@@ -106,6 +106,7 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("GET /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.getConversationMessages)))
 	mux.Handle("POST /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.createGeneration)))
 	mux.Handle("GET /api/generation-batches/{id}", browserSession(http.HandlerFunc(server.getGenerationBatch)))
+	mux.Handle("GET /api/generation-batches/{id}/context", browserSession(http.HandlerFunc(server.getGenerationBatchContext)))
 	mux.Handle("GET /api/generation-batches/{id}/events", browserSession(http.HandlerFunc(server.generationBatchEvents)))
 	mux.Handle("POST /api/generation-batches/{id}/cancel", browserSession(http.HandlerFunc(server.cancelGenerationBatch)))
 	mux.Handle("POST /api/generation-batches/{id}/skip-context", browserSession(http.HandlerFunc(server.skipGenerationBatchContext)))
@@ -443,6 +444,19 @@ func (server *Server) getGenerationBatch(writer http.ResponseWriter, request *ht
 		return
 	}
 	writeJSON(writer, http.StatusOK, generationBatchEnvelopeFor(batch))
+}
+
+func (server *Server) getGenerationBatchContext(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	messages, err := server.chat.GetGenerationBatchContext(request.Context(), request.PathValue("id"))
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, messages)
 }
 
 func (server *Server) generationBatchEvents(writer http.ResponseWriter, request *http.Request) {

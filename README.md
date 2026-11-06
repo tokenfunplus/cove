@@ -7,6 +7,8 @@ A local-first Mac chat app with on-device history and verifiable AI inference.
 
 Cove keeps conversation history on your Mac and connects to the model providers you choose. A SwiftUI menu-bar Launcher starts a local Go service and opens the Chat Surface in your browser. There is no Cove account or cloud conversation store.
 
+Choose a workspace skin in **Settings → General → Workspace skin**. Continuum uses warm neutrals and blue, Blueprint uses a compact technical grid, and Studio pairs violet surfaces with serif headings. Grove keeps the original forest palette. Each skin supports the existing Light, Dark, and System modes. Cove remembers your skin in this browser for the Local Service address.
+
 ## Features
 
 - Stream responses from OpenAI-compatible providers or the built-in NearAI preset.

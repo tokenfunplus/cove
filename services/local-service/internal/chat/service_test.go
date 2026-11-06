@@ -827,6 +827,20 @@ func TestServiceRequiresAComparisonDispositionBeforeTheNextBatchAndUsesTheSelect
 		t.Fatalf("start follow-up batch: %v", err)
 	}
 	waitForBatch(t, store, second.Batch.ID, persistence.GenerationBatchCompleted)
+	contextMessages, err := service.GetGenerationBatchContext(context.Background(), second.Batch.ID)
+	if err != nil {
+		t.Fatalf("read frozen browser context: %v", err)
+	}
+	if len(contextMessages) != 2 || contextMessages[0].Content != "First question" || contextMessages[1].Content != "Chosen answer" {
+		t.Fatalf("browser context does not match the selected answer")
+	}
+	emptyContext, err := service.GetGenerationBatchContext(context.Background(), first.Batch.ID)
+	if err != nil || len(emptyContext) != 0 {
+		t.Fatalf("first batch context should remain empty")
+	}
+	if _, err := service.GetGenerationBatchContext(context.Background(), "missing-batch"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing context error = %v", err)
+	}
 	for _, messages := range upstream.messagesFor("model-a") {
 		if messages[len(messages)-1] == (provider.ProviderMessage{Role: "user", Content: "Follow-up"}) {
 			if !containsProviderMessage(messages, provider.ProviderMessage{Role: "assistant", Content: "Chosen answer"}) || containsProviderMessage(messages, provider.ProviderMessage{Role: "assistant", Content: "Other answer"}) {

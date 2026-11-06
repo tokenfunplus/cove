@@ -237,6 +237,12 @@ export interface GenerationTarget {
   generation: GenerationTargetAttempt;
 }
 
+/** Frozen selected history; excludes the current prompt and System Prompt. */
+export interface GenerationContextMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface GenerationBatch {
   id: string;
   conversation_id: string;

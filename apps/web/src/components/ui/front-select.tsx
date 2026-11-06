@@ -1,6 +1,24 @@
-import { Combobox, ComboboxButton, ComboboxInput, ComboboxLabel, ComboboxOption, ComboboxOptions, Listbox } from "@headlessui/react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { primitivesStyles } from "@/styles/primitives";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import {
+  Combobox,
+  ComboboxButton,
+  ComboboxInput,
+  ComboboxLabel,
+  ComboboxOption,
+  ComboboxOptions,
+} from "@headlessui/react";
 import { ChevronDown, Search } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 export type FrontSelectOption = {
   value: string;
@@ -10,14 +28,28 @@ export type FrontSelectOption = {
 };
 
 function optionSearchText(option: FrontSelectOption): string {
-  const keywords = typeof option.keywords === "string" ? [option.keywords] : option.keywords ?? [];
-  return [option.value, typeof option.label === "string" ? option.label : "", ...keywords].join(" ").toLocaleLowerCase();
+  const keywords =
+    typeof option.keywords === "string"
+      ? [option.keywords]
+      : (option.keywords ?? []);
+  return [
+    option.value,
+    typeof option.label === "string" ? option.label : "",
+    ...keywords,
+  ]
+    .join(" ")
+    .toLocaleLowerCase();
 }
 
-export function filterFrontSelectOptions(options: readonly FrontSelectOption[], query: string): FrontSelectOption[] {
+export function filterFrontSelectOptions(
+  options: readonly FrontSelectOption[],
+  query: string,
+): FrontSelectOption[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   if (!normalizedQuery) return [...options];
-  return options.filter((option) => optionSearchText(option).includes(normalizedQuery));
+  return options.filter((option) =>
+    optionSearchText(option).includes(normalizedQuery),
+  );
 }
 
 export function FrontSelect({
@@ -34,7 +66,7 @@ export function FrontSelect({
   emptyText = "No matching models",
   className = "",
   panelClassName = "",
-  optionClassName = ""
+  optionClassName = "",
 }: {
   id?: string;
   label?: ReactNode;
@@ -52,36 +84,103 @@ export function FrontSelect({
   optionClassName?: string;
 }) {
   const [query, setQuery] = useState("");
+  const generatedId = useId();
+  const triggerId = id ?? generatedId;
   if (searchable) {
     const filteredOptions = filterFrontSelectOptions(options, query);
     return (
-      <Combobox value={value} onChange={(nextValue) => nextValue !== null && onValueChange(nextValue)} disabled={disabled} onClose={() => setQuery("")} immediate>
-        <div className="relative grid gap-1 front-select front-select--searchable">
-          {label ? <ComboboxLabel className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">{label}</ComboboxLabel> : null}
-          <div className="front-select__input-shell">
-            <span className="front-select__selected-value" aria-hidden="true">{options.find((option) => option.value === value)?.label}</span>
-            <Search aria-hidden="true" className="front-select__search-icon" size={13} strokeWidth={1.8} />
+      <Combobox
+        value={value}
+        onChange={(nextValue) => nextValue !== null && onValueChange(nextValue)}
+        disabled={disabled}
+        onClose={() => setQuery("")}
+        immediate
+      >
+        <div
+          className={cn(
+            primitivesStyles.frontSelect,
+            "front-select--searchable",
+          )}
+        >
+          {label ? (
+            <ComboboxLabel className={primitivesStyles.fieldSelect_label}>
+              {label}
+            </ComboboxLabel>
+          ) : null}
+          <div className={primitivesStyles.frontSelect_inputShell}>
+            <span
+              className={primitivesStyles.frontSelect_selectedValue}
+              aria-hidden="true"
+            >
+              {options.find((option) => option.value === value)?.label}
+            </span>
+            <Search
+              aria-hidden="true"
+              className={primitivesStyles.frontSelect_searchIcon}
+              size={13}
+              strokeWidth={1.8}
+            />
             <ComboboxInput
+              as={Input}
               id={id}
               aria-label={ariaLabel}
-              className={`front-select__input min-h-9 rounded-md border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-left text-[var(--ink)] ${className}`}
+              className={cn(
+                primitivesStyles.frontSelect_input,
+                `front-select__input ${className}`,
+              )}
               displayValue={(selectedValue: string) => {
-                const option = options.find((candidate) => candidate.value === selectedValue);
+                const option = options.find(
+                  (candidate) => candidate.value === selectedValue,
+                );
                 if (!option) return "";
-                return typeof option.label === "string" ? option.label : option.value;
+                return typeof option.label === "string"
+                  ? option.label
+                  : option.value;
               }}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={typeof placeholder === "string" ? placeholder : searchPlaceholder}
+              placeholder={
+                typeof placeholder === "string"
+                  ? placeholder
+                  : searchPlaceholder
+              }
             />
-            <ComboboxButton aria-label={searchPlaceholder} className="front-select__toggle"><ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} /></ComboboxButton>
+            <ComboboxButton
+              as={Button}
+              variant="ghost"
+              aria-label={searchPlaceholder}
+              className={primitivesStyles.frontSelect_toggle}
+            >
+              <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} />
+            </ComboboxButton>
           </div>
-          <ComboboxOptions anchor="bottom start" portal className={`front-select__options front-select__options--searchable ${panelClassName}`}>
-            <div className="front-select__options-heading">{searchPlaceholder}</div>
-            {filteredOptions.length > 0 ? filteredOptions.map((option) => (
-              <ComboboxOption className={`front-select__option ${optionClassName}`} key={option.value} value={option.value} disabled={option.disabled}>
-                {option.label}
-              </ComboboxOption>
-            )) : <p className="front-select__empty">{emptyText}</p>}
+          <ComboboxOptions
+            anchor="bottom start"
+            portal
+            className={cn(
+              primitivesStyles.frontSelect_options,
+              `front-select__options front-select__options--searchable ${panelClassName}`,
+            )}
+          >
+            <div className={primitivesStyles.frontSelect_optionsHeading}>
+              {searchPlaceholder}
+            </div>
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((option) => (
+                <ComboboxOption
+                  className={cn(
+                    primitivesStyles.frontSelect_option,
+                    `front-select__option ${optionClassName}`,
+                  )}
+                  key={option.value}
+                  value={option.value}
+                  disabled={option.disabled}
+                >
+                  {option.label}
+                </ComboboxOption>
+              ))
+            ) : (
+              <p className={primitivesStyles.frontSelect_empty}>{emptyText}</p>
+            )}
           </ComboboxOptions>
         </div>
       </Combobox>
@@ -89,20 +188,44 @@ export function FrontSelect({
   }
 
   return (
-    <Listbox value={value} onChange={onValueChange} disabled={disabled}>
-      <div className="relative grid gap-1">
-        {label ? <Listbox.Label className="text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">{label}</Listbox.Label> : null}
-        <Listbox.Button id={id} aria-label={ariaLabel} className={`min-h-9 rounded-md border border-[var(--line)] bg-[var(--surface-raised)] px-2 text-left text-[var(--ink)] ${className}`}>
-          {options.find((option) => option.value === value)?.label ?? placeholder}
-        </Listbox.Button>
-        <Listbox.Options anchor="bottom start" portal className={`front-select__options ${panelClassName}`}>
+    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+      <div className={primitivesStyles.fieldSelect}>
+        {label ? (
+          <label
+            htmlFor={triggerId}
+            className={primitivesStyles.fieldSelect_label}
+          >
+            {label}
+          </label>
+        ) : null}
+        <SelectTrigger
+          id={triggerId}
+          aria-label={ariaLabel}
+          className={cn(primitivesStyles.fieldSelect_trigger, className)}
+        >
+          <SelectValue placeholder={placeholder}>
+            {options.find((option) => option.value === value)?.label ??
+              placeholder}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent
+          className={cn(
+            "z-[100] max-h-[min(360px,50dvh)] max-w-[calc(100vw-28px)]",
+            panelClassName,
+          )}
+        >
           {options.map((option) => (
-            <Listbox.Option className={`front-select__option ${optionClassName}`} key={option.value} value={option.value} disabled={option.disabled}>
+            <SelectItem
+              className={optionClassName}
+              key={option.value}
+              value={option.value}
+              disabled={option.disabled}
+            >
               {option.label}
-            </Listbox.Option>
+            </SelectItem>
           ))}
-        </Listbox.Options>
+        </SelectContent>
       </div>
-    </Listbox>
+    </Select>
   );
 }

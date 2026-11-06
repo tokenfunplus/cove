@@ -1,0 +1,1238 @@
+import http from "node:http";
+import { randomBytes } from "node:crypto";
+import { spawn } from "node:child_process";
+import { createInterface } from "node:readline";
+import { once } from "node:events";
+import {
+  mkdtemp,
+  readFile,
+  writeFile,
+  rm,
+  readdir,
+  mkdir,
+} from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import assert from "node:assert/strict";
+
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../..",
+);
+process.chdir(repoRoot);
+const evidenceDir = path.resolve(
+  process.env.COVE_BROWSER_ARTIFACT_DIR ?? ".artifacts/frontend-acceptance",
+);
+await mkdir(evidenceDir, { recursive: true, mode: 0o700 });
+const browserBinary =
+  process.env.COVE_BROWSER_BIN ??
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const require = createRequire(import.meta.url);
+
+const temp = await mkdtemp(path.join(os.tmpdir(), "cove-stage4-browser-"));
+const control = randomBytes(24).toString("hex");
+let service, chrome;
+const requests = [];
+let sawApiKeyHeader = false;
+const attempts = new Map();
+let catalogGate;
+const provider = http.createServer(async (request, response) => {
+  if (request.headers["x-api-key"]) sawApiKeyHeader = true;
+  if (
+    (request.headers.authorization ?? "").includes("invalid") ||
+    (request.headers["x-api-key"] ?? "").includes("invalid")
+  ) {
+    response.writeHead(401);
+    response.end("{}");
+    return;
+  }
+  if (request.method === "GET") {
+    if (catalogGate) await catalogGate.promise;
+    response.setHeader("Content-Type", "application/json");
+    response.end(
+      JSON.stringify({
+        data: [
+          { id: "model-one" },
+          { id: "model-two" },
+          { id: "model-three" },
+          { id: "model-four" },
+        ],
+      }),
+    );
+    return;
+  }
+  let body = "";
+  for await (const chunk of request) body += chunk;
+  const input = JSON.parse(body);
+  requests.push(input);
+  const prompt = input.messages.at(-1)?.content ?? "";
+  const attemptKey = input.model + ":" + prompt;
+  const attempt = (attempts.get(attemptKey) ?? 0) + 1;
+  attempts.set(attemptKey, attempt);
+  if (
+    prompt.includes("Retry fixture") &&
+    input.model === "model-two" &&
+    attempt === 1
+  ) {
+    response.writeHead(500);
+    response.end("{}");
+    return;
+  }
+
+  response.writeHead(200, { "Content-Type": "text/event-stream" });
+  response.write(
+    "data: " +
+      JSON.stringify({
+        choices: [{ delta: { content: "Browser answer from " + input.model } }],
+      }) +
+      "\n\n",
+  );
+  if (prompt.includes("Long fixture"))
+    response.write(
+      "data: " +
+        JSON.stringify({
+          choices: [
+            {
+              delta: {
+                content:
+                  "\n\n## A long answer\n\n" +
+                  "A readable paragraph with enough detail to scroll.\n\n".repeat(
+                    80,
+                  ) +
+                  '```javascript\nconst longLine = \"' +
+                  "x".repeat(180) +
+                  '\";\n```',
+              },
+            },
+          ],
+        }) +
+        "\n\n",
+    );
+  setTimeout(
+    () => response.end("data: [DONE]\n\n"),
+    prompt.includes("Slow fixture") ? 3500 : 150,
+  );
+});
+await new Promise((resolve) => provider.listen(0, "127.0.0.1", resolve));
+try {
+  service = spawn(
+    ".artifacts/cove-local-service",
+    [
+      "--control-token",
+      control,
+      "--port",
+      "19520",
+      "--insecure-file-secret-store",
+    ],
+    {
+      env: {
+        ...process.env,
+        COVE_DATA_DIR: temp,
+        COVE_INSECURE_FILE_SECRET_STORE: "1",
+      },
+      stdio: ["ignore", "pipe", "ignore"],
+    },
+  );
+  const lines = createInterface({ input: service.stdout });
+  const ready = JSON.parse(
+    (await once(lines, "line", { signal: AbortSignal.timeout(10000) }))[0],
+  );
+  const origin = ready.url;
+  const launch = await fetch(
+    origin + "/launch?token=" + encodeURIComponent(ready.launch_token),
+    { redirect: "manual" },
+  );
+  const cookie = launch.headers.getSetCookie()[0].split(";")[0];
+  const session = await fetch(origin + "/api/session", {
+    headers: { Cookie: cookie },
+  }).then((r) => r.json());
+  const headers = {
+    Cookie: cookie,
+    Origin: origin,
+    "Content-Type": "application/json",
+    "X-Cove-CSRF-Token": session.csrf_token,
+  };
+  async function api(route, method = "GET", body) {
+    const response = await fetch(origin + route, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    assert(
+      response.ok,
+      "Fixture API returned " + response.status + " for " + route,
+    );
+    return response.status === 204 ? undefined : response.json();
+  }
+  const profile = await api("/api/models", "POST", {
+    kind: "openai_compatible",
+    name: "Browser fixture",
+    endpoint: "http://127.0.0.1:" + provider.address().port,
+    auth_method: "bearer",
+    secret: randomBytes(12).toString("hex"),
+  });
+  const settings = await api("/api/settings");
+  await api("/api/settings", "PATCH", {
+    ...settings,
+    active_model_set: ["model-one", "model-two"].map((model_id) => ({
+      provider_id: profile.id,
+      model_id,
+    })),
+  });
+  const conversation = await api("/api/conversations", "POST", {
+    title: "A little room for bright ideas",
+  });
+  const token = await fetch(origin + "/internal/control/launch-token", {
+    method: "POST",
+    headers: { "X-Cove-Control-Token": control },
+  }).then((r) => r.json());
+  catalogGate = Promise.withResolvers();
+  chrome = spawn(
+    browserBinary,
+    [
+      "--headless",
+      "--no-first-run",
+      "--disable-default-apps",
+      "--disable-extensions",
+      "--disable-sync",
+      "--disable-background-networking",
+      "--no-proxy-server",
+      "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
+      "--remote-debugging-port=0",
+      "--user-data-dir=" + path.join(temp, "chrome"),
+      origin + "/launch?token=" + encodeURIComponent(token.launch_token),
+    ],
+    { stdio: "ignore" },
+  );
+  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  let debugPort;
+  for (let i = 0; i < 100; i++) {
+    try {
+      debugPort = (
+        await readFile(path.join(temp, "chrome", "DevToolsActivePort"), "utf8")
+      ).split("\n")[0];
+      break;
+    } catch {
+      await pause(100);
+    }
+  }
+  assert(debugPort, "Browser debugging endpoint did not start");
+  const tabs = await fetch("http://127.0.0.1:" + debugPort + "/json/list").then(
+    (r) => r.json(),
+  );
+  const tab = tabs.find((t) => t.type === "page");
+  const socket = new WebSocket(tab.webSocketDebuggerUrl);
+  await once(socket, "open");
+  let sequence = 0;
+  const pending = new Map();
+  const exceptions = [];
+  socket.addEventListener("message", (event) => {
+    const data = JSON.parse(event.data);
+    if (data.id) {
+      const task = pending.get(data.id);
+      pending.delete(data.id);
+      data.error
+        ? task.reject(new Error(data.error.message))
+        : task.resolve(data.result);
+    }
+    if (data.method === "Runtime.exceptionThrown")
+      exceptions.push(data.params.exceptionDetails.text);
+  });
+  function rawCdp(method, params = {}) {
+    return new Promise((resolve, reject) => {
+      const id = ++sequence;
+      pending.set(id, { resolve, reject });
+      socket.send(JSON.stringify({ id, method, params }));
+    });
+  }
+  async function cdp(method, params = {}) {
+    const result = await rawCdp(method, params);
+    if (
+      method === "Emulation.setDeviceMetricsOverride" ||
+      method === "Emulation.setEmulatedMedia"
+    ) {
+      await rawCdp("Page.captureScreenshot", { format: "png" });
+      await pause(100);
+    }
+    return result;
+  }
+  await cdp("Runtime.enable");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  async function evaluate(expression) {
+    const result = await cdp("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    assert(
+      !result.exceptionDetails,
+      "Browser evaluation failed: " +
+        (result.exceptionDetails?.exception?.description ??
+          result.exceptionDetails?.text ??
+          ""),
+    );
+    return result.result.value;
+  }
+  async function until(expression) {
+    for (let i = 0; i < 100; i++) {
+      if (await evaluate(expression)) return;
+      await pause(100);
+    }
+    await snapshot("failure");
+    throw new Error("Browser condition timed out: " + expression);
+  }
+  async function click(selector) {
+    await until(`!!document.querySelector(${JSON.stringify(selector)})`);
+    await evaluate(`(async()=>{const e=document.querySelector(${JSON.stringify(selector)});const r=e.getBoundingClientRect();const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);if(!e.contains(hit)){e.scrollIntoView({block:'nearest'});await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);}})()`);
+    const point = await evaluate(
+      `(()=>{const e=document.querySelector(${JSON.stringify(selector)});const r=e.getBoundingClientRect();const x=r.left+r.width/2,y=r.top+r.height/2;const hit=document.elementFromPoint(x,y);return {x,y,ok:!!hit&&(e.contains(hit)||hit.contains(e))};})()`,
+    );
+    assert(point.ok, "Pointer is blocked for " + selector);
+    await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+    await cdp("Input.dispatchMouseEvent", {
+      type: "mousePressed",
+      x: point.x,
+      y: point.y,
+      button: "left",
+      clickCount: 1,
+    });
+    await cdp("Input.dispatchMouseEvent", {
+      type: "mouseReleased",
+      x: point.x,
+      y: point.y,
+      button: "left",
+      clickCount: 1,
+    });
+    await pause(150);
+  }
+  async function send(text) {
+    await until('!!document.querySelector("#generation-input")');
+    await evaluate(
+      `(()=>{const t=document.querySelector('#generation-input');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(t,${JSON.stringify(text)});t.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    await until(
+      `!document.querySelector('button[aria-label="Send message"]').disabled`,
+    );
+    await evaluate(
+      `document.querySelector('button[aria-label="Send message"]').click()`,
+    );
+    await until(
+      `document.body.textContent.includes('Browser answer from model-one') && document.body.textContent.includes('Browser answer from model-two') && !document.querySelector('button[aria-label="Stop generation"]')`,
+    );
+  }
+  await until('!!document.querySelector(".conversation-welcome")');
+  await until(`document.querySelector('.model-selector')?.dataset.catalogStatus === 'loading' && !!document.querySelector('#generation-input')`);
+  const layoutAt = async (width) => {
+    await cdp("Emulation.setDeviceMetricsOverride", { width, height: width < 768 ? 844 : 900, deviceScaleFactor: 1, mobile: width < 768 });
+    await pause(500);
+    return evaluate(`['.workspace__header','.message-list','.conversation-welcome','#generation-input','.generation-composer__send'].map(selector => {
+      const { top, height } = document.querySelector(selector).getBoundingClientRect();
+      return { top, height };
+    })`);
+  };
+  await fill("#generation-input", "Draft while loading");
+  assert(await evaluate(`document.querySelector('.generation-composer__send').disabled`));
+  const loadingLayout = new Map();
+  for (const width of [390, 1440]) loadingLayout.set(width, await layoutAt(width));
+  catalogGate.resolve();
+  await until(`document.querySelector('.model-selector')?.dataset.catalogStatus === 'ready'`);
+  for (const width of [390, 1440]) {
+    assert.deepEqual(await layoutAt(width), loadingLayout.get(width), "Catalog loading shifted the workspace at width " + width);
+  }
+  assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "Draft while loading");
+  await fill("#generation-input", "");
+
+  assert.equal(
+    await evaluate(
+      `!!document.querySelector('.model-selector__add-menu-items')`,
+    ),
+    false,
+  );
+  async function snapshot(name) {
+    await pause(350);
+    const shot = await cdp("Page.captureScreenshot", { format: "png" });
+    await writeFile(
+      path.join(evidenceDir, name + ".png"),
+      Buffer.from(shot.data, "base64"),
+    );
+  }
+  async function assertLayout(name) {
+    const metrics = await evaluate(
+      `({width:innerWidth, scroll:document.documentElement.scrollWidth, main:document.querySelector('.workspace__main').getBoundingClientRect().width, composer:document.querySelector('.generation-composer').getBoundingClientRect().toJSON(), font:document.fonts.check('14px "Geist Variable"')})`,
+    );
+    assert(
+      metrics.scroll <= metrics.width + 1,
+      name + " overflows horizontally",
+    );
+    assert(
+      metrics.main >= metrics.width - (metrics.width >= 980 ? 300 : 1),
+      name + " loses space to a missing sidebar",
+    );
+    assert(
+      metrics.composer.bottom <= (await evaluate("innerHeight")) + 1,
+      name + " composer leaves viewport",
+    );
+    assert(metrics.font, name + " local font failed to load");
+    assert.equal(
+      await evaluate(
+        `!document.querySelector('.generation-composer__send:disabled') || getComputedStyle(document.querySelector('.generation-composer__send:disabled')).cursor==='not-allowed'`,
+      ),
+      true,
+    );
+  }
+  for (const [width, height] of [
+    [1440, 900],
+    [1280, 720],
+    [981, 800],
+    [980, 800],
+    [979, 800],
+    [768, 1024],
+    [390, 844],
+    [320, 740],
+  ]) {
+    await cdp("Emulation.setDeviceMetricsOverride", {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: width < 768,
+    });
+    await pause(250);
+    await assertLayout("Empty " + width);
+    const controlRects = await evaluate(`['.model-selector__provider-select', '.model-selector__fields .front-select__input', '.model-selector__comparison-toggle'].map(s => document.querySelector(s).getBoundingClientRect().toJSON())`);
+    for (const rect of controlRects.slice(1)) {
+      assert(Math.abs(rect.top - controlRects[0].top) <= 1 && Math.abs(rect.height - controlRects[0].height) <= 1,
+        "Model controls are misaligned at width " + width);
+    }
+    await snapshot("empty-light-" + width);
+  }
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await click('button[aria-label="Collapse sidebar"]');
+  await until(`!!document.querySelector('.conversation-sidebar--collapsed')`);
+  assert(await evaluate(`document.querySelector('.conversation-list__new').getBoundingClientRect().width > 0`));
+  await snapshot("collapsed-sidebar");
+  await click('button[aria-label="Settings"]');
+  await click('button[aria-label="Close settings"]');
+  await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "k", code: "KeyK", modifiers: 4 });
+  await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "k", code: "KeyK" });
+  await until(`!document.querySelector('.conversation-sidebar--collapsed') && document.activeElement === document.querySelector('.conversation-list__search input')`);
+  await evaluate(
+    `document.querySelector('button[aria-label="Toggle day / night edition"]').click()`,
+  );
+  await until(`document.documentElement.dataset.theme==='dark'`);
+  await snapshot("empty-dark-1440");
+  async function chooseSkin(id) {
+    await click('button[aria-label="Settings"]');
+    await click(`label:has(input[name="workspace-skin"][value="${id}"])`);
+    await until(
+      `document.documentElement.dataset.skin === ${JSON.stringify(id)}`,
+    );
+    await click('button[aria-label="Close settings"]');
+    await until(`!document.querySelector('[role="dialog"]')`);
+  }
+  for (const id of ["blueprint", "studio", "grove", "continuum"]) {
+    await chooseSkin(id);
+    await assertLayout(id + " dark");
+    await snapshot("skin-" + id + "-dark");
+  }
+  await evaluate(
+    `document.querySelector('button[aria-label="Toggle day / night edition"]').click()`,
+  );
+  await until(`document.documentElement.dataset.theme==='light'`);
+  for (const id of ["continuum", "blueprint", "studio"]) {
+    await chooseSkin(id);
+    await assertLayout(id + " light");
+    await snapshot("skin-" + id + "-light");
+  }
+  await cdp("Page.reload");
+  await until(
+    `!!document.querySelector('.conversation-welcome') && document.documentElement.dataset.skin === "studio"`,
+  );
+  await chooseSkin("continuum");
+  await evaluate(
+    `document.querySelector('button[aria-label="Settings"]').click()`,
+  );
+  await until(`!!document.querySelector('[role="dialog"]')`);
+  await until(
+    `document.querySelector('#settings-general').getBoundingClientRect().height>100`,
+  );
+  await click("#settings-tab-provider");
+  await click("#provider-settings [data-slot=select-trigger]");
+  await until(`!!document.querySelector('[data-slot=select-content]')`);
+  await click("[data-slot=select-item]");
+  await until(`!document.querySelector('[data-slot=select-content]')`);
+  await click(".prov__foot button:first-child");
+  await until(
+    `document.querySelector('#provider-settings').textContent.includes('Connection verified')`,
+  );
+  await click("#provider-settings .front-select__input");
+  await until(`!!document.querySelector('.front-select__options')`);
+  assert(
+    await evaluate(
+      `document.activeElement===document.querySelector('#provider-settings .front-select__input')`,
+    ),
+    "Search field lost modal focus",
+  );
+  await evaluate(
+    `document.querySelector('#provider-settings .front-select__input').select()`,
+  );
+  await cdp("Input.insertText", { text: "model-t" });
+  await until(
+    `document.querySelector('.front-select__options')?.textContent.includes('model-two')`,
+  );
+  await chooseOption("model-two");
+  await until(
+    `document.querySelector('#provider-settings .front-select__input').value==='model-two'`,
+  );
+  assert(
+    await evaluate(`!!document.querySelector('.settings-dialog__panel')`),
+    "Model selection dismissed its settings dialog",
+  );
+  await click("#settings-tab-general");
+  await clickText("Follow system");
+  await cdp("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: "dark" }],
+  });
+  await until(`document.documentElement.dataset.theme==='dark'`);
+  await cdp("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  });
+  await until(`document.documentElement.dataset.theme==='light'`);
+  assert.equal((await api("/api/settings")).theme, "system");
+  await snapshot("settings-general-light");
+  await evaluate(`document.querySelector('#settings-tab-provider').click()`);
+  await until(
+    `document.querySelector('#settings-provider').getBoundingClientRect().height>100`,
+  );
+  await snapshot("settings-provider-light");
+  await evaluate(`document.querySelector('#settings-tab-chat-data').click()`);
+  await until(
+    `document.querySelector('#settings-chat-data').getBoundingClientRect().height>100`,
+  );
+  await snapshot("settings-data-light");
+  await evaluate(
+    `document.querySelector('button[aria-label="Close settings"]').click()`,
+  );
+  await until(`!document.querySelector('[role="dialog"]')`);
+  const chatArea = () => evaluate(`document.querySelector('.message-list').getBoundingClientRect().toJSON()`);
+  const closedChatArea = await chatArea();
+  await evaluate(
+    `document.querySelector('.model-selector__comparison-toggle').click()`,
+  );
+  assert.deepEqual(await chatArea(), closedChatArea, "Opening the model set moved the chat");
+  await snapshot("model-comparison-controls");
+  await click(".model-selector__chip .front-select__input");
+  await chooseOption("model-one");
+  assert.equal(await evaluate(`document.querySelector('.model-selector__comparison-toggle').getAttribute('aria-expanded')`), "true",
+    "Choosing a target dismissed the model set");
+  await evaluate(
+    `document.querySelector('.model-selector__add-button').click()`,
+  );
+  await until(`!!document.querySelector('.model-selector__add-menu-items')`);
+  await snapshot("model-add-menu");
+  const menuRect = await evaluate(
+    `document.querySelector('.model-selector__add-menu-items').getBoundingClientRect().toJSON()`,
+  );
+  assert(
+    menuRect.left >= 0 &&
+      menuRect.right <= 1440 &&
+      menuRect.top >= 0 &&
+      menuRect.bottom <= 900,
+    "Model menu escapes viewport",
+  );
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+  });
+  await until(`!document.querySelector('.model-selector__add-menu-items')`);
+  await evaluate(
+    `document.querySelector('.model-selector__comparison-toggle').click()`,
+  );
+  await send("First browser prompt");
+  for (const id of ["studio", "blueprint", "continuum"]) {
+    await chooseSkin(id);
+    await until(
+      `document.body.textContent.includes('Browser answer from model-two')`,
+    );
+    await snapshot("conversation-" + id + "-light");
+  }
+
+  let view = await api("/api/conversations/" + conversation.id);
+  assert.equal(view.generation_batches.length, 1);
+  assert.equal(view.generation_batches[0].state, "completed");
+  assert.equal(view.messages.filter((m) => m.role === "assistant").length, 2);
+  await evaluate(
+    `(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Use for next turn');if(!b)throw new Error('Choice missing');b.click();})()`,
+  );
+  await until(
+    `!![...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Selected · Answer of record')`,
+  );
+  await cdp("Page.reload");
+  await pause(500);
+  await until(
+    `document.readyState==='complete' && !!document.querySelector('button[aria-label="Toggle day / night edition"]')`,
+  );
+  await until(
+    `document.body.textContent.includes('Browser answer from model-one') && !![...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Selected · Answer of record')`,
+  );
+  await evaluate(
+    `document.querySelector('button[aria-label="Toggle day / night edition"]').click()`,
+  );
+  await until(`document.documentElement.dataset.theme==='dark'`);
+  assert.equal((await api("/api/settings")).theme, "dark");
+  await evaluate(
+    `document.querySelector('button[aria-label="Settings"]').click()`,
+  );
+  await until(`!!document.querySelector('[role="dialog"]')`);
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+  });
+  await until(`!document.querySelector('[role="dialog"]')`);
+  await send("Second browser prompt");
+  view = await api("/api/conversations/" + conversation.id);
+  assert.equal(view.generation_batches.length, 2);
+  assert.equal(view.messages.filter((m) => m.role === "assistant").length, 4);
+  assert.equal(exceptions.length, 0);
+  await until(
+    `(()=>{const n=document.querySelector('.message-list');return n.scrollHeight-n.scrollTop-n.clientHeight<2})()`,
+  );
+  assert.equal(
+    await evaluate(
+      `document.querySelectorAll(".message__verification-lanes").length`,
+    ),
+    0,
+    "Ordinary Provider displays private verification lanes",
+  );
+  await snapshot("comparison-dark-1440");
+  await evaluate(
+    `document.querySelector('button[aria-label="Settings"]').click()`,
+  );
+  await until(`!!document.querySelector('[role="dialog"]')`);
+  await snapshot("settings-general-dark");
+  await evaluate(
+    `document.querySelector('button[aria-label="Close settings"]').click()`,
+  );
+  await until(`!document.querySelector('[role="dialog"]')`);
+  const desktop = await cdp("Page.captureScreenshot", { format: "png" });
+  await writeFile(
+    path.join(evidenceDir, "desktop.png"),
+    Buffer.from(desktop.data, "base64"),
+  );
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await until(
+    `!!document.querySelector('button[aria-label="Expand sidebar"]')`,
+  );
+  await assertLayout("Comparison 390");
+  await until(
+    `(()=>{const n=document.querySelector('.message-list');return n.scrollHeight-n.scrollTop-n.clientHeight<2})()`,
+  );
+  await snapshot("comparison-dark-390");
+  await evaluate(
+    `document.querySelector('button[aria-label="Expand sidebar"]').click()`,
+  );
+  await until(`!!document.querySelector('.mobile-sidebar-dialog__panel')`);
+  await snapshot("sidebar-dark-390");
+  await evaluate(
+    `document.querySelector('.mobile-sidebar-dialog__panel button[aria-label="Settings"]').click()`,
+  );
+  await until(`!!document.querySelector('.settings-dialog__panel')`);
+  await snapshot("settings-general-dark-390");
+  await evaluate(`document.querySelector('#settings-tab-provider').click()`);
+  await snapshot("settings-provider-dark-390");
+  await evaluate(`document.querySelector('#settings-tab-chat-data').click()`);
+  await snapshot("settings-data-dark-390");
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+  });
+  await until(`!document.querySelector('[role="dialog"]')`);
+  await evaluate(
+    `document.querySelector('button[aria-label="Privacy Status"]').click()`,
+  );
+  await until(`!!document.querySelector('.privacy-status-panel')`);
+  await snapshot("privacy-dark-390");
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+  });
+  await until(`!document.querySelector('[role="dialog"]')`);
+  await cdp("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+  });
+  await evaluate(
+    `document.querySelector('button[aria-label="Expand sidebar"]').click()`,
+  );
+  await until(`!!document.querySelector('.mobile-sidebar-dialog__panel')`);
+  await evaluate(
+    `document.querySelector('button[aria-label="New conversation"]').click()`,
+  );
+  await until('!!document.querySelector(".conversation-welcome")');
+  assert.equal(
+    await evaluate(
+      `getComputedStyle(document.querySelector('.conversation-welcome')).animationDuration`,
+    ),
+    "1e-05s",
+  );
+  assert.equal(exceptions.length, 0);
+  const narrow = await cdp("Page.captureScreenshot", { format: "png" });
+  await writeFile(
+    path.join(evidenceDir, "mobile.png"),
+    Buffer.from(narrow.data, "base64"),
+  );
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await pause(250);
+  async function fill(selector, value) {
+    await click(selector);
+    await evaluate(
+      `document.querySelector(${JSON.stringify(selector)}).select()`,
+    );
+    await cdp("Input.insertText", { text: value });
+  }
+  async function clickText(text, scope = "body") {
+    const found = await evaluate(
+      `(()=>{const e=[...document.querySelectorAll(${JSON.stringify(scope + " button, " + scope + " [role=menuitem]")})].find(e=>e.textContent.trim()===${JSON.stringify(text)}&&e.getBoundingClientRect().width>0);if(!e)return false;e.setAttribute('data-fixture-click','true');return true})()`,
+    );
+    assert(found, "Visible action missing: " + text);
+    await click("[data-fixture-click]");
+    await evaluate(
+      `document.querySelector('[data-fixture-click]')?.removeAttribute('data-fixture-click')`,
+    );
+  }
+  async function escape() {
+    await cdp("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: "Escape",
+      code: "Escape",
+    });
+    await cdp("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Escape",
+      code: "Escape",
+    });
+    await pause(100);
+  }
+  async function rowAction(text) {
+    await click(".conversation--selected + .conversation-actions button");
+    await clickText(text);
+  }
+  // Rename, search, pin, archive, restore and export through their real UI actions.
+  await rowAction("Rename conversation");
+  await fill("#conversation-title", "Review conversation");
+  await clickText("Save title");
+  await until(
+    `document.querySelector('.masthead__title').textContent==='Review conversation'`,
+  );
+  await rowAction("Pin");
+  await until(
+    `document.querySelector('.conversation-list').textContent.includes('Pinned')`,
+  );
+  await rowAction("Unpin");
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "k",
+    code: "KeyK",
+    modifiers: 4,
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "k",
+    code: "KeyK",
+  });
+  assert(
+    await evaluate(
+      `document.activeElement===document.querySelector('.conversation-list__search input')`,
+    ),
+    "Search shortcut did not focus",
+  );
+  await fill(".conversation-list__search input", "Review conversation");
+  assert.equal(
+    await evaluate(`document.querySelectorAll('.conversation-row').length`),
+    1,
+  );
+  await fill(".conversation-list__search input", "");
+  await rowAction("Archive");
+  await clickText("Archived chats");
+  await until(
+    `document.querySelector('.conversation--selected')?.textContent.includes('Review conversation')`,
+  );
+  assert(
+    await evaluate(
+      `document.querySelector('.conversation-panel__archived')!==null`,
+    ),
+    "Archived conversation has no notice",
+  );
+  assert(
+    await evaluate(`!document.querySelector('#generation-input')`),
+    "Archived conversation still accepts input",
+  );
+  await rowAction("Unarchive");
+  await clickText("All chats");
+  await until(`!!document.querySelector('#generation-input')`);
+  await rowAction("Download");
+  const downloads = path.join(temp, "downloads");
+  await mkdir(downloads);
+  await cdp("Browser.setDownloadBehavior", {
+    behavior: "allow",
+    downloadPath: downloads,
+  });
+  await clickText("Download as JSON");
+  let downloadFiles = [];
+  for (let i = 0; i < 50; i++) {
+    downloadFiles = await readdir(downloads);
+    if (downloadFiles.some((n) => n.endsWith(".json"))) break;
+    await pause(100);
+  }
+  assert(
+    downloadFiles.some((n) => n.endsWith(".json")),
+    "Conversation export did not download",
+  );
+  // Expand from two to four models using the search menu, then stream independent answers.
+  await click(".model-selector__comparison-toggle");
+  for (const model of ["model-three", "model-four"]) {
+    await click(".model-selector__add-button");
+    await until(`!!document.querySelector('.model-selector__add-menu-items')`);
+    await evaluate(
+      `(()=>{const e=[...document.querySelectorAll('.model-selector__add-option')].find(e=>e.textContent.includes(${JSON.stringify(model)}));if(!e)throw Error('Missing add option');e.setAttribute('data-fixture-model','yes')})()`,
+    );
+    await click("[data-fixture-model]");
+    await until(`!document.querySelector('.model-selector__add-menu-items')`);
+  }
+  assert.equal(
+    await evaluate(`document.querySelectorAll('.model-selector__chip').length`),
+    4,
+  );
+  await snapshot("four-model-controls");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await pause(250);
+  await assertLayout("Four-model mobile controls");
+  const modelPanel = await evaluate(`document.querySelector('.model-selector__comparison').getBoundingClientRect().toJSON()`);
+  assert(modelPanel.width > 0 && modelPanel.left >= 0 && modelPanel.right <= 390 && modelPanel.bottom <= 844,
+    "The model set escapes the mobile viewport");
+  await snapshot("four-model-controls-390");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await pause(250);
+  await click(".model-selector__comparison-toggle");
+  await fill("#generation-input", "Four model fixture");
+  await click('button[aria-label="Send message"]');
+  await until(
+    `document.querySelectorAll('.model-answer-card').length===4 && !document.querySelector('button[aria-label="Stop generation"]')`,
+  );
+  const current = (await api("/api/conversations")).find(
+    (c) => c.title === "Review conversation",
+  );
+  let latest = await api("/api/conversations/" + current.id);
+  assert.equal(latest.generation_batches[0].targets.length, 4);
+  const selected = latest.generation_batches[0].targets[1].generation.id;
+  await evaluate(
+    `document.querySelectorAll('.model-answer-card .pick')[1].click()`,
+  );
+  await until(
+    `document.querySelectorAll('.pick[aria-pressed=true]').length===1`,
+  );
+  await fill("#generation-input", "Selected context fixture");
+  await click('button[aria-label="Send message"]');
+  await until(
+    `document.querySelectorAll('.model-answer-card').length===8 && !document.querySelector('button[aria-label="Stop generation"]')`,
+  );
+  latest = await api("/api/conversations/" + current.id);
+  const follow = latest.generation_batches.at(-1);
+  const context = await api(
+    "/api/generation-batches/" + follow.id + "/context",
+  );
+  assert.equal(context.length, 2);
+  assert(context[1].content.includes("model-two"));
+  assert.equal(
+    requests
+      .filter((r) => r.messages.at(-1)?.content === "Selected context fixture")
+      .every(
+        (r) => r.messages.filter((m) => m.role === "assistant").length === 1,
+      ),
+    true,
+  );
+  await clickText("Continue without an answer");
+  await fill("#generation-input", "Retry fixture");
+  await click('button[aria-label="Send message"]');
+  await until(
+    `!![...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Retry generation' && !b.disabled)`,
+  );
+  await clickText("Retry generation");
+  await until(
+    `![...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Retry generation') && !document.querySelector('button[aria-label="Stop generation"]')`,
+  );
+  await clickText("Continue without an answer");
+  await fill("#generation-input", "Slow fixture");
+  const composerPosition = () => evaluate(`['#generation-input', '.generation-composer__send'].map(selector => document.querySelector(selector).getBoundingClientRect().toJSON())`);
+  const idleComposer = await composerPosition();
+  await click('button[aria-label="Send message"]');
+  await until(`document.querySelectorAll('.generation-stop').length>0`);
+  assert.deepEqual(await composerPosition(), idleComposer, "The composer moved when Send became Stop");
+  await click(".generation-stop");
+  await until(`document.querySelector('.model-answer-card--stopped')!==null`);
+  await click('.generation-composer__send[aria-label="Stop generation"]');
+  await until(
+    `!document.querySelector('button[aria-label="Stop generation"]')`,
+  );
+  assert.deepEqual(await composerPosition(), idleComposer, "The composer moved when Stop became Send");
+  await snapshot("four-model-stopped");
+  await clickText("Continue without an answer");
+  await fill("#generation-input", "Long fixture");
+  await click('button[aria-label="Send message"]');
+  await until(
+    `document.querySelectorAll('.message__markdown pre').length>0 && !document.querySelector('button[aria-label="Stop generation"]')`,
+  );
+  await evaluate(
+    `const list=document.querySelector('.message-list');list.scrollTop=0;list.dispatchEvent(new Event('scroll',{bubbles:true}));`,
+  );
+  await until(`!!document.querySelector('.conversation-panel__latest')`);
+  await click(".conversation-panel__latest");
+  await pause(200);
+  assert(
+    await evaluate(
+      `(()=>{const n=document.querySelector('.message-list');return n.scrollHeight-n.clientHeight-n.scrollTop<120})()`,
+    ),
+    "Jump to latest failed",
+  );
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await pause(250);
+  assert.equal(await evaluate("document.documentElement.scrollWidth"), 390);
+  await snapshot("long-markdown-390");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await pause(250);
+  // Delete confirmation can be dismissed, then remove only its intended conversation.
+  await rowAction("Delete");
+  await clickText("Cancel", ".confirmation-dialog__panel");
+  assert((await api("/api/conversations")).some((c) => c.id === current.id));
+  await rowAction("Delete");
+  await clickText("Delete", ".confirmation-dialog__panel");
+  assert(!(await api("/api/conversations")).some((c) => c.id === current.id));
+  await click(".model-selector__comparison-toggle");
+  for (let i = 0; i < 3; i++) await click(".model-selector__chip-remove");
+  await click(".model-selector__comparison-toggle");
+  await click('button[aria-label="New conversation"]');
+  await until(`!!document.querySelector('.conversation-welcome')`);
+  await fill("#generation-input", "Normal fixture");
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Enter",
+    code: "Enter",
+    text: "\r",
+    unmodifiedText: "\r",
+    windowsVirtualKeyCode: 13,
+    modifiers: 8,
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Enter",
+    code: "Enter",
+  });
+  await cdp("Input.insertText", { text: "Unicode: \u4f60\u597d" });
+  assert.equal(
+    await evaluate(`document.querySelector('#generation-input').value`),
+    "Normal fixture\nUnicode: \u4f60\u597d",
+  );
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Enter",
+    code: "Enter",
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Enter",
+    code: "Enter",
+  });
+  await until(
+    `document.querySelector('.message--assistant')!==null && !document.querySelector('button[aria-label="Stop generation"]')`,
+  );
+  assert.equal(
+    await evaluate(`document.querySelectorAll('.message--assistant').length`),
+    1,
+  );
+  assert.equal(await evaluate(`document.querySelectorAll('.pick').length`), 0);
+  await click(".message--assistant .message__privacy-toggle");
+  await until(`!document.querySelector('.message__privacy-footnote').hidden`);
+  await click(".message__snapshot summary");
+  await until(`document.querySelector('.message__snapshot').open`);
+  await snapshot("message-disclosures");
+  // Persist model settings, export all local records and clear history through the confirmation.
+  await click('button[aria-label="Settings"]');
+  await until(
+    `!!document.querySelector('.workspace-settings__prompt textarea')`,
+  );
+  await fill(".workspace-settings__prompt textarea", "Browser system prompt");
+  await clickText("Save settings");
+  await until(
+    `document.querySelector('.workspace-settings').textContent.includes('Settings saved')`,
+  );
+  assert.equal(
+    (await api("/api/settings")).system_prompt,
+    "Browser system prompt",
+  );
+  await click("#settings-tab-chat-data");
+  const beforeExport = (await readdir(downloads)).length;
+  await clickText("JSON", ".chat-data__export");
+  for (
+    let i = 0;
+    i < 50 && (await readdir(downloads)).length === beforeExport;
+    i++
+  )
+    await pause(100);
+  assert(
+    (await readdir(downloads)).length > beforeExport,
+    "Workspace export did not download",
+  );
+  await clickText("Clear chat data", ".danger");
+  await clickText("Cancel", ".confirmation-dialog__panel");
+  assert((await api("/api/conversations")).length > 0);
+  await clickText("Clear chat data", ".danger");
+  await clickText("Clear chat data", ".confirmation-dialog__panel");
+  await until(
+    `document.querySelector('.chat-data').textContent.includes('No conversations') || !document.querySelector('.conversation-row')`,
+  );
+  assert.equal((await api("/api/conversations")).length, 0);
+  assert.equal(
+    (await api("/api/settings")).system_prompt,
+    "Browser system prompt",
+  );
+  assert((await api("/api/models")).some((p) => p.configured));
+  await escape();
+  async function chooseOption(label) {
+    await until(
+      `[...document.querySelectorAll('[role=option]')].some(e=>e.textContent.trim()===${JSON.stringify(label)})`,
+    );
+    await evaluate(
+      `(()=>{const e=[...document.querySelectorAll('[role=option]')].find(e=>e.textContent.trim()===${JSON.stringify(label)});if(!e)throw Error('Option missing');e.setAttribute('data-fixture-option','yes')})()`,
+    );
+    await click("[data-fixture-option]");
+  }
+  async function openProviders(name) {
+    await click('button[aria-label="Settings"]');
+    await click("#settings-tab-provider");
+    if (name) {
+      await click("#provider-settings [data-slot=select-trigger]");
+      await chooseOption(name);
+    }
+  }
+  // Create an X-API-Key profile, validate rotation, remove its key and profile.
+  await openProviders();
+  await click("#provider-settings [data-slot=select-trigger]");
+  await chooseOption("New Provider");
+  await evaluate(
+    `(()=>{const inputs=document.querySelectorAll('.prov__body label input');inputs[0].id='fixture-provider-name';inputs[1].id='fixture-provider-endpoint';})()`,
+  );
+  await fill("#fixture-provider-name", "Second fixture provider");
+  await fill(
+    "#fixture-provider-endpoint",
+    "http://127.0.0.1:" + provider.address().port,
+  );
+  await fill("#provider-settings .rotate input", "fixture-valid-key");
+  await click('#provider-settings [aria-label="Authentication"]');
+  await chooseOption("X-API-Key");
+  await click(".prov__foot button:first-child");
+  await until(
+    `document.querySelector('#provider-settings').textContent.includes('Connection verified')`,
+  );
+  await clickText("Save Provider");
+  await until(`!document.querySelector('.settings-dialog__panel')`);
+  let secondProfile = (await api("/api/models")).find(
+    (p) => p.name === "Second fixture provider",
+  );
+  assert(
+    secondProfile?.configured && secondProfile.auth_method === "x_api_key",
+  );
+  assert(sawApiKeyHeader);
+  await openProviders("Second fixture provider");
+  await clickText("Rotate key");
+  await fill("#provider-settings .rotate input", "invalid-key-fixture");
+  await click(".prov__foot button:first-child");
+  await until(
+    `document.querySelector('#provider-settings').textContent.includes('rejected the API key')`,
+  );
+  await clickText("Save Provider");
+  await until(
+    `!document.querySelector('#provider-settings fieldset').disabled`,
+  );
+  assert(
+    (await api("/api/models")).find((p) => p.id === secondProfile.id)
+      .configured,
+    "Rejected rotation erased the original key",
+  );
+  await fill("#provider-settings .rotate input", "fixture-replacement-key");
+  await clickText("Save Provider");
+  await until(`!document.querySelector('.settings-dialog__panel')`);
+  await openProviders("Second fixture provider");
+  await clickText("Remove Key");
+  await until(
+    `document.querySelector('#provider-settings').textContent.includes('Key not configured')`,
+  );
+  assert.equal(
+    (await api("/api/models")).find((p) => p.id === secondProfile.id)
+      .configured,
+    false,
+  );
+  await clickText("Remove Provider");
+  await until(
+    `!document.querySelector('#provider-settings fieldset').disabled`,
+  );
+  assert(!(await api("/api/models")).some((p) => p.id === secondProfile.id));
+  await until(
+    `document.querySelectorAll("#provider-settings [data-slot=select-trigger]").length >= 3`,
+  );
+  await clickText("OpenAI-compatible", "#provider-settings");
+  await chooseOption("NearAI preset");
+  assert(
+    await evaluate(
+      `document.querySelector('#provider-settings [aria-label="Authentication"]').disabled`,
+    ),
+    "Preset authentication can be edited",
+  );
+  assert(
+    await evaluate(
+      `document.querySelectorAll('#provider-settings .prov__body label input')[1].readOnly`,
+    ),
+    "Preset endpoint can be edited",
+  );
+  await escape();
+  // A skin override changes the same controls without palette-specific component branches.
+  await evaluate(
+    `document.documentElement.style.setProperty('--primary','#315ec7');document.documentElement.style.setProperty('--radius','12px')`,
+  );
+  await until(
+    `getComputedStyle(document.querySelector('.conversation-list__new')).backgroundColor === 'rgb(49, 94, 199)'`,
+  );
+  await evaluate(
+    `document.documentElement.style.removeProperty('--primary');document.documentElement.style.removeProperty('--radius')`,
+  );
+  // WCAG rules are evaluated in the same production browser and CSP context.
+  const axe = await readFile(require.resolve("axe-core/axe.min.js"), "utf8");
+  await evaluate(axe);
+  await click('button[aria-label="New conversation"]');
+  await until(`!!document.querySelector('.conversation-welcome')`);
+  const audits = [];
+  async function auditSurface(surface, skin, theme) {
+    const violations = await evaluate(
+      `axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}).then(r=>r.violations.map(v=>({id:v.id,impact:v.impact,count:v.nodes.length,nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))})))`,
+    );
+    audits.push({ surface, skin, theme, violations });
+  }
+  for (const skin of ["continuum", "blueprint", "studio", "grove"]) {
+    await chooseSkin(skin);
+    for (const theme of ["light", "dark"]) {
+      if (
+        await evaluate(
+          `document.documentElement.dataset.theme !== ${JSON.stringify(theme)}`,
+        )
+      ) {
+        await click('button[aria-label="Toggle day / night edition"]');
+        await until(
+          `document.documentElement.dataset.theme === ${JSON.stringify(theme)}`,
+        );
+      }
+      await assertLayout(skin + " " + theme + " audit");
+      await auditSurface("welcome", skin, theme);
+      await click('button[aria-label="Settings"]');
+      await click("#settings-tab-general");
+      await auditSurface("settings", skin, theme);
+      await escape();
+    }
+  }
+  await writeFile(
+    path.join(evidenceDir, "accessibility.json"),
+    JSON.stringify(audits, null, 2),
+  );
+  assert(
+    !audits.some((a) =>
+      a.violations.some(
+        (v) => v.impact === "critical" || v.impact === "serious",
+      ),
+    ),
+    "Accessibility findings require review",
+  );
+  assert.equal(exceptions.length, 0);
+  socket.close();
+  console.log(
+    "Production browser acceptance passed: chat, comparison, context, retry/stop, conversation management, exports, Provider lifecycle, responsive layout, and accessibility.",
+  );
+  console.log(
+    "Captured synthetic desktop and narrow-screen evidence. Browser runtime exceptions: 0.",
+  );
+} finally {
+  catalogGate?.resolve();
+  if (chrome && chrome.exitCode === null) {
+    const exit = once(chrome, "exit");
+    chrome.kill();
+    await exit;
+  }
+  if (service && service.exitCode === null) {
+    const exit = once(service, "exit");
+    service.kill();
+    await exit;
+  }
+  await new Promise((resolve) => provider.close(resolve));
+  await rm(temp, { recursive: true, force: true });
+}

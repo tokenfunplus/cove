@@ -453,6 +453,7 @@ func TestGenerationBatchAPICreatesAComparisonAndStreamsTargetIdentifiedEvents(t 
 }
 
 type fakeChat struct {
+	batchContext            []provider.ProviderMessage
 	createConversation      func(context.Context, string) (persistence.Conversation, error)
 	listConversations       func(context.Context, bool) ([]persistence.Conversation, error)
 	readConversation        func(context.Context, string) (persistence.ConversationView, error)
@@ -613,6 +614,13 @@ func (fake *fakeChat) StartGenerationBatch(ctx context.Context, input chat.SendI
 
 func (fake *fakeChat) GetGenerationBatch(context.Context, string) (persistence.GenerationBatch, error) {
 	return persistence.GenerationBatch{ID: "batch-1", ConversationID: fake.generation.ConversationID, State: persistence.GenerationBatchCompleted, Targets: []persistence.GenerationTarget{{ID: "target-1", BatchID: "batch-1", Generation: fake.generation}}}, nil
+}
+
+func (fake *fakeChat) GetGenerationBatchContext(context.Context, string) ([]provider.ProviderMessage, error) {
+	if fake.batchContext == nil {
+		return []provider.ProviderMessage{}, nil
+	}
+	return fake.batchContext, nil
 }
 
 func (fake *fakeChat) SubscribeGenerationBatch(ctx context.Context, _, _ string) (<-chan chat.GenerationEvent, error) {
@@ -1568,4 +1576,30 @@ type testClock struct {
 
 func (clock testClock) Now() time.Time {
 	return clock.now
+}
+
+func TestFrozenBatchContextRequiresABrowserSession(t *testing.T) {
+	expected := []provider.ProviderMessage{{Role: "user", Content: "Earlier prompt"}, {Role: "assistant", Content: "Selected result"}}
+	server := NewServer(Config{LaunchToken: "launch-token", Chat: &fakeChat{batchContext: expected}})
+	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/generation-batches/batch-1/context", nil)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated context status = %d", response.Code)
+	}
+	cookie, _ := launchBrowserSession(t, server)
+	request = httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/generation-batches/batch-1/context", nil)
+	request.AddCookie(cookie)
+	response = httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("context status = %d", response.Code)
+	}
+	var actual []provider.ProviderMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &actual); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatal("frozen context read model changed the selected history")
+	}
 }

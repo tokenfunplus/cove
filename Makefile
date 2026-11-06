@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build build-web build-service build-macos package-macos dmg test-package-macos start-local stop-local check check-go test test-contract test-web test-service test-macos test-lifecycle test-scripts
+.PHONY: help build build-web build-service build-macos package-macos dmg test-package-macos start-local stop-local check check-go test test-contract test-web test-service test-macos test-lifecycle test-scripts test-web-browser
 
 help:
 	@printf '%s\n' 'Cove development tasks:' '  make start-local / stop-local  Build and open / stop the local app' '  make check                     Check source and repository conventions' '  make test                      Run contract, web, Go race, and Swift tests' '  make build                     Build all components' '  make dmg                       Package Cove.app and an ARM64 DMG' '  make test-lifecycle            Test isolated service lifecycle' '  make test-package-macos        Test a disposable macOS package'
@@ -60,3 +60,6 @@ check: check-go
 check-go:
 	@test -z "$$(gofmt -l services/local-service)" || { gofmt -l services/local-service; exit 1; }
 	cd services/local-service && ../../scripts/go vet ./...
+
+test-web-browser: build-service
+	pnpm --filter @cove/web test:browser

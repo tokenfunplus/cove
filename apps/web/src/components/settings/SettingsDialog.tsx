@@ -1,0 +1,159 @@
+import { settingsStyles } from "@/styles/settings";
+import { cn } from "@/lib/utils";
+import { CoveMark } from "@/components/ui/CoveMark";
+import { Button } from "@/components/ui/button";
+import { type ApplicationCopy, englishConversationCopy } from "@/messages";
+import {
+  Dialog,
+  DialogOverlay,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Database, Settings2, SlidersHorizontal, X } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+
+type SettingsDialogSection = "general" | "provider" | "chat-data";
+
+export function SettingsDialog({
+  open,
+  initialSection,
+  onClose,
+  children,
+  copy = englishConversationCopy,
+}: {
+  open: boolean;
+  initialSection?: SettingsDialogSection;
+  onClose: () => void;
+  children: ReactNode;
+  copy?: ApplicationCopy;
+}) {
+  return (
+    <Dialog
+      className={cn(settingsStyles.settingsDialog, "settings-dialog--nearai")}
+      open={open}
+      onClose={onClose}
+    >
+      <DialogOverlay className={settingsStyles.settingsDialog_backdrop} />
+      <div className={settingsStyles.settingsDialog_viewport}>
+        <DialogContent className={settingsStyles.settingsDialog_panel}>
+          <SettingsDialogContent
+            initialSection={initialSection}
+            copy={copy}
+            onClose={onClose}
+            title={<DialogTitle as="h2">{copy.settings}</DialogTitle>}
+          >
+            {children}
+          </SettingsDialogContent>
+        </DialogContent>
+      </div>
+    </Dialog>
+  );
+}
+
+export function SettingsDialogContent({
+  children,
+  onClose = () => {},
+  copy = englishConversationCopy,
+  title,
+  initialSection = "general",
+}: {
+  children: ReactNode;
+  onClose?: () => void;
+  copy?: ApplicationCopy;
+  title?: ReactNode;
+  initialSection?: SettingsDialogSection;
+}) {
+  const heading = title ?? <h2>{copy.settings}</h2>;
+  const [activeSection, setActiveSection] =
+    useState<SettingsDialogSection>(initialSection);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+  }, [activeSection]);
+  const sections = [
+    { id: "general" as const, icon: SlidersHorizontal, label: copy.general },
+    { id: "provider" as const, icon: Settings2, label: copy.providerSettings },
+    { id: "chat-data" as const, icon: Database, label: copy.chatData },
+  ];
+  return (
+    <>
+      <header className={settingsStyles.settingsDialog_header}>
+        <span aria-hidden="true" className={settingsStyles.settingsDialog_mark}>
+          <CoveMark />
+        </span>
+        {heading}
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={copy.closeSettings}
+          className={settingsStyles.settingsDialog_close}
+          onClick={onClose}
+        >
+          <X size={17} aria-hidden="true" />
+        </Button>
+      </header>
+      <div className={settingsStyles.settingsDialog_content}>
+        <nav
+          aria-label={copy.settingsSections}
+          className={settingsStyles.settingsDialog_navigation}
+          role="tablist"
+        >
+          {sections.map((section, index) => (
+            <Button
+              variant="ghost"
+              ref={(node) => {
+                tabRefs.current[index] = node;
+              }}
+              tabIndex={activeSection === section.id ? 0 : -1}
+              onKeyDown={(event) => {
+                const offset =
+                  event.key === "ArrowDown" || event.key === "ArrowRight"
+                    ? 1
+                    : event.key === "ArrowUp" || event.key === "ArrowLeft"
+                      ? -1
+                      : 0;
+                if (!offset && event.key !== "Home" && event.key !== "End")
+                  return;
+                event.preventDefault();
+                const next =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? sections.length - 1
+                      : (index + offset + sections.length) % sections.length;
+                setActiveSection(sections[next].id);
+                tabRefs.current[next]?.focus();
+              }}
+              id={`settings-tab-${section.id}`}
+              aria-controls={`settings-${section.id}`}
+              aria-selected={activeSection === section.id}
+              key={section.id}
+              onClick={() => setActiveSection(section.id)}
+              role="tab"
+              aria-label={section.label}
+              type="button"
+            >
+              <section.icon size={16} aria-hidden="true" />
+              {section.id === "provider" ? (
+                <>
+                  <span className="hidden md:inline">{section.label}</span>
+                  <span className="md:hidden">{copy.providers}</span>
+                </>
+              ) : (
+                <span>{section.label}</span>
+              )}
+            </Button>
+          ))}
+        </nav>
+        <div
+          ref={contentRef}
+          className={settingsStyles.settingsDialog_sections}
+          data-active-settings-section={activeSection}
+        >
+          {children}
+        </div>
+      </div>
+    </>
+  );
+}

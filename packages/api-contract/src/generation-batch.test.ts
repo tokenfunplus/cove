@@ -64,3 +64,10 @@ test("versioned fixtures remain compatible with the Batch contract", () => {
   expect(batch.targets).toHaveLength(2);
   expect(event.batch_id).toBe(batch.id);
 });
+
+test("frozen context carries only ordered prior user and selected assistant content", async () => {
+  const { default: fixture } = await import("../fixtures/generation-context.json");
+  const context = fixture.map(message => ({...message, role: message.role as import("./index").GenerationContextMessage["role"]}));
+  expect(context.map(message=>message.role)).toEqual(["user","assistant"]);
+  expect(context[1]?.content).toBe("Selected answer");
+});

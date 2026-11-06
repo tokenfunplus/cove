@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Frozen Generation Batch context",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["role", "content"],
+    "properties": {
+      "role": { "enum": ["user", "assistant"] },
+      "content": { "type": "string" }
+    }
+  }
+}

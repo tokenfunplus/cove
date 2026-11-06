@@ -30,6 +30,22 @@ React Chat Surface
 | `services/local-service/internal/localsecurity/` | Launch tokens, sessions, origin checks, and CSRF |
 | `services/local-service/internal/webassets/` | Embedded generated assets and setup fallback |
 
+## Frontend boundaries
+
+`App.tsx` mounts `pages/ChatPage.tsx`. The page composes the workspace shell, conversation surface, and overlays. Domain presentation lives in `components/chat`, `conversations`, `providers`, `settings`, and `verification`. `components/ui` contains generic controls.
+
+`api/client.ts` owns local HTTP/session adaptation and error decoding. Domain endpoint modules retain the shared contract types. `api/hooks` exposes TanStack Query queries and mutations, with scoped keys in `api/queryKeys.ts`. Mutations explicitly disable automatic retries. Conversation refreshes and generation batch reads use the same cache keys as mounted queries. The SSE adapter remains a stream rather than a cached query.
+
+`hooks/workspace/use-chat-workspace.ts` composes UI state and focused domain controllers. Conversation actions, model selection, ordinary batch streaming, private inference, and private connection verification have separate hooks. Query data owns server records. Workspace UI state and the transient Live Turn remain separate from durable history. Session query data contains readiness only, while the CSRF proof stays in the HTTP client.
+
+`lib/inference` isolates the browser SDK, protocol adapters, evidence conversion, and verifiers. `lib/chat` owns the pure Live Turn projection. `messages` owns interface copy and `theme` owns system appearance resolution, skin selection, and semantic variables. Skin preference contains only presentation state in browser local storage; appearance continues to use the settings API.
+
+Unit/component tests are colocated with their owning modules. `pages/ChatPage.interactions.test.tsx` covers the composed workspace, `test` contains synthetic fixtures, and `e2e` owns the production browser acceptance harness. Test modules and fixtures are outside the production import graph.
+
+`components/ui` owns editable shadcn/Radix primitives. Tailwind recipes in `styles` express domain presentation through semantic variables in `theme/tokens.css`. Component-specific CSS is avoided; CSS retains theme registration, base rules, and shared motion. See [presentation and skin decision](adr/0020-use-tailwind-recipes-and-shadcn-primitives.md).
+
+See [frontend organization decision](adr/0019-separate-frontend-presentation-and-api-hooks.md) and the [refactor acceptance baseline](frontend-refactor.md).
+
 ## Generation lifecycle
 
 A submitted message creates one durable Generation Batch with one to four Targets and a `client_request_id`. Repeating the request is idempotent. Targets run concurrently, with at most one active Batch across the service. Commands create or control work; a separate SSE stream reports events. Persisted state is authoritative.
@@ -41,6 +57,8 @@ Single-model turns select their completed answers automatically. Comparisons req
 ## Private inference boundary
 
 The browser performs NearAI cryptography because it owns plaintext before encryption and after decryption. The Local Service retains Provider Keys and proxies protocol bodies without transforming ciphertext. Browser completion commands persist results and evidence through Chat.
+
+Browser inference reads `GET /api/generation-batches/{id}/context` through the Generation Query hook. Chat returns the existing immutable context, shared by every target/retry in that Batch; the browser excludes visible unselected or skipped history. See [ADR-0021](adr/0021-read-authoritative-context-for-browser-inference.md).
 
 Saved verification records report browser checks; SQLite does not independently revalidate the full proof. See [privacy.md](privacy.md) for trust boundaries.
 

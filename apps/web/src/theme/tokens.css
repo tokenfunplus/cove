@@ -1,0 +1,73 @@
+/* Grove supplies the base palette and shared status colors for every skin. */
+:root,
+[data-skin="grove"] {
+  color-scheme: light;
+  --background: #f7f7ef;
+  --card: #fffef9;
+  --popover: #ffffff;
+  --muted: #f0f3e9;
+  --sidebar: #edf3e8;
+  --foreground: #213c31;
+  --muted-foreground: #617166;
+  --border: #dce5d7;
+  --border-strong: #b9ceba;
+  --primary: #28754d;
+  --primary-hover: #1c5e3b;
+  --accent: #e0efdc;
+  --primary-foreground: #ffffff;
+  --peach: #f9e9d9;
+  --peach-foreground: #845239;
+  --rose: #f9e6e7;
+  --rose-foreground: #9b4257;
+  --success: #28754d;
+  --destructive: #b43741;
+  --destructive-muted: #fbe9e8;
+  --ring: #4b9670;
+  --ambient: #dbeacb;
+  --elevation-panel: 0 18px 60px -30px #264c3430;
+  --elevation-popover: 0 16px 48px -16px #173c3933;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration: 180ms;
+}
+:root:where([data-theme="dark"]),
+:where([data-theme="dark"]) [data-skin="grove"] {
+  color-scheme: dark;
+  --background: #14251e;
+  --card: #1b2d25;
+  --popover: #22372d;
+  --muted: #263b30;
+  --sidebar: #192d23;
+  --foreground: #eaf2e6;
+  --muted-foreground: #adbead;
+  --border: #354b3b;
+  --border-strong: #536e56;
+  --primary: #9bd5a3;
+  --primary-hover: #b9ebbc;
+  --accent: #2c4834;
+  --primary-foreground: #193321;
+  --peach: #463b2c;
+  --peach-foreground: #edc49b;
+  --rose: #493039;
+  --rose-foreground: #efb1bd;
+  --success: #9bd5a3;
+  --destructive: #ffabb0;
+  --destructive-muted: #462f32;
+  --ring: #a1d6a5;
+  --ambient: #355434;
+  --elevation-panel: 0 18px 60px -24px #0008;
+  --elevation-popover: 0 16px 48px -16px #000a;
+}
+
+:root {
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --accent-foreground: var(--primary);
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --input: var(--border);
+  --radius: 1rem;
+}
