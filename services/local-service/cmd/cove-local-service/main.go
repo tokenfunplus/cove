@@ -1,0 +1,142 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/tokenfunplus/cove/services/local-service/internal/api"
+	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
+	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
+	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
+	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
+	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
+	"github.com/tokenfunplus/cove/services/local-service/internal/providerconfig"
+	localruntime "github.com/tokenfunplus/cove/services/local-service/internal/runtime"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "cove-local-service:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	defaultListener := localruntime.DefaultListenerConfig()
+	var preferredPort int
+	var recoveryStart int
+	var recoveryEnd int
+	var controlToken string
+	var insecureFileSecretStore bool
+	var dataDirectory string
+	flag.IntVar(&preferredPort, "port", defaultListener.PreferredPort, "preferred loopback port")
+	flag.IntVar(&recoveryStart, "port-range-start", defaultListener.RecoveryStart, "first port used after a conflict")
+	flag.IntVar(&recoveryEnd, "port-range-end", defaultListener.RecoveryEnd, "last port used after a conflict")
+	flag.StringVar(&controlToken, "control-token", "", "Launcher-only control token")
+	flag.BoolVar(&insecureFileSecretStore, "insecure-file-secret-store", false, "store Provider Keys in an owner-only test file instead of macOS Keychain")
+	flag.StringVar(&dataDirectory, "data-dir", os.Getenv("COVE_DATA_DIR"), "application data directory (defaults to ~/Library/Application Support/cove)")
+	flag.Parse()
+	if controlToken == "" {
+		return errors.New("--control-token is required")
+	}
+
+	security := localsecurity.New(nil, nil)
+	launchToken, err := security.MintLaunchToken()
+	if err != nil {
+		return err
+	}
+	listener, err := localruntime.Listen(localruntime.ListenerConfig{
+		PreferredPort: preferredPort,
+		RecoveryStart: recoveryStart,
+		RecoveryEnd:   recoveryEnd,
+	})
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+
+	var shutdownOnce sync.Once
+	httpServer := &http.Server{
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+	}
+	applicationDataDirectory, err := applicationDataDirectoryPath(dataDirectory)
+	if err != nil {
+		return err
+	}
+	storePath := filepath.Join(applicationDataDirectory, "cove.sqlite")
+	store, err := persistence.OpenSQLite(storePath)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	if err := store.RecoverInterruptedGenerations(context.Background()); err != nil {
+		return err
+	}
+	var secretStore credentials.SecretStore = credentials.NewKeychainStore("io.github.tokenfunplus.cove.provider")
+	if insecureFileSecretStore {
+		fmt.Fprintln(os.Stderr, "WARNING: insecure test mode stores Provider Keys as plaintext in the application data directory.")
+		secretStore = credentials.NewFileStore(filepath.Join(applicationDataDirectory, "insecure-test-provider-secrets.json"))
+	}
+	providerSetup := providerconfig.NewService(store, secretStore, nil)
+	localAPI := api.NewServer(api.Config{
+		Security:      security,
+		ControlToken:  controlToken,
+		Store:         store,
+		Settings:      store,
+		Chat:          chat.NewServiceWithSettings(store, providerSetup, provider.NewHTTPAdapter(nil), store),
+		ProviderSetup: providerSetup,
+		NearAIProxy:   provider.NewNearAIProxy(providerSetup, nil),
+		Shutdown: func() {
+			shutdownOnce.Do(func() {
+				go func() {
+					shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					_ = httpServer.Shutdown(shutdownContext)
+				}()
+			})
+		},
+	})
+	httpServer.Handler = localAPI.Handler()
+
+	if err := localruntime.WriteReadiness(os.Stdout, listener.Addr(), launchToken); err != nil {
+		return err
+	}
+
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(interrupt)
+	go func() {
+		<-interrupt
+		shutdownOnce.Do(func() {
+			shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = httpServer.Shutdown(shutdownContext)
+		})
+	}()
+
+	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serve: %w", err)
+	}
+	return nil
+}
+
+func applicationDataDirectoryPath(configured string) (string, error) {
+	if configured != "" {
+		return filepath.Abs(configured)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	return filepath.Join(home, "Library", "Application Support", "cove"), nil
+}

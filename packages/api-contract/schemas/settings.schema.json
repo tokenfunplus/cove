@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WorkspaceSettings",
+  "type": "object",
+  "required": ["theme", "locale", "system_prompt", "temperature", "top_p", "max_tokens", "active_model_set"],
+  "properties": {
+    "theme": { "enum": ["system", "light", "dark"] },
+    "locale": { "enum": ["system", "en", "zh", "ja"] },
+    "system_prompt": { "type": "string", "maxLength": 8192 },
+    "temperature": { "type": ["number", "null"], "minimum": 0, "maximum": 2 },
+    "top_p": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "max_tokens": { "type": ["integer", "null"], "minimum": 1 },
+    "active_model_set": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["provider_id", "model_id"],
+        "properties": {
+          "provider_id": { "type": "string", "minLength": 1 },
+          "model_id": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

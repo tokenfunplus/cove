@@ -1,0 +1,41 @@
+{
+  "id": "018f0d8f-3d5b-4c92-8a5b-8e0f3df6d2ad",
+  "conversation_id": "018f0d8f-3d5b-4c92-8a5b-8e0f3df6d2ab",
+  "client_request_id": "request-1",
+  "user_message_id": "018f0d8f-3d5b-4c92-8a5b-8e0f3df6d2ae",
+  "state": "completed",
+  "snapshot": {
+    "provider_id": "nearai",
+    "provider_name": "NearAI",
+    "model_id": "nearai/model-a",
+    "runtime_location": "NearAI cloud",
+    "destination": "cloud-stg-api.near.ai",
+    "transport_security": "tls",
+    "privacy_notice": "Conversation content is sent to NearAI cloud over HTTPS/TLS."
+  },
+  "configuration_snapshot": {
+    "system_prompt": "Answer concisely.",
+    "temperature": 0,
+    "top_p": null,
+    "max_tokens": 512
+  },
+  "verification": {
+    "status": "verified_model",
+    "verified_at": "2026-09-10T00:00:59Z",
+    "signature_kind": "provider_tee",
+    "signing_address": "ed25519:fixture-signer",
+    "signing_algorithm": "ed25519",
+    "signed_message": "fixture signed message representation",
+    "signature": "fixture-signature",
+    "signature_digest": "sha256:fixture",
+    "lanes": {
+      "gateway": "verified",
+      "model": "verified",
+      "response": "verified"
+    }
+  },
+  "assistant_message_id": "018f0d8f-3d5b-4c92-8a5b-8e0f3df6d2af",
+  "events_url": "/api/generations/018f0d8f-3d5b-4c92-8a5b-8e0f3df6d2ad/events",
+  "created_at": "2026-09-10T00:00:00Z",
+  "updated_at": "2026-09-10T00:01:00Z"
+}

@@ -1,0 +1,1073 @@
+package api
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime"
+	"net/http"
+	"net/url"
+	"reflect"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
+	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
+	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
+	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
+	"github.com/tokenfunplus/cove/services/local-service/internal/providerconfig"
+)
+
+const sessionCookieName = "cove_session"
+
+const maxNvidiaEvidenceBytes = 2 << 20
+
+type Config struct {
+	Security        *localsecurity.Manager
+	LaunchToken     string
+	ControlToken    string
+	Clock           func() time.Time
+	Shutdown        func()
+	Store           persistence.ChatStore
+	Settings        persistence.SettingsStore
+	Chat            chat.Chat
+	ProviderSetup   *providerconfig.Service
+	NearAIProxy     *provider.NearAIProxy
+	NvidiaNRASProxy *provider.NvidiaNRASProxy
+}
+
+type Server struct {
+	security        *localsecurity.Manager
+	controlToken    string
+	shutdown        func()
+	settings        persistence.SettingsStore
+	chat            chat.Chat
+	providerSetup   *providerconfig.Service
+	nearAIProxy     *provider.NearAIProxy
+	nvidiaNRASProxy *provider.NvidiaNRASProxy
+}
+
+type ErrorEnvelope struct {
+	Error APIError `json:"error"`
+}
+
+type APIError struct {
+	Code      string          `json:"code"`
+	Message   string          `json:"message"`
+	Details   json.RawMessage `json:"details"`
+	RequestID string          `json:"request_id"`
+}
+
+func NewServer(config Config) *Server {
+	security := config.Security
+	if security == nil {
+		security = localsecurity.New(config.Clock, nil)
+	}
+	if config.LaunchToken != "" {
+		security.RegisterLaunchToken(config.LaunchToken)
+	}
+	shutdown := config.Shutdown
+	if shutdown == nil {
+		shutdown = func() {}
+	}
+	settings := config.Settings
+	if settings == nil {
+		settings, _ = config.Store.(persistence.SettingsStore)
+	}
+	chatService := config.Chat
+	if chatService == nil && config.Store != nil {
+		chatService = chat.NewService(config.Store, nil, nil)
+	}
+	nvidiaNRASProxy := config.NvidiaNRASProxy
+	if nvidiaNRASProxy == nil {
+		nvidiaNRASProxy = provider.NewNvidiaNRASProxy(nil)
+	}
+	return &Server{security: security, controlToken: config.ControlToken, shutdown: shutdown, settings: settings, chat: chatService, providerSetup: config.ProviderSetup, nearAIProxy: config.NearAIProxy, nvidiaNRASProxy: nvidiaNRASProxy}
+}
+
+func (server *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	browserSession := server.security.RequireBrowserSession(sessionCookieName, server.writeSecurityError)
+	mux.HandleFunc("GET /launch", server.launch)
+	mux.Handle("GET /api/session", browserSession(http.HandlerFunc(server.session)))
+	mux.HandleFunc("GET /api/health", server.health)
+	mux.Handle("GET /api/conversations", browserSession(http.HandlerFunc(server.listConversations)))
+	mux.Handle("POST /api/conversations", browserSession(http.HandlerFunc(server.createConversation)))
+	mux.Handle("GET /api/settings", browserSession(http.HandlerFunc(server.getSettings)))
+	mux.Handle("PATCH /api/settings", browserSession(http.HandlerFunc(server.updateSettings)))
+	mux.Handle("GET /api/conversations/{id}", browserSession(http.HandlerFunc(server.getConversation)))
+	mux.Handle("PATCH /api/conversations/{id}", browserSession(http.HandlerFunc(server.renameConversation)))
+	mux.Handle("DELETE /api/conversations/{id}", browserSession(http.HandlerFunc(server.deleteConversation)))
+	mux.Handle("DELETE /api/data", browserSession(http.HandlerFunc(server.clearChatData)))
+	mux.Handle("GET /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.getConversationMessages)))
+	mux.Handle("POST /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.createGeneration)))
+	mux.Handle("GET /api/generation-batches/{id}", browserSession(http.HandlerFunc(server.getGenerationBatch)))
+	mux.Handle("GET /api/generation-batches/{id}/events", browserSession(http.HandlerFunc(server.generationBatchEvents)))
+	mux.Handle("POST /api/generation-batches/{id}/cancel", browserSession(http.HandlerFunc(server.cancelGenerationBatch)))
+	mux.Handle("POST /api/generation-batches/{id}/skip-context", browserSession(http.HandlerFunc(server.skipGenerationBatchContext)))
+	mux.Handle("GET /api/generations/{id}", browserSession(http.HandlerFunc(server.getGeneration)))
+	mux.Handle("GET /api/generations/{id}/events", browserSession(http.HandlerFunc(server.generationEvents)))
+	mux.Handle("POST /api/generations/{id}/cancel", browserSession(http.HandlerFunc(server.cancelGeneration)))
+	mux.Handle("POST /api/generations/{id}/secure/environment", browserSession(http.HandlerFunc(server.secureGenerationEnvironment)))
+	mux.Handle("POST /api/generations/{id}/secure/streaming", browserSession(http.HandlerFunc(server.secureGenerationStreaming)))
+	mux.Handle("POST /api/generations/{id}/secure/response", browserSession(http.HandlerFunc(server.secureGenerationResponse)))
+	mux.Handle("POST /api/generations/{id}/secure/settle", browserSession(http.HandlerFunc(server.secureGenerationSettle)))
+	mux.Handle("POST /api/generations/{id}/select", browserSession(http.HandlerFunc(server.selectGenerationAnswer)))
+	mux.Handle("POST /api/generation-targets/{id}/retry", browserSession(http.HandlerFunc(server.retryGenerationTarget)))
+	mux.Handle("POST /api/messages/{id}/retry", browserSession(http.HandlerFunc(server.retryGeneration)))
+	mux.Handle("GET /api/models", browserSession(http.HandlerFunc(server.listProviderProfiles)))
+	mux.Handle("POST /api/models", browserSession(http.HandlerFunc(server.createProviderProfile)))
+	mux.Handle("GET /api/models/{id}", browserSession(http.HandlerFunc(server.getProviderProfile)))
+	mux.Handle("PATCH /api/models/{id}", browserSession(http.HandlerFunc(server.updateProviderProfile)))
+	mux.Handle("DELETE /api/models/{id}", browserSession(http.HandlerFunc(server.deleteProviderProfile)))
+	mux.Handle("DELETE /api/models/{id}/key", browserSession(http.HandlerFunc(server.deleteProviderKey)))
+	mux.Handle("GET /api/models/{id}/catalog", browserSession(http.HandlerFunc(server.discoverProviderModels)))
+	mux.Handle("POST /api/models/test", browserSession(http.HandlerFunc(server.testProviderConnection)))
+	mux.Handle("POST /api/verification/nvidia", browserSession(http.HandlerFunc(server.forwardNvidiaEvidence)))
+	mux.Handle("GET /api/nearai/{providerID}/v1/attestation/report", browserSession(http.HandlerFunc(server.forwardNearAI)))
+	mux.Handle("GET /api/nearai/{providerID}/v1/model/{modelID}", browserSession(http.HandlerFunc(server.forwardNearAI)))
+	mux.Handle("POST /api/nearai/{providerID}/v1/chat/completions", browserSession(http.HandlerFunc(server.forwardNearAI)))
+	mux.Handle("POST /api/nearai/{providerID}/v1/responses", browserSession(http.HandlerFunc(server.forwardNearAI)))
+	mux.Handle("GET /api/nearai/{providerID}/v1/signature/{completionID}", browserSession(http.HandlerFunc(server.forwardNearAI)))
+	control := localsecurity.RequireControlToken(server.controlToken, server.writeSecurityError)
+	mux.Handle("POST /internal/control/shutdown", control(http.HandlerFunc(server.controlShutdown)))
+	mux.Handle("POST /internal/control/launch-token", control(http.HandlerFunc(server.controlLaunchToken)))
+	mux.HandleFunc("/api/", server.apiNotFound)
+	mux.Handle("GET /assets/{path...}", browserSession(http.HandlerFunc(server.assets)))
+	mux.Handle("/", browserSession(http.HandlerFunc(server.shell)))
+	return localsecurity.RequireLoopbackHost(server.writeSecurityError)(server.security.RequireBrowserMutations(sessionCookieName, server.writeSecurityError)(mux))
+}
+
+func (server *Server) forwardNvidiaEvidence(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Cache-Control", "no-store")
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		writeError(writer, http.StatusUnsupportedMediaType, "unsupported_media_type", "NVIDIA evidence must use application/json.")
+		return
+	}
+	limited := http.MaxBytesReader(writer, request.Body, maxNvidiaEvidenceBytes)
+	evidence, err := io.ReadAll(limited)
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(writer, http.StatusRequestEntityTooLarge, "request_too_large", "NVIDIA evidence exceeds the allowed size.")
+			return
+		}
+		writeError(writer, http.StatusBadRequest, "invalid_request", "NVIDIA evidence could not be read.")
+		return
+	}
+	if err := server.nvidiaNRASProxy.Forward(writer, request, evidence); err != nil {
+		writeError(writer, http.StatusBadGateway, "attestation_service_unavailable", "NVIDIA attestation could not be reached.")
+	}
+}
+
+func (server *Server) forwardNearAI(writer http.ResponseWriter, request *http.Request) {
+	if server.nearAIProxy == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	upstreamPath := strings.TrimPrefix(request.URL.Path, "/api/nearai/"+request.PathValue("providerID"))
+	if modelID := request.PathValue("modelID"); modelID != "" {
+		upstreamPath = "/v1/model/" + url.PathEscape(modelID)
+	}
+	if err := server.nearAIProxy.Forward(writer, request, request.PathValue("providerID"), upstreamPath); err != nil {
+		switch {
+		case errors.Is(err, provider.ErrNearAIProxyRoute):
+			writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		case errors.Is(err, provider.ErrNearAIProxyUnconfigured):
+			writeError(writer, http.StatusConflict, "provider_unconfigured", "Configure the NearAI Provider Key before starting private inference.")
+		case errors.Is(err, provider.ErrNearAIProxyProvider):
+			writeError(writer, http.StatusBadRequest, "private_inference_unavailable", "This Provider cannot use private inference.")
+		case errors.Is(err, provider.ErrNearAIProxyRedirect):
+			writeError(writer, http.StatusBadGateway, "private_inference_unavailable", "Private inference rejected an unexpected Provider redirect.")
+		default:
+			writeError(writer, http.StatusBadGateway, "private_inference_unavailable", "Private inference could not reach the Provider.")
+		}
+	}
+}
+
+func (server *Server) controlShutdown(writer http.ResponseWriter, request *http.Request) {
+	server.shutdown()
+	writeJSON(writer, http.StatusAccepted, map[string]string{"status": "shutting_down"})
+}
+
+func (server *Server) controlLaunchToken(writer http.ResponseWriter, request *http.Request) {
+	token, err := server.security.MintLaunchToken()
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "The Local Service could not create a browser token.")
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]string{"launch_token": token})
+}
+
+func (server *Server) launch(writer http.ResponseWriter, request *http.Request) {
+	session, err := server.security.ConsumeLaunchToken(request.URL.Query().Get("token"))
+	if err != nil {
+		writeError(writer, http.StatusUnauthorized, "invalid_launch_token", "The launch token is invalid or expired.")
+		return
+	}
+
+	http.SetCookie(writer, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    session.ID,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+	http.Redirect(writer, request, "/", http.StatusSeeOther)
+}
+
+func (server *Server) session(writer http.ResponseWriter, request *http.Request) {
+	session, _ := localsecurity.SessionFromRequest(request)
+	writeJSON(writer, http.StatusOK, map[string]string{"csrf_token": session.CSRFToken})
+}
+
+func (server *Server) getSettings(writer http.ResponseWriter, request *http.Request) {
+	if server.settings == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Workspace settings are unavailable.")
+		return
+	}
+	settings, err := server.settings.GetSettings(request.Context())
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Workspace settings are unavailable.")
+		return
+	}
+	writeJSON(writer, http.StatusOK, settings)
+}
+
+func (server *Server) updateSettings(writer http.ResponseWriter, request *http.Request) {
+	if server.settings == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Workspace settings are unavailable.")
+		return
+	}
+	var settings persistence.Settings
+	if err := decodeJSON(request, &settings); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation", "The workspace settings are invalid.")
+		return
+	}
+	current, err := server.settings.GetSettings(request.Context())
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Workspace settings are unavailable.")
+		return
+	}
+	if server.chat != nil && server.chat.HasActiveGenerationBatch() && !reflect.DeepEqual(current.ActiveModelSet, settings.ActiveModelSet) {
+		writeError(writer, http.StatusConflict, "generation_batch_in_progress", "Wait for the active Generation Batch to finish before changing the Active Model Set.")
+		return
+	}
+	if err := server.settings.UpdateSettings(request.Context(), settings); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation", "The workspace settings are invalid.")
+		return
+	}
+	updated, err := server.settings.GetSettings(request.Context())
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Workspace settings are unavailable.")
+		return
+	}
+	writeJSON(writer, http.StatusOK, updated)
+}
+
+func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
+	writeJSON(writer, http.StatusOK, map[string]string{"status": "ok", "schema_version": "v1"})
+}
+
+func (server *Server) apiNotFound(writer http.ResponseWriter, _ *http.Request) {
+	writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+}
+
+func (server *Server) listConversations(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Local history is unavailable.")
+		return
+	}
+	archived := false
+	if value := request.URL.Query().Get("archived"); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			writeError(writer, http.StatusBadRequest, "validation", "The conversation filter is invalid.")
+			return
+		}
+		archived = parsed
+	}
+	conversations, err := server.chat.ListConversations(request.Context(), archived)
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Local history is unavailable.")
+		return
+	}
+	writeJSON(writer, http.StatusOK, conversations)
+}
+
+func (server *Server) createConversation(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Local history is unavailable.")
+		return
+	}
+	var input struct {
+		Title string `json:"title"`
+	}
+	if err := decodeJSON(request, &input); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation", "The conversation title is invalid.")
+		return
+	}
+	conversation, err := server.chat.CreateConversation(request.Context(), input.Title)
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Local history is unavailable.")
+		return
+	}
+	writeJSON(writer, http.StatusCreated, conversation)
+}
+
+func (server *Server) getConversation(writer http.ResponseWriter, request *http.Request) {
+	view, err := server.loadConversation(request)
+	if err != nil {
+		writeConversationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, conversationViewEnvelopeFor(view))
+}
+
+func (server *Server) getConversationMessages(writer http.ResponseWriter, request *http.Request) {
+	view, err := server.loadConversation(request)
+	if err != nil {
+		writeConversationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, view.Messages)
+}
+
+func (server *Server) renameConversation(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Chat is unavailable.")
+		return
+	}
+	var input struct {
+		Title    *string `json:"title"`
+		Pinned   *bool   `json:"pinned"`
+		Archived *bool   `json:"archived"`
+	}
+	if err := decodeJSON(request, &input); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation", "The conversation update is invalid.")
+		return
+	}
+	fields := 0
+	if input.Title != nil {
+		fields++
+	}
+	if input.Pinned != nil {
+		fields++
+	}
+	if input.Archived != nil {
+		fields++
+	}
+	if fields != 1 {
+		writeError(writer, http.StatusBadRequest, "validation", "Update one conversation property at a time.")
+		return
+	}
+	conversationID := request.PathValue("id")
+	var updateErr error
+	switch {
+	case input.Title != nil:
+		if strings.TrimSpace(*input.Title) == "" {
+			writeError(writer, http.StatusBadRequest, "validation", "The conversation title is invalid.")
+			return
+		}
+		updateErr = server.chat.RenameConversation(request.Context(), conversationID, *input.Title)
+	case input.Pinned != nil:
+		updateErr = server.chat.SetConversationPinned(request.Context(), conversationID, *input.Pinned)
+	case input.Archived != nil:
+		updateErr = server.chat.SetConversationArchived(request.Context(), conversationID, *input.Archived)
+	}
+	if updateErr != nil {
+		writeConversationError(writer, updateErr)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) deleteConversation(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Chat is unavailable.")
+		return
+	}
+	if err := server.chat.DeleteConversation(request.Context(), request.PathValue("id")); err != nil {
+		writeConversationError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) clearChatData(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Chat history is unavailable.")
+		return
+	}
+	if err := server.chat.ClearChatData(request.Context()); err != nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Chat history could not be cleared.")
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) createGeneration(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Chat is unavailable.")
+		return
+	}
+	var input struct {
+		ClientRequestID string `json:"client_request_id"`
+		Body            string `json:"body"`
+	}
+	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" || strings.TrimSpace(input.Body) == "" {
+		writeError(writer, http.StatusBadRequest, "validation", "The generation request is invalid.")
+		return
+	}
+	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body})
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, generationBatchEnvelopeFor(started.Batch))
+}
+
+func (server *Server) getGenerationBatch(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	batch, err := server.chat.GetGenerationBatch(request.Context(), request.PathValue("id"))
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, generationBatchEnvelopeFor(batch))
+}
+
+func (server *Server) generationBatchEvents(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	afterEventID := request.Header.Get("Last-Event-ID")
+	if afterEventID == "" {
+		afterEventID = request.URL.Query().Get("after")
+	}
+	events, err := server.chat.SubscribeGenerationBatch(request.Context(), request.PathValue("id"), afterEventID)
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	server.writeGenerationEvents(writer, events)
+}
+
+func (server *Server) cancelGenerationBatch(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	batch, err := server.chat.CancelGenerationBatch(request.Context(), request.PathValue("id"))
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, generationBatchEnvelopeFor(batch))
+}
+
+func (server *Server) retryGenerationTarget(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	var input struct {
+		ClientRequestID string `json:"client_request_id"`
+	}
+	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" {
+		writeError(writer, http.StatusBadRequest, "validation", "The retry request is invalid.")
+		return
+	}
+	started, err := server.chat.RetryGenerationTarget(request.Context(), request.PathValue("id"), input.ClientRequestID)
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, generationEnvelopeFor(started.Generation))
+}
+
+func (server *Server) selectGenerationAnswer(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	if err := server.chat.SelectGenerationAnswer(request.Context(), request.PathValue("id")); err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) skipGenerationBatchContext(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	if err := server.chat.SkipGenerationBatchContext(request.Context(), request.PathValue("id")); err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) getGeneration(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	generation, err := server.chat.GetGeneration(request.Context(), request.PathValue("id"))
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, generationEnvelopeFor(generation))
+}
+
+func (server *Server) generationEvents(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	afterEventID := request.Header.Get("Last-Event-ID")
+	if afterEventID == "" {
+		afterEventID = request.URL.Query().Get("after")
+	}
+	events, err := server.chat.SubscribeGeneration(request.Context(), request.PathValue("id"), afterEventID)
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	server.writeGenerationEvents(writer, events)
+}
+
+func (server *Server) writeGenerationEvents(writer http.ResponseWriter, events <-chan chat.GenerationEvent) {
+	writer.Header().Set("Content-Type", "text/event-stream")
+	writer.Header().Set("Cache-Control", "no-cache")
+	writer.Header().Set("Connection", "keep-alive")
+	flusher, ok := writer.(http.Flusher)
+	if !ok {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "The event stream is unavailable.")
+		return
+	}
+	for event := range events {
+		payload, err := json.Marshal(generationEventEnvelopeFor(event))
+		if err != nil {
+			return
+		}
+		if _, err := fmt.Fprintf(writer, "id: %s\nevent: %s\ndata: %s\n\n", event.EventID, event.Type, payload); err != nil {
+			return
+		}
+		flusher.Flush()
+	}
+}
+
+func (server *Server) cancelGeneration(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	generation, err := server.chat.CancelGeneration(request.Context(), request.PathValue("id"))
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, generationEnvelopeFor(generation))
+}
+
+func (server *Server) secureGenerationEnvironment(writer http.ResponseWriter, request *http.Request) {
+	server.advanceSecureGeneration(writer, request, server.chat.MarkSecureGenerationVerifyingEnvironment)
+}
+
+func (server *Server) secureGenerationStreaming(writer http.ResponseWriter, request *http.Request) {
+	server.advanceSecureGeneration(writer, request, server.chat.MarkSecureGenerationStreaming)
+}
+
+func (server *Server) secureGenerationResponse(writer http.ResponseWriter, request *http.Request) {
+	server.advanceSecureGeneration(writer, request, server.chat.MarkSecureGenerationVerifyingResponse)
+}
+
+func (server *Server) advanceSecureGeneration(writer http.ResponseWriter, request *http.Request, advance func(context.Context, string) (persistence.Generation, error)) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	generation, err := advance(request.Context(), request.PathValue("id"))
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, generationEnvelopeFor(generation))
+}
+
+func (server *Server) secureGenerationSettle(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	var input struct {
+		Body         string `json:"body"`
+		Verification struct {
+			Status           persistence.VerificationStatus    `json:"status"`
+			CompletionID     string                            `json:"completion_id"`
+			VerifiedAt       *time.Time                        `json:"verified_at"`
+			SignatureKind    string                            `json:"signature_kind"`
+			SigningAddress   string                            `json:"signing_address"`
+			SigningAlgorithm string                            `json:"signing_algorithm"`
+			SignedMessage    string                            `json:"signed_message"`
+			Signature        string                            `json:"signature"`
+			SignatureDigest  string                            `json:"signature_digest"`
+			EvidenceSummary  string                            `json:"evidence_summary"`
+			FailureCode      string                            `json:"failure_code"`
+			Evidence         *persistence.VerificationEvidence `json:"evidence"`
+			Lanes            *persistence.VerificationLanes    `json:"lanes"`
+		} `json:"verification"`
+	}
+	if err := decodeJSON(request, &input); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation", "The secure generation settlement is invalid.")
+		return
+	}
+	generation, err := server.chat.SettleSecureGeneration(request.Context(), persistence.SecureGenerationSettlementInput{GenerationID: request.PathValue("id"), Body: input.Body, Verification: persistence.GenerationVerification{Status: input.Verification.Status, CompletionID: input.Verification.CompletionID, VerifiedAt: input.Verification.VerifiedAt, SignatureKind: input.Verification.SignatureKind, SigningAddress: input.Verification.SigningAddress, SigningAlgorithm: input.Verification.SigningAlgorithm, SignedMessage: input.Verification.SignedMessage, Signature: input.Verification.Signature, SignatureDigest: input.Verification.SignatureDigest, EvidenceSummary: input.Verification.EvidenceSummary, FailureCode: input.Verification.FailureCode, Evidence: input.Verification.Evidence, Lanes: input.Verification.Lanes}})
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, generationEnvelopeFor(generation))
+}
+
+func (server *Server) retryGeneration(writer http.ResponseWriter, request *http.Request) {
+	if server.chat == nil {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
+		return
+	}
+	var input struct {
+		ClientRequestID string `json:"client_request_id"`
+	}
+	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" {
+		writeError(writer, http.StatusBadRequest, "validation", "The retry request is invalid.")
+		return
+	}
+	systemPrompt := ""
+	if server.settings != nil {
+		settings, err := server.settings.GetSettings(request.Context())
+		if err != nil {
+			writeError(writer, http.StatusInternalServerError, "internal_error", "Workspace settings are unavailable.")
+			return
+		}
+		systemPrompt = settings.SystemPrompt
+	}
+	started, err := server.chat.RetryGeneration(request.Context(), request.PathValue("id"), input.ClientRequestID, systemPrompt)
+	if err != nil {
+		writeGenerationError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, generationEnvelopeFor(started.Generation))
+}
+
+type providerSnapshotEnvelope struct {
+	ProviderID        string `json:"provider_id"`
+	ProviderName      string `json:"provider_name"`
+	ModelID           string `json:"model_id"`
+	RuntimeLocation   string `json:"runtime_location"`
+	Destination       string `json:"destination"`
+	TransportSecurity string `json:"transport_security"`
+	PrivacyNotice     string `json:"privacy_notice"`
+	PrivacyMode       string `json:"privacy_mode,omitempty"`
+}
+
+type generationConfigurationSnapshotEnvelope struct {
+	SystemPrompt string   `json:"system_prompt"`
+	Temperature  *float64 `json:"temperature"`
+	TopP         *float64 `json:"top_p"`
+	MaxTokens    *int     `json:"max_tokens"`
+}
+
+type generationVerificationEnvelope struct {
+	Status           persistence.VerificationStatus    `json:"status"`
+	CompletionID     string                            `json:"completion_id,omitempty"`
+	VerifiedAt       *time.Time                        `json:"verified_at,omitempty"`
+	SignatureKind    string                            `json:"signature_kind,omitempty"`
+	SigningAddress   string                            `json:"signing_address,omitempty"`
+	SigningAlgorithm string                            `json:"signing_algorithm,omitempty"`
+	SignedMessage    string                            `json:"signed_message,omitempty"`
+	Signature        string                            `json:"signature,omitempty"`
+	SignatureDigest  string                            `json:"signature_digest,omitempty"`
+	EvidenceSummary  string                            `json:"evidence_summary,omitempty"`
+	FailureCode      string                            `json:"failure_code,omitempty"`
+	Evidence         *persistence.VerificationEvidence `json:"evidence,omitempty"`
+	Lanes            *persistence.VerificationLanes    `json:"lanes,omitempty"`
+}
+
+type generationEnvelope struct {
+	ID                    string                                  `json:"id"`
+	ConversationID        string                                  `json:"conversation_id"`
+	ClientRequestID       string                                  `json:"client_request_id"`
+	UserMessageID         string                                  `json:"user_message_id"`
+	State                 persistence.GenerationState             `json:"state"`
+	Snapshot              providerSnapshotEnvelope                `json:"snapshot"`
+	ConfigurationSnapshot generationConfigurationSnapshotEnvelope `json:"configuration_snapshot"`
+	Verification          generationVerificationEnvelope          `json:"verification"`
+	AssistantMessageID    string                                  `json:"assistant_message_id,omitempty"`
+	ErrorCode             string                                  `json:"error_code,omitempty"`
+	ErrorMessage          string                                  `json:"error_message,omitempty"`
+	EventsURL             string                                  `json:"events_url"`
+	CreatedAt             time.Time                               `json:"created_at"`
+	UpdatedAt             time.Time                               `json:"updated_at"`
+}
+
+type generationEventEnvelope struct {
+	EventID      string                    `json:"event_id"`
+	BatchID      string                    `json:"batch_id,omitempty"`
+	TargetID     string                    `json:"target_id,omitempty"`
+	GenerationID string                    `json:"generation_id"`
+	Type         chat.EventType            `json:"type"`
+	Delta        string                    `json:"delta,omitempty"`
+	ErrorCode    string                    `json:"error_code,omitempty"`
+	ErrorMessage string                    `json:"error_message,omitempty"`
+	Snapshot     *providerSnapshotEnvelope `json:"snapshot,omitempty"`
+}
+
+type generationTargetAttemptEnvelope struct {
+	ID                    string                                  `json:"id"`
+	State                 persistence.GenerationState             `json:"state"`
+	Snapshot              providerSnapshotEnvelope                `json:"snapshot"`
+	ConfigurationSnapshot generationConfigurationSnapshotEnvelope `json:"configuration_snapshot"`
+	Verification          generationVerificationEnvelope          `json:"verification"`
+	AssistantMessageID    string                                  `json:"assistant_message_id,omitempty"`
+	ErrorCode             string                                  `json:"error_code,omitempty"`
+	ErrorMessage          string                                  `json:"error_message,omitempty"`
+}
+
+type conversationViewEnvelope struct {
+	persistence.Conversation
+	Messages              []persistence.Message     `json:"messages"`
+	ActiveGenerationBatch *generationBatchEnvelope  `json:"active_generation_batch,omitempty"`
+	GenerationBatches     []generationBatchEnvelope `json:"generation_batches"`
+}
+
+type generationTargetEnvelope struct {
+	ID         string                          `json:"id"`
+	ProviderID string                          `json:"provider_id"`
+	ModelID    string                          `json:"model_id"`
+	Position   int                             `json:"position"`
+	Generation generationTargetAttemptEnvelope `json:"generation"`
+}
+
+type generationBatchEnvelope struct {
+	ID                   string                           `json:"id"`
+	ConversationID       string                           `json:"conversation_id"`
+	ClientRequestID      string                           `json:"client_request_id"`
+	UserMessageID        string                           `json:"user_message_id,omitempty"`
+	State                persistence.GenerationBatchState `json:"state"`
+	Targets              []generationTargetEnvelope       `json:"targets"`
+	EventsURL            string                           `json:"events_url"`
+	SelectedGenerationID string                           `json:"selected_generation_id,omitempty"`
+	ContextSkipped       bool                             `json:"context_skipped,omitempty"`
+	ContextFrozen        bool                             `json:"context_frozen,omitempty"`
+	CreatedAt            time.Time                        `json:"created_at"`
+	UpdatedAt            time.Time                        `json:"updated_at"`
+}
+
+func generationEnvelopeFor(generation persistence.Generation) generationEnvelope {
+	return generationEnvelope{
+		ID: generation.ID, ConversationID: generation.ConversationID, ClientRequestID: generation.ClientRequestID,
+		UserMessageID: generation.UserMessageID, State: generation.State, Snapshot: providerSnapshotEnvelopeFor(generation.Snapshot), ConfigurationSnapshot: generationConfigurationSnapshotEnvelopeFor(generation.ConfigurationSnapshot),
+		Verification:       generationVerificationEnvelopeFor(generation.Verification),
+		AssistantMessageID: generation.AssistantMessageID, ErrorCode: generation.ErrorCode, ErrorMessage: generation.ErrorMessage,
+		EventsURL: "/api/generations/" + generation.ID + "/events", CreatedAt: generation.CreatedAt, UpdatedAt: generation.UpdatedAt,
+	}
+}
+
+func conversationViewEnvelopeFor(view persistence.ConversationView) conversationViewEnvelope {
+	result := conversationViewEnvelope{Conversation: view.Conversation, Messages: view.Messages, GenerationBatches: make([]generationBatchEnvelope, 0, len(view.GenerationBatches))}
+	if view.ActiveGenerationBatch != nil {
+		batch := generationBatchEnvelopeFor(*view.ActiveGenerationBatch)
+		result.ActiveGenerationBatch = &batch
+	}
+	for _, batch := range view.GenerationBatches {
+		result.GenerationBatches = append(result.GenerationBatches, generationBatchEnvelopeFor(batch))
+	}
+	return result
+}
+
+func generationBatchEnvelopeFor(batch persistence.GenerationBatch) generationBatchEnvelope {
+	targets := make([]generationTargetEnvelope, 0, len(batch.Targets))
+	for _, target := range batch.Targets {
+		generation := target.Generation
+		targets = append(targets, generationTargetEnvelope{
+			ID: target.ID, ProviderID: target.ProviderID, ModelID: target.ModelID, Position: target.Position,
+			Generation: generationTargetAttemptEnvelope{
+				ID: generation.ID, State: generation.State, Snapshot: providerSnapshotEnvelopeFor(generation.Snapshot), ConfigurationSnapshot: generationConfigurationSnapshotEnvelopeFor(generation.ConfigurationSnapshot),
+				Verification:       generationVerificationEnvelopeFor(generation.Verification),
+				AssistantMessageID: generation.AssistantMessageID, ErrorCode: generation.ErrorCode, ErrorMessage: generation.ErrorMessage,
+			},
+		})
+	}
+	return generationBatchEnvelope{
+		ID: batch.ID, ConversationID: batch.ConversationID, ClientRequestID: batch.ClientRequestID, UserMessageID: batch.UserMessageID,
+		State: batch.State, Targets: targets, EventsURL: "/api/generation-batches/" + batch.ID + "/events",
+		SelectedGenerationID: batch.SelectedGenerationID, ContextSkipped: batch.ContextSkipped, ContextFrozen: batch.ContextFrozen, CreatedAt: batch.CreatedAt, UpdatedAt: batch.UpdatedAt,
+	}
+}
+
+func generationVerificationEnvelopeFor(verification persistence.GenerationVerification) generationVerificationEnvelope {
+	if verification.Status == "" {
+		verification.Status = persistence.VerificationUnsupported
+	}
+	return generationVerificationEnvelope{Status: verification.Status, CompletionID: verification.CompletionID, VerifiedAt: verification.VerifiedAt, SignatureKind: verification.SignatureKind, SigningAddress: verification.SigningAddress, SigningAlgorithm: verification.SigningAlgorithm, SignedMessage: verification.SignedMessage, Signature: verification.Signature, SignatureDigest: verification.SignatureDigest, EvidenceSummary: verification.EvidenceSummary, FailureCode: verification.FailureCode, Evidence: verification.Evidence, Lanes: verification.Lanes}
+}
+
+func generationEventEnvelopeFor(event chat.GenerationEvent) generationEventEnvelope {
+	result := generationEventEnvelope{
+		EventID: event.EventID, BatchID: event.BatchID, TargetID: event.TargetID, GenerationID: event.GenerationID, Type: event.Type,
+		Delta: event.Delta, ErrorCode: event.ErrorCode, ErrorMessage: event.ErrorMessage,
+	}
+	if event.Snapshot != nil {
+		snapshot := providerSnapshotEnvelopeFor(*event.Snapshot)
+		result.Snapshot = &snapshot
+	}
+	return result
+}
+
+func providerSnapshotEnvelopeFor(snapshot persistence.ProviderSnapshot) providerSnapshotEnvelope {
+	return providerSnapshotEnvelope{
+		ProviderID: snapshot.ProviderID, ProviderName: snapshot.ProviderName, ModelID: snapshot.ModelID,
+		RuntimeLocation: snapshot.RuntimeLocation, Destination: snapshot.Destination,
+		TransportSecurity: snapshot.TransportSecurity, PrivacyNotice: snapshot.PrivacyNotice,
+		PrivacyMode: snapshot.PrivacyMode,
+	}
+}
+
+func generationConfigurationSnapshotEnvelopeFor(snapshot persistence.GenerationConfigurationSnapshot) generationConfigurationSnapshotEnvelope {
+	return generationConfigurationSnapshotEnvelope{
+		SystemPrompt: snapshot.SystemPrompt, Temperature: snapshot.Temperature, TopP: snapshot.TopP, MaxTokens: snapshot.MaxTokens,
+	}
+}
+
+func (server *Server) listProviderProfiles(writer http.ResponseWriter, request *http.Request) {
+	if server.providerSetup == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Provider configuration is unavailable.")
+		return
+	}
+	profiles, err := server.providerSetup.List(request.Context())
+	if err != nil {
+		writeProviderError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, profiles)
+}
+
+func (server *Server) getProviderProfile(writer http.ResponseWriter, request *http.Request) {
+	if server.providerSetup == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Provider configuration is unavailable.")
+		return
+	}
+	profile, err := server.providerSetup.Get(request.Context(), request.PathValue("id"))
+	if err != nil {
+		writeProviderError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, profile)
+}
+
+func (server *Server) createProviderProfile(writer http.ResponseWriter, request *http.Request) {
+	if server.providerSetup == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Provider configuration is unavailable.")
+		return
+	}
+	var input providerconfig.ProfileInput
+	if err := decodeJSON(request, &input); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation", "The Provider Profile is invalid.")
+		return
+	}
+	profile, err := server.providerSetup.Configure(request.Context(), input)
+	if err != nil {
+		writeProviderError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, profile)
+}
+
+func (server *Server) updateProviderProfile(writer http.ResponseWriter, request *http.Request) {
+	if server.providerSetup == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Provider configuration is unavailable.")
+		return
+	}
+	var input providerconfig.ProfileInput
+	if err := decodeJSON(request, &input); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation", "The Provider Profile is invalid.")
+		return
+	}
+	input.ID = request.PathValue("id")
+	profile, err := server.providerSetup.Configure(request.Context(), input)
+	if err != nil {
+		writeProviderError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, profile)
+}
+
+func (server *Server) deleteProviderProfile(writer http.ResponseWriter, request *http.Request) {
+	if server.providerSetup == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Provider configuration is unavailable.")
+		return
+	}
+	if err := server.providerSetup.Delete(request.Context(), request.PathValue("id")); err != nil {
+		writeProviderError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) deleteProviderKey(writer http.ResponseWriter, request *http.Request) {
+	if server.providerSetup == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Provider configuration is unavailable.")
+		return
+	}
+	if err := server.providerSetup.DeleteKey(request.Context(), request.PathValue("id")); err != nil {
+		writeProviderError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (server *Server) testProviderConnection(writer http.ResponseWriter, request *http.Request) {
+	if server.providerSetup == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Provider configuration is unavailable.")
+		return
+	}
+	var input providerconfig.ProfileInput
+	if err := decodeJSON(request, &input); err != nil {
+		writeError(writer, http.StatusBadRequest, "validation", "The Provider connection details are invalid.")
+		return
+	}
+	result, err := server.providerSetup.Validate(request.Context(), input)
+	if err != nil {
+		writeProviderError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+func (server *Server) discoverProviderModels(writer http.ResponseWriter, request *http.Request) {
+	if server.providerSetup == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Provider configuration is unavailable.")
+		return
+	}
+	result, err := server.providerSetup.Discover(request.Context(), providerconfig.ProfileInput{ID: request.PathValue("id")})
+	if err != nil {
+		writeProviderError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
+}
+
+func (server *Server) loadConversation(request *http.Request) (persistence.ConversationView, error) {
+	if server.chat == nil {
+		return persistence.ConversationView{}, errors.New("history unavailable")
+	}
+	return server.chat.ReadConversation(request.Context(), request.PathValue("id"))
+}
+
+func writeConversationError(writer http.ResponseWriter, err error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(writer, http.StatusNotFound, "not_found", "The requested conversation does not exist.")
+		return
+	}
+	writeError(writer, http.StatusInternalServerError, "internal_error", "Local history is unavailable.")
+}
+
+func writeGenerationError(writer http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		writeError(writer, http.StatusNotFound, "not_found", "The requested Generation does not exist.")
+	case errors.Is(err, chat.ErrGenerationInProgress):
+		writeError(writer, http.StatusConflict, "generation_in_progress", "Another Generation is already in progress.")
+	case errors.Is(err, chat.ErrGenerationBatchInProgress):
+		writeError(writer, http.StatusConflict, "generation_batch_in_progress", "Another Generation Batch is already in progress.")
+	case errors.Is(err, persistence.ErrContextDispositionRequired):
+		writeError(writer, http.StatusConflict, "context_disposition_required", "Select an answer or continue without an answer before starting the next Generation Batch.")
+	case errors.Is(err, persistence.ErrContextDispositionFrozen):
+		writeError(writer, http.StatusConflict, "context_disposition_frozen", "A later Generation Batch already captured this answer choice.")
+	case errors.Is(err, chat.ErrProviderSelectionRequired):
+		writeError(writer, http.StatusUnprocessableEntity, "provider_selection_required", "Select a configured Provider and model before starting a Generation.")
+	case errors.Is(err, provider.ErrModelUnavailable):
+		writeError(writer, http.StatusBadRequest, "validation", "The selected Provider model is unavailable.")
+	case errors.Is(err, providerconfig.ErrUnconfigured):
+		writeError(writer, http.StatusUnprocessableEntity, "provider_unconfigured", "This Provider Profile has no configured Key.")
+	case errors.Is(err, provider.ErrAuthenticationFailed):
+		writeError(writer, http.StatusUnauthorized, "authentication_failed", "The Provider rejected the configured Key.")
+	case errors.Is(err, provider.ErrRateLimited):
+		writeError(writer, http.StatusTooManyRequests, "rate_limited", "The Provider rate limited the generation request.")
+	case errors.Is(err, provider.ErrProviderUnavailable):
+		writeError(writer, http.StatusBadGateway, "provider_unavailable", "The Provider could not be reached.")
+	case errors.Is(err, provider.ErrProtocol):
+		writeError(writer, http.StatusBadGateway, "protocol_error", "The Provider returned an invalid response.")
+	default:
+		writeError(writer, http.StatusInternalServerError, "internal_error", "The Generation could not be started.")
+	}
+}
+
+func writeProviderError(writer http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		writeError(writer, http.StatusNotFound, "not_found", "The requested Provider Profile does not exist.")
+	case errors.Is(err, providerconfig.ErrUnconfigured):
+		writeError(writer, http.StatusUnprocessableEntity, "provider_unconfigured", "This Provider Profile has no configured Key.")
+	case errors.Is(err, provider.ErrAuthenticationFailed):
+		writeError(writer, http.StatusUnauthorized, "authentication_failed", "The Provider rejected the configured Key.")
+	case errors.Is(err, provider.ErrRateLimited):
+		writeError(writer, http.StatusTooManyRequests, "rate_limited", "The Provider rate limited the validation request.")
+	case errors.Is(err, provider.ErrProviderUnavailable):
+		writeError(writer, http.StatusBadGateway, "provider_unavailable", "The Provider could not be reached.")
+	case errors.Is(err, provider.ErrProtocol):
+		writeError(writer, http.StatusBadGateway, "protocol_error", "The Provider returned an invalid response.")
+	case errors.Is(err, provider.ErrInvalidEndpoint), errors.Is(err, provider.ErrInsecureEndpoint), errors.Is(err, provider.ErrInvalidAuth), errors.Is(err, provider.ErrInvalidProfile), errors.Is(err, provider.ErrModelUnavailable), errors.Is(err, providerconfig.ErrValidationFailed):
+		writeError(writer, http.StatusBadRequest, "validation", "The Provider connection details could not be validated.")
+	default:
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Provider configuration is unavailable.")
+	}
+}
+
+func decodeJSON(request *http.Request, target any) error {
+	decoder := json.NewDecoder(request.Body)
+	return decoder.Decode(target)
+}
+
+func (server *Server) writeSecurityError(writer http.ResponseWriter, _ *http.Request, err error) {
+	switch {
+	case errors.Is(err, localsecurity.ErrInvalidHost):
+		writeError(writer, http.StatusBadRequest, "invalid_host", "The Local Service only accepts loopback hosts.")
+	case errors.Is(err, localsecurity.ErrInvalidOrigin):
+		writeError(writer, http.StatusForbidden, "invalid_origin", "The request origin is not authorized.")
+	case errors.Is(err, localsecurity.ErrInvalidCSRF):
+		writeError(writer, http.StatusForbidden, "invalid_csrf", "The request is missing a valid CSRF token.")
+	case errors.Is(err, localsecurity.ErrInvalidControlToken):
+		writeError(writer, http.StatusUnauthorized, "invalid_control_token", "The Launcher control token is invalid.")
+	default:
+		writeError(writer, http.StatusUnauthorized, "invalid_session", "A valid browser session is required.")
+	}
+}
+
+func writeJSON(writer http.ResponseWriter, status int, value any) {
+	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.WriteHeader(status)
+	_ = json.NewEncoder(writer).Encode(value)
+}
+
+func writeError(writer http.ResponseWriter, status int, code, message string) {
+	writeJSON(writer, status, ErrorEnvelope{Error: APIError{
+		Code:      code,
+		Message:   message,
+		RequestID: "local",
+	}})
+}

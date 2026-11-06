@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Generation Batch Event",
+  "type": "object",
+  "required": ["event_id", "batch_id", "target_id", "generation_id", "type"],
+  "properties": {
+    "event_id": { "type": "string" },
+    "batch_id": { "type": "string" },
+    "target_id": { "type": "string" },
+    "generation_id": { "type": "string" },
+    "type": { "enum": ["started", "delta", "completed", "stopped", "failed"] },
+    "delta": { "type": "string" },
+    "error_code": { "type": "string" },
+    "error_message": { "type": "string" },
+    "snapshot": { "$ref": "generation.schema.json#/$defs/providerSnapshot" }
+  },
+  "additionalProperties": false
+}

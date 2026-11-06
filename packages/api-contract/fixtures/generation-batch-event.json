@@ -1,0 +1,8 @@
+{
+  "event_id": "42",
+  "batch_id": "batch-1",
+  "target_id": "target-b",
+  "generation_id": "generation-b",
+  "type": "delta",
+  "delta": "Independent streamed text"
+}

@@ -1,0 +1,221 @@
+name: macOS Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+env:
+  COVE_REQUIRE_NOTARIZATION: ${{ vars.COVE_REQUIRE_NOTARIZATION || '0' }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    outputs:
+      artifact_name: ${{ steps.metadata.outputs.artifact_name }}
+      dmg_name: ${{ steps.metadata.outputs.dmg_name }}
+      checksum_name: ${{ steps.metadata.outputs.checksum_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate runner and release metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$(uname -s)" != "Darwin" || "$(uname -m)" != "arm64" ]]; then
+            echo "Cove release packaging requires a macOS ARM64 runner." >&2
+            exit 1
+          fi
+          if [[ "$COVE_REQUIRE_NOTARIZATION" != "0" && "$COVE_REQUIRE_NOTARIZATION" != "1" ]]; then
+            echo "COVE_REQUIRE_NOTARIZATION must be 0 or 1." >&2
+            exit 1
+          fi
+
+          release_version="$(plutil -extract CoveReleaseVersion raw -o - apps/macos/Resources/Info.plist)"
+          marketing_version="$(plutil -extract CFBundleShortVersionString raw -o - apps/macos/Resources/Info.plist)"
+          build_version="$(plutil -extract CFBundleVersion raw -o - apps/macos/Resources/Info.plist)"
+          version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$'
+          if [[ ! "$release_version" =~ $version_pattern ]]; then
+            echo "Invalid CoveReleaseVersion in apps/macos/Resources/Info.plist: $release_version" >&2
+            exit 1
+          fi
+          if [[ "$release_version" != "$marketing_version" && "$release_version" != "$marketing_version"-alpha.* && "$release_version" != "$marketing_version"-beta.* && "$release_version" != "$marketing_version"-rc.* ]]; then
+            echo "CoveReleaseVersion $release_version must use CFBundleShortVersionString $marketing_version as its base." >&2
+            exit 1
+          fi
+          if [[ -z "$build_version" ]]; then
+            echo "CFBundleVersion must not be empty." >&2
+            exit 1
+          fi
+
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            tag_pattern="^v${version_pattern#^}"
+            if [[ ! "$GITHUB_REF_NAME" =~ $tag_pattern ]]; then
+              echo "Invalid release tag: $GITHUB_REF_NAME" >&2
+              exit 1
+            fi
+            if [[ "${GITHUB_REF_NAME#v}" != "$release_version" ]]; then
+              echo "Release tag $GITHUB_REF_NAME does not match CoveReleaseVersion $release_version." >&2
+              exit 1
+            fi
+          fi
+
+          dmg_name="Cove-$release_version-arm64.dmg"
+          echo "artifact_name=Cove-$release_version-arm64" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=$dmg_name" >> "$GITHUB_OUTPUT"
+          echo "checksum_name=$dmg_name.sha256" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/local-service/go.mod
+          cache: true
+          cache-dependency-path: services/local-service/go.sum
+      - run: pnpm install --frozen-lockfile
+      - name: Test repository
+        run: make check test
+      - run: pnpm audit --audit-level moderate
+      - name: Configure Developer ID signing and notarization
+        if: env.COVE_REQUIRE_NOTARIZATION == '1'
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_CERTIFICATE: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE }}
+          MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          MACOS_DEVELOPER_ID_IDENTITY: ${{ secrets.MACOS_DEVELOPER_ID_IDENTITY }}
+          APPLE_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          : "${MACOS_DEVELOPER_ID_CERTIFICATE:?MACOS_DEVELOPER_ID_CERTIFICATE is required}"
+          : "${MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD:?MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD is required}"
+          : "${MACOS_DEVELOPER_ID_IDENTITY:?MACOS_DEVELOPER_ID_IDENTITY is required}"
+          : "${APPLE_NOTARY_KEY:?APPLE_NOTARY_KEY is required}"
+          : "${APPLE_NOTARY_KEY_ID:?APPLE_NOTARY_KEY_ID is required}"
+          : "${APPLE_NOTARY_ISSUER_ID:?APPLE_NOTARY_ISSUER_ID is required}"
+
+          keychain_path="$RUNNER_TEMP/cove-release.keychain-db"
+          certificate_path="$RUNNER_TEMP/cove-developer-id.p12"
+          notary_key_path="$RUNNER_TEMP/AuthKey_${APPLE_NOTARY_KEY_ID}.p8"
+          security create-keychain -p "$MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD" "$keychain_path"
+          printf '%s' "$MACOS_DEVELOPER_ID_CERTIFICATE" | base64 -D > "$certificate_path"
+          security import "$certificate_path" -k "$keychain_path" -P "$MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD" "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+          security default-keychain -d user -s "$keychain_path"
+          printf '%s' "$APPLE_NOTARY_KEY" | base64 -D > "$notary_key_path"
+          xcrun notarytool store-credentials cove-release-notary \
+            --key "$notary_key_path" \
+            --key-id "$APPLE_NOTARY_KEY_ID" \
+            --issuer "$APPLE_NOTARY_ISSUER_ID"
+          {
+            echo "COVE_SIGNING_IDENTITY=$MACOS_DEVELOPER_ID_IDENTITY"
+            echo "COVE_NOTARY_PROFILE=cove-release-notary"
+            echo "COVE_NOTARIZE=1"
+            echo "COVE_RELEASE=1"
+          } >> "$GITHUB_ENV"
+      - name: Build macOS DMG
+        env:
+          COVE_INSECURE_FILE_SECRET_STORE: "0"
+        run: make dmg
+      - name: Verify packaged Secret Store mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! plutil -extract CoveInsecureFileSecretStore raw -o - .artifacts/Cove.app/Contents/Info.plist >/dev/null 2>&1
+      - name: Run macOS package acceptance test
+        run: make test-package-macos
+      - name: Verify macOS DMG checksum
+        shell: bash
+        env:
+          DMG_NAME: ${{ steps.metadata.outputs.dmg_name }}
+          CHECKSUM_NAME: ${{ steps.metadata.outputs.checksum_name }}
+        run: |
+          set -euo pipefail
+          test -f ".artifacts/$DMG_NAME"
+          test -f ".artifacts/$CHECKSUM_NAME"
+          (cd .artifacts && shasum -a 256 -c "$CHECKSUM_NAME")
+      - name: Write update manifest
+        env:
+          DMG_NAME: ${{ steps.metadata.outputs.dmg_name }}
+        run: |
+          version="$(plutil -extract CoveReleaseVersion raw -o - apps/macos/Resources/Info.plist)"
+          node scripts/write-update-manifest.mjs "$version" "https://github.com/$GITHUB_REPOSITORY/releases/download/v$version/$DMG_NAME" .artifacts/update.json
+      - name: Clean signing material
+        if: always() && env.COVE_REQUIRE_NOTARIZATION == '1'
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/cove-release.keychain-db" || true
+          rm -f "$RUNNER_TEMP/cove-developer-id.p12" "$RUNNER_TEMP"/AuthKey_*.p8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.metadata.outputs.artifact_name }}
+          path: |
+            .artifacts/${{ steps.metadata.outputs.dmg_name }}
+            .artifacts/${{ steps.metadata.outputs.checksum_name }}
+            .artifacts/update.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release-assets
+      - name: Verify downloaded release artifacts
+        shell: bash
+        env:
+          DMG_NAME: ${{ needs.build.outputs.dmg_name }}
+          CHECKSUM_NAME: ${{ needs.build.outputs.checksum_name }}
+        run: |
+          set -euo pipefail
+          test -f "release-assets/$DMG_NAME"
+          test -f "release-assets/$CHECKSUM_NAME"
+          (cd release-assets && sha256sum -c "$CHECKSUM_NAME")
+      - name: Create draft GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DMG_NAME: ${{ needs.build.outputs.dmg_name }}
+          CHECKSUM_NAME: ${{ needs.build.outputs.checksum_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "A GitHub Release already exists for $GITHUB_REF_NAME." >&2
+            exit 1
+          fi
+          prerelease_args=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease_args+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" "${prerelease_args[@]}" \
+            "release-assets/$DMG_NAME" \
+            "release-assets/$CHECKSUM_NAME" \
+            "release-assets/update.json" \
+            --draft \
+            --generate-notes \
+            --verify-tag

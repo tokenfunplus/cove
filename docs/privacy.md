@@ -1,0 +1,44 @@
+# Privacy and trust model
+
+## Where information goes
+
+| Information | Location or destination |
+| --- | --- |
+| History, settings, snapshots, completed verification records | Local SQLite database under `~/Library/Application Support/cove/` |
+| Provider Keys | macOS Keychain by default |
+| Prompt, System Prompt, selected context, generation parameters | Configured model provider |
+| NearAI encrypted protocol traffic | Fixed NearAI staging service, through the Local Service |
+| Intel TDX verification collateral | `https://pccs.phala.network` |
+| NVIDIA attestation evidence | `https://nras.attestation.nvidia.com`, through a fixed local proxy |
+| Manual update check | Cove's GitHub release manifest |
+| Markdown or JSON exports | Files downloaded to your device |
+
+Cove has no account, cloud conversation store, or synchronization service. Remote providers still receive information. Custom local providers use loopback HTTP; other custom endpoints require HTTPS.
+
+## Local storage
+
+Cove does not encrypt its SQLite database or exports. Filesystem permissions and operating-system protections such as FileVault govern access at rest. Deleting history does not delete provider records, backups, or exports, and is not a secure-erasure guarantee.
+
+`COVE_INSECURE_FILE_SECRET_STORE=1` stores keys as plaintext in an owner-only test file. It is disabled by default and rejected when `COVE_RELEASE=1`. The service warns when this mode is used.
+
+Cove's namespace is `io.github.tokenfunplus.cove`; earlier TBD data and Keychain entries are not automatically migrated.
+
+## Verification claims
+
+Supported NearAI models can use browser-side end-to-end encryption and hardware attestation. Availability depends on the model's advertised mode. A model TEE receipt, a gateway receipt, and an unverified ordinary response are distinct results.
+
+Browser Fetch does not expose the remote TLS peer certificate. The browser path does not pin that certificate against an attested fingerprint. HTTPS alone does not prove confidential model execution.
+
+Saved evidence is historical. Opening its details does not automatically rerun cryptographic verification. The Local Service accepts completion records from the authenticated browser and does not independently repeat all SDK cryptography. A modified browser or compromised local account can falsify local records; persisted labels are not third-party-verifiable audit certificates.
+
+## Provider integration and dependencies
+
+The NearAI SDK is pinned to `0.2.1`. The preset still uses a staging endpoint. Treat provider integration as dependent on upstream availability and explicit verification results rather than a blanket confidentiality promise.
+
+The SDK transitively includes `elliptic`, which has an unresolved low-severity advisory, [GHSA-848j-6mx2-7j84](https://github.com/advisories/GHSA-848j-6mx2-7j84).
+
+Review `pnpm audit` and the resolved dependency graph before releases. Do not replace cryptographic dependencies through untested overrides simply to silence an audit.
+
+## Reporting problems
+
+Follow [SECURITY.md](../SECURITY.md). Use synthetic content and remove credentials, launch URLs, tokens, and personal information from reports and screenshots.

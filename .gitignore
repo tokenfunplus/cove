@@ -1,0 +1,28 @@
+# Dependencies and generated output
+node_modules/
+apps/macos/.build/
+apps/macos/.swiftpm/
+.artifacts/
+coverage/
+services/local-service/cove-local-service
+services/local-service/internal/webassets/content/dist/
+
+# Local-only data and configuration
+.scratch/
+.DS_Store
+*.log
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.env
+.env.*
+!.env.example
+key.md
+*.p12
+*.p8
+*.keychain-db
+
+# Editors
+.idea/
+.vscode/
+*.swp

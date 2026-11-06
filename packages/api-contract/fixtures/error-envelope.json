@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "not_found",
+    "message": "The requested API route does not exist.",
+    "details": null,
+    "request_id": "local"
+  }
+}

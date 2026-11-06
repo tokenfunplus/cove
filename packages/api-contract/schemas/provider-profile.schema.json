@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProviderProfile",
+  "type": "object",
+  "required": ["id", "kind", "name", "endpoint", "model_id", "auth_method", "runtime_location", "destination", "transport_security", "privacy_notice", "configured", "created_at", "updated_at"],
+  "properties": {
+    "id": { "type": "string" },
+    "kind": { "enum": ["nearai", "openai_compatible"] },
+    "name": { "type": "string" },
+    "endpoint": { "type": "string", "format": "uri" },
+    "model_id": { "type": "string" },
+    "auth_method": { "enum": ["bearer", "x_api_key"] },
+    "runtime_location": { "type": "string" },
+    "destination": { "type": "string" },
+    "transport_security": { "enum": ["tls", "plaintext", "unknown"] },
+    "privacy_notice": { "type": "string" },
+    "configured": { "type": "boolean" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,309 @@
+package provider
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+
+	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
+)
+
+var (
+	ErrAuthenticationFailed = errors.New("provider authentication failed")
+	ErrProviderUnavailable  = errors.New("provider unavailable")
+	ErrRateLimited          = errors.New("provider rate limited")
+	ErrProtocol             = errors.New("provider protocol is invalid")
+	ErrModelUnavailable     = errors.New("provider model is unavailable")
+)
+
+type ValidateInput struct {
+	Profile Profile
+	Secret  credentials.Secret
+}
+
+type ValidationResult struct {
+	Models        []string        `json:"models"`
+	ModelMetadata []ModelMetadata `json:"model_metadata,omitempty"`
+}
+
+// ModelMetadata is the provider's advertised privacy classification. NearAI
+// exposes Private TEE, Incognito, and Chutes models from the same catalog, so
+// Provider kind alone is not enough to choose a transport.
+type ModelMetadata struct {
+	ID          string `json:"id"`
+	PrivacyMode string `json:"privacy_mode"`
+	Verifiable  bool   `json:"verifiable"`
+}
+
+const (
+	PrivacyModePrivateTEE = "private_tee"
+	PrivacyModeIncognito  = "incognito"
+	PrivacyModeChutes     = "chutes"
+)
+
+// These models have been verified against the current NearAI attestation
+// endpoint. Keep this allowlist exact until the provider exposes the same
+// classification in /v1/models; descriptions alone are not authoritative.
+var verifiedModelIDs = map[string]struct{}{
+	"Qwen/Qwen3.8-27B":   {},
+	"z-ai/glm-5.3-flash": {},
+}
+
+type HTTPAdapter struct {
+	client *http.Client
+}
+
+func NewHTTPAdapter(client *http.Client) *HTTPAdapter {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	clientCopy := *client
+	clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &HTTPAdapter{client: &clientCopy}
+}
+
+func (adapter *HTTPAdapter) Validate(ctx context.Context, input ValidateInput) (ValidationResult, error) {
+	profile, err := NormalizeProfile(input.Profile)
+	if err != nil {
+		return ValidationResult{}, err
+	}
+	metadata, err := adapter.ListModelMetadata(ctx, profile, input.Secret)
+	if err != nil {
+		return ValidationResult{}, err
+	}
+	models := modelIDs(metadata)
+	if profile.Model == "" {
+		return ValidationResult{Models: models, ModelMetadata: metadata}, nil
+	}
+	if !containsModel(models, profile.Model) {
+		return ValidationResult{}, ErrModelUnavailable
+	}
+	if err := adapter.ValidateChat(ctx, profile, input.Secret); err != nil {
+		return ValidationResult{}, err
+	}
+	return ValidationResult{Models: models, ModelMetadata: metadata}, nil
+}
+
+func (adapter *HTTPAdapter) Stream(ctx context.Context, input CompletionInput) (CompletionStream, error) {
+	profile, err := NormalizeProfile(input.Profile)
+	if err != nil {
+		return nil, err
+	}
+	payload := struct {
+		Model       string            `json:"model"`
+		Messages    []ProviderMessage `json:"messages"`
+		Temperature *float64          `json:"temperature,omitempty"`
+		TopP        *float64          `json:"top_p,omitempty"`
+		MaxTokens   *int              `json:"max_tokens,omitempty"`
+		Stream      bool              `json:"stream"`
+	}{Model: profile.Model, Messages: input.Messages, Temperature: input.GenerationParameters.Temperature, TopP: input.GenerationParameters.TopP, MaxTokens: input.GenerationParameters.MaxTokens, Stream: true}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encode provider completion: %w", ErrProtocol)
+	}
+	request, err := adapter.newRequest(ctx, http.MethodPost, profile, "/chat/completions", input.Secret)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Body = io.NopCloser(strings.NewReader(string(body)))
+	request.ContentLength = int64(len(body))
+	response, err := adapter.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("open provider completion: %w", ErrProviderUnavailable)
+	}
+	if err := classifyStatus(response.StatusCode); err != nil {
+		_ = response.Body.Close()
+		return nil, err
+	}
+	return newSSECompletionStream(response.Body), nil
+}
+
+func (adapter *HTTPAdapter) ListModels(ctx context.Context, profile Profile, secret credentials.Secret) ([]string, error) {
+	metadata, err := adapter.ListModelMetadata(ctx, profile, secret)
+	if err != nil {
+		return nil, err
+	}
+	return modelIDs(metadata), nil
+}
+
+func (adapter *HTTPAdapter) ListModelMetadata(ctx context.Context, profile Profile, secret credentials.Secret) ([]ModelMetadata, error) {
+	request, err := adapter.newRequest(ctx, http.MethodGet, profile, "/models", secret)
+	if err != nil {
+		return nil, err
+	}
+	response, err := adapter.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("list provider models: %w", ErrProviderUnavailable)
+	}
+	defer response.Body.Close()
+	if err := classifyStatus(response.StatusCode); err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Data []struct {
+			ID           string `json:"id"`
+			OwnedBy      string `json:"owned_by"`
+			Description  string `json:"description"`
+			IsReady      *bool  `json:"is_ready"`
+			PrivacyMode  string `json:"privacy_mode"`
+			Verifiable   *bool  `json:"verifiable"`
+			Provider     string `json:"provider"`
+			ProviderType string `json:"provider_type"`
+		} `json:"data"`
+	}
+	if err := decodeBoundedJSON(response.Body, &payload); err != nil {
+		return nil, fmt.Errorf("decode provider models: %w", ErrProtocol)
+	}
+	models := make([]ModelMetadata, 0, len(payload.Data))
+	for _, model := range payload.Data {
+		if model.IsReady != nil && !*model.IsReady {
+			continue
+		}
+		if strings.TrimSpace(model.ID) != "" {
+			models = append(models, classifyModelMetadata(model.ID, model.OwnedBy, model.Description, model.Provider, model.ProviderType, model.PrivacyMode, model.Verifiable))
+		}
+	}
+	return models, nil
+}
+
+func modelIDs(metadata []ModelMetadata) []string {
+	models := make([]string, 0, len(metadata))
+	for _, model := range metadata {
+		models = append(models, model.ID)
+	}
+	return models
+}
+
+// classifyModelMetadata consumes provider model-directory metadata.
+// Chutes stays a distinct catalog type with verifiable=false even when the
+// upstream directory advertises TEE: the current SDK cannot verify that
+// attestation format. Private TEE is enabled only for the SDK-supported
+// allowlist. Unknown models, advertised verifiable flags, and TDX copy
+// never default a model into Private TEE.
+func classifyModelMetadata(id, ownedBy, description, providerName, providerType, advertisedPrivacyMode string, advertisedVerifiable *bool) ModelMetadata {
+	if advertisedPrivacyMode == PrivacyModeChutes || looksLikeChutesModel(id, ownedBy, description, providerName, providerType) {
+		return ModelMetadata{ID: id, PrivacyMode: PrivacyModeChutes, Verifiable: false}
+	}
+	if advertisedPrivacyMode == PrivacyModeIncognito {
+		return ModelMetadata{ID: id, PrivacyMode: PrivacyModeIncognito, Verifiable: false}
+	}
+	if _, ok := verifiedModelIDs[id]; ok {
+		return ModelMetadata{ID: id, PrivacyMode: PrivacyModePrivateTEE, Verifiable: true}
+	}
+	return ModelMetadata{ID: id, PrivacyMode: PrivacyModeIncognito, Verifiable: false}
+}
+
+func looksLikeChutesModel(id, ownedBy, description, providerName, providerType string) bool {
+	haystack := strings.ToLower(strings.Join([]string{id, ownedBy, description, providerName, providerType}, " "))
+	return strings.Contains(haystack, "chutes")
+}
+
+func (adapter *HTTPAdapter) ValidateChat(ctx context.Context, profile Profile, secret credentials.Secret) error {
+	payload := struct {
+		Model    string `json:"model"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+		MaxTokens int  `json:"max_tokens"`
+		Stream    bool `json:"stream"`
+	}{
+		Model: profile.Model,
+		Messages: []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		}{{Role: "user", Content: "Connection test"}},
+		MaxTokens: 1,
+		Stream:    false,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode provider validation: %w", ErrProtocol)
+	}
+	request, err := adapter.newRequest(ctx, http.MethodPost, profile, "/chat/completions", secret)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Body = io.NopCloser(strings.NewReader(string(body)))
+	request.ContentLength = int64(len(body))
+	response, err := adapter.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("validate provider chat: %w", ErrProviderUnavailable)
+	}
+	defer response.Body.Close()
+	if err := classifyStatus(response.StatusCode); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (adapter *HTTPAdapter) newRequest(ctx context.Context, method string, profile Profile, suffix string, secret credentials.Secret) (*http.Request, error) {
+	profile, err := NormalizeProfile(profile)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(secret.Value) == "" {
+		return nil, ErrAuthenticationFailed
+	}
+	endpoint, err := url.Parse(profile.Endpoint)
+	if err != nil {
+		return nil, ErrInvalidEndpoint
+	}
+	path := strings.TrimRight(endpoint.Path, "/")
+	if !strings.HasSuffix(path, "/v1") {
+		path += "/v1"
+	}
+	endpoint.Path = path + suffix
+	request, err := http.NewRequestWithContext(ctx, method, endpoint.String(), nil)
+	if err != nil {
+		return nil, ErrInvalidEndpoint
+	}
+	request.Header.Set("Accept", "application/json")
+	switch profile.AuthMethod {
+	case AuthBearer:
+		request.Header.Set("Authorization", "Bearer "+secret.Value)
+	case AuthAPIKey:
+		request.Header.Set("X-API-Key", secret.Value)
+	default:
+		return nil, ErrInvalidAuth
+	}
+	return request, nil
+}
+
+func classifyStatus(status int) error {
+	switch {
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return ErrAuthenticationFailed
+	case status == http.StatusTooManyRequests:
+		return ErrRateLimited
+	case status >= http.StatusInternalServerError:
+		return ErrProviderUnavailable
+	case status < http.StatusOK || status >= http.StatusMultipleChoices:
+		return ErrProtocol
+	default:
+		return nil
+	}
+}
+
+func decodeBoundedJSON(reader io.Reader, target any) error {
+	decoder := json.NewDecoder(io.LimitReader(reader, 1<<20))
+	return decoder.Decode(target)
+}
+
+func containsModel(models []string, wanted string) bool {
+	for _, model := range models {
+		if model == wanted {
+			return true
+		}
+	}
+	return false
+}

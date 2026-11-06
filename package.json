@@ -1,0 +1,35 @@
+{
+  "name": "cove",
+  "private": true,
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "build": "make build",
+    "build:web": "pnpm --filter @cove/web build",
+    "check:web": "pnpm --filter @cove/web check",
+    "test:web": "pnpm --filter @cove/web test",
+    "check:contract": "pnpm --filter @cove/api-contract check",
+    "test:contract": "pnpm --filter @cove/api-contract test",
+    "test": "make test",
+    "check": "make check",
+    "check:repo": "node scripts/check-repository.mjs",
+    "test:service": "make test-service",
+    "test:macos": "make test-macos",
+    "start": "make start-local",
+    "stop": "make stop-local"
+  },
+  "version": "0.1.0",
+  "description": "A local-first Mac chat app with on-device history and verifiable AI inference.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tokenfunplus/cove.git"
+  },
+  "homepage": "https://github.com/tokenfunplus/cove#readme",
+  "bugs": {
+    "url": "https://github.com/tokenfunplus/cove/issues"
+  },
+  "engines": {
+    "node": ">=24.22.1",
+    "pnpm": "10.11.x"
+  }
+}

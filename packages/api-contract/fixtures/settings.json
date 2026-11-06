@@ -1,0 +1,9 @@
+{
+  "theme": "system",
+  "locale": "system",
+  "system_prompt": "",
+  "temperature": null,
+  "top_p": null,
+  "max_tokens": null,
+  "active_model_set": []
+}

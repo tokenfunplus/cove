@@ -1,0 +1,37 @@
+name: Bug report
+description: Report a reproducible problem in Cove.
+body:
+  - type: markdown
+    attributes:
+      value: Remove keys, launch URLs, tokens, and private conversations. Use SECURITY.md for vulnerabilities.
+  - type: input
+    id: version
+    attributes:
+      label: Cove version or commit
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: macOS version, chip, and browser
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Use synthetic prompts and describe provider configuration without credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized diagnostics
+    validations:
+      required: true

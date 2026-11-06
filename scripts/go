@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+# Respect the toolchain selected by the caller or CI before trying fallbacks.
+if go version >/dev/null 2>&1; then
+  exec go "$@"
+fi
+
+if command -v brew >/dev/null 2>&1; then
+  cove_brew_go="$(brew --prefix go 2>/dev/null || true)/bin/go"
+  if [ -x "$cove_brew_go" ]; then
+    exec "$cove_brew_go" "$@"
+  fi
+fi
+
+if command -v goenv >/dev/null 2>&1; then
+  exec env GOENV_VERSION="${COVE_GO_VERSION:-1.26.5}" goenv exec go "$@"
+fi
+
+echo "Go 1.26 or newer is required to build Cove." >&2
+exit 1
