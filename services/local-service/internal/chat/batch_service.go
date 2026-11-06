@@ -126,6 +126,23 @@ func (service *Service) GetGenerationBatch(ctx context.Context, batchID string) 
 	return service.store.GetGenerationBatch(ctx, batchID)
 }
 
+// GetGenerationBatchContext reads the immutable context shared by every target and retry.
+// It excludes the current user turn and the attempt's System Prompt.
+func (service *Service) GetGenerationBatchContext(ctx context.Context, batchID string) ([]provider.ProviderMessage, error) {
+	if _, err := service.store.GetGenerationBatch(ctx, batchID); err != nil {
+		return nil, err
+	}
+	items, err := service.store.LoadGenerationBatchContext(ctx, batchID)
+	if err != nil {
+		return nil, err
+	}
+	messages := make([]provider.ProviderMessage, 0, len(items)*2)
+	for _, item := range items {
+		messages = append(messages, provider.ProviderMessage{Role: "user", Content: item.UserBody}, provider.ProviderMessage{Role: "assistant", Content: item.AssistantBody})
+	}
+	return messages, nil
+}
+
 func (service *Service) SubscribeGenerationBatch(ctx context.Context, batchID, afterEventID string) (<-chan GenerationEvent, error) {
 	batch, err := service.store.GetGenerationBatch(ctx, batchID)
 	if err != nil {

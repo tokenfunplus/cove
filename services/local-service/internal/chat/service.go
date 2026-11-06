@@ -77,6 +77,7 @@ type Chat interface {
 	ClearChatData(ctx context.Context) error
 	StartGenerationBatch(ctx context.Context, input SendInput) (GenerationBatchStart, error)
 	GetGenerationBatch(ctx context.Context, batchID string) (persistence.GenerationBatch, error)
+	GetGenerationBatchContext(ctx context.Context, batchID string) ([]provider.ProviderMessage, error)
 	SubscribeGenerationBatch(ctx context.Context, batchID, afterEventID string) (<-chan GenerationEvent, error)
 	CancelGenerationBatch(ctx context.Context, batchID string) (persistence.GenerationBatch, error)
 	RetryGenerationTarget(ctx context.Context, targetID, clientRequestID string) (GenerationStart, error)
