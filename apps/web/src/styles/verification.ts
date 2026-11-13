@@ -8,10 +8,10 @@ export const verificationStyles = {
   viewer_notice: "mb-4 text-xs text-muted-foreground",
   viewer_title: "text-lg font-semibold",
   viewer_heading: "mb-3 flex items-center justify-between gap-3",
-  viewer_iframe: "min-h-0 w-full flex-1 border-0",
+  viewer_iframe: "min-h-0 w-full flex-1 rounded-lg border-0",
   viewer_status: "text-sm text-muted-foreground",
   viewer_overlay: "absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-card p-6 text-center",
-  viewer_frame: "relative flex h-[min(65dvh,640px)] min-h-64 flex-col overflow-hidden rounded-xl border border-border",
+  viewer_frame: "relative flex h-[min(65dvh,640px)] min-h-64 flex-col overflow-hidden rounded-xl border border-border bg-white p-3 sm:p-5 dark:bg-card",
   viewer_empty: "my-4 text-sm text-muted-foreground",
   message_verificationLanes: cn(String.raw`
     message__verification-lanes flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-muted-foreground
