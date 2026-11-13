@@ -10,7 +10,7 @@ import {
   type VerificationEvidence,
 } from "@cove/api-contract";
 import { Dialog, DialogOverlay, DialogContent } from "@/components/ui/dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
 export function VerificationDialog({
   kind,
@@ -26,7 +26,7 @@ export function VerificationDialog({
   providerName?: string;
   modelId?: string;
   copy?: ApplicationCopy;
-  onVerifyAgain: (
+  onVerifyAgain?: (
     kind: "model" | "gateway",
   ) => Promise<VerificationEvidence | undefined>;
   onClose: () => void;
@@ -36,6 +36,7 @@ export function VerificationDialog({
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationError, setVerificationError] = useState(false);
   const [copiedQuote, setCopiedQuote] = useState(false);
+  const [copyError, setCopyError] = useState(false);
   useEffect(() => setCurrentEvidence(evidence), [evidence]);
   useEffect(() => setActiveKind(kind), [kind]);
   const evidenceForKind = (nextKind: "model" | "gateway") =>
@@ -45,18 +46,27 @@ export function VerificationDialog({
         ? currentEvidence.gateway
         : currentEvidence.model;
   const displayedEvidence = evidenceForKind(activeKind);
+  const viewerEvidence = useMemo(() => {
+    if (!displayedEvidence) return undefined;
+    return activeKind === "gateway"
+      ? { ...displayedEvidence, model: undefined }
+      : currentEvidence;
+  }, [activeKind, displayedEvidence, currentEvidence]);
   const changeKind = (nextKind: "model" | "gateway") => {
     if (nextKind === activeKind) return;
     setActiveKind(nextKind);
     setVerificationError(false);
     setCopiedQuote(false);
+    setCopyError(false);
   };
   const copyQuote = async (value: string) => {
     setCopiedQuote(false);
     const copied = await copyVerificationValue(value);
     setCopiedQuote(copied);
+    setCopyError(!copied);
   };
   const refresh = async () => {
+    if (!onVerifyAgain) return;
     setIsVerifying(true);
     setVerificationError(false);
     try {
@@ -113,7 +123,7 @@ export function VerificationDialog({
               {copy.verificationViewerNotice}
             </p>
             <NearAIVerificationFrame
-              evidence={currentEvidence}
+              evidence={viewerEvidence}
               modelId={modelId}
               onClose={onClose}
             />
@@ -135,6 +145,7 @@ export function VerificationDialog({
                 hasGatewayEvidence
               />
             </details>
+            {copyError ? <p role="alert">{copy.copyFailed}</p> : null}
             {isVerifying ? (
               <p role="status">{copy.privateInferenceVerifying}</p>
             ) : null}
@@ -143,14 +154,16 @@ export function VerificationDialog({
             ) : null}
           </div>
           <div className={settingsStyles.conversationDialog_actions}>
-            <Button
-              variant="outline"
-              type="button"
-              disabled={isVerifying}
-              onClick={() => void refresh()}
-            >
-              {copy.verifyAgain}
-            </Button>
+            {onVerifyAgain ? (
+              <Button
+                variant="outline"
+                type="button"
+                disabled={isVerifying}
+                onClick={() => void refresh()}
+              >
+                {copy.verifyAgain}
+              </Button>
+            ) : null}
             <Button variant="outline" type="button" onClick={onClose}>
               {copy.closeVerification}
             </Button>
@@ -190,6 +203,32 @@ export function VerificationDialogContent({
   const relatedModel = evidence?.model ?? (model ? evidence : undefined);
   const relatedGateway = evidence?.gateway ?? (!model ? evidence : undefined);
   const rawValue = (value: unknown) => JSON.stringify(value ?? {}, null, 2);
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (
+      !onKindChange ||
+      !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+    )
+      return;
+    const available = (["model", "gateway"] as const).filter((tab) =>
+      tab === "model" ? hasModelEvidence : hasGatewayEvidence,
+    );
+    if (!available.length) return;
+    event.preventDefault();
+    const offset = event.key === "ArrowLeft" ? -1 : 1;
+    const next =
+      event.key === "Home"
+        ? available[0]
+        : event.key === "End"
+          ? available[available.length - 1]
+          : available[
+              (available.indexOf(kind) + offset + available.length) %
+                available.length
+            ];
+    onKindChange(next);
+    event.currentTarget
+      .querySelector<HTMLButtonElement>(`[data-verification-tab="${next}"]`)
+      ?.focus();
+  };
   return (
     <div data-verification-dialog={kind}>
       <div className={verificationStyles.verificationDialog_topline}>
@@ -197,11 +236,14 @@ export function VerificationDialogContent({
           className={verificationStyles.verificationDialog_tabs}
           role="tablist"
           aria-label={copy.attestationEvidence}
+          onKeyDown={handleTabKeyDown}
         >
           <Button
             variant="outline"
             role="tab"
             aria-selected={model}
+            tabIndex={model ? 0 : -1}
+            data-verification-tab="model"
             className={model ? "is-active" : ""}
             disabled={!hasModelEvidence}
             onClick={() => onKindChange?.("model")}
@@ -213,6 +255,8 @@ export function VerificationDialogContent({
             variant="outline"
             role="tab"
             aria-selected={!model}
+            tabIndex={!model ? 0 : -1}
+            data-verification-tab="gateway"
             className={!model ? "is-active" : ""}
             disabled={!hasGatewayEvidence}
             onClick={() => onKindChange?.("gateway")}
@@ -307,7 +351,7 @@ export function VerificationDialogContent({
                   : copy.tlsPeerBindingUnavailable}
               </p>
             ) : null}
-            <label className={verificationStyles.verificationDialog_quoteLabel}>
+            <div className={verificationStyles.verificationDialog_quoteLabel}>
               <span>{copy.quote}</span>
               <Button
                 variant="outline"
@@ -317,7 +361,7 @@ export function VerificationDialogContent({
                 {copiedQuote ? copy.copied : copy.copy}
               </Button>
               <pre>{rawValue(evidence.raw)}</pre>
-            </label>
+            </div>
           </details>
         </div>
       ) : (

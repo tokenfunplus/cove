@@ -198,7 +198,7 @@ export function ConversationPanel({
   const hasMessages = view.messages.length > 0 || Boolean(liveTurn);
   const liveUserAlreadyPersisted = Boolean(
     liveTurn?.userMessageId &&
-    view.messages.some((message) => message.id === liveTurn.userMessageId),
+      view.messages.some((message) => message.id === liveTurn.userMessageId),
   );
   const rawLiveTargets = liveTurn?.targets?.length
     ? liveTurn.targets
@@ -414,6 +414,12 @@ export function ConversationPanel({
                     createdAt={message.created_at}
                     copy={copy}
                     verification={historyVerification}
+                    onVerifyAgain={
+                      generationTarget && onVerifyAgain
+                        ? (kind) =>
+                            onVerifyAgain(generationTarget.target.id, kind)
+                        : undefined
+                    }
                     mode={inferenceModeForSnapshot(
                       generationTarget?.target.generation.snapshot ?? snapshot,
                     )}
@@ -456,7 +462,7 @@ export function ConversationPanel({
                     modelId={snapshot?.model_id}
                     copy={copy}
                     onVerifyAgain={
-                      generationTarget
+                      generationTarget && onVerifyAgain
                         ? (kind) =>
                             onVerifyAgain?.(generationTarget.target.id, kind) ??
                             Promise.resolve(undefined)
@@ -530,6 +536,11 @@ export function ConversationPanel({
                   providerName={target.snapshot?.provider_name}
                   copy={copy}
                   verification={liveVerification}
+                  onVerifyAgain={
+                    target.targetId && onVerifyAgain
+                      ? (kind) => onVerifyAgain(target.targetId!, kind)
+                      : undefined
+                  }
                   mode={inferenceModeForSnapshot(target.snapshot)}
                 />
                 {showInlineGenerationStatus ? (
@@ -615,7 +626,7 @@ export function ConversationPanel({
                   modelId={target.snapshot?.model_id ?? target.modelId}
                   copy={copy}
                   onVerifyAgain={
-                    target.targetId
+                    target.targetId && onVerifyAgain
                       ? (kind) =>
                           onVerifyAgain?.(target.targetId!, kind) ??
                           Promise.resolve(undefined)

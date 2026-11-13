@@ -2,6 +2,7 @@ import { messagesStyles } from "@/styles/messages";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { VerificationLanes } from "@/components/verification/VerificationLanes";
+import { type VerificationRefresh } from "@/components/verification/VerificationDetailsButton";
 import { formatTime } from "@/lib/format-date";
 import { type SecureInferenceMode } from "@/lib/inference/secure-inference";
 import { type ApplicationCopy } from "@/messages";
@@ -17,6 +18,7 @@ export function MessageMeta({
   verification,
   copy,
   mode,
+  onVerifyAgain,
 }: {
   role: string;
   providerName?: string;
@@ -25,6 +27,7 @@ export function MessageMeta({
   verification?: GenerationVerification;
   copy: ApplicationCopy;
   mode?: SecureInferenceMode;
+  onVerifyAgain?: VerificationRefresh;
 }) {
   const isAssistant = role === "assistant";
   return (
@@ -50,6 +53,9 @@ export function MessageMeta({
           copy={copy}
           mode={mode}
           verification={verification}
+          providerName={providerName}
+          modelId={modelId}
+          onVerifyAgain={onVerifyAgain}
         />
       ) : null}
       {createdAt ? (

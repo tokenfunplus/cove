@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 
 // Tailwind recipes for verification presentation. Semantic colors come from theme/tokens.css.
 export const verificationStyles = {
+  message_verificationLink: "h-auto min-h-6 gap-1 rounded-sm px-0 py-0 text-[11px] font-medium text-inherit underline decoration-dotted underline-offset-4 shadow-none hover:bg-transparent hover:text-current hover:decoration-solid cursor-pointer",
   viewer_summary: "cursor-pointer text-sm font-medium",
   viewer_details: "mt-4 rounded-lg border border-border p-3",
   viewer_notice: "mb-4 text-xs text-muted-foreground",

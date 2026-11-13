@@ -6,6 +6,7 @@
 
 - Embed the NearAI Cloud verification center with local saved-details fallback, bounded report projection, theme support, and connection recovery.
 - Add code-block language labels and clipboard success/failure feedback.
+- Open verification details directly from message status labels, show gateway evidence from gateway shortcuts, and support keyboard navigation in local evidence tabs.
 
 - Contributor guidance, an MIT license, security reporting instructions, and issue and pull request templates.
 - Architecture, privacy, development, and release documentation.

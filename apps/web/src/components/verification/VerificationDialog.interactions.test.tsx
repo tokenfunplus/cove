@@ -19,7 +19,10 @@ vi.mock("./NearAIVerificationFrame", () => ({
     <output data-testid="viewer-evidence">{JSON.stringify(evidence)}</output>
   ),
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 test("local tabs retain both viewer reports and refreshed evidence", async () => {
   const refresh = vi
@@ -42,7 +45,7 @@ test("local tabs retain both viewer reports and refreshed evidence", async () =>
   fireEvent.click(screen.getByText("Saved details on this Mac"));
   fireEvent.click(screen.getByRole("tab", { name: "Gateway Verification" }));
   expect(screen.getByTestId("viewer-evidence").textContent).toContain(
-    "old-model",
+    "old-gateway",
   );
   fireEvent.click(screen.getByRole("button", { name: "Verify Again" }));
   await waitFor(() =>
@@ -52,6 +55,9 @@ test("local tabs retain both viewer reports and refreshed evidence", async () =>
   );
   expect(refresh).toHaveBeenLastCalledWith("gateway");
   fireEvent.click(screen.getByRole("tab", { name: "Model Verification" }));
+  expect(screen.getByTestId("viewer-evidence").textContent).toContain(
+    "old-model",
+  );
   fireEvent.click(screen.getByRole("button", { name: "Verify Again" }));
   await waitFor(() =>
     expect(screen.getByTestId("viewer-evidence").textContent).toContain(
@@ -62,8 +68,47 @@ test("local tabs retain both viewer reports and refreshed evidence", async () =>
     "new-gateway",
   );
   fireEvent.click(screen.getByRole("tab", { name: "Gateway Verification" }));
-  expect(screen.getByTestId("viewer-evidence").textContent).toContain(
+  expect(screen.getByTestId("viewer-evidence").textContent).not.toContain(
     "new-model",
   );
   expect(screen.getByText("new-gateway")).toBeTruthy();
+});
+
+test("local evidence tabs support arrow navigation and omit unavailable re-verification", () => {
+  render(
+    <VerificationDialog
+      kind="model"
+      evidence={{ kind: "model", gateway: { kind: "gateway" } }}
+      onClose={vi.fn()}
+    />,
+  );
+  expect(screen.queryByRole("button", { name: "Verify Again" })).toBeNull();
+  fireEvent.click(screen.getByText("Saved details on this Mac"));
+  const model = screen.getByRole("tab", { name: "Model Verification" });
+  const gateway = screen.getByRole("tab", { name: "Gateway Verification" });
+  model.focus();
+  fireEvent.keyDown(model, { key: "ArrowRight" });
+  expect(document.activeElement).toBe(gateway);
+  expect(gateway.getAttribute("aria-selected")).toBe("true");
+  expect(model.tabIndex).toBe(-1);
+  fireEvent.keyDown(gateway, { key: "Home" });
+  expect(document.activeElement).toBe(model);
+  expect(model.getAttribute("aria-selected")).toBe("true");
+});
+
+test("copying a saved quote reports clipboard denial", async () => {
+  vi.stubGlobal("navigator", {
+    clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+  });
+  render(
+    <VerificationDialog
+      kind="model"
+      evidence={{ kind: "model", raw: { intel_quote: "fixture" } }}
+      onClose={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByText("Saved details on this Mac"));
+  fireEvent.click(screen.getByText("Intel TDX Attestation"));
+  fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Could not copy");
 });

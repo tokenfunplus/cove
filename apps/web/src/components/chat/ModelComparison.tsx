@@ -143,9 +143,10 @@ export function ModelComparisonResultGrid({
                   selected={selected}
                   snapshot={liveTarget?.snapshot ?? target.generation.snapshot}
                   verification={target.generation.verification}
-                  onVerifyAgain={(kind) =>
-                    onVerifyAgain?.(target.id, kind) ??
-                    Promise.resolve(undefined)
+                  onVerifyAgain={
+                    onVerifyAgain
+                      ? (kind) => onVerifyAgain(target.id, kind)
+                      : undefined
                   }
                   targetId={target.id}
                 />
@@ -188,10 +189,10 @@ export function LiveModelComparisonGrid({
 }) {
   const terminal = Boolean(
     batch &&
-    (batch.state === "completed" ||
-      batch.state === "completed_with_errors" ||
-      batch.state === "stopped" ||
-      batch.state === "failed"),
+      (batch.state === "completed" ||
+        batch.state === "completed_with_errors" ||
+        batch.state === "stopped" ||
+        batch.state === "failed"),
   );
   const verifiedCount = targets.filter((target) => {
     const verification = batch?.targets.find(
@@ -292,9 +293,11 @@ export function LiveModelComparisonGrid({
                     (candidate) => candidate.id === target.targetId,
                   )?.generation.verification
                 }
-                onVerifyAgain={(kind) =>
-                  onVerifyAgain?.(target.targetId ?? target.key, kind) ??
-                  Promise.resolve(undefined)
+                onVerifyAgain={
+                  onVerifyAgain
+                    ? (kind) =>
+                        onVerifyAgain(target.targetId ?? target.key, kind)
+                    : undefined
                 }
                 targetId={target.targetId ?? target.key}
               />

@@ -1234,5 +1234,7 @@ try {
     await exit;
   }
   await new Promise((resolve) => provider.close(resolve));
-  await rm(temp, { recursive: true, force: true });
+  // Chrome subprocesses can finish profile writes just after the main process
+  // exits on Linux. Retry transient ENOTEMPTY/EBUSY cleanup failures.
+  await rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
