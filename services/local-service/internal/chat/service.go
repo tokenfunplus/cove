@@ -115,18 +115,20 @@ type GenerationEvent struct {
 }
 
 type Service struct {
-	store        persistence.ChatStore
-	profiles     ProviderSource
-	provider     provider.Provider
-	hub          *eventHub
-	batchHub     *batchEventHub
-	nextID       atomic.Uint64
-	startMu      sync.Mutex
-	activeMu     sync.Mutex
-	active       map[string]*activeGeneration
-	secureActive map[string]struct{}
-	timeout      time.Duration
-	settings     persistence.SettingsStore
+	store         persistence.ChatStore
+	profiles      ProviderSource
+	provider      provider.Provider
+	hub           *eventHub
+	batchHub      *batchEventHub
+	nextID        atomic.Uint64
+	startMu       sync.Mutex
+	activeMu      sync.Mutex
+	active        map[string]*activeGeneration
+	secureActive  map[string]*time.Timer
+	secureMu      sync.Mutex
+	secureTimeout time.Duration
+	timeout       time.Duration
+	settings      persistence.SettingsStore
 }
 
 type activeGeneration struct {
@@ -141,7 +143,12 @@ func NewService(store persistence.ChatStore, profiles ProviderSource, upstream p
 }
 
 func NewServiceWithTimeout(store persistence.ChatStore, profiles ProviderSource, upstream provider.Provider, timeout time.Duration) *Service {
-	return &Service{store: store, profiles: profiles, provider: upstream, hub: newEventHub(), batchHub: newBatchEventHub(), active: make(map[string]*activeGeneration), secureActive: make(map[string]struct{}), timeout: timeout}
+	return &Service{
+		store: store, profiles: profiles, provider: upstream,
+		hub: newEventHub(), batchHub: newBatchEventHub(),
+		active: make(map[string]*activeGeneration), secureActive: make(map[string]*time.Timer),
+		timeout: timeout, secureTimeout: timeout + 30*time.Second,
+	}
 }
 
 func NewServiceWithSettings(store persistence.ChatStore, profiles ProviderSource, upstream provider.Provider, settings persistence.SettingsStore) *Service {
@@ -156,6 +163,8 @@ func (service *Service) StartGeneration(ctx context.Context, input SendInput) (G
 	}
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
+	service.secureMu.Lock()
+	defer service.secureMu.Unlock()
 	if existing, err := service.store.GetGenerationByClientRequestID(ctx, input.ClientRequestID); err == nil {
 		return GenerationStart{Generation: existing}, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
@@ -308,8 +317,11 @@ func (service *Service) ClearChatData(ctx context.Context) error {
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
 	service.activeMu.Lock()
-	activeGenerationIDs := make([]string, 0, len(service.active))
+	activeGenerationIDs := make([]string, 0, len(service.active)+len(service.secureActive))
 	for id := range service.active {
+		activeGenerationIDs = append(activeGenerationIDs, id)
+	}
+	for id := range service.secureActive {
 		activeGenerationIDs = append(activeGenerationIDs, id)
 	}
 	service.activeMu.Unlock()
@@ -333,6 +345,8 @@ func (service *Service) CancelGeneration(ctx context.Context, generationID strin
 			return persistence.Generation{}, ctx.Err()
 		}
 	} else {
+		service.secureMu.Lock()
+		defer service.secureMu.Unlock()
 		generation, err := service.store.GetGeneration(ctx, generationID)
 		if err != nil {
 			return persistence.Generation{}, err
@@ -341,31 +355,31 @@ func (service *Service) CancelGeneration(ctx context.Context, generationID strin
 			if err := service.store.TerminateGeneration(ctx, persistence.TerminateGenerationInput{GenerationID: generationID, State: persistence.GenerationStopped, ErrorCode: "stopped", ErrorMessage: "Generation stopped."}); err != nil {
 				return persistence.Generation{}, err
 			}
-			service.activeMu.Lock()
-			delete(service.secureActive, generationID)
-			service.activeMu.Unlock()
 			if generation.GenerationBatchID != "" {
 				service.publishBatchTerminal(generation.GenerationBatchID, GenerationEvent{BatchID: generation.GenerationBatchID, TargetID: generation.GenerationTargetID, GenerationID: generation.ID, Type: EventStopped, ErrorCode: "stopped", ErrorMessage: "Generation stopped."})
 			}
 		}
+		service.finishSecureGeneration(generationID)
 	}
 	return service.store.GetGeneration(ctx, generationID)
 }
 
 func (service *Service) MarkSecureGenerationVerifyingEnvironment(ctx context.Context, generationID string) (persistence.Generation, error) {
+	service.secureMu.Lock()
+	defer service.secureMu.Unlock()
 	if err := service.store.MarkGenerationVerifyingEnvironment(ctx, generationID); err != nil {
 		return persistence.Generation{}, err
 	}
 	generation, err := service.store.GetGeneration(ctx, generationID)
 	if err == nil && !isTerminal(generation.State) {
-		service.activeMu.Lock()
-		service.secureActive[generationID] = struct{}{}
-		service.activeMu.Unlock()
+		service.trackSecureGeneration(generationID)
 	}
 	return generation, err
 }
 
 func (service *Service) MarkSecureGenerationStreaming(ctx context.Context, generationID string) (persistence.Generation, error) {
+	service.secureMu.Lock()
+	defer service.secureMu.Unlock()
 	if err := service.store.MarkGenerationStreaming(ctx, generationID); err != nil {
 		return persistence.Generation{}, err
 	}
@@ -373,6 +387,8 @@ func (service *Service) MarkSecureGenerationStreaming(ctx context.Context, gener
 }
 
 func (service *Service) MarkSecureGenerationVerifyingResponse(ctx context.Context, generationID string) (persistence.Generation, error) {
+	service.secureMu.Lock()
+	defer service.secureMu.Unlock()
 	if err := service.store.MarkGenerationVerifyingResponse(ctx, generationID); err != nil {
 		return persistence.Generation{}, err
 	}
@@ -380,14 +396,23 @@ func (service *Service) MarkSecureGenerationVerifyingResponse(ctx context.Contex
 }
 
 func (service *Service) SettleSecureGeneration(ctx context.Context, input persistence.SecureGenerationSettlementInput) (persistence.Generation, error) {
+	service.secureMu.Lock()
+	defer service.secureMu.Unlock()
+	return service.settleSecureGeneration(ctx, input)
+}
+
+// Caller holds secureMu so settlement, cancellation, and expiry emit one terminal result.
+func (service *Service) settleSecureGeneration(ctx context.Context, input persistence.SecureGenerationSettlementInput) (persistence.Generation, error) {
+	previous, err := service.store.GetGeneration(ctx, input.GenerationID)
+	if err != nil {
+		return persistence.Generation{}, err
+	}
 	if err := service.store.SettleSecureGeneration(ctx, input); err != nil {
 		return persistence.Generation{}, err
 	}
-	service.activeMu.Lock()
-	delete(service.secureActive, input.GenerationID)
-	service.activeMu.Unlock()
+	service.finishSecureGeneration(input.GenerationID)
 	generation, err := service.store.GetGeneration(ctx, input.GenerationID)
-	if err == nil && generation.GenerationBatchID != "" {
+	if err == nil && !isTerminal(previous.State) && generation.GenerationBatchID != "" {
 		eventType := EventCompleted
 		if generation.State == persistence.GenerationFailed || generation.Verification.Status == persistence.VerificationUnsupported || generation.Verification.Status == persistence.VerificationFailed {
 			eventType = EventFailed
@@ -610,7 +635,15 @@ func (hub *eventHub) publish(event GenerationEvent) {
 	}
 	terminal := event.Type == EventCompleted || event.Type == EventStopped || event.Type == EventFailed
 	for subscriber := range stream.subscribers {
-		subscriber <- event
+		select {
+		case subscriber <- event:
+		default:
+			// Slow subscribers reconnect and reconcile against persisted state.
+			// Never hold the hub lock while waiting for a browser to read.
+			close(subscriber)
+			delete(stream.subscribers, subscriber)
+			continue
+		}
 		if terminal {
 			close(subscriber)
 			delete(stream.subscribers, subscriber)

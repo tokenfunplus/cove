@@ -1,3 +1,4 @@
+import { NearAIVerificationFrame } from "@/components/verification/NearAIVerificationFrame";
 import { settingsStyles } from "@/styles/settings";
 import { verificationStyles } from "@/styles/verification";
 import { cn } from "@/lib/utils";
@@ -41,22 +42,14 @@ export function VerificationDialog({
     currentEvidence.kind === nextKind
       ? currentEvidence
       : nextKind === "gateway"
-        ? evidence.kind === "gateway"
-          ? evidence
-          : (evidence.gateway ?? currentEvidence.gateway)
-        : evidence.kind === "model"
-          ? evidence
-          : (evidence.model ?? currentEvidence.model);
+        ? currentEvidence.gateway
+        : currentEvidence.model;
   const displayedEvidence = evidenceForKind(activeKind);
   const changeKind = (nextKind: "model" | "gateway") => {
     if (nextKind === activeKind) return;
-    const nextEvidence = evidenceForKind(nextKind);
     setActiveKind(nextKind);
     setVerificationError(false);
     setCopiedQuote(false);
-    if (nextEvidence) {
-      setCurrentEvidence(nextEvidence);
-    }
   };
   const copyQuote = async (value: string) => {
     setCopiedQuote(false);
@@ -68,8 +61,18 @@ export function VerificationDialog({
     setVerificationError(false);
     try {
       const refreshed = await onVerifyAgain(activeKind);
-      if (refreshed) setCurrentEvidence(refreshed);
-      else setVerificationError(true);
+      if (refreshed) {
+        setCurrentEvidence((previous) => {
+          if (refreshed.kind !== previous.kind) {
+            return { ...previous, [refreshed.kind]: refreshed };
+          }
+          const relatedKind = refreshed.kind === "model" ? "gateway" : "model";
+          return {
+            ...refreshed,
+            [relatedKind]: refreshed[relatedKind] ?? previous[relatedKind],
+          };
+        });
+      } else setVerificationError(true);
     } catch {
       setVerificationError(true);
     } finally {
@@ -93,19 +96,45 @@ export function VerificationDialog({
           data-verification-dialog={kind}
         >
           <div className="verification-dialog__body">
-            <VerificationDialogContent
-              kind={activeKind}
-              evidence={displayedEvidence}
-              providerName={providerName}
+            <div className={verificationStyles.viewer_heading}>
+              <h2 className={verificationStyles.viewer_title}>
+                {copy.verificationViewerTitle}
+              </h2>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={copy.closeVerification}
+                onClick={onClose}
+              >
+                ×
+              </Button>
+            </div>
+            <p className={verificationStyles.viewer_notice}>
+              {copy.verificationViewerNotice}
+            </p>
+            <NearAIVerificationFrame
+              evidence={currentEvidence}
               modelId={modelId}
-              copy={copy}
               onClose={onClose}
-              onKindChange={changeKind}
-              onCopyQuote={copyQuote}
-              copiedQuote={copiedQuote}
-              hasModelEvidence
-              hasGatewayEvidence
             />
+            <details className={verificationStyles.viewer_details}>
+              <summary className={verificationStyles.viewer_summary}>
+                {copy.verificationLocalDetails}
+              </summary>
+              <VerificationDialogContent
+                kind={activeKind}
+                evidence={displayedEvidence}
+                providerName={providerName}
+                modelId={modelId}
+                copy={copy}
+                onClose={onClose}
+                onKindChange={changeKind}
+                onCopyQuote={copyQuote}
+                copiedQuote={copiedQuote}
+                hasModelEvidence
+                hasGatewayEvidence
+              />
+            </details>
             {isVerifying ? (
               <p role="status">{copy.privateInferenceVerifying}</p>
             ) : null}

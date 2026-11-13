@@ -4,6 +4,9 @@
 
 ### Added
 
+- Embed the NearAI Cloud verification center with local saved-details fallback, bounded report projection, theme support, and connection recovery.
+- Add code-block language labels and clipboard success/failure feedback.
+
 - Contributor guidance, an MIT license, security reporting instructions, and issue and pull request templates.
 - Architecture, privacy, development, and release documentation.
 - Repository checks, dependency maintenance configuration, and isolated local-service test data directories.
@@ -11,6 +14,9 @@
 
 ### Changed
 
+- Disconnect slow event subscribers without blocking generation or cancellation.
+- Expire abandoned browser Generations on the Local Service, including retries, while allowing grace for normal browser settlement.
+- Run production browser acceptance in CI and retain its synthetic screenshots and accessibility evidence.
 - Renamed the supplied Secure Chat / TBD application to Cove, including package names, bundle identifier, and local application namespace.
 - Standardized project text and the interface on English while preserving Unicode conversation support.
 - Made Keychain the default credential store; plaintext test storage is an explicit opt-in.

@@ -31,6 +31,19 @@ jobs:
           cache-dependency-path: services/local-service/go.sum
       - run: pnpm install --frozen-lockfile
       - run: make check test-scripts test-contract test-web test-service test-lifecycle
+      - name: Run production browser acceptance
+        run: |
+          browser_binary="$(command -v google-chrome || command -v chromium)"
+          COVE_BROWSER_BIN="$browser_binary" make test-web-browser
+      - name: Upload browser acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cove-browser-acceptance
+          path: .artifacts/frontend-acceptance/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
       - run: pnpm audit --audit-level moderate
 
   package-macos:

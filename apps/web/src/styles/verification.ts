@@ -2,6 +2,16 @@ import { cn } from "@/lib/utils";
 
 // Tailwind recipes for verification presentation. Semantic colors come from theme/tokens.css.
 export const verificationStyles = {
+  viewer_summary: "cursor-pointer text-sm font-medium",
+  viewer_details: "mt-4 rounded-lg border border-border p-3",
+  viewer_notice: "mb-4 text-xs text-muted-foreground",
+  viewer_title: "text-lg font-semibold",
+  viewer_heading: "mb-3 flex items-center justify-between gap-3",
+  viewer_iframe: "min-h-0 w-full flex-1 border-0",
+  viewer_status: "text-sm text-muted-foreground",
+  viewer_overlay: "absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-card p-6 text-center",
+  viewer_frame: "relative flex h-[min(65dvh,640px)] min-h-64 flex-col overflow-hidden rounded-xl border border-border",
+  viewer_empty: "my-4 text-sm text-muted-foreground",
   message_verificationLanes: cn(String.raw`
     message__verification-lanes flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-muted-foreground
     [&_ul]:list-none [&_ul]:m-0 [&_ul]:p-0

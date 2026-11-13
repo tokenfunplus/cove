@@ -216,6 +216,8 @@ const messages = {
   signingKind: "Signing kind",
   copy: "Copy",
   copied: "Copied",
+  code: "Code",
+  copyCode: "Copy code",
   copyFailed: "Could not copy",
   signatureUnavailable:
     "No verified receipt signature is saved for this response.",
@@ -322,6 +324,13 @@ const messages = {
   customEndpoint: "Custom endpoint",
   keyInKeychainConfigured: "Provider Key · Configured",
   unconfigured: "Unconfigured",
+  verificationViewerTitle: "NEAR AI Verification Center",
+  verificationViewerLoading: "Loading the verification center…",
+  verificationViewerFailed: "The verification center is unavailable. Retry or view the saved details below.",
+  verificationViewerReload: "Reload verification center",
+  verificationViewerLegacy: "This older record cannot be displayed in the verification center. Saved details are available below.",
+  verificationLocalDetails: "Saved details on this Mac",
+  verificationViewerNotice: "NearAI displays the verification metadata supplied by Cove. Your chat content and Provider Key stay out of this viewer.",
 } as const;
 
 export type ApplicationCopy = { [Key in keyof typeof messages]: string };
