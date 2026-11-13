@@ -20,6 +20,8 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 	}
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
+	service.secureMu.Lock()
+	defer service.secureMu.Unlock()
 	if existing, err := service.store.GetGenerationBatchByClientRequestID(ctx, input.ClientRequestID); err == nil {
 		return GenerationBatchStart{Batch: existing}, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
@@ -84,13 +86,11 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 			return GenerationBatchStart{}, err
 		}
 	}
-	service.activeMu.Lock()
 	for _, target := range batch.Targets {
 		if resolved[target.Position].isSecure() {
-			service.secureActive[target.Generation.ID] = struct{}{}
+			service.trackSecureGeneration(target.Generation.ID)
 		}
 	}
-	service.activeMu.Unlock()
 	if !hasLegacyTarget {
 		return GenerationBatchStart{Batch: batch}, nil
 	}
@@ -173,6 +173,8 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 	}
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
+	service.secureMu.Lock()
+	defer service.secureMu.Unlock()
 	target, err := service.store.GetGenerationTarget(ctx, targetID)
 	if err != nil {
 		return GenerationStart{}, err
@@ -238,15 +240,7 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 	// A retry stream contains one new attempt; earlier terminal targets do not
 	// emit duplicate terminal events. The hub therefore waits for this target.
 	service.batchHub.activate(batch.ID, 1)
-	if profile.Kind == provider.KindNearAIPreset && isNearAIVerifiedTransport(metadata.PrivacyMode) {
-		service.activeMu.Lock()
-		service.secureActive[generation.ID] = struct{}{}
-		service.activeMu.Unlock()
-	}
 	if resolveErr != nil || selectionErr != nil {
-		service.activeMu.Lock()
-		delete(service.secureActive, generation.ID)
-		service.activeMu.Unlock()
 		if err := service.store.TerminateGeneration(context.Background(), persistence.TerminateGenerationInput{
 			GenerationID: generation.ID, State: persistence.GenerationFailed, ErrorCode: "target_unavailable", ErrorMessage: "The original Provider target is no longer available for retry.",
 		}); err != nil {
@@ -259,6 +253,7 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 		return GenerationStart{Generation: generation}, nil
 	}
 	if profile.Kind == provider.KindNearAIPreset && isNearAIVerifiedTransport(metadata.PrivacyMode) {
+		service.trackSecureGeneration(generation.ID)
 		return GenerationStart{Generation: generation}, nil
 	}
 	messages, err := service.messagesForBatch(ctx, batch, userBody, generation.ConfigurationSnapshot)
@@ -522,7 +517,15 @@ func (hub *batchEventHub) publish(event GenerationEvent, terminal bool) {
 		stream.events = stream.events[len(stream.events)-256:]
 	}
 	for subscriber := range stream.subscribers {
-		subscriber <- event
+		select {
+		case subscriber <- event:
+		default:
+			// Slow subscribers reconnect and reconcile against persisted state.
+			// Never hold the hub lock while waiting for a browser to read.
+			close(subscriber)
+			delete(stream.subscribers, subscriber)
+			continue
+		}
 		if terminal {
 			close(subscriber)
 			delete(stream.subscribers, subscriber)

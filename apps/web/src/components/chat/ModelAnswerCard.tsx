@@ -104,6 +104,9 @@ export function ModelAnswerCard({
               copy={copy}
               mode={mode}
               verification={verification}
+              providerName={providerName}
+              modelId={modelId}
+              onVerifyAgain={onVerifyAgain}
             />
           ) : null}
           {selected ? (

@@ -10,6 +10,7 @@
 | NearAI encrypted protocol traffic | Fixed NearAI staging service, through the Local Service |
 | Intel TDX verification collateral | `https://pccs.phala.network` |
 | NVIDIA attestation evidence | `https://nras.attestation.nvidia.com`, through a fixed local proxy |
+| Selected verification metadata when opening verification details | `https://cloud-stg.near.ai/verify`, in an embedded viewer |
 | Manual update check | Cove's GitHub release manifest |
 | Markdown or JSON exports | Files downloaded to your device |
 
@@ -30,6 +31,8 @@ Supported NearAI models can use browser-side end-to-end encryption and hardware 
 Browser Fetch does not expose the remote TLS peer certificate. The browser path does not pin that certificate against an attested fingerprint. HTTPS alone does not prove confidential model execution.
 
 Saved evidence is historical. Opening its details does not automatically rerun cryptographic verification. The Local Service accepts completion records from the authenticated browser and does not independently repeat all SDK cryptography. A modified browser or compromised local account can falsify local records; persisted labels are not third-party-verifiable audit certificates.
+
+The embedded NearAI viewer displays Cove's supplied report rather than independently verifying it. It receives model/completion identifiers, signer metadata, measurement hashes, and supported hash-only response receipts. Provider Keys, chat content, raw evidence, and deployment configuration are excluded. Saved local details remain available if the remote viewer is unavailable. See [ADR-0023](adr/0023-embed-nearai-verification-reports.md).
 
 ## Provider integration and dependencies
 

@@ -52,6 +52,8 @@ A submitted message creates one durable Generation Batch with one to four Target
 
 Every attempt captures its Provider Snapshot and generation configuration. Completed assistant text becomes Conversation History; failed and stopped attempts retain diagnostics without persisting incomplete assistant content. Restart recovery marks interrupted attempts as failed.
 
+Chat expires abandoned browser Generations after the inference timeout plus settlement grace. Slow SSE subscribers are disconnected without blocking Provider workers and can reconnect to reconcile persisted results. See [bounded lifetimes and event delivery](adr/0022-bound-browser-generation-lifetimes.md).
+
 Single-model turns select their completed answers automatically. Comparisons require the user to select one answer or skip the turn for later context. Later batches capture immutable Context Snapshots. Unselected answers remain local. Retries preserve original context and model targets.
 
 ## Private inference boundary
@@ -61,6 +63,8 @@ The browser performs NearAI cryptography because it owns plaintext before encryp
 Browser inference reads `GET /api/generation-batches/{id}/context` through the Generation Query hook. Chat returns the existing immutable context, shared by every target/retry in that Batch; the browser excludes visible unselected or skipped history. See [ADR-0021](adr/0021-read-authoritative-context-for-browser-inference.md).
 
 Saved verification records report browser checks; SQLite does not independently revalidate the full proof. See [privacy.md](privacy.md) for trust boundaries.
+
+`lib/verification/viewer.ts` projects saved records into bounded display reports and owns the origin-checked NearAI iframe connection. Verification components retain local details and retry controls. The remote viewer does not own inference or persisted verification state. See [ADR-0023](adr/0023-embed-nearai-verification-reports.md).
 
 ## Invariants
 

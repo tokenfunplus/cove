@@ -11,7 +11,9 @@ import {
 } from "@cove/api-contract";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import { BadgeCheck, ChevronDown } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+
+export type VerificationDetailKind = "model" | "gateway" | "response";
 
 export type VerificationRefresh = (
   kind: "model" | "gateway",
@@ -30,12 +32,14 @@ export function VerificationDetailsButton({
   modelId,
   copy,
   onVerifyAgain,
+  children,
 }: {
   verification?: GenerationVerification;
   providerName?: string;
   modelId?: string;
   copy: ApplicationCopy;
   onVerifyAgain?: VerificationRefresh;
+  children?: (openDetails: (kind: VerificationDetailKind) => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [openKind, setOpenKind] = useState<"model" | "gateway">();
@@ -49,106 +53,112 @@ export function VerificationDetailsButton({
       : copy.modelVerification;
   return (
     <>
-      <Menu as="div" className={primitivesStyles.message_verificationMenu}>
-        <MenuButton
-          as={Button}
-          variant="ghost"
-          aria-label={primaryLabel}
-          className={verificationStyles.message_verificationTrigger}
-          title={primaryLabel}
-          type="button"
-        >
-          <BadgeCheck aria-hidden="true" size={15} strokeWidth={1.8} />
-          <span>{primaryLabel}</span>
-          <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} />
-        </MenuButton>
-        <MenuItems
-          anchor="bottom start"
-          portal
-          className={primitivesStyles.message_verificationMenuItems}
-          transition
-        >
-          <MenuItem>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setOpenKind(primaryKind);
-                setOpen(true);
-              }}
-              type="button"
-            >
-              {primaryKind === "gateway"
-                ? copy.gatewayVerification
-                : copy.modelVerification}
-            </Button>
-          </MenuItem>
-          {evidence.kind === "model" && evidence.gateway ? (
+      {children ? (
+        children((kind) => {
+          if (kind === "response") setSignatureOpen(true);
+          else {
+            setOpenKind(kind);
+            setOpen(true);
+          }
+        })
+      ) : (
+        <Menu as="div" className={primitivesStyles.message_verificationMenu}>
+          <MenuButton
+            as={Button}
+            variant="ghost"
+            aria-label={primaryLabel}
+            className={verificationStyles.message_verificationTrigger}
+            title={primaryLabel}
+            type="button"
+          >
+            <BadgeCheck aria-hidden="true" size={15} strokeWidth={1.8} />
+            <span>{primaryLabel}</span>
+            <ChevronDown aria-hidden="true" size={14} strokeWidth={1.8} />
+          </MenuButton>
+          <MenuItems
+            anchor="bottom start"
+            portal
+            className={primitivesStyles.message_verificationMenuItems}
+            transition
+          >
             <MenuItem>
               <Button
                 variant="ghost"
                 onClick={() => {
-                  setOpenKind("gateway");
+                  setOpenKind(primaryKind);
                   setOpen(true);
                 }}
                 type="button"
               >
-                {copy.gatewayVerification}
+                {primaryKind === "gateway"
+                  ? copy.gatewayVerification
+                  : copy.modelVerification}
               </Button>
             </MenuItem>
-          ) : null}
-          {evidence.kind === "gateway" && evidence.model ? (
-            <MenuItem>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setOpenKind("model");
-                  setOpen(true);
-                }}
-                type="button"
-              >
-                {copy.modelVerification}
-              </Button>
-            </MenuItem>
-          ) : null}
-          {onVerifyAgain ? (
-            <MenuItem>
-              <Button
-                variant="ghost"
-                onClick={() => void onVerifyAgain(primaryKind)}
-                type="button"
-              >
-                {copy.verifyAgain}
-              </Button>
-            </MenuItem>
-          ) : null}
-          {signatureVerificationAvailable(verification) ? (
-            <MenuItem>
-              <Button
-                variant="ghost"
-                onClick={() => setSignatureOpen(true)}
-                type="button"
-              >
-                {copy.signatureVerification}
-              </Button>
-            </MenuItem>
-          ) : null}
-        </MenuItems>
-      </Menu>
+            {evidence.kind === "model" && evidence.gateway ? (
+              <MenuItem>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setOpenKind("gateway");
+                    setOpen(true);
+                  }}
+                  type="button"
+                >
+                  {copy.gatewayVerification}
+                </Button>
+              </MenuItem>
+            ) : null}
+            {evidence.kind === "gateway" && evidence.model ? (
+              <MenuItem>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setOpenKind("model");
+                    setOpen(true);
+                  }}
+                  type="button"
+                >
+                  {copy.modelVerification}
+                </Button>
+              </MenuItem>
+            ) : null}
+            {onVerifyAgain ? (
+              <MenuItem>
+                <Button
+                  variant="ghost"
+                  onClick={() => void onVerifyAgain(primaryKind)}
+                  type="button"
+                >
+                  {copy.verifyAgain}
+                </Button>
+              </MenuItem>
+            ) : null}
+            {signatureVerificationAvailable(verification) ? (
+              <MenuItem>
+                <Button
+                  variant="ghost"
+                  onClick={() => setSignatureOpen(true)}
+                  type="button"
+                >
+                  {copy.signatureVerification}
+                </Button>
+              </MenuItem>
+            ) : null}
+          </MenuItems>
+        </Menu>
+      )}
       {open ? (
         <VerificationDialog
           kind={openKind ?? evidence.kind}
-          evidence={
-            openKind === "gateway"
-              ? (evidence.gateway ?? evidence)
-              : openKind === "model"
-                ? (evidence.model ?? evidence)
-                : evidence
-          }
+          evidence={evidence}
           providerName={providerName}
           modelId={modelId}
           copy={copy}
-          onVerifyAgain={(kind) =>
-            invokeVerificationRefresh(onVerifyAgain, kind)
+          onVerifyAgain={
+            onVerifyAgain
+              ? (kind) => invokeVerificationRefresh(onVerifyAgain, kind)
+              : undefined
           }
           onClose={() => {
             setOpen(false);

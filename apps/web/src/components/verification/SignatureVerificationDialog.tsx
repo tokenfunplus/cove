@@ -1,3 +1,4 @@
+import { NearAIVerificationFrame } from "@/components/verification/NearAIVerificationFrame";
 import { settingsStyles } from "@/styles/settings";
 import { verificationStyles } from "@/styles/verification";
 import { cn } from "@/lib/utils";
@@ -45,13 +46,39 @@ export function SignatureVerificationDialog({
           )}
           data-signature-verification="saved"
         >
-          <SignatureVerificationContent
+          <div className={verificationStyles.viewer_heading}>
+            <h2 className={verificationStyles.viewer_title}>
+              {copy.signatureVerification}
+            </h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={copy.closeVerification}
+              onClick={onClose}
+            >
+              ×
+            </Button>
+          </div>
+          <p className={verificationStyles.viewer_notice}>
+            {copy.verificationViewerNotice}
+          </p>
+          <NearAIVerificationFrame
+            evidence={verification.evidence}
             verification={verification}
-            copy={copy}
-            onCopy={copyValue}
-            copied={copied}
             onClose={onClose}
           />
+          <details className={verificationStyles.viewer_details}>
+            <summary className={verificationStyles.viewer_summary}>
+              {copy.verificationLocalDetails}
+            </summary>
+            <SignatureVerificationContent
+              verification={verification}
+              copy={copy}
+              onCopy={copyValue}
+              copied={copied}
+              onClose={onClose}
+            />
+          </details>
           {copyError ? <p role="alert">{copy.copyFailed}</p> : null}
         </DialogContent>
       </div>

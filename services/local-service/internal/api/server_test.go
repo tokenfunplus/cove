@@ -780,7 +780,7 @@ func TestAuthorizedBrowserLoadsEmbeddedReactShell(t *testing.T) {
 	if policy := response.Header().Get("Content-Security-Policy"); !strings.Contains(policy, "default-src 'self'") {
 		t.Fatalf("shell CSP = %q, want self-only default source", policy)
 	}
-	for _, verifier := range []string{"https://pccs.phala.network", "https://nras.attestation.nvidia.com"} {
+	for _, verifier := range []string{"https://pccs.phala.network", "https://nras.attestation.nvidia.com", "frame-src https://cloud-stg.near.ai;", "frame-ancestors 'none'"} {
 		if !strings.Contains(response.Header().Get("Content-Security-Policy"), verifier) {
 			t.Fatalf("shell CSP does not allow SDK evidence verifier %q", verifier)
 		}

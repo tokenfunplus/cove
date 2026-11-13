@@ -1,7 +1,17 @@
 import { verificationStyles } from "@/styles/verification";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  VerificationDetailsButton,
+  type VerificationDetailKind,
+  type VerificationRefresh,
+} from "./VerificationDetailsButton";
 import { CircleCheck, Clock3, CircleAlert } from "lucide-react";
 import { type SecureInferenceMode } from "@/lib/inference/secure-inference";
-import { verificationLaneStatus } from "@/lib/inference/verification-record";
+import {
+  signatureVerificationAvailable,
+  verificationLaneStatus,
+} from "@/lib/inference/verification-record";
 import { type ApplicationCopy } from "@/messages";
 import { type GenerationVerification } from "@cove/api-contract";
 
@@ -9,10 +19,16 @@ export function VerificationLanes({
   verification,
   copy,
   mode,
+  providerName,
+  modelId,
+  onVerifyAgain,
 }: {
   verification?: GenerationVerification;
   copy: ApplicationCopy;
   mode?: SecureInferenceMode;
+  providerName?: string;
+  modelId?: string;
+  onVerifyAgain?: VerificationRefresh;
 }) {
   if (
     !mode &&
@@ -62,17 +78,40 @@ export function VerificationLanes({
     ? lanes[0].status
     : undefined;
   const SharedIcon = sharedStatus && icons[sharedStatus];
-  return (
+  const evidence = verification?.evidence;
+  const hasDetails = (kind: VerificationDetailKind) =>
+    kind === "response"
+      ? signatureVerificationAvailable(verification)
+      : Boolean(evidence && (evidence.kind === kind || evidence[kind]));
+  const content = (openDetails?: (kind: VerificationDetailKind) => void) => (
     <div className={verificationStyles.message_verificationLanes} role="status">
-      {sharedStatus && SharedIcon && (
-        <span
-          className={verificationStyles.message_verificationState}
-          data-status={sharedStatus}
-        >
-          <SharedIcon size={13} aria-hidden="true" />
-          {statusLabels[sharedStatus]}
-        </span>
-      )}
+      {sharedStatus &&
+        SharedIcon &&
+        (openDetails && evidence ? (
+          <Button
+            variant="ghost"
+            type="button"
+            className={cn(
+              verificationStyles.message_verificationState,
+              verificationStyles.message_verificationLink,
+            )}
+            data-status={sharedStatus}
+            aria-label={`${copy.verificationEvidenceTitle}: ${statusLabels[sharedStatus]}`}
+            aria-haspopup="dialog"
+            onClick={() => openDetails(evidence.kind)}
+          >
+            <SharedIcon size={13} aria-hidden="true" />
+            {statusLabels[sharedStatus]}
+          </Button>
+        ) : (
+          <span
+            className={verificationStyles.message_verificationState}
+            data-status={sharedStatus}
+          >
+            <SharedIcon size={13} aria-hidden="true" />
+            {statusLabels[sharedStatus]}
+          </span>
+        ))}
       <ul className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         {lanes.map((lane, index) => {
           const Icon = icons[lane.status];
@@ -85,30 +124,67 @@ export function VerificationLanes({
               className="inline-flex items-center gap-1"
               title={description}
             >
-              <span className="sr-only">{description}</span>
               {sharedStatus && index > 0 && (
                 <span aria-hidden="true" className="mr-1">
                   ·
                 </span>
               )}
-              {!sharedStatus && (
-                <Icon
-                  size={13}
-                  aria-hidden="true"
-                  className={verificationStyles.message_verificationState}
-                  data-status={lane.status}
-                />
-              )}
-              <span aria-hidden="true">{lane.label}</span>
-              {!sharedStatus && (
-                <span aria-hidden="true" className="font-medium">
-                  {statusLabels[lane.status]}
-                </span>
+              {openDetails && hasDetails(lane.kind) ? (
+                <Button
+                  variant="ghost"
+                  type="button"
+                  className={verificationStyles.message_verificationLink}
+                  aria-label={description}
+                  aria-haspopup="dialog"
+                  onClick={() => openDetails(lane.kind)}
+                >
+                  {!sharedStatus && (
+                    <Icon
+                      size={13}
+                      aria-hidden="true"
+                      className={verificationStyles.message_verificationState}
+                      data-status={lane.status}
+                    />
+                  )}
+                  {lane.label}
+                  {!sharedStatus && <span>{statusLabels[lane.status]}</span>}
+                </Button>
+              ) : (
+                <>
+                  <span className="sr-only">{description}</span>
+                  {!sharedStatus && (
+                    <Icon
+                      size={13}
+                      aria-hidden="true"
+                      className={verificationStyles.message_verificationState}
+                      data-status={lane.status}
+                    />
+                  )}
+                  <span aria-hidden="true">{lane.label}</span>
+                  {!sharedStatus && (
+                    <span aria-hidden="true" className="font-medium">
+                      {statusLabels[lane.status]}
+                    </span>
+                  )}
+                </>
               )}
             </li>
           );
         })}
       </ul>
     </div>
+  );
+  return evidence ? (
+    <VerificationDetailsButton
+      verification={verification}
+      providerName={providerName}
+      modelId={modelId}
+      copy={copy}
+      onVerifyAgain={onVerifyAgain}
+    >
+      {content}
+    </VerificationDetailsButton>
+  ) : (
+    content()
   );
 }

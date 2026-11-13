@@ -2,6 +2,11 @@ import { cn } from "@/lib/utils";
 
 // Tailwind recipes for messages presentation. Semantic colors come from theme/tokens.css.
 export const messagesStyles = {
+  codeBlock_pre: "!m-0 !rounded-none !border-0",
+  codeBlock_error: "px-3 text-xs text-destructive",
+  codeBlock_language: "truncate font-mono",
+  codeBlock_toolbar: "flex items-center justify-between gap-3 border-b border-border px-3 py-1 text-xs text-muted-foreground",
+  codeBlock: "my-3 overflow-hidden rounded-xl border border-border bg-muted",
   message: cn(String.raw`
     message w-full max-w-[760px] mx-auto mt-0 mb-7 min-w-0 [&.message--user]:flex
     [&.message--user]:items-end [&.message--user]:flex-col [&.message--user]:gap-1.5

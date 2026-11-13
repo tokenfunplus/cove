@@ -55,11 +55,7 @@ export function PrivacyStatusPanel({
   );
   const evidence = detail?.message.verification.evidence;
   const detailEvidence =
-    detail && detail.kind !== "signature" && evidence
-      ? detail.kind === "gateway"
-        ? (evidence.gateway ?? evidence)
-        : (evidence.model ?? evidence)
-      : undefined;
+    detail && detail.kind !== "signature" ? evidence : undefined;
   const detailDialog =
     detail?.kind === "model" && detailEvidence ? (
       <VerificationDialog
@@ -68,13 +64,15 @@ export function PrivacyStatusPanel({
         providerName={detail.message.providerName}
         modelId={detail.message.modelId}
         copy={copy}
-        onVerifyAgain={(kind) =>
-          invokeVerificationRefresh(
-            onVerifyAgain
-              ? (nextKind) => onVerifyAgain(detail.message.targetId, nextKind)
-              : undefined,
-            kind,
-          )
+        onVerifyAgain={
+          onVerifyAgain
+            ? (kind) =>
+                invokeVerificationRefresh(
+                  (nextKind) =>
+                    onVerifyAgain(detail.message.targetId, nextKind),
+                  kind,
+                )
+            : undefined
         }
         onClose={() => setDetail(undefined)}
       />
@@ -85,13 +83,15 @@ export function PrivacyStatusPanel({
         providerName={detail.message.providerName}
         modelId={detail.message.modelId}
         copy={copy}
-        onVerifyAgain={(kind) =>
-          invokeVerificationRefresh(
-            onVerifyAgain
-              ? (nextKind) => onVerifyAgain(detail.message.targetId, nextKind)
-              : undefined,
-            kind,
-          )
+        onVerifyAgain={
+          onVerifyAgain
+            ? (kind) =>
+                invokeVerificationRefresh(
+                  (nextKind) =>
+                    onVerifyAgain(detail.message.targetId, nextKind),
+                  kind,
+                )
+            : undefined
         }
         onClose={() => setDetail(undefined)}
       />

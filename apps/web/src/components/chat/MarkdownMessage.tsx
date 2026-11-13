@@ -1,3 +1,4 @@
+import { CodeBlock } from "@/components/chat/CodeBlock";
 import { messagesStyles } from "@/styles/messages";
 import { cn } from "@/lib/utils";
 import { memo, type ReactNode } from "react";
@@ -30,6 +31,7 @@ function renderMarkdownBlocks(content: string): ReactNode[] {
       continue;
     }
     if (line.trim().startsWith("```")) {
+      const language = line.trim().slice(3).trim().split(/\s+/)[0] ?? "";
       const code: string[] = [];
       index += 1;
       while (index < lines.length && !lines[index]?.trim().startsWith("```")) {
@@ -40,9 +42,11 @@ function renderMarkdownBlocks(content: string): ReactNode[] {
         index += 1;
       }
       blocks.push(
-        <pre key={`code-${blocks.length}`}>
-          <code>{code.join("\n")}</code>
-        </pre>,
+        <CodeBlock
+          key={`code-${blocks.length}`}
+          content={code.join("\n")}
+          language={language}
+        />,
       );
       continue;
     }

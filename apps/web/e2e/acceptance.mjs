@@ -204,25 +204,64 @@ try {
       "--user-data-dir=" + path.join(temp, "chrome"),
       origin + "/launch?token=" + encodeURIComponent(token.launch_token),
     ],
-    { stdio: "ignore" },
+    { stdio: ["ignore", "ignore", "pipe"] },
   );
+  let browserError;
+  let browserDiagnostics = "";
+  chrome.on("error", (error) => {
+    browserError = error;
+  });
+  chrome.stderr.on("data", (chunk) => {
+    browserDiagnostics = (browserDiagnostics + chunk.toString()).slice(-16_384);
+  });
+  const startupFailure = () =>
+    [
+      "Browser debugging endpoint did not start",
+      browserError?.message,
+      `Exit code: ${chrome.exitCode}; signal: ${chrome.signalCode}`,
+      browserDiagnostics,
+    ]
+      .filter(Boolean)
+      .join("\n")
+      .replaceAll(token.launch_token, "[redacted]")
+      .replaceAll(control, "[redacted]")
+      .replace(/([?&]token=)[^\s"<>]+/g, "$1[redacted]");
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-  let debugPort;
-  for (let i = 0; i < 100; i++) {
+  let tab;
+  const browserDeadline = Date.now() + 30_000;
+  while (Date.now() < browserDeadline) {
+    assert(
+      !browserError && chrome.exitCode === null && chrome.signalCode === null,
+      startupFailure(),
+    );
     try {
-      debugPort = (
+      const debugPort = (
         await readFile(path.join(temp, "chrome", "DevToolsActivePort"), "utf8")
-      ).split("\n")[0];
-      break;
-    } catch {
-      await pause(100);
-    }
+      )
+        .split("\n")[0]
+        .trim();
+      // The file, HTTP endpoint, and initial page can become ready separately.
+      if (
+        /^\d+$/.test(debugPort) &&
+        Number(debugPort) > 0 &&
+        Number(debugPort) <= 65535
+      ) {
+        const tabs = await fetch(
+          "http://127.0.0.1:" + debugPort + "/json/list",
+          {
+            signal: AbortSignal.timeout(1000),
+          },
+        ).then((response) => response.json());
+        tab = tabs.find(
+          (candidate) =>
+            candidate.type === "page" && candidate.webSocketDebuggerUrl,
+        );
+        if (tab) break;
+      }
+    } catch {}
+    await pause(100);
   }
-  assert(debugPort, "Browser debugging endpoint did not start");
-  const tabs = await fetch("http://127.0.0.1:" + debugPort + "/json/list").then(
-    (r) => r.json(),
-  );
-  const tab = tabs.find((t) => t.type === "page");
+  assert(tab, startupFailure());
   const socket = new WebSocket(tab.webSocketDebuggerUrl);
   await once(socket, "open");
   let sequence = 0;
@@ -1223,7 +1262,7 @@ try {
   );
 } finally {
   catalogGate?.resolve();
-  if (chrome && chrome.exitCode === null) {
+  if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
     const exit = once(chrome, "exit");
     chrome.kill();
     await exit;
@@ -1234,5 +1273,7 @@ try {
     await exit;
   }
   await new Promise((resolve) => provider.close(resolve));
-  await rm(temp, { recursive: true, force: true });
+  // Chrome subprocesses can finish profile writes just after the main process
+  // exits on Linux. Retry transient ENOTEMPTY/EBUSY cleanup failures.
+  await rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 }
