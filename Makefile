@@ -1,8 +1,12 @@
 .DEFAULT_GOAL := help
-.PHONY: help build build-web build-service build-macos package-macos dmg test-package-macos start-local stop-local check check-go test test-contract test-web test-service test-macos test-lifecycle test-scripts test-web-browser
+.PHONY: help version build build-web build-service build-macos package-macos dmg test-package-macos start-local stop-local check check-go test test-contract test-web test-service test-macos test-lifecycle test-scripts test-web-browser
 
 help:
 	@printf '%s\n' 'Cove development tasks:' '  make start-local / stop-local  Build and open / stop the local app' '  make check                     Check source and repository conventions' '  make test                      Run contract, web, Go race, and Swift tests' '  make build                     Build all components' '  make dmg                       Package Cove.app and an ARM64 DMG' '  make test-lifecycle            Test isolated service lifecycle' '  make test-package-macos        Test a disposable macOS package'
+	@printf '%s\n' '  make version VERSION=x.y.z     Set release versions and increment the build number (BUILD=n overrides it)'
+
+version:
+	node scripts/set-version.mjs "$(VERSION)" "$(BUILD)"
 
 build: build-service build-macos
 
@@ -12,6 +16,7 @@ build-web:
 build-service: build-web
 	mkdir -p .artifacts
 	cd services/local-service && ../../scripts/go build -o ../../.artifacts/cove-local-service ./cmd/cove-local-service
+	scripts/sign-local-service.sh .artifacts/cove-local-service
 
 build-macos:
 	cd apps/macos && swift build

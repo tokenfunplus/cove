@@ -32,12 +32,32 @@ Without notarization, the workflow still uses Keychain and produces ad-hoc signe
 
 ## Versioning and releases
 
-1. Update root and workspace `package.json` versions and `apps/macos/Resources/Info.plist`. `CoveReleaseVersion` is the full version; `CFBundleShortVersionString` is its numeric base. Increment `CFBundleVersion` for an actual shipped build.
+Use `make version VERSION=0.1.0-beta.1 BUILD=1` for the first beta. The command synchronizes the root and workspace package versions, `CoveReleaseVersion`, `CFBundleShortVersionString`, and `CFBundleVersion`. Omitting `BUILD` increments the existing build number. Keep build numbers increasing for subsequent published packages.
+
+Use `alpha.N`, `beta.N`, and `rc.N` suffixes for test releases, then the plain version for stable releases. Git tags add a `v` prefix, for example `v0.1.0-beta.1`. A prerelease is published with GitHub's prerelease flag and does not enter the stable `releases/latest` update feed. Until the first stable release exists, beta testers download updates from the Releases page.
+
+1. Run the version command. `CoveReleaseVersion` is the full version; `CFBundleShortVersionString` is its numeric base.
 2. Move the relevant `CHANGELOG.md` entries into a dated release section.
 3. Run checks, tests, and package acceptance. Review dependency advisories and bundled notices.
 4. Push a matching `v<version>` tag when authorized to publish artifacts.
 5. Review the draft GitHub Release, signing mode, checksum, notes, and `update.json` before publication.
 
 Tags must match `CoveReleaseVersion`. Manual builds do not create a release. Prerelease tags produce prerelease drafts and are excluded from GitHub's latest stable release.
+
+### Publishing a locally signed test package
+
+A local release keeps signing private keys on the developer's Mac. Create a local Notary profile with `xcrun notarytool store-credentials cove-release-notary`, then build with `COVE_RELEASE=1`, `COVE_SIGNING_IDENTITY`, `COVE_NOTARIZE=1`, and `COVE_NOTARY_PROFILE=cove-release-notary`. Enter credentials in the tool's secure prompt. Never place credentials in release notes, shell history, or repository files.
+
+When the local Swift toolchain cannot build the Launcher, manually dispatch the macOS Release workflow for the intended commit. Download its artifact, verify its checksum, mount the DMG read-only, and copy `Cove.app` to a local staging directory. The release workflow uses Keychain mode, whereas ordinary CI package fixtures enable plaintext test storage and must not be published. Finish a downloaded release app locally with:
+
+```sh
+export COVE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export COVE_NOTARY_PROFILE=cove-release-notary
+scripts/notarize-macos-package.sh path/to/Cove.app .artifacts/notarized
+```
+
+This command checks the source app's identity, version, build number, architecture, license notices, and Secret Store mode. It signs the nested service and app, notarizes and staples the app, then creates, signs, notarizes, and staples the final DMG. Both artifacts must pass Gatekeeper assessment before the final checksum and update manifest are written. The command requires Command Line Tools, not a full Xcode installation, and leaves the source bundle unchanged.
+
+After committing and pushing the matching version tag, wait for the release workflow to finish its checks and create a draft release. When CI signing is not configured, its draft artifacts are ad-hoc signed. Replace those draft artifacts with the locally signed, notarized DMG, its matching checksum, and `update.json` before publishing. Verify the uploaded bytes match the local checksum, preserve the prerelease flag, and publish only after the local package passes notarization, stapling, Gatekeeper, and installation acceptance. Do not upload private keys merely to publish a local package.
 
 Releases attach a DMG, checksum, and `update.json` containing `version` and `download_url`. The manual **Check for Updates** action reads the latest stable manifest and opens a download page; it does not install updates. Forks should update `CoveUpdateManifestURL`, their bundle identifier, and repository links.

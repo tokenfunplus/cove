@@ -21,6 +21,12 @@ Choose a workspace skin in **Settings → General → Workspace skin**. Continuu
 
 **Local-first describes storage, not model execution.** Prompts and selected conversation context are sent to your provider. Local history is not encrypted by Cove. HTTPS alone does not establish confidential computation, and verification capabilities vary by model. Read the [privacy and trust model](docs/privacy.md) before relying on a verification label.
 
+## Install the beta
+
+Download [Cove 0.1.0-beta.1](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.1) for Apple Silicon Macs running macOS 13 or later. Open the DMG, drag Cove to Applications, and launch it from there. The beta package is Developer ID signed and Apple notarized; a SHA-256 checksum is included with the download.
+
+See the [beta release notes](docs/releases/0.1.0-beta.1.md) for features, setup, and current limitations.
+
 ## Run from source
 
 You need an Apple Silicon Mac running macOS 13+, Xcode Command Line Tools with Swift 5.10+, Node.js 24.22.1+, pnpm 10.11, Go 1.26+, and `make`.
@@ -46,7 +52,7 @@ The Launcher and packaged app are macOS-only. Web, API contract, and Go checks c
 make dmg
 ```
 
-The build produces `.artifacts/Cove.app`, `Cove-0.1.0-arm64.dmg`, and a SHA-256 checksum. Local builds are ad-hoc signed. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md).
+The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.1-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
 
 ## Develop and contribute
 

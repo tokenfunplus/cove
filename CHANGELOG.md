@@ -2,8 +2,12 @@
 
 ## Unreleased
 
+## 0.1.0-beta.1 - 2026-11-15
+
 ### Added
 
+- Add a synchronized release-version command and the first Apple Silicon beta package.
+- Support local signing and notarization of CI-built Mac packages without installing full Xcode locally.
 - Add SVG and PNG browser favicons using Cove's conversation mark.
 - Embed the NearAI Cloud verification center with local saved-details fallback, bounded report projection, theme support, and connection recovery.
 - Add code-block language labels and clipboard success/failure feedback.
@@ -16,6 +20,7 @@
 
 ### Changed
 
+- Sign local macOS service builds with an available certificate-backed identity and a fixed identifier, preserving ad-hoc fallback for machines without certificates.
 - Fix scrolling in long model lists inside settings, bound dropdown height, and clarify selected options and search results.
 - Disconnect slow event subscribers without blocking generation or cancellation.
 - Expire abandoned browser Generations on the Local Service, including retries, while allowing grace for normal browser settlement.
@@ -28,4 +33,4 @@
 - Prevent stale busy errors while a completed generation finishes worker cleanup.
 - Removed internal planning files, machine-specific documentation, unused translations, and checked-in production web bundles.
 
-The first Cove release is planned as `0.1.0`. Cove uses a separate data directory and Keychain namespace from earlier TBD installations; no automatic data migration is performed.
+The first Cove test release is `0.1.0-beta.1`; `0.1.0` remains the planned first stable release. Cove uses a separate data directory and Keychain namespace from earlier TBD installations; no automatic data migration is performed.

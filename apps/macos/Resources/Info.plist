@@ -23,7 +23,7 @@
   <key>LSUIElement</key>
   <true/>
   <key>CoveReleaseVersion</key>
-  <string>0.1.0</string>
+  <string>0.1.0-beta.1</string>
   <key>CoveUpdateManifestURL</key>
   <string>https://github.com/tokenfunplus/cove/releases/latest/download/update.json</string>
 </dict>

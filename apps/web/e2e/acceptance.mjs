@@ -539,11 +539,17 @@ try {
     const x = before.rect.left + before.rect.width / 2;
     if (name === "mobile") {
       await cdp("Emulation.setTouchEmulationEnabled", { enabled: true });
-      await cdp("Input.synthesizeScrollGesture", {
-        x, y: before.rect.bottom - 40, yDistance: -180,
-        speed: 400, gestureSourceType: "touch",
+      const y = before.rect.bottom - 40;
+      await cdp("Input.dispatchTouchEvent", {
+        type: "touchStart", touchPoints: [{x, y}],
       });
-      await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
+      for (let distance = 30; distance <= 180; distance += 30) {
+        await cdp("Input.dispatchTouchEvent", {
+          type: "touchMove", touchPoints: [{x, y: y - distance}],
+        });
+        await pause(35);
+      }
+      await cdp("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     } else {
       await cdp("Input.dispatchMouseEvent", {
         type: "mouseWheel", x,
@@ -555,8 +561,12 @@ try {
     const after = await evaluate(`({
       scroll: document.querySelector('.front-select__options').scrollTop,
       parentScroll: document.querySelector('.settings-dialog__sections').scrollTop,
-      viewportWidth: innerWidth, viewportHeight: innerHeight
+      viewportWidth: innerWidth, viewportHeight: innerHeight,
+      insideDialog: document.querySelector('[role="dialog"]').contains(document.querySelector('.front-select__options'))
     })`);
+    if (name === "mobile") {
+      await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
+    }
     await snapshot("model-list-" + name);
     assert(after.scroll > 0, "Model list blocked scrolling: " + JSON.stringify({before, after}));
     assert(before.rect.height <= before.maxHeight + 1,

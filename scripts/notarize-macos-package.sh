@@ -1,0 +1,85 @@
+#!/bin/sh
+set -eu
+umask 077
+
+cove_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+fail() {
+  printf 'notarize-macos-package: %s\n' "$1" >&2
+  exit 1
+}
+
+[ "$#" -ge 1 ] && [ "$#" -le 2 ] || fail 'Usage: notarize-macos-package.sh SOURCE_APP [OUTPUT_DIRECTORY]'
+[ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ] || fail 'An Apple Silicon Mac is required'
+cove_identity="${COVE_SIGNING_IDENTITY:-}"
+cove_profile="${COVE_NOTARY_PROFILE:-}"
+[ -n "$cove_identity" ] && [ "$cove_identity" != '-' ] || fail 'COVE_SIGNING_IDENTITY must select a Developer ID Application certificate'
+[ -n "$cove_profile" ] || fail 'COVE_NOTARY_PROFILE is required'
+cove_source="$1"
+cove_info="$cove_source/Contents/Info.plist"
+[ -f "$cove_info" ] || fail 'The source app has no Info.plist'
+
+plist_value() {
+  plutil -extract "$2" raw -o - "$1"
+}
+
+cove_version="$(plist_value "$cove_root/apps/macos/Resources/Info.plist" CoveReleaseVersion)"
+for cove_key in CFBundleIdentifier CoveReleaseVersion CFBundleShortVersionString CFBundleVersion; do
+  cove_expected="$(plist_value "$cove_root/apps/macos/Resources/Info.plist" "$cove_key")"
+  cove_actual="$(plist_value "$cove_info" "$cove_key")"
+  [ "$cove_actual" = "$cove_expected" ] || fail "The source app's $cove_key does not match this checkout"
+done
+if plutil -extract CoveInsecureFileSecretStore raw -o - "$cove_info" >/dev/null 2>&1; then
+  fail 'A test app with file-based Provider secrets cannot be published'
+fi
+for cove_executable in Contents/MacOS/Cove Contents/Resources/cove-local-service; do
+  [ -x "$cove_source/$cove_executable" ] || fail "Missing executable: $cove_executable"
+  case "$(file -b "$cove_source/$cove_executable")" in
+    *arm64*) ;;
+    *) fail "The source executable is not arm64: $cove_executable" ;;
+  esac
+done
+[ -f "$cove_source/Contents/Resources/THIRD_PARTY_LICENSES.txt" ] || fail 'Third-party license notices are missing'
+cove_sensitive="$(find "$cove_source" -type f \( -name '*.sqlite' -o -name '*.sqlite-wal' -o -name '*.sqlite-shm' -o -name '*.p12' -o -name '*.p8' -o -name '*.keychain-db' -o -name '.env' -o -name 'insecure-test-provider-secrets.json' \) -print)"
+[ -z "$cove_sensitive" ] || fail 'The source app contains local state or credential files'
+
+cove_output="${2:-$cove_root/.artifacts/notarized}"
+mkdir -p "$cove_output"
+cove_output="$(CDPATH= cd -- "$cove_output" && pwd)"
+cove_stage="$(mktemp -d "${TMPDIR:-/tmp}/cove-notarize.XXXXXX")"
+trap 'rm -rf "$cove_stage"' EXIT INT TERM
+cove_app="$cove_stage/Cove.app"
+cove_dmg="$cove_output/Cove-$cove_version-arm64.dmg"
+ditto "$cove_source" "$cove_app"
+
+codesign --force --options runtime --timestamp \
+  --identifier io.github.tokenfunplus.cove.local-service \
+  --sign "$cove_identity" "$cove_app/Contents/Resources/cove-local-service"
+codesign --force --options runtime --timestamp --sign "$cove_identity" "$cove_app"
+codesign --verify --deep --strict "$cove_app"
+
+notarize() {
+  cove_submission="$1"
+  cove_result="$2"
+  xcrun notarytool submit "$cove_submission" --keychain-profile "$cove_profile" --wait --output-format json > "$cove_result"
+  cove_status="$(plutil -extract status raw -o - "$cove_result")"
+  [ "$cove_status" = Accepted ] || fail "Notarization was not accepted; inspect $cove_result"
+}
+
+ditto -c -k --keepParent "$cove_app" "$cove_stage/Cove.zip"
+notarize "$cove_stage/Cove.zip" "$cove_output/app-notarization.json"
+xcrun stapler staple "$cove_app"
+xcrun stapler validate "$cove_app"
+spctl --assess --type execute --verbose "$cove_app"
+
+hdiutil create -volname "Cove $cove_version" -srcfolder "$cove_app" -ov -format UDZO "$cove_dmg" >/dev/null
+codesign --force --timestamp --sign "$cove_identity" "$cove_dmg"
+notarize "$cove_dmg" "$cove_output/dmg-notarization.json"
+xcrun stapler staple "$cove_dmg"
+xcrun stapler validate "$cove_dmg"
+codesign --verify --strict "$cove_dmg"
+spctl --assess --type open --context context:primary-signature --verbose "$cove_dmg"
+(cd "$cove_output" && shasum -a 256 "$(basename "$cove_dmg")" > "$(basename "$cove_dmg").sha256")
+node "$cove_root/scripts/write-update-manifest.mjs" "$cove_version" \
+  "https://github.com/tokenfunplus/cove/releases/download/v$cove_version/$(basename "$cove_dmg")" \
+  "$cove_output/update.json"
+printf 'Notarized app and disk image verified: %s\n' "$cove_dmg"

@@ -24,6 +24,21 @@ Web, contract, and Go tests also run on Linux. The Launcher, Keychain adapter, a
 
 `make build-service` builds web assets first. Calling `scripts/go build` directly before a web build embeds an English setup page instead of the application. Generated assets live in `services/local-service/internal/webassets/content/dist/` and stay untracked.
 
+## Local code signing
+
+On macOS, `make build-service` signs and verifies the Local Service after compilation, so `make start-local` uses the same signing path. The signing identifier is always `io.github.tokenfunplus.cove.local-service`. With no explicit selection, the build uses a single valid Developer ID Application identity, or a single Apple Development identity if no Developer ID identity exists. Multiple identities of the preferred type require an explicit selection:
+
+```sh
+export COVE_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+make build-service
+```
+
+The variable also accepts a certificate fingerprint. Certificate names and fingerprints are resolved from the local keychain and are never written into tracked project configuration. Machines without either identity type retain ad-hoc signing; set `COVE_SIGNING_IDENTITY=-` to request that mode explicitly for isolated fixtures. A selected identity's signing or verification failure stops the build. Linux builds skip this macOS step.
+
+Certificate-backed local builds use Hardened Runtime and omit a secure timestamp to work offline. They do not submit software for notarization. Distributable packages use the separate timestamped signing and notarization flow in [releasing.md](releasing.md).
+
+Switching from an ad-hoc build to a certificate-backed build changes the service identity once. Existing Provider Key access controls may need to authorize the new identity; subsequent builds with the same signing identity and identifier preserve that identity. Signing does not change stored Provider Keys or their access controls. See [ADR-0024](adr/0024-sign-local-service-builds-with-stable-identities.md).
+
 ## Frontend tests
 
 Unit and component tests live beside the module they exercise as `*.test.ts` or `*.test.tsx`. The workspace integration suite lives in `pages/ChatPage.interactions.test.tsx`; it mounts the application with controlled API/inference boundaries. Shared synthetic records belong in `src/test/` and are never imported by production code. Production browser acceptance remains in `apps/web/e2e/`.

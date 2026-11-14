@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const ignored = new Set([".git", "node_modules", ".build", ".swiftpm", ".artifacts", ".scratch", "dist", "coverage", ".idea", ".vscode"]);
+const ignored = new Set([".git", "node_modules", ".build", ".swiftpm", ".artifacts", ".scratch", "local-notes", "dist", "coverage", ".idea", ".vscode"]);
 const errors = [];
 
 async function inspect(directory) {

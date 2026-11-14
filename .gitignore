@@ -8,6 +8,7 @@ services/local-service/cove-local-service
 services/local-service/internal/webassets/content/dist/
 
 # Local-only data and configuration
+/local-notes/
 .scratch/
 .DS_Store
 *.log
