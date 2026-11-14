@@ -20,6 +20,7 @@
 
 ### Changed
 
+- Align the Go service's compiled deployment target with the app's macOS 13 minimum and reject incompatible release binaries.
 - Sign local macOS service builds with an available certificate-backed identity and a fixed identifier, preserving ad-hoc fallback for machines without certificates.
 - Fix scrolling in long model lists inside settings, bound dropdown height, and clarify selected options and search results.
 - Disconnect slow event subscribers without blocking generation or cancellation.

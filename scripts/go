@@ -1,6 +1,16 @@
 #!/bin/sh
 set -eu
 
+# cgo's linker otherwise inherits the build Mac's minimum OS, which can make
+# the Local Service incompatible with the Launcher's macOS 13 deployment target.
+if [ "$(uname -s)" = "Darwin" ]; then
+  MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-13.0}"
+  CGO_CFLAGS="${CGO_CFLAGS:--O2 -g} -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+  CGO_CXXFLAGS="${CGO_CXXFLAGS:--O2 -g} -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+  CGO_LDFLAGS="${CGO_LDFLAGS:--O2 -g} -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+  export MACOSX_DEPLOYMENT_TARGET CGO_CFLAGS CGO_CXXFLAGS CGO_LDFLAGS
+fi
+
 # Respect the toolchain selected by the caller or CI before trying fallbacks.
 if go version >/dev/null 2>&1; then
   exec go "$@"

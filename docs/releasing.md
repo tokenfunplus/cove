@@ -56,7 +56,7 @@ export COVE_NOTARY_PROFILE=cove-release-notary
 scripts/notarize-macos-package.sh path/to/Cove.app .artifacts/notarized
 ```
 
-This command checks the source app's identity, version, build number, architecture, license notices, and Secret Store mode. It signs the nested service and app, notarizes and staples the app, then creates, signs, notarizes, and staples the final DMG. Both artifacts must pass Gatekeeper assessment before the final checksum and update manifest are written. The command requires Command Line Tools, not a full Xcode installation, and leaves the source bundle unchanged.
+This command checks the source app's identity, version, build number, architecture, binary deployment targets, license notices, and Secret Store mode. It signs the nested service and app, notarizes and staples the app, then creates, signs, notarizes, and staples the final DMG. Both artifacts must pass Gatekeeper assessment before the final checksum and update manifest are written. The command requires Command Line Tools, not a full Xcode installation, and leaves the source bundle unchanged.
 
 After committing and pushing the matching version tag, wait for the release workflow to finish its checks and create a draft release. When CI signing is not configured, its draft artifacts are ad-hoc signed. Replace those draft artifacts with the locally signed, notarized DMG, its matching checksum, and `update.json` before publishing. Verify the uploaded bytes match the local checksum, preserve the prerelease flag, and publish only after the local package passes notarization, stapling, Gatekeeper, and installation acceptance. Do not upload private keys merely to publish a local package.
 

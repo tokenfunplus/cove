@@ -51,6 +51,21 @@ assert_arm64() {
   esac
 }
 
+assert_deployment_target() {
+  cove_binary_minimum="$(otool -l "$1" | awk '
+    /LC_BUILD_VERSION/ { kind=1 }
+    /LC_VERSION_MIN_MACOSX/ { kind=2 }
+    kind==1 && $1=="minos" { print $2; exit }
+    kind==2 && $1=="version" { print $2; exit }
+  ')"
+  test -n "$cove_binary_minimum" || fail "Cannot read deployment target: $1"
+  awk -v actual="$cove_binary_minimum" -v expected="$cove_minimum" 'BEGIN {
+    split(actual, a, "[.]"); split(expected, e, "[.]");
+    for (i=1; i<=3; i++) if (a[i]+0 != e[i]+0) exit (a[i]+0 > e[i]+0);
+    exit 0;
+  }' || fail "$1 requires macOS $cove_binary_minimum instead of the advertised $cove_minimum"
+}
+
 assert_plist_value() {
   cove_key="$1"
   cove_expected="$2"
@@ -71,6 +86,7 @@ require_command hdiutil
 require_command iconutil
 require_command sips
 require_command shasum
+require_command otool
 
 case "$cove_release" in
   0|1) ;;
@@ -90,6 +106,7 @@ mkdir -p "$cove_app/Contents/MacOS" "$cove_app/Contents/Resources"
 
 cove_version="$(plist_value "$cove_root/apps/macos/Resources/Info.plist" CoveReleaseVersion)"
 cove_marketing_version="$(plist_value "$cove_root/apps/macos/Resources/Info.plist" CFBundleShortVersionString)"
+cove_minimum="$(plist_value "$cove_root/apps/macos/Resources/Info.plist" LSMinimumSystemVersion)"
 test -n "$cove_version" || fail 'CoveReleaseVersion is empty'
 test -n "$cove_marketing_version" || fail 'CFBundleShortVersionString is empty'
 case "$cove_version" in
@@ -103,7 +120,8 @@ cove_dmg_checksum="$cove_dmg.sha256"
   cd "$cove_root"
   pnpm run build:web
 )
-"$cove_root/scripts/go" build -C "$cove_root/services/local-service" -o "$cove_app/Contents/Resources/cove-local-service" ./cmd/cove-local-service
+MACOSX_DEPLOYMENT_TARGET="$cove_minimum" \
+  "$cove_root/scripts/go" build -C "$cove_root/services/local-service" -o "$cove_app/Contents/Resources/cove-local-service" ./cmd/cove-local-service
 (
   cd "$cove_root/apps/macos"
   swift build -c release --product CoveLauncherApp
@@ -130,10 +148,12 @@ test -d "$cove_app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle" || fa
 test -f "$cove_app/Contents/Info.plist" || fail "Cove app Info.plist is missing"
 assert_arm64 "$cove_app/Contents/MacOS/Cove"
 assert_arm64 "$cove_app/Contents/Resources/cove-local-service"
+assert_deployment_target "$cove_app/Contents/MacOS/Cove"
+assert_deployment_target "$cove_app/Contents/Resources/cove-local-service"
 assert_plist_value CFBundleIdentifier io.github.tokenfunplus.cove
 assert_plist_value CFBundleExecutable Cove
 assert_plist_value CFBundlePackageType APPL
-assert_plist_value LSMinimumSystemVersion 13.0
+assert_plist_value LSMinimumSystemVersion "$cove_minimum"
 assert_plist_value CFBundleShortVersionString "$cove_marketing_version"
 assert_plist_value CoveReleaseVersion "$cove_version"
 assert_plist_value CFBundleIconFile AppIcon.icns

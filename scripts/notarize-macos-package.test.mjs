@@ -67,3 +67,17 @@ test("an app containing local data is rejected before signing or submission", { 
   });
   assert.match(error, /contains local state or credential files/);
 });
+
+test("binary deployment targets cannot exceed the advertised minimum OS", { skip: !native }, async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "cove-deployment-guard-"));
+  try {
+    await writeFile(path.join(directory, "otool"), '#!/bin/sh\nprintf "cmd LC_BUILD_VERSION\\nminos 99.0\\n"\n', { mode: 0o700 });
+    const error = await rejectedPackage(async ({ app }) => {
+      await copyFile("/usr/bin/true", path.join(app, "Contents/MacOS/Cove"));
+      await copyFile("/usr/bin/true", path.join(app, "Contents/Resources/cove-local-service"));
+    }, { PATH: directory + path.delimiter + process.env.PATH });
+    assert.match(error, /requires macOS 99\.0 instead of the advertised/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

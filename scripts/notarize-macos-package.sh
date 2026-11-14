@@ -23,7 +23,7 @@ plist_value() {
 }
 
 cove_version="$(plist_value "$cove_root/apps/macos/Resources/Info.plist" CoveReleaseVersion)"
-for cove_key in CFBundleIdentifier CoveReleaseVersion CFBundleShortVersionString CFBundleVersion; do
+for cove_key in CFBundleIdentifier CoveReleaseVersion CFBundleShortVersionString CFBundleVersion LSMinimumSystemVersion; do
   cove_expected="$(plist_value "$cove_root/apps/macos/Resources/Info.plist" "$cove_key")"
   cove_actual="$(plist_value "$cove_info" "$cove_key")"
   [ "$cove_actual" = "$cove_expected" ] || fail "The source app's $cove_key does not match this checkout"
@@ -31,16 +31,29 @@ done
 if plutil -extract CoveInsecureFileSecretStore raw -o - "$cove_info" >/dev/null 2>&1; then
   fail 'A test app with file-based Provider secrets cannot be published'
 fi
+cove_sensitive="$(find "$cove_source" -type f \( -name '*.sqlite' -o -name '*.sqlite-wal' -o -name '*.sqlite-shm' -o -name '*.p12' -o -name '*.p8' -o -name '*.keychain-db' -o -name '.env' -o -name 'insecure-test-provider-secrets.json' \) -print)"
+[ -z "$cove_sensitive" ] || fail 'The source app contains local state or credential files'
+cove_minimum="$(plist_value "$cove_info" LSMinimumSystemVersion)"
 for cove_executable in Contents/MacOS/Cove Contents/Resources/cove-local-service; do
   [ -x "$cove_source/$cove_executable" ] || fail "Missing executable: $cove_executable"
   case "$(file -b "$cove_source/$cove_executable")" in
     *arm64*) ;;
     *) fail "The source executable is not arm64: $cove_executable" ;;
   esac
+  cove_binary_minimum="$(otool -l "$cove_source/$cove_executable" | awk '
+    /LC_BUILD_VERSION/ { kind=1 }
+    /LC_VERSION_MIN_MACOSX/ { kind=2 }
+    kind==1 && $1=="minos" { print $2; exit }
+    kind==2 && $1=="version" { print $2; exit }
+  ')"
+  [ -n "$cove_binary_minimum" ] || fail "Cannot read deployment target: $cove_executable"
+  awk -v actual="$cove_binary_minimum" -v expected="$cove_minimum" 'BEGIN {
+    split(actual, a, "[.]"); split(expected, e, "[.]");
+    for (i=1; i<=3; i++) if (a[i]+0 != e[i]+0) exit (a[i]+0 > e[i]+0);
+    exit 0;
+  }' || fail "$cove_executable requires macOS $cove_binary_minimum instead of the advertised $cove_minimum"
 done
 [ -f "$cove_source/Contents/Resources/THIRD_PARTY_LICENSES.txt" ] || fail 'Third-party license notices are missing'
-cove_sensitive="$(find "$cove_source" -type f \( -name '*.sqlite' -o -name '*.sqlite-wal' -o -name '*.sqlite-shm' -o -name '*.p12' -o -name '*.p8' -o -name '*.keychain-db' -o -name '.env' -o -name 'insecure-test-provider-secrets.json' \) -print)"
-[ -z "$cove_sensitive" ] || fail 'The source app contains local state or credential files'
 
 cove_output="${2:-$cove_root/.artifacts/notarized}"
 mkdir -p "$cove_output"
