@@ -37,6 +37,8 @@ func (server *Server) serveEmbeddedFile(writer http.ResponseWriter, request *htt
 		writer.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 	} else if strings.HasSuffix(path, ".css") {
 		writer.Header().Set("Content-Type", "text/css; charset=utf-8")
+	} else if strings.HasSuffix(path, ".svg") {
+		writer.Header().Set("Content-Type", "image/svg+xml")
 	} else if strings.HasSuffix(path, ".txt") {
 		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	}

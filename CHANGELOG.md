@@ -4,6 +4,7 @@
 
 ### Added
 
+- Add SVG and PNG browser favicons using Cove's conversation mark.
 - Embed the NearAI Cloud verification center with local saved-details fallback, bounded report projection, theme support, and connection recovery.
 - Add code-block language labels and clipboard success/failure feedback.
 - Open verification details directly from message status labels, show gateway evidence from gateway shortcuts, and support keyboard navigation in local evidence tabs.
