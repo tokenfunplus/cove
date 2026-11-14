@@ -8,6 +8,7 @@ Cove uses MedBox's Tailwind 4 and editable shadcn/Radix component pattern for th
 - Component styles use semantic tokens such as `bg-card`, `text-foreground`, `border-border`, and `bg-primary`. Palette values, the base radius, elevation, and motion timing live in `theme/tokens.css`. Light and dark themes share the same component recipes.
 - CSS is reserved for theme tokens, Tailwind theme registration, base typography/accessibility rules, and shared keyframes/reduced-motion handling. New component-specific CSS selectors are avoided.
 - Existing Headless UI menus and searchable Combobox behavior remain behind their current adapters. Their fields and triggers use shared controls. Standard Select and all modal mechanics use Radix. This keeps keyboard/search behavior within the visual refactor's scope. The Dialog adapter accommodates the retained Combobox portal without treating a model choice as an outside dismissal.
+- Settings Combobox portals stay inside the Radix modal's scroll boundary, outside the clipped visual panel. Anchored lists set Headless UI's `--anchor-max-height` so its inline positioning preserves the intended viewport-relative height limit.
 - Dialogs preserve controlled open state, accessible titles, Escape handling, focus containment, and focus restoration. Settings tabs retain their existing mounted forms and support arrow/Home/End navigation.
 
 ## Skin extension

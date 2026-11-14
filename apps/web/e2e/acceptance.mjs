@@ -58,6 +58,9 @@ const provider = http.createServer(async (request, response) => {
           { id: "model-two" },
           { id: "model-three" },
           { id: "model-four" },
+          ...Array.from({ length: 80 }, (_, index) => ({
+            id: "catalog/model-" + String(index + 1).padStart(3, "0"),
+          })),
         ],
       }),
     );
@@ -523,6 +526,59 @@ try {
     ),
     "Search field lost modal focus",
   );
+  async function assertModelListScroll(name) {
+    const before = await evaluate(`(()=>{
+      const list = document.querySelector('.front-select__options');
+      list.scrollTop = 0;
+      const rect = list.getBoundingClientRect();
+      return {rect: rect.toJSON(), maxHeight: Math.min(320, innerHeight * .45),
+        scrollHeight: list.scrollHeight, height: list.clientHeight,
+        parentScroll: document.querySelector('.settings-dialog__sections').scrollTop};
+    })()`);
+    assert(before.scrollHeight > before.height, "Catalog fixture must overflow");
+    const x = before.rect.left + before.rect.width / 2;
+    if (name === "mobile") {
+      await cdp("Emulation.setTouchEmulationEnabled", { enabled: true });
+      await cdp("Input.synthesizeScrollGesture", {
+        x, y: before.rect.bottom - 40, yDistance: -180,
+        speed: 400, gestureSourceType: "touch",
+      });
+      await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
+    } else {
+      await cdp("Input.dispatchMouseEvent", {
+        type: "mouseWheel", x,
+        y: before.rect.top + Math.min(80, before.rect.height / 2),
+        deltaX: 0, deltaY: 360,
+      });
+    }
+    await pause(250);
+    const after = await evaluate(`({
+      scroll: document.querySelector('.front-select__options').scrollTop,
+      parentScroll: document.querySelector('.settings-dialog__sections').scrollTop,
+      viewportWidth: innerWidth, viewportHeight: innerHeight
+    })`);
+    await snapshot("model-list-" + name);
+    assert(after.scroll > 0, "Model list blocked scrolling: " + JSON.stringify({before, after}));
+    assert(before.rect.height <= before.maxHeight + 1,
+      "Model list exceeded its height limit: " + JSON.stringify(before));
+    assert(before.rect.left >= 0 && before.rect.right <= after.viewportWidth + 1 &&
+      before.rect.top >= 0 && before.rect.bottom <= after.viewportHeight + 1,
+      "Model list escaped the viewport: " + JSON.stringify(before));
+    assert.equal(after.parentScroll, before.parentScroll,
+      "Scrolling the model list moved its settings panel");
+  }
+  await assertModelListScroll("desktop");
+  await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
+  await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape" });
+  await until(`!document.querySelector('.front-select__options')`);
+  assert(await evaluate(`!!document.querySelector('.settings-dialog__panel')`),
+    "Closing the model list dismissed settings");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 390, height: 844, deviceScaleFactor: 1, mobile: true,
+  });
+  await click("#provider-settings .front-select__toggle");
+  await until(`!!document.querySelector('.front-select__options')`);
+  await assertModelListScroll("mobile");
   await evaluate(
     `document.querySelector('#provider-settings .front-select__input').select()`,
   );
@@ -538,6 +594,9 @@ try {
     await evaluate(`!!document.querySelector('.settings-dialog__panel')`),
     "Model selection dismissed its settings dialog",
   );
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1440, height: 900, deviceScaleFactor: 1, mobile: false,
+  });
   await click("#settings-tab-general");
   await clickText("Follow system");
   await cdp("Emulation.setEmulatedMedia", {

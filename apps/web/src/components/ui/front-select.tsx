@@ -17,7 +17,7 @@ import {
   ComboboxOption,
   ComboboxOptions,
 } from "@headlessui/react";
-import { ChevronDown, Search } from "lucide-react";
+import { Check, ChevronDown, Search } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 export type FrontSelectOption = {
@@ -122,8 +122,10 @@ export function FrontSelect({
             />
             <ComboboxInput
               as={Input}
-              id={id}
+              id={triggerId}
               aria-label={ariaLabel}
+              autoComplete="off"
+              spellCheck={false}
               className={cn(
                 primitivesStyles.frontSelect_input,
                 `front-select__input ${className}`,
@@ -161,8 +163,12 @@ export function FrontSelect({
               `front-select__options front-select__options--searchable ${panelClassName}`,
             )}
           >
-            <div className={primitivesStyles.frontSelect_optionsHeading}>
-              {searchPlaceholder}
+            <div
+              className={primitivesStyles.frontSelect_optionsHeading}
+              aria-hidden="true"
+            >
+              <span>{searchPlaceholder}</span>
+              <span className="tabular-nums">{filteredOptions.length}</span>
             </div>
             {filteredOptions.length > 0 ? (
               filteredOptions.map((option) => (
@@ -175,7 +181,21 @@ export function FrontSelect({
                   value={option.value}
                   disabled={option.disabled}
                 >
-                  {option.label}
+                  {({ selected }) => (
+                    <>
+                      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+                        {option.label}
+                      </span>
+                      <Check
+                        aria-hidden="true"
+                        size={14}
+                        className={cn(
+                          "shrink-0 text-primary",
+                          !selected && "invisible",
+                        )}
+                      />
+                    </>
+                  )}
                 </ComboboxOption>
               ))
             ) : (

@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Database, Settings2, SlidersHorizontal, X } from "lucide-react";
+import { Portal } from "@headlessui/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 type SettingsDialogSection = "general" | "provider" | "chat-data";
@@ -27,6 +28,7 @@ export function SettingsDialog({
   children: ReactNode;
   copy?: ApplicationCopy;
 }) {
+  const popoverTarget = useRef<HTMLDivElement>(null);
   return (
     <Dialog
       className={cn(settingsStyles.settingsDialog, "settings-dialog--nearai")}
@@ -35,15 +37,33 @@ export function SettingsDialog({
     >
       <DialogOverlay className={settingsStyles.settingsDialog_backdrop} />
       <div className={settingsStyles.settingsDialog_viewport}>
-        <DialogContent className={settingsStyles.settingsDialog_panel}>
-          <SettingsDialogContent
-            initialSection={initialSection}
-            copy={copy}
-            onClose={onClose}
-            title={<DialogTitle as="h2">{copy.settings}</DialogTitle>}
-          >
-            {children}
-          </SettingsDialogContent>
+        <DialogContent
+          ref={popoverTarget}
+          className={settingsStyles.settingsDialog_layer}
+          onEscapeKeyDown={(event) => {
+            // Radix handles Escape before the nested Combobox receives it.
+            const toggle = popoverTarget.current?.querySelector<HTMLButtonElement>(
+              '.front-select__toggle[aria-expanded="true"]',
+            );
+            if (toggle) {
+              event.preventDefault();
+              toggle.click();
+            }
+          }}
+        >
+          {/* Keep popovers inside the modal's scroll lock, outside its clipped panel. */}
+          <Portal.Group target={popoverTarget}>
+            <div className={settingsStyles.settingsDialog_panel}>
+              <SettingsDialogContent
+                initialSection={initialSection}
+                copy={copy}
+                onClose={onClose}
+                title={<DialogTitle as="h2">{copy.settings}</DialogTitle>}
+              >
+                {children}
+              </SettingsDialogContent>
+            </div>
+          </Portal.Group>
         </DialogContent>
       </div>
     </Dialog>

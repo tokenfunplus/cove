@@ -47,9 +47,10 @@ export const primitivesStyles = {
   `),
   frontSelect_options: cn(String.raw`
     pointer-events-auto front-select__options z-100 max-w-[calc(100vw_-_28px)] border border-border
-    rounded-2xl p-1.5 text-foreground bg-popover shadow-popover [--anchor-gap:8px]
+    rounded-xl p-1 text-foreground bg-popover shadow-popover [--anchor-gap:6px]
     [--anchor-padding:14px] w-[max(var(--input-width,_var(--button-width,_220px)),_220px)]
-    max-h-[min(360px,_50dvh)] overflow-y-auto [transition:opacity_120ms,_transform_120ms_var(--ease-out)]
+    [--anchor-max-height:min(320px,45dvh)] max-h-[min(320px,45dvh)] overflow-y-auto overscroll-contain
+    scroll-py-9 [transition:opacity_120ms,_transform_120ms_var(--ease-out)]
   `),
   conversationActions_menu: cn(String.raw`
     conversation-actions__menu z-100 max-w-[calc(100vw_-_28px)] border border-border rounded-2xl p-1.5
@@ -83,16 +84,17 @@ export const primitivesStyles = {
     [transition:opacity_120ms,_transform_120ms_var(--ease-out)]
   `),
   frontSelect_optionsHeading: cn(String.raw`
-    front-select__options-heading block py-[9px] px-2.5 text-muted-foreground text-[10px] font-semibold
+    front-select__options-heading sticky top-0 z-1 flex items-center justify-between gap-3
+    border-b border-border bg-popover px-3 py-2 text-muted-foreground text-[10px] font-medium
   `),
   modelSelector_addProviderName: cn(String.raw`
     model-selector__add-provider-name block py-[9px] px-2.5 text-muted-foreground text-[10px]
     font-semibold
   `),
   frontSelect_option: cn(String.raw`
-    front-select__option p-2.5 rounded-[calc(var(--radius)*0.625)] cursor-pointer text-xs
-    [&[data-focus]]:bg-accent [&[data-focus]]:text-primary [&[data-selected]]:bg-accent
-    [&[data-selected]]:text-primary [&[data-disabled]]:opacity-40 [&[data-disabled]]:cursor-not-allowed
+    front-select__option flex min-h-9 items-center gap-3 px-3 py-2 rounded-lg cursor-pointer text-xs leading-5
+    [&[data-focus]]:bg-muted [&[data-selected]]:bg-accent [&[data-selected]]:text-primary
+    [&[data-disabled]]:opacity-40 [&[data-disabled]]:cursor-not-allowed
   `),
   modelSelector_addOption: cn(String.raw`
     model-selector__add-option p-2.5 rounded-[calc(var(--radius)*0.625)] cursor-pointer text-xs

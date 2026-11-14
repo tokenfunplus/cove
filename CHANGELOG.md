@@ -15,6 +15,7 @@
 
 ### Changed
 
+- Fix scrolling in long model lists inside settings, bound dropdown height, and clarify selected options and search results.
 - Disconnect slow event subscribers without blocking generation or cancellation.
 - Expire abandoned browser Generations on the Local Service, including retries, while allowing grace for normal browser settlement.
 - Run production browser acceptance in CI and retain its synthetic screenshots and accessibility evidence.

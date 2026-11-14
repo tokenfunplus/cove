@@ -29,6 +29,9 @@ export const settingsStyles = {
     conversation-dialog__viewport fixed inset-0 flex items-center justify-center overflow-y-auto p-6
     max-[767px]:p-2.5 z-10
   `),
+  settingsDialog_layer: cn(String.raw`
+    w-full max-w-[1000px] border-0 bg-transparent shadow-none
+  `),
   settingsDialog_panel: cn(String.raw`
     settings-dialog__panel flex flex-col w-full max-w-[1000px] h-[min(780px,_calc(100dvh_-_48px))]
     bg-card border border-border rounded-[calc(var(--radius)*1.875)] shadow-popover overflow-hidden
