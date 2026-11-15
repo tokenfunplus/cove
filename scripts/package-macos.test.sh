@@ -7,6 +7,8 @@ cove_test_data="$(mktemp -d "${TMPDIR:-/tmp}/cove-package-home.XXXXXX")"
 cove_mount_attached=0
 cove_launcher_pid=""
 cove_service_pid=""
+cove_build_resources=""
+cove_saved_resources=""
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -52,6 +54,9 @@ cleanup() {
   if [ "$cove_mount_attached" -eq 1 ]; then
     detach_mount || true
   fi
+  if [ -n "$cove_saved_resources" ] && [ -d "$cove_saved_resources" ]; then
+    mv "$cove_saved_resources" "$cove_build_resources"
+  fi
   rm -rf "$cove_package_dir" "$cove_test_data"
 }
 
@@ -87,6 +92,8 @@ cove_mount="$cove_package_dir/mount"
 test -x "$cove_app/Contents/MacOS/Cove"
 test -x "$cove_app/Contents/Resources/cove-local-service"
 test -d "$cove_app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle"
+test -f "$cove_app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle/CoveMenuBarTemplate.png"
+test -f "$cove_app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle/CoveMenuBarTemplate@2x.png"
 test -f "$cove_app/Contents/Resources/AppIcon.icns"
 test -f "$cove_dmg"
 test -f "$cove_dmg.sha256"
@@ -113,6 +120,13 @@ cove_mount_attached=1
 test -x "$cove_mount/Cove.app/Contents/MacOS/Cove"
 test -d "$cove_mount/Cove.app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle"
 test -f "$cove_mount/Cove.app/Contents/Resources/AppIcon.icns"
+
+# An installed app cannot fall back to resources in its original build tree.
+# Restore this directory even when startup or later assertions fail.
+cove_swift_build="$(cd "$cove_root/apps/macos" && swift build -c release --show-bin-path)"
+cove_build_resources="$cove_swift_build/CoveLauncher_CoveLauncherApp.bundle"
+cove_saved_resources="$cove_package_dir/build-resources.bundle"
+mv "$cove_build_resources" "$cove_saved_resources"
 
 COVE_DATA_DIR="$cove_test_data" COVE_PACKAGE_ACCEPTANCE_TEST=1 "$cove_mount/Cove.app/Contents/MacOS/Cove" >"$cove_package_dir/launcher.log" 2>&1 &
 cove_launcher_pid=$!

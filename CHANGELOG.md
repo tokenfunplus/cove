@@ -13,6 +13,7 @@
 ### Changed
 
 - Unify the Chat Surface, favicon, macOS application icon, and menu bar around the blue and teal Cove wave mark.
+- Load menu-bar image resources from the installed application bundle and test startup without the original SwiftPM resource directory.
 - Refresh the README, release documentation, and product website for the second signed and notarized beta.
 
 - Detect failed/incomplete Gateway Responses SSE events before receipt lookup and display bounded upstream errors instead of misreporting them as cryptographic verification failures.

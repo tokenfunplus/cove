@@ -31,6 +31,8 @@ The Go wrapper sets a macOS 13 deployment target and matching cgo compiler/linke
 
 The editable wave mark is `apps/web/public/assets/cove-mark.svg`. Run `node scripts/generate-brand-assets.mjs` on macOS after editing it to refresh the SVG/PNG favicon, the macOS application icon source, and the monochrome menu-bar templates. The Chat Surface uses the same mark across the sidebar, welcome surface, empty state, and settings. Packaging derives the application icon's resolution variants from `apps/macos/Resources/AppIcon.svg`.
 
+The Launcher resolves image and localization resources from its installed application bundle. Package acceptance temporarily hides the SwiftPM build resource directory, then restores it during cleanup, so an installed app cannot accidentally rely on resources left on the build machine. Avoid concurrent builds in that checkout while this acceptance test runs.
+
 ## Local code signing
 
 On macOS, `make build-service` signs and verifies the Local Service after compilation, so `make start-local` uses the same signing path. The signing identifier is always `io.github.tokenfunplus.cove.local-service`. With no explicit selection, the build uses a single valid Developer ID Application identity, or a single Apple Development identity if no Developer ID identity exists. Multiple identities of the preferred type require an explicit selection:

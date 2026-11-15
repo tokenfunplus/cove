@@ -84,7 +84,7 @@ struct CoveLauncherApp: App {
                 }
             }
         } label: {
-            Image("CoveMenuBarTemplate", bundle: .module)
+            Image("CoveMenuBarTemplate", bundle: launcherResourceBundle)
                 .renderingMode(.template)
                 .accessibilityLabel("Cove")
         }
