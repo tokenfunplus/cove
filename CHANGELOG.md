@@ -9,6 +9,8 @@
 
 ### Changed
 
+- Unify the Chat Surface, favicon, macOS application icon, and menu bar around the blue and teal Cove wave mark.
+
 - Detect failed/incomplete Gateway Responses SSE events before receipt lookup and display bounded upstream errors instead of misreporting them as cryptographic verification failures.
 
 - Reuse authorized Keychain reads within the Local Service, coalesce concurrent reads, and preserve fresh version/write checks during rotation. Evict cached keys on deletion or missing-item checks.

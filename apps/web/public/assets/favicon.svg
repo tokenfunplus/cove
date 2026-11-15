@@ -1,4 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="5 3 38 42" fill="none">
-  <path d="M8 18C8 10 14 5 24 5s17 6 17 16-7 17-17 17h-5l-9 5 1-11C9 29 8 24 8 18Z" fill="#1269b1"/>
-  <path d="M18 19v2m12-2v2m-11 7c3 3 7 3 10 0" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="cove-blue" x1="42" y1="155" x2="202" y2="20" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#246b98"/>
+      <stop offset="1" stop-color="#257da2"/>
+    </linearGradient>
+    <linearGradient id="cove-teal" x1="62" y1="159" x2="201" y2="239" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#79c1b6"/>
+      <stop offset="1" stop-color="#62b9ad"/>
+    </linearGradient>
+  </defs>
+  <path d="M20 171C10 149 13 121 23 96C37 62 66 31 102 17C137 3 180 5 211 24C228 34 240 48 241 63C244 81 231 99 214 101C203 103 195 100 184 93C169 82 151 82 136 88C109 98 97 125 108 158C92 146 77 140 63 141C46 142 31 153 20 171Z" fill="url(#cove-blue)"/>
+  <path d="M25 183C33 164 49 155 65 156C87 156 103 172 121 180C143 191 157 185 175 171C192 158 205 153 220 157C235 160 241 170 239 186C234 211 209 232 181 242C140 256 97 249 67 234C47 223 32 205 25 185Z" fill="url(#cove-teal)"/>
 </svg>

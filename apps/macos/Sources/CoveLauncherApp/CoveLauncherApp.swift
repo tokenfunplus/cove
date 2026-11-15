@@ -34,7 +34,7 @@ struct CoveLauncherApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Cove", systemImage: "bubble.left.and.bubble.right") {
+        MenuBarExtra {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Cove")
                     .font(.system(size: 20, weight: .semibold, design: .rounded))
@@ -83,6 +83,10 @@ struct CoveLauncherApp: App {
                     return Alert(title: Text(localized("Update check unavailable.")))
                 }
             }
+        } label: {
+            Image("CoveMenuBarTemplate", bundle: .module)
+                .renderingMode(.template)
+                .accessibilityLabel("Cove")
         }
         .menuBarExtraStyle(.window)
     }
