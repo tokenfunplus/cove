@@ -1,4 +1,5 @@
-# Cove
+<img width="640" height="213" alt="exec-a8b3bbb7-0284-493d-a65e-c921033eb0e2" src="https://github.com/user-attachments/assets/ab557daf-f379-4a30-9d9a-a105ebb94081" />
+
 
 A local-first Mac chat app with on-device history and verifiable AI inference.
 
