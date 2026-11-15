@@ -1,5 +1,8 @@
 .DEFAULT_GOAL := help
-.PHONY: help version build build-web build-service build-macos package-macos dmg test-package-macos start-local stop-local check check-go test test-contract test-web test-service test-macos test-lifecycle test-scripts test-web-browser
+.PHONY: help version build build-web build-service build-macos package-macos dmg test-package-macos start-local stop-local check check-go test test-contract test-web test-service test-fuzz test-macos test-lifecycle test-scripts test-web-browser
+
+FUZZ_TIME ?= 10s
+FUZZ_WORKERS ?= 2
 
 help:
 	@printf '%s\n' 'Cove development tasks:' '  make start-local / stop-local  Build and open / stop the local app' '  make check                     Check source and repository conventions' '  make test                      Run contract, web, Go race, and Swift tests' '  make build                     Build all components' '  make dmg                       Package Cove.app and an ARM64 DMG' '  make test-lifecycle            Test isolated service lifecycle' '  make test-package-macos        Test a disposable macOS package'
@@ -50,6 +53,11 @@ test-web: build-web
 
 test-service: build-web
 	cd services/local-service && ../../scripts/go test -race ./...
+
+test-fuzz:
+	cd services/local-service && ../../scripts/go test ./internal/documents -run '^$$' -fuzz '^FuzzParseTextDocument$$' -fuzztime=$(FUZZ_TIME) -parallel=$(FUZZ_WORKERS)
+	cd services/local-service && ../../scripts/go test ./internal/provider -run '^$$' -fuzz '^FuzzParseSSEData$$' -fuzztime=$(FUZZ_TIME) -parallel=$(FUZZ_WORKERS)
+	cd services/local-service && ../../scripts/go test ./internal/provider -run '^$$' -fuzz '^FuzzSSEContentRoundTrip$$' -fuzztime=$(FUZZ_TIME) -parallel=$(FUZZ_WORKERS)
 
 test-macos:
 	cd apps/macos && swift test

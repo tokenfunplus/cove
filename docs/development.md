@@ -19,6 +19,7 @@ Web, contract, and Go tests also run on Linux. The Launcher, Keychain adapter, a
 | `make test-contract test-web test-service` | Portable test suite for Linux |
 | `make test-web-browser` | Production Chromium acceptance with isolated service/Provider fixtures |
 | `make test-lifecycle` | Isolated start, reuse, health, and shutdown checks |
+| `make test-fuzz` | Fuzz text snapshots and Provider SSE parsing; 10 seconds per target by default |
 | `make dmg` | Package an Apple Silicon app and DMG |
 | `make test-package-macos` | Build and launch an isolated acceptance fixture |
 | `pnpm audit` | Inspect JavaScript dependency advisories |
@@ -49,6 +50,14 @@ Certificate-backed local builds use Hardened Runtime and omit a secure timestamp
 Switching from an ad-hoc build to a certificate-backed build changes the service identity once. Existing Provider Key access controls may need to authorize the new identity; subsequent builds with the same signing identity and identifier preserve that identity. Signing does not change stored Provider Keys or their access controls. See [ADR-0024](adr/0024-sign-local-service-builds-with-stable-identities.md).
 
 Use the default certificate-backed signing path for development sessions that read real Provider Keys. `COVE_SIGNING_IDENTITY=-` is suitable for isolated fixtures; repeatedly rebuilding it changes the identity recognized by Keychain. Do not use a plaintext secret store or broaden item access controls to work around a signing authorization. Provider catalog failures do not retry on focus or reconnect; after granting access, use the Provider's explicit connection test to recover its catalog. Successful key reads are reused within the running service; restart after changing an existing key outside Cove. See [ADR-0026](adr/0026-reuse-authorized-keychain-reads-without-passive-retries.md).
+
+## Security checks and fuzzing
+
+The [CodeQL workflow](../.github/workflows/codeql.yml) analyzes Go and JavaScript/TypeScript on pull requests, pushes to `main`, and a weekly schedule. The Go job builds embedded web assets before initializing analysis and explicitly builds the Local Service module. JavaScript/TypeScript analysis reads source directly. Results appear in GitHub code scanning.
+
+`make test-fuzz` actively mutates synthetic inputs for three Go targets. Text parsing checks snapshot byte ownership, extraction bounds, Unicode, and stable source-line citations. Provider parsing checks malformed JSON and sanitized errors, while a stream round trip checks content, line endings, completion, and finish reasons. CI runs each target for ten seconds; use `make test-fuzz FUZZ_TIME=1m` for a longer local session. A failing input is saved by Go under the owning package's `testdata/fuzz/` directory; retain reproducible failures as regression inputs. Normal Go tests also run the seed corpus.
+
+The local startup command requests browser launch tokens through a fixed Node HTTP helper. It accepts only loopback service origins, does not follow redirects, bounds response size and request duration, and reads the control token from standard input. It never evaluates the response as code or prints failed response bodies.
 
 ## Frontend tests
 
