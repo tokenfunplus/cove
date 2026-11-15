@@ -5,6 +5,7 @@
 A local-first Mac chat app with on-device history and verifiable AI inference.
 
 [![CI](https://github.com/tokenfunplus/cove/actions/workflows/ci.yml/badge.svg)](https://github.com/tokenfunplus/cove/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/tokenfunplus/cove/badge)](https://scorecard.dev/viewer/?uri=github.com/tokenfunplus/cove)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/7jdddhG8ZG)
 
