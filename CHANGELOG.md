@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- File chat with local text/code/PDF parsing, immutable source snapshots, original-file downloads, source citation navigation, and draft/saved Provider context inspection.
+- Bounded PDF parser subprocesses and application input limits; see ADR-0025 for supported files and compatibility.
+
+### Changed
+
+- Detect failed/incomplete Gateway Responses SSE events before receipt lookup and display bounded upstream errors instead of misreporting them as cryptographic verification failures.
+
+- Reuse authorized Keychain reads within the Local Service, coalesce concurrent reads, and preserve fresh version/write checks during rotation. Evict cached keys on deletion or missing-item checks.
+- Stop automatic Provider catalog retries and focus/reconnect refreshes that could repeatedly open macOS authorization dialogs. Explicit connection tests can recover denied catalog reads.
+
+- Preserve attached source text in selected/frozen context, target retries, history, and Markdown/JSON exports. SQLite schema 14 preserves existing history; original file bytes stay out of exports.
+- Enforce cancel-and-wait in Chat before direct conversation deletion removes source records.
+
 ## 0.1.0-beta.1 - 2026-11-15
 
 ### Added

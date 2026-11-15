@@ -8,6 +8,12 @@ export function providerCatalogQueryOptions(id: string) {
     queryKey: providerKeys.catalog(id),
     queryFn: () => api.getProviderCatalog(id),
     enabled: Boolean(id),
+    // Discovery may require a macOS Keychain authorization. Returning from its
+    // dialog must not start another read, nor should a denial trigger retries.
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 5 * 60 * 1000,
   };
 }
 
@@ -41,7 +47,20 @@ export function useSaveProvider() {
 }
 
 export function useTestProviderConnection() {
-  return useMutation({ mutationFn: api.testProviderConnection, retry: false });
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: api.testProviderConnection,
+    retry: false,
+    onSuccess: (_result, input) => {
+      // An explicit successful test can recover a catalog whose automatic
+      // read was denied. Draft keys are not saved by a connection test.
+      if (input.id && !input.secret)
+        return cache.invalidateQueries({
+          queryKey: providerKeys.catalog(input.id),
+          exact: true,
+        });
+    },
+  });
 }
 
 export function useDeleteProvider() {

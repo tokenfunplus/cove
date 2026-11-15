@@ -8,8 +8,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
+	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 )
@@ -39,6 +41,10 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 	if err != nil {
 		return GenerationBatchStart{}, err
 	}
+	attachments, inputContent, err := service.prepareAttachments(ctx, input, systemPrompt)
+	if err != nil {
+		return GenerationBatchStart{}, err
+	}
 	resolved := make([]resolvedTarget, 0, len(activeModelSet))
 	batchTargets := make([]persistence.GenerationTargetInput, 0, len(activeModelSet))
 	for _, target := range activeModelSet {
@@ -62,7 +68,7 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		batchTargets = append(batchTargets, persistence.GenerationTargetInput{ProviderID: target.ProviderID, ModelID: target.ModelID, Snapshot: snapshot})
 	}
 	batch, err := service.store.BeginGenerationBatch(ctx, persistence.BeginGenerationBatchInput{
-		ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID, Body: input.Body, SystemPrompt: systemPrompt, GenerationParameters: parameters, Targets: batchTargets,
+		ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID, Body: input.Body, InputContent: inputContent, Attachments: attachments, SystemPrompt: systemPrompt, GenerationParameters: parameters, Targets: batchTargets,
 	})
 	if err != nil {
 		return GenerationBatchStart{}, err
@@ -233,6 +239,20 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 		}
 		snapshot = snapshotFor(profile, metadata.PrivacyMode)
 	}
+	var messages []provider.ProviderMessage
+	if resolveErr == nil && selectionErr == nil {
+		messages, err = service.messagesForBatch(ctx, batch, userBody, configuration)
+		if err != nil {
+			return GenerationStart{}, err
+		}
+		characters := 0
+		for _, message := range messages {
+			characters += utf8.RuneCountInString(message.Content)
+		}
+		if characters > documents.MaxContextCharacters {
+			return GenerationStart{}, documents.ErrContextLimit
+		}
+	}
 	generation, err := service.store.BeginGenerationAttempt(ctx, persistence.BeginGenerationAttemptInput{TargetID: target.ID, ClientRequestID: clientRequestID, Snapshot: snapshot, ConfigurationSnapshot: configuration})
 	if err != nil {
 		return GenerationStart{}, err
@@ -255,10 +275,6 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 	if profile.Kind == provider.KindNearAIPreset && isNearAIVerifiedTransport(metadata.PrivacyMode) {
 		service.trackSecureGeneration(generation.ID)
 		return GenerationStart{Generation: generation}, nil
-	}
-	messages, err := service.messagesForBatch(ctx, batch, userBody, generation.ConfigurationSnapshot)
-	if err != nil {
-		return GenerationStart{}, err
 	}
 	runContext, cancel := context.WithTimeout(context.Background(), service.timeout)
 	service.activeMu.Lock()
@@ -294,6 +310,9 @@ func (service *Service) activeModelSet(ctx context.Context, fallback SendInput) 
 }
 
 func (service *Service) messagesForBatch(ctx context.Context, batch persistence.GenerationBatch, currentBody string, configuration persistence.GenerationConfigurationSnapshot) ([]provider.ProviderMessage, error) {
+	if batch.InputContent != "" {
+		currentBody = batch.InputContent
+	}
 	contextItems, err := service.store.LoadGenerationBatchContext(ctx, batch.ID)
 	if err != nil {
 		return nil, err

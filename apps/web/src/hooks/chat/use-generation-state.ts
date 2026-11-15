@@ -13,6 +13,9 @@ export function useGenerationState() {
   const [liveTurn, setLiveTurn] = useState<LiveTurn>();
 
   const [isSending, setIsSending] = useState(false);
+  const pendingSubmissionRef = useRef<{ cancelRequested: boolean } | undefined>(
+    undefined,
+  );
 
   const [resumeGenerationBatch, setResumeGenerationBatch] =
     useState<GenerationBatch>();
@@ -44,6 +47,7 @@ export function useGenerationState() {
     liveTurn,
     setLiveTurn,
     isSending,
+    pendingSubmissionRef,
     setIsSending,
     resumeGenerationBatch,
     setResumeGenerationBatch,

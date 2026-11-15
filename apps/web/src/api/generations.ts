@@ -5,11 +5,15 @@ import {
   type GenerationContextMessage,
   type GenerationInput,
   type GenerationVerification,
+  type AttachmentInput,
+  type AttachmentSnapshot,
+  type GenerationPromptMessage,
 } from "@cove/api-contract";
 
 export type GenerationSelection = {
   clientRequestId: string;
   body: string;
+  attachments?: AttachmentInput[];
 };
 
 export function createGenerationBatch(
@@ -19,6 +23,7 @@ export function createGenerationBatch(
   const input: GenerationInput = {
     client_request_id: selection.clientRequestId,
     body: selection.body,
+    attachments: selection.attachments,
   };
   return request<GenerationBatch>(
     `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
@@ -26,6 +31,34 @@ export function createGenerationBatch(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
+    },
+  );
+}
+
+export function previewAttachment(
+  input: AttachmentInput,
+): Promise<AttachmentSnapshot> {
+  return request<AttachmentSnapshot>("/api/attachments/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function previewGenerationContext(input: {
+  conversationId: string;
+  body: string;
+  attachments?: AttachmentInput[];
+}): Promise<GenerationPromptMessage[]> {
+  return request(
+    `/api/conversations/${encodeURIComponent(input.conversationId)}/context-preview`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        body: input.body,
+        attachments: input.attachments,
+      }),
     },
   );
 }

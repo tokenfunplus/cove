@@ -20,6 +20,7 @@ import (
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
+	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 	"github.com/tokenfunplus/cove/services/local-service/internal/providerconfig"
@@ -453,6 +454,7 @@ func TestGenerationBatchAPICreatesAComparisonAndStreamsTargetIdentifiedEvents(t 
 }
 
 type fakeChat struct {
+	attachmentStore         persistence.ChatStore
 	batchContext            []provider.ProviderMessage
 	createConversation      func(context.Context, string) (persistence.Conversation, error)
 	listConversations       func(context.Context, bool) ([]persistence.Conversation, error)
@@ -476,6 +478,7 @@ type fakeChat struct {
 
 func historyFakeChat(store persistence.ChatStore) *fakeChat {
 	return &fakeChat{
+		attachmentStore: store,
 		createConversation: func(ctx context.Context, title string) (persistence.Conversation, error) {
 			return store.CreateConversation(ctx, title)
 		},
@@ -1602,4 +1605,19 @@ func TestFrozenBatchContextRequiresABrowserSession(t *testing.T) {
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatal("frozen context read model changed the selected history")
 	}
+}
+
+func (fake *fakeChat) PreviewAttachment(ctx context.Context, input documents.Input) (documents.Snapshot, error) {
+	parsed, err := documents.Parse(ctx, input)
+	return parsed.Snapshot, err
+}
+func (fake *fakeChat) ReadAttachment(ctx context.Context, batchID, documentID string) (documents.Input, error) {
+	if fake.attachmentStore == nil {
+		return documents.Input{}, sql.ErrNoRows
+	}
+	return fake.attachmentStore.LoadAttachmentData(ctx, batchID, documentID)
+}
+
+func (fake *fakeChat) PreviewGenerationContext(context.Context, chat.SendInput) ([]provider.ProviderMessage, error) {
+	return fake.batchContext, nil
 }

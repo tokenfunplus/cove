@@ -153,6 +153,7 @@ export function ChatPage() {
               {feedback ? <WorkspaceToast feedback={feedback} onDismiss={setFeedback} /> : null}
             </div>
             <ConversationPanel
+              attachmentDraft={workspace.attachmentDraft}
               view={isLoadingConversation ? undefined : conversationView}
 
               copy={copy}

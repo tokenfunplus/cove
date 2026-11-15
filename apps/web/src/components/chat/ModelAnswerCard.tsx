@@ -81,7 +81,11 @@ export function ModelAnswerCard({
           : phase === "stopped"
             ? copy.generationStopped
             : phase === "failed"
-              ? generationFailureMessage(errorCode, copy)
+              ? generationFailureMessage(
+                  errorCode ?? verification?.failure_code,
+                  copy,
+                  verification?.evidence_summary,
+                )
               : phase === "unknown"
                 ? copy.generationDeliveryUnknown
                 : "";

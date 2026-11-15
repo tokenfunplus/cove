@@ -1,6 +1,26 @@
 import type { LocalePreference } from "@cove/api-contract";
 
 const messages = {
+  close: "Close",
+  attachFiles: "Attach files",
+  attachmentLimits: "Up to 4 files · 4 MiB each · Text, code, PDF",
+  removeAttachment: "Remove attachment",
+  previewSource: "Preview extracted text",
+  parsingFile: "Reading file locally…",
+  characters: "characters",
+  attachmentDisclosure: "Extracted text will be sent to the selected Providers. Originals stay on this Mac.",
+  sources: "Sources and context",
+  sourceSnapshot: "Source snapshot",
+  sourceText: "Extracted source text",
+  sourceFileDetails: "File version details",
+  sourceCitationNotice: "A citation opens saved source text. It does not independently establish that the answer is correct.",
+  downloadOriginal: "Download original file",
+  viewContext: "View context",
+  reviewContext: "Review context",
+  draftContextNotice: "Preview the current draft, selected prior answers, System Prompt, and extracted source text. Opening this preview does not contact a Provider.",
+  contextSourceNotice: "This is the saved input for the selected model's latest attempt, including selected prior answers and attached source text.",
+  contextBudgetNotice: "Cove input limit; model token limits vary.",
+  contextLoadFailed: "The saved context could not be loaded. Close and reopen to retry.",
   chatSurface: "Cove Chat Surface",
   loading: "Connecting to local service",
   ready: "Local session ready",
@@ -117,6 +137,9 @@ const messages = {
   modelRequired: "Select a model after testing the connection",
   generationUnavailable: "The Generation stream was interrupted",
   generationFailed: "The Generation failed",
+  generationStreamFailed: "The model response stream failed before a verified response was available. Retry or select another model.",
+  generationResponseVerificationFailed: "The response could not be verified. Its receipt may be missing or inconsistent.",
+  verificationUnavailable: "Unavailable",
   generationOutputLimit:
     "The Provider reached the output token limit before returning an assistant response. Increase Max Tokens or leave it blank.",
   generationEmptyResponse:

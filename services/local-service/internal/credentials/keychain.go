@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const defaultKeychainService = "io.github.tokenfunplus.cove.provider"
@@ -23,8 +24,18 @@ type keychainBackend interface {
 // KeychainStore keeps provider secrets in the user's macOS Keychain.
 // The platform adapter is isolated here so callers only depend on SecretStore.
 type KeychainStore struct {
-	service string
-	backend keychainBackend
+	service    string
+	backend    keychainBackend
+	mu         sync.Mutex
+	operations sync.Mutex
+	cache      map[string]Secret
+	reads      map[string]*keychainRead
+}
+
+type keychainRead struct {
+	done   chan struct{}
+	secret Secret
+	err    error
 }
 
 func NewKeychainStore(service string) *KeychainStore {
@@ -42,6 +53,9 @@ func (store *KeychainStore) Exists(ctx context.Context, providerID string) (bool
 	if err != nil {
 		return false, fmt.Errorf("check provider secret: %w", err)
 	}
+	if !exists {
+		store.forget(providerID)
+	}
 	return exists, nil
 }
 
@@ -49,6 +63,55 @@ func (store *KeychainStore) Get(ctx context.Context, providerID string) (Secret,
 	if err := ctx.Err(); err != nil {
 		return Secret{}, err
 	}
+	store.mu.Lock()
+	if secret, ok := store.cache[providerID]; ok {
+		store.mu.Unlock()
+		return secret, nil
+	}
+	if pending := store.reads[providerID]; pending != nil {
+		store.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return Secret{}, ctx.Err()
+		case <-pending.done:
+			return pending.secret, pending.err
+		}
+	}
+	pending := &keychainRead{done: make(chan struct{})}
+	if store.reads == nil {
+		store.reads = make(map[string]*keychainRead)
+	}
+	store.reads[providerID] = pending
+	store.mu.Unlock()
+
+	// Serialize native reads with rotation/deletion. Concurrent callers share
+	// this result, including a cancelled/denied authorization, without queuing dialogs.
+	store.operations.Lock()
+	defer store.operations.Unlock()
+	store.mu.Lock()
+	secret, cached := store.cache[providerID]
+	store.mu.Unlock()
+	var err error
+	if !cached {
+		if err = ctx.Err(); err == nil {
+			secret, err = store.readSecret(providerID)
+		}
+	}
+	store.mu.Lock()
+	if err == nil {
+		if store.cache == nil {
+			store.cache = make(map[string]Secret)
+		}
+		store.cache[providerID] = secret
+	}
+	pending.secret, pending.err = secret, err
+	delete(store.reads, providerID)
+	close(pending.done)
+	store.mu.Unlock()
+	return secret, err
+}
+
+func (store *KeychainStore) readSecret(providerID string) (Secret, error) {
 	output, err := store.backend.Get(store.service, providerID)
 	if err != nil {
 		if errors.Is(err, ErrSecretNotFound) {
@@ -67,7 +130,15 @@ func (store *KeychainStore) ReplaceAfterValidation(ctx context.Context, provider
 	if strings.TrimSpace(next.Value) == "" {
 		return errors.New("provider secret is required")
 	}
-	current, err := store.Get(ctx, providerID)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	store.operations.Lock()
+	defer store.operations.Unlock()
+	store.forget(providerID)
+	// Compare against Keychain itself, never a process-cached version. Another
+	// Local Service may have rotated the key since our last successful read.
+	current, err := store.readSecret(providerID)
 	if errors.Is(err, ErrSecretNotFound) {
 		current = Secret{}
 	} else if errors.Is(err, ErrInvalidSecret) {
@@ -86,10 +157,16 @@ func (store *KeychainStore) ReplaceAfterValidation(ctx context.Context, provider
 	if err := store.backend.Replace(store.service, providerID, []byte(payload)); err != nil {
 		return errors.New("write provider secret to Keychain")
 	}
-	saved, err := store.Get(ctx, providerID)
+	saved, err := store.readSecret(providerID)
 	if err != nil || saved.Version != next.Version || saved.Value != next.Value {
 		return errors.New("verify provider secret in Keychain")
 	}
+	store.mu.Lock()
+	if store.cache == nil {
+		store.cache = make(map[string]Secret)
+	}
+	store.cache[providerID] = saved
+	store.mu.Unlock()
 	return nil
 }
 
@@ -97,6 +174,9 @@ func (store *KeychainStore) Delete(ctx context.Context, providerID string) error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	store.operations.Lock()
+	defer store.operations.Unlock()
+	store.forget(providerID)
 	err := store.backend.Delete(store.service, providerID)
 	if errors.Is(err, ErrSecretNotFound) {
 		return nil
@@ -106,6 +186,12 @@ func (store *KeychainStore) Delete(ctx context.Context, providerID string) error
 		return errors.New("delete provider secret from Keychain")
 	}
 	return nil
+}
+
+func (store *KeychainStore) forget(providerID string) {
+	store.mu.Lock()
+	delete(store.cache, providerID)
+	store.mu.Unlock()
 }
 
 func encodeSecret(secret Secret) string {

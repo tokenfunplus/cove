@@ -2,12 +2,17 @@ import { CodeBlock } from "@/components/chat/CodeBlock";
 import { messagesStyles } from "@/styles/messages";
 import { cn } from "@/lib/utils";
 import { memo, type ReactNode } from "react";
+import {
+  useSourceNavigation,
+  type SourceNavigation,
+} from "@/components/chat/SourceDocuments";
 
 export const MarkdownMessage = memo(function MarkdownMessage({
   content,
 }: {
   content: string;
 }) {
+  const navigation = useSourceNavigation();
   return (
     <div
       className={cn(
@@ -15,12 +20,15 @@ export const MarkdownMessage = memo(function MarkdownMessage({
         messagesStyles.message_markdown,
       )}
     >
-      {renderMarkdownBlocks(content)}
+      {renderMarkdownBlocks(content, navigation)}
     </div>
   );
 });
 
-function renderMarkdownBlocks(content: string): ReactNode[] {
+function renderMarkdownBlocks(
+  content: string,
+  navigation: SourceNavigation,
+): ReactNode[] {
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
@@ -55,7 +63,7 @@ function renderMarkdownBlocks(content: string): ReactNode[] {
       const Heading = `h${heading[1].length}` as "h1" | "h2" | "h3";
       blocks.push(
         <Heading key={`heading-${blocks.length}`}>
-          {renderInline(heading[2])}
+          {renderInline(heading[2], navigation)}
         </Heading>,
       );
       index += 1;
@@ -66,7 +74,10 @@ function renderMarkdownBlocks(content: string): ReactNode[] {
       while (index < lines.length && /^\s*[-*]\s+/.test(lines[index] ?? "")) {
         items.push(
           <li key={`item-${items.length}`}>
-            {renderInline((lines[index] ?? "").replace(/^\s*[-*]\s+/, ""))}
+            {renderInline(
+              (lines[index] ?? "").replace(/^\s*[-*]\s+/, ""),
+              navigation,
+            )}
           </li>,
         );
         index += 1;
@@ -79,7 +90,10 @@ function renderMarkdownBlocks(content: string): ReactNode[] {
       while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index] ?? "")) {
         items.push(
           <li key={`item-${items.length}`}>
-            {renderInline((lines[index] ?? "").replace(/^\s*\d+\.\s+/, ""))}
+            {renderInline(
+              (lines[index] ?? "").replace(/^\s*\d+\.\s+/, ""),
+              navigation,
+            )}
           </li>,
         );
         index += 1;
@@ -102,14 +116,14 @@ function renderMarkdownBlocks(content: string): ReactNode[] {
     }
     blocks.push(
       <p key={`paragraph-${blocks.length}`}>
-        {renderInline(paragraph.join("\n"))}
+        {renderInline(paragraph.join("\n"), navigation)}
       </p>,
     );
   }
   return blocks;
 }
 
-function renderInline(text: string): ReactNode[] {
+function renderInline(text: string, navigation: SourceNavigation): ReactNode[] {
   const nodes: ReactNode[] = [];
   const pattern =
     /!\[([^\]]*)\]\(([^)\s]+)\)|\[([^\]]+)\]\(([^)\s]+)\)|\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`|\*([^*]+)\*|_([^_]+)_/g;
@@ -127,6 +141,21 @@ function renderInline(text: string): ReactNode[] {
         </span>,
       );
     } else if (match[3] !== undefined) {
+      const openSource = navigation.resolve(match[4] ?? "");
+      if (openSource) {
+        nodes.push(
+          <button
+            type="button"
+            className="cursor-pointer text-primary underline underline-offset-2"
+            key={key}
+            onClick={openSource}
+          >
+            {match[3]}
+          </button>,
+        );
+        lastIndex = pattern.lastIndex;
+        continue;
+      }
       const href = safeMarkdownHref(match[4]);
       nodes.push(
         href ? (

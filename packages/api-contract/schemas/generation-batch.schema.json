@@ -8,6 +8,8 @@
     "conversation_id": { "type": "string" },
     "client_request_id": { "type": "string" },
     "user_message_id": { "type": "string" },
+    "input_content": { "type": "string" },
+    "attachments": { "type": "array", "maxItems": 4, "items": { "$ref": "attachment.schema.json" } },
     "state": { "enum": ["pending", "streaming", "completed", "completed_with_errors", "stopped", "failed"] },
     "events_url": { "type": "string" },
     "selected_generation_id": { "type": "string" },

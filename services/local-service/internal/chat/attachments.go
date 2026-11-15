@@ -1,0 +1,78 @@
+package chat
+
+import (
+	"context"
+	"unicode/utf8"
+
+	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
+)
+
+func (service *Service) PreviewAttachment(ctx context.Context, input documents.Input) (documents.Snapshot, error) {
+	parsed, err := service.parseAttachment(ctx, input)
+	return parsed.Snapshot, err
+}
+
+// SetDocumentParser configures the parser before the service starts handling requests.
+func (service *Service) SetDocumentParser(parser documents.Parser) { service.documentParser = parser }
+
+func (service *Service) parseAttachment(ctx context.Context, input documents.Input) (documents.Prepared, error) {
+	if service.documentParser != nil {
+		return service.documentParser(ctx, input)
+	}
+	return documents.Parse(ctx, input)
+}
+
+func (service *Service) ReadAttachment(ctx context.Context, batchID, documentID string) (documents.Input, error) {
+	return service.store.LoadAttachmentData(ctx, batchID, documentID)
+}
+
+func (service *Service) PreviewGenerationContext(ctx context.Context, input SendInput) ([]provider.ProviderMessage, error) {
+	if _, err := service.store.LoadConversation(ctx, input.ConversationID); err != nil {
+		return nil, err
+	}
+	systemPrompt := input.SystemPrompt
+	if service.settings != nil {
+		settings, err := service.settings.GetSettings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		systemPrompt = settings.SystemPrompt
+	}
+	_, content, err := service.prepareAttachments(ctx, input, systemPrompt)
+	if err != nil {
+		return nil, err
+	}
+	items, err := service.store.LoadBatchContext(ctx, input.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	messages := make([]provider.ProviderMessage, 0, len(items)*2+2)
+	if systemPrompt != "" {
+		messages = append(messages, provider.ProviderMessage{Role: "system", Content: systemPrompt})
+	}
+	for _, item := range items {
+		messages = append(messages, provider.ProviderMessage{Role: "user", Content: item.UserBody}, provider.ProviderMessage{Role: "assistant", Content: item.AssistantBody})
+	}
+	return append(messages, provider.ProviderMessage{Role: "user", Content: content}), nil
+}
+
+func (service *Service) prepareAttachments(ctx context.Context, input SendInput, systemPrompt string) ([]documents.Prepared, string, error) {
+	prepared, err := documents.PrepareWith(ctx, input.Attachments, service.parseAttachment)
+	if err != nil {
+		return nil, "", err
+	}
+	content := documents.Prompt(input.Body, prepared)
+	items, err := service.store.LoadBatchContext(ctx, input.ConversationID)
+	if err != nil {
+		return nil, "", err
+	}
+	characters := utf8.RuneCountInString(content) + utf8.RuneCountInString(systemPrompt)
+	for _, item := range items {
+		characters += utf8.RuneCountInString(item.UserBody) + utf8.RuneCountInString(item.AssistantBody)
+	}
+	if characters > documents.MaxContextCharacters {
+		return nil, "", documents.ErrContextLimit
+	}
+	return prepared, content, nil
+}

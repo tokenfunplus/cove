@@ -44,6 +44,8 @@ vi.mock("@/api", async (importOriginal) => {
     subscribeGenerationBatch: vi.fn(),
     getGenerationBatch: vi.fn(),
     getGenerationBatchContext: vi.fn(),
+    previewAttachment: vi.fn(),
+    previewGenerationContext: vi.fn(),
     cancelGeneration: vi.fn(),
     cancelGenerationBatch: vi.fn(),
     retryGenerationTarget: vi.fn(),
@@ -717,8 +719,9 @@ test("private verification actions appear only after opening their menu", async 
 test.each(["model", "gateway"] as const)(
   "saved %s evidence keeps re-verification reachable through its menu",
   async (kind) => {
-    const { VerificationDetailsButton } =
-      await import("@/components/verification/VerificationDetailsButton");
+    const { VerificationDetailsButton } = await import(
+      "@/components/verification/VerificationDetailsButton"
+    );
     const { englishConversationCopy } = await import("@/messages");
     const refresh = vi.fn().mockResolvedValue(undefined);
     render(
@@ -745,8 +748,9 @@ test.each(["model", "gateway"] as const)(
 );
 
 test("Escape dismisses the nested add-model search and restores its trigger", async () => {
-  const { ModelSelector } =
-    await import("@/components/providers/ModelSelector");
+  const { ModelSelector } = await import(
+    "@/components/providers/ModelSelector"
+  );
   render(
     <ModelSelector
       profiles={[fixture.profile]}
@@ -941,8 +945,9 @@ test("stopping private verification does not wait forever for an SDK callback", 
 });
 
 test("a changed destination requires an explicit new key before testing or saving", async () => {
-  const { ProviderSettings } =
-    await import("@/components/providers/ProviderSettings");
+  const { ProviderSettings } = await import(
+    "@/components/providers/ProviderSettings"
+  );
   const save = vi.fn().mockResolvedValue(fixture.profile);
   const probe = vi.fn().mockResolvedValue(fixture.models);
   render(
@@ -970,8 +975,9 @@ test("a changed destination requires an explicit new key before testing or savin
 });
 
 test("provider save disables overlapping commands until the request finishes", async () => {
-  const { ProviderSettings } =
-    await import("@/components/providers/ProviderSettings");
+  const { ProviderSettings } = await import(
+    "@/components/providers/ProviderSettings"
+  );
   let finish!: (profile: typeof fixture.profile) => void;
   const save = vi.fn().mockImplementation(
     () =>
@@ -1223,4 +1229,182 @@ test("the provider setup action opens the Provider tab directly", async () => {
       await screen.findByRole("tab", { name: "Provider settings" })
     ).getAttribute("aria-selected"),
   ).toBe("true");
+});
+
+test("files are previewed, sent with an idempotent submission, and cleared after acceptance", async () => {
+  const snapshot = {
+    id: "a".repeat(64),
+    name: "notes.md",
+    media_type: "text/plain" as const,
+    size: 6,
+    characters: 6,
+    extraction_version: "cove-text-v1",
+    sections: [{ id: "L1", text: "Source" }],
+  };
+  vi.mocked(transport.previewAttachment).mockResolvedValue(snapshot);
+  vi.mocked(transport.previewGenerationContext).mockResolvedValue([
+    { role: "user", content: "A draft and Source" },
+  ]);
+  const { composer, user } = await openWorkspace();
+  await user.upload(
+    screen.getByLabelText("Attach files"),
+    new File(["Source"], "notes.md", { type: "text/markdown" }),
+  );
+  await screen.findByRole("button", { name: /Preview extracted text/ });
+  expect(transport.previewAttachment).toHaveBeenCalledWith({
+    name: "notes.md",
+    data: btoa("Source"),
+  });
+  await user.type(composer, "Use the source");
+  await user.click(screen.getByRole("button", { name: "Review context" }));
+  await screen.findByText("A draft and Source");
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Close" }));
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() =>
+    expect(transport.createGenerationBatch).toHaveBeenCalledWith(
+      fixture.conversation.id,
+      expect.objectContaining({
+        body: "Use the source",
+        attachments: [{ name: "notes.md", data: btoa("Source") }],
+      }),
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Remove attachment: notes.md" }),
+    ).toBeNull(),
+  );
+});
+
+test("attachment validation blocks sending and a rejected submission retains its files", async () => {
+  const snapshot = {
+    id: "b".repeat(64),
+    name: "notes.txt",
+    media_type: "text/plain" as const,
+    size: 6,
+    characters: 6,
+    extraction_version: "cove-text-v1",
+    sections: [{ id: "L1", text: "Source" }],
+  };
+  vi.mocked(transport.previewAttachment).mockRejectedValueOnce(
+    new Error("The file could not be parsed."),
+  );
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Use the source");
+  await user.upload(
+    screen.getByLabelText("Attach files"),
+    new File(["bad"], "bad.txt"),
+  );
+  await screen.findByText("The file could not be parsed.");
+  expect(
+    screen
+      .getByRole("button", { name: "Send message" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  await user.click(
+    screen.getByRole("button", { name: "Remove attachment: bad.txt" }),
+  );
+  vi.mocked(transport.previewAttachment).mockResolvedValue(snapshot);
+  await user.upload(
+    screen.getByLabelText("Attach files"),
+    new File(["Source"], "notes.txt"),
+  );
+  await screen.findByRole("button", { name: /Preview extracted text/ });
+  vi.mocked(transport.createGenerationBatch).mockRejectedValue(
+    new transport.LocalServiceError({
+      error: {
+        code: "invalid_attachment",
+        message: "The context is too large.",
+        details: null,
+        request_id: "test",
+      },
+    }),
+  );
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await screen.findByText("The context is too large.");
+  expect(
+    screen.getByRole("button", { name: "Remove attachment: notes.txt" }),
+  ).toBeTruthy();
+  expect((composer as HTMLTextAreaElement).value).toBe("Use the source");
+});
+
+test("NearAI receives the authoritative attachment input rather than the visible user message", async () => {
+  configureNearAITarget(0, "private_tee");
+  const encryptedInput = "Visible prompt plus frozen source text";
+  fixture.pendingBatch.input_content = encryptedInput;
+  fixture.completedBatch.input_content = encryptedInput;
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "A test prompt");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(privateInference.generate).toHaveBeenCalled());
+  expect(privateInference.generate.mock.calls[0]?.[0].message).toBe(
+    encryptedInput,
+  );
+});
+
+test("stopping during file submission cancels the newly accepted batch before starting browser inference", async () => {
+  configureNearAITarget(0, "private_tee");
+  let accept!: (batch: typeof fixture.pendingBatch) => void;
+  vi.mocked(transport.createGenerationBatch).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        accept = resolve;
+      }),
+  );
+  const stopped = {
+    ...fixture.pendingBatch,
+    state: "stopped" as const,
+    targets: fixture.pendingBatch.targets.map((target) => ({
+      ...target,
+      generation: { ...target.generation, state: "stopped" as const },
+    })),
+  };
+  vi.mocked(transport.cancelGenerationBatch).mockResolvedValue(stopped);
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "A pending submission");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() =>
+    expect(transport.createGenerationBatch).toHaveBeenCalled(),
+  );
+  await user.click(screen.getByRole("button", { name: "Stop generation" }));
+  expect(transport.cancelGenerationBatch).not.toHaveBeenCalled();
+  await act(async () => {
+    accept(fixture.pendingBatch);
+  });
+  await waitFor(() =>
+    expect(transport.cancelGenerationBatch).toHaveBeenCalledWith(
+      fixture.pendingBatch.id,
+    ),
+  );
+  expect(privateInference.generate).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Stop generation" }),
+    ).toBeNull(),
+  );
+});
+
+test("private stream failure preserves the bounded Provider reason in settlement and the UI", async () => {
+  configureNearAITarget(0, "incognito");
+  const reason =
+    "Provider error: The upstream model service failed to generate a response (server_error). Try again later or select another model.";
+  privateInference.generate.mockImplementation(async function* () {
+    yield { type: "verifying_environment" };
+    yield { type: "streaming" };
+    yield { type: "failed", code: "stream_failed", reason };
+  });
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Reply OK");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() =>
+    expect(transport.settleSecureGeneration).toHaveBeenCalledWith(
+      fixture.pendingBatch.targets[0]!.generation.id,
+      "",
+      expect.objectContaining({
+        failure_code: "stream_failed",
+        evidence_summary: reason,
+      }),
+    ),
+  );
 });

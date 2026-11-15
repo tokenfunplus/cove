@@ -202,6 +202,30 @@ export interface Generation {
 export interface GenerationInput {
   client_request_id: string;
   body: string;
+  attachments?: AttachmentInput[];
+}
+
+export interface AttachmentInput {
+  name: string;
+  /** Base64-encoded original file bytes, retained locally when the turn is saved. */
+  data: string;
+}
+
+export interface SourceSection {
+  /** L<number> for text lines, P<number> for PDF pages. */
+  id: string;
+  text: string;
+}
+
+export interface AttachmentSnapshot {
+  /** SHA-256 of the original bytes. */
+  id: string;
+  name: string;
+  media_type: "text/plain" | "application/pdf";
+  size: number;
+  characters: number;
+  extraction_version: string;
+  sections: SourceSection[];
 }
 
 export type GenerationEventType = "started" | "delta" | "completed" | "stopped" | "failed";
@@ -243,11 +267,20 @@ export interface GenerationContextMessage {
   content: string;
 }
 
+/** A Provider input item, including the System Prompt in a draft preview. */
+export interface GenerationPromptMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 export interface GenerationBatch {
   id: string;
   conversation_id: string;
   client_request_id: string;
   user_message_id?: string;
+  /** Exact current user input supplied to Providers when attachments are present. */
+  input_content?: string;
+  attachments?: AttachmentSnapshot[];
   state: GenerationBatchState;
   targets: GenerationTarget[];
   events_url: string;

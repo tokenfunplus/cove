@@ -496,7 +496,8 @@ class BrowserAttestationClient extends AttestationClient {
         .clone()
         .json()
         .catch(() => undefined)) as
-        { error?: { message?: unknown } } | undefined;
+        | { error?: { message?: unknown } }
+        | undefined;
       if (
         typeof body?.error?.message === "string" &&
         body.error.message.trim() !== ""
@@ -685,27 +686,38 @@ export class BrowserGatewayResponseClient implements SecureInferenceSdkClient {
     const decoder = new TextDecoder();
     let buffer = "";
     let completionId = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (value) {
-        this.responseChunks.push(value);
-        buffer += decoder.decode(value, { stream: !done });
+    let consumed = false;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (value) {
+          this.responseChunks.push(value);
+          buffer += decoder.decode(value, { stream: !done });
+        }
+        if (done) {
+          buffer += decoder.decode();
+        }
+        const parsed = consumeSse(buffer + (done ? "\n\n" : ""));
+        buffer = parsed.rest;
+        for (const event of parsed.events) {
+          const failure = responseFailureFor(event);
+          if (failure) throw new Error(failure);
+          const chunk = responseChunkFor(event);
+          if (!chunk) continue;
+          if (chunk.completionId) completionId = chunk.completionId;
+          yield {
+            completionId: completionId || chunk.completionId,
+            delta: chunk.delta,
+          };
+        }
+        if (done) {
+          consumed = true;
+          break;
+        }
       }
-      if (done) {
-        buffer += decoder.decode();
-      }
-      const parsed = consumeSse(buffer);
-      buffer = parsed.rest;
-      for (const event of parsed.events) {
-        const chunk = responseChunkFor(event);
-        if (!chunk) continue;
-        if (chunk.completionId) completionId = chunk.completionId;
-        yield {
-          completionId: completionId || chunk.completionId,
-          delta: chunk.delta,
-        };
-      }
-      if (done) break;
+    } finally {
+      if (!consumed) await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
     }
   }
 
@@ -745,11 +757,11 @@ export class BrowserGatewayResponseClient implements SecureInferenceSdkClient {
 
 function consumeSse(buffer: string): { events: unknown[]; rest: string } {
   const events: unknown[] = [];
-  const parts = buffer.split("\n\n");
+  const parts = buffer.split(/\r?\n\r?\n/);
   const rest = parts.pop() ?? "";
   for (const part of parts) {
     const data = part
-      .split("\n")
+      .split(/\r?\n/)
       .filter((line) => line.startsWith("data:"))
       .map((line) => line.slice(5).trim())
       .join("");
@@ -761,6 +773,39 @@ function consumeSse(buffer: string): { events: unknown[]; rest: string } {
     }
   }
   return { events, rest };
+}
+
+function responseFailureFor(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const event = value as {
+    type?: unknown;
+    error?: { code?: unknown };
+    response?: { status?: unknown; error?: { code?: unknown } };
+  };
+  if (
+    event.type !== "response.failed" &&
+    event.type !== "response.incomplete" &&
+    event.type !== "error" &&
+    !event.error &&
+    event.response?.status !== "failed" &&
+    event.response?.status !== "incomplete"
+  )
+    return undefined;
+  const code = event.response?.error?.code ?? event.error?.code;
+  // Provider error messages can echo submitted content. Persist a bounded
+  // classification instead of an arbitrary upstream message or payload.
+  if (code === "server_error")
+    return "Provider error: The upstream model service failed to generate a response (server_error). Try again later or select another model.";
+  if (code === "rate_limit_exceeded")
+    return "Provider error: The upstream model service reached its rate limit (rate_limit_exceeded). Try again later.";
+  if (code === "model_not_found")
+    return "Provider error: The upstream model is unavailable (model_not_found). Select another model.";
+  if (
+    event.type === "response.incomplete" ||
+    event.response?.status === "incomplete"
+  )
+    return "Provider error: The upstream model returned an incomplete response.";
+  return "Provider error: The upstream model failed to generate a response.";
 }
 
 function responseChunkFor(

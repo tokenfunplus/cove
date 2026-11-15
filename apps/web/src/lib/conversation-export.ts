@@ -122,6 +122,35 @@ function markdownExport(view: ConversationView): string {
       );
     }
   }
+  const sources = new Map(
+    (view.generation_batches ?? []).flatMap((batch) =>
+      (batch.attachments ?? []).map((source) => [source.id, source] as const),
+    ),
+  );
+  if (sources.size > 0)
+    lines.push(
+      "## Source snapshots",
+      "",
+      "Original file bytes are not included in this export. The extracted text below is the saved version supplied to Providers.",
+      "",
+    );
+  for (const source of sources.values()) {
+    lines.push(
+      `### ${source.name.replace(/[\r\n]/g, " ")}`,
+      "",
+      `SHA-256: ${source.id}`,
+      `Extraction: ${source.extraction_version}`,
+      "",
+    );
+    for (const section of source.sections) {
+      lines.push(
+        `#### ${section.id}`,
+        "",
+        ...section.text.split("\n").map((line) => `    ${line}`),
+        "",
+      );
+    }
+  }
   return `${lines.join("\n").trimEnd()}\n`;
 }
 

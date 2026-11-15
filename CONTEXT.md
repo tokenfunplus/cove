@@ -54,6 +54,14 @@ _Avoid_: Best model, merged answer
 The immutable ordered references to Selected Answers that a Generation Batch supplied to its Providers. It does not change if the user later chooses a different answer for an earlier Batch.
 _Avoid_: Live conversation history, Provider transcript
 
+**Source Document**:
+A text, code, or text-based PDF file attached to a submitted user message. Cove retains its original bytes locally and sends its extracted text through the selected Provider transport.
+_Avoid_: Provider upload, Knowledge base
+
+**Attachment Snapshot**:
+The immutable original-file identity, filename, parser version, and extracted line/page sections saved with a Generation Batch. Every Target and retry uses the same saved source input. A source citation navigates to a section; it does not establish factual correctness or cryptographic verification.
+_Avoid_: Live file reference, Verified source
+
 **Context-Skipped Batch**:
 A Generation Batch the user explicitly chose not to represent in later Provider context. Its user message and every local result remain in Conversation History but are excluded from later Context Snapshots. The choice may change until a later Batch captures the disposition in its Context Snapshot.
 _Avoid_: Deleted turn, failed turn

@@ -52,6 +52,8 @@ A submitted message creates one durable Generation Batch with one to four Target
 
 Every attempt captures its Provider Snapshot and generation configuration. Completed assistant text becomes Conversation History; failed and stopped attempts retain diagnostics without persisting incomplete assistant content. Restart recovery marks interrupted attempts as failed.
 
+File chat saves original bytes, extracted source sections, and the augmented user input atomically with the Batch. `internal/documents` owns parsing and text formatting under Chat; persistence owns immutable snapshots and original downloads. The runnable service isolates PDF decoding in a bounded child process without initializing credentials or storage. Browser inference reads the same saved `input_content` used by ordinary Providers. Selected prior turns include that augmented input in later Context Snapshots. Draft previews remain local and ephemeral. See [source document snapshots](adr/0025-snapshot-local-source-documents-for-file-chat.md) for limits, context inspection, and citation semantics.
+
 Chat expires abandoned browser Generations after the inference timeout plus settlement grace. Slow SSE subscribers are disconnected without blocking Provider workers and can reconnect to reconcile persisted results. See [bounded lifetimes and event delivery](adr/0022-bound-browser-generation-lifetimes.md).
 
 Single-model turns select their completed answers automatically. Comparisons require the user to select one answer or skip the turn for later context. Later batches capture immutable Context Snapshots. Unselected answers remain local. Retries preserve original context and model targets.

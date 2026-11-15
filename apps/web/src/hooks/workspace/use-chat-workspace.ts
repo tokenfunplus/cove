@@ -5,6 +5,7 @@ import { secureTargetForCatalog } from "@/components/providers/model-selection";
 import { useBatchEvents } from "@/hooks/chat/use-batch-events";
 import { useGenerationCommands } from "@/hooks/chat/use-generation-commands";
 import { useGenerationState } from "@/hooks/chat/use-generation-state";
+import { useAttachmentDraft } from "@/hooks/chat/use-attachment-draft";
 import { usePrivateGeneration } from "@/hooks/chat/use-private-generation";
 import { useConversationActions } from "@/hooks/conversations/use-conversation-actions";
 import { useConversationLifecycle } from "@/hooks/conversations/use-conversation-lifecycle";
@@ -35,6 +36,7 @@ export function useChatWorkspace() {
   } = workspaceState;
   const { setFeedback, setMobileSidebarOpen } = workspaceUi;
   const generationState = useGenerationState();
+  const attachmentDraft = useAttachmentDraft(selectedId);
   const {
     setGenerationBatch,
     setDraft,
@@ -178,6 +180,7 @@ export function useChatWorkspace() {
   });
 
   const generationCommands = useGenerationCommands({
+    attachmentDraft,
     ...workspaceState,
     ...workspaceUi,
     ...generationState,
@@ -213,6 +216,7 @@ export function useChatWorkspace() {
   });
 
   return {
+    attachmentDraft,
     ...providerActions,
     ...workspaceState,
     ...workspaceUi,

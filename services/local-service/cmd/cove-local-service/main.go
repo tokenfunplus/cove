@@ -16,6 +16,7 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/api"
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
+	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
@@ -24,6 +25,12 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--extract-pdf" {
+		if err := documents.RunWorker(os.Stdin, os.Stdout); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "cove-local-service:", err)
 		os.Exit(1)
@@ -88,12 +95,18 @@ func run() error {
 		secretStore = credentials.NewFileStore(filepath.Join(applicationDataDirectory, "insecure-test-provider-secrets.json"))
 	}
 	providerSetup := providerconfig.NewService(store, secretStore, nil)
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	chatService := chat.NewServiceWithSettings(store, providerSetup, provider.NewHTTPAdapter(nil), store)
+	chatService.SetDocumentParser(documents.ProcessParser(executable))
 	localAPI := api.NewServer(api.Config{
 		Security:      security,
 		ControlToken:  controlToken,
 		Store:         store,
 		Settings:      store,
-		Chat:          chat.NewServiceWithSettings(store, providerSetup, provider.NewHTTPAdapter(nil), store),
+		Chat:          chatService,
 		ProviderSetup: providerSetup,
 		NearAIProxy:   provider.NewNearAIProxy(providerSetup, nil),
 		Shutdown: func() {

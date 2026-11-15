@@ -92,6 +92,26 @@ const provider = http.createServer(async (request, response) => {
       }) +
       "\n\n",
   );
+  if (prompt.includes('"name":"source-notes.md"')) {
+    const sources = prompt
+      .split("\n")
+      .filter((line) => line.startsWith('{"id":"'))
+      .map((line) => JSON.parse(line));
+    for (const source of sources)
+      response.write(
+        "data: " +
+          JSON.stringify({
+            choices: [
+              {
+                delta: {
+                  content: `\n\n[${source.name}, ${source.sections[0].id}](cove:${source.id}:${source.sections[0].id})`,
+                },
+              },
+            ],
+          }) +
+          "\n\n",
+      );
+  }
   if (prompt.includes("Long fixture"))
     response.write(
       "data: " +
@@ -332,12 +352,18 @@ try {
   }
   async function click(selector) {
     await until(`!!document.querySelector(${JSON.stringify(selector)})`);
-    await evaluate(`(async()=>{const e=document.querySelector(${JSON.stringify(selector)});const r=e.getBoundingClientRect();const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);if(!e.contains(hit)){e.scrollIntoView({block:'nearest'});await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);}})()`);
+    await evaluate(
+      `(async()=>{const e=document.querySelector(${JSON.stringify(selector)});const r=e.getBoundingClientRect();const hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);if(!e.contains(hit)){e.scrollIntoView({block:'nearest'});await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);}})()`,
+    );
     const point = await evaluate(
       `(()=>{const e=document.querySelector(${JSON.stringify(selector)});const r=e.getBoundingClientRect();const x=r.left+r.width/2,y=r.top+r.height/2;const hit=document.elementFromPoint(x,y);return {x,y,ok:!!hit&&(e.contains(hit)||hit.contains(e))};})()`,
     );
     assert(point.ok, "Pointer is blocked for " + selector);
-    await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y });
+    await cdp("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: point.x,
+      y: point.y,
+    });
     await cdp("Input.dispatchMouseEvent", {
       type: "mousePressed",
       x: point.x,
@@ -370,9 +396,16 @@ try {
     );
   }
   await until('!!document.querySelector(".conversation-welcome")');
-  await until(`document.querySelector('.model-selector')?.dataset.catalogStatus === 'loading' && !!document.querySelector('#generation-input')`);
+  await until(
+    `document.querySelector('.model-selector')?.dataset.catalogStatus === 'loading' && !!document.querySelector('#generation-input')`,
+  );
   const layoutAt = async (width) => {
-    await cdp("Emulation.setDeviceMetricsOverride", { width, height: width < 768 ? 844 : 900, deviceScaleFactor: 1, mobile: width < 768 });
+    await cdp("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: width < 768 ? 844 : 900,
+      deviceScaleFactor: 1,
+      mobile: width < 768,
+    });
     await pause(500);
     return evaluate(`['.workspace__header','.message-list','.conversation-welcome','#generation-input','.generation-composer__send'].map(selector => {
       const { top, height } = document.querySelector(selector).getBoundingClientRect();
@@ -380,15 +413,29 @@ try {
     })`);
   };
   await fill("#generation-input", "Draft while loading");
-  assert(await evaluate(`document.querySelector('.generation-composer__send').disabled`));
+  assert(
+    await evaluate(
+      `document.querySelector('.generation-composer__send').disabled`,
+    ),
+  );
   const loadingLayout = new Map();
-  for (const width of [390, 1440]) loadingLayout.set(width, await layoutAt(width));
+  for (const width of [390, 1440])
+    loadingLayout.set(width, await layoutAt(width));
   catalogGate.resolve();
-  await until(`document.querySelector('.model-selector')?.dataset.catalogStatus === 'ready'`);
+  await until(
+    `document.querySelector('.model-selector')?.dataset.catalogStatus === 'ready'`,
+  );
   for (const width of [390, 1440]) {
-    assert.deepEqual(await layoutAt(width), loadingLayout.get(width), "Catalog loading shifted the workspace at width " + width);
+    assert.deepEqual(
+      await layoutAt(width),
+      loadingLayout.get(width),
+      "Catalog loading shifted the workspace at width " + width,
+    );
   }
-  assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "Draft while loading");
+  assert.equal(
+    await evaluate(`document.querySelector('#generation-input').value`),
+    "Draft while loading",
+  );
   await fill("#generation-input", "");
 
   assert.equal(
@@ -447,10 +494,15 @@ try {
     });
     await pause(250);
     await assertLayout("Empty " + width);
-    const controlRects = await evaluate(`['.model-selector__provider-select', '.model-selector__fields .front-select__input', '.model-selector__comparison-toggle'].map(s => document.querySelector(s).getBoundingClientRect().toJSON())`);
+    const controlRects = await evaluate(
+      `['.model-selector__provider-select', '.model-selector__fields .front-select__input', '.model-selector__comparison-toggle'].map(s => document.querySelector(s).getBoundingClientRect().toJSON())`,
+    );
     for (const rect of controlRects.slice(1)) {
-      assert(Math.abs(rect.top - controlRects[0].top) <= 1 && Math.abs(rect.height - controlRects[0].height) <= 1,
-        "Model controls are misaligned at width " + width);
+      assert(
+        Math.abs(rect.top - controlRects[0].top) <= 1 &&
+          Math.abs(rect.height - controlRects[0].height) <= 1,
+        "Model controls are misaligned at width " + width,
+      );
     }
     await snapshot("empty-light-" + width);
   }
@@ -462,13 +514,28 @@ try {
   });
   await click('button[aria-label="Collapse sidebar"]');
   await until(`!!document.querySelector('.conversation-sidebar--collapsed')`);
-  assert(await evaluate(`document.querySelector('.conversation-list__new').getBoundingClientRect().width > 0`));
+  assert(
+    await evaluate(
+      `document.querySelector('.conversation-list__new').getBoundingClientRect().width > 0`,
+    ),
+  );
   await snapshot("collapsed-sidebar");
   await click('button[aria-label="Settings"]');
   await click('button[aria-label="Close settings"]');
-  await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "k", code: "KeyK", modifiers: 4 });
-  await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "k", code: "KeyK" });
-  await until(`!document.querySelector('.conversation-sidebar--collapsed') && document.activeElement === document.querySelector('.conversation-list__search input')`);
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "k",
+    code: "KeyK",
+    modifiers: 4,
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "k",
+    code: "KeyK",
+  });
+  await until(
+    `!document.querySelector('.conversation-sidebar--collapsed') && document.activeElement === document.querySelector('.conversation-list__search input')`,
+  );
   await evaluate(
     `document.querySelector('button[aria-label="Toggle day / night edition"]').click()`,
   );
@@ -535,26 +602,36 @@ try {
         scrollHeight: list.scrollHeight, height: list.clientHeight,
         parentScroll: document.querySelector('.settings-dialog__sections').scrollTop};
     })()`);
-    assert(before.scrollHeight > before.height, "Catalog fixture must overflow");
+    assert(
+      before.scrollHeight > before.height,
+      "Catalog fixture must overflow",
+    );
     const x = before.rect.left + before.rect.width / 2;
     if (name === "mobile") {
       await cdp("Emulation.setTouchEmulationEnabled", { enabled: true });
       const y = before.rect.bottom - 40;
       await cdp("Input.dispatchTouchEvent", {
-        type: "touchStart", touchPoints: [{x, y}],
+        type: "touchStart",
+        touchPoints: [{ x, y }],
       });
       for (let distance = 30; distance <= 180; distance += 30) {
         await cdp("Input.dispatchTouchEvent", {
-          type: "touchMove", touchPoints: [{x, y: y - distance}],
+          type: "touchMove",
+          touchPoints: [{ x, y: y - distance }],
         });
         await pause(35);
       }
-      await cdp("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await cdp("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      });
     } else {
       await cdp("Input.dispatchMouseEvent", {
-        type: "mouseWheel", x,
+        type: "mouseWheel",
+        x,
         y: before.rect.top + Math.min(80, before.rect.height / 2),
-        deltaX: 0, deltaY: 360,
+        deltaX: 0,
+        deltaY: 360,
       });
     }
     await pause(250);
@@ -568,23 +645,48 @@ try {
       await cdp("Emulation.setTouchEmulationEnabled", { enabled: false });
     }
     await snapshot("model-list-" + name);
-    assert(after.scroll > 0, "Model list blocked scrolling: " + JSON.stringify({before, after}));
-    assert(before.rect.height <= before.maxHeight + 1,
-      "Model list exceeded its height limit: " + JSON.stringify(before));
-    assert(before.rect.left >= 0 && before.rect.right <= after.viewportWidth + 1 &&
-      before.rect.top >= 0 && before.rect.bottom <= after.viewportHeight + 1,
-      "Model list escaped the viewport: " + JSON.stringify(before));
-    assert.equal(after.parentScroll, before.parentScroll,
-      "Scrolling the model list moved its settings panel");
+    assert(
+      after.scroll > 0,
+      "Model list blocked scrolling: " + JSON.stringify({ before, after }),
+    );
+    assert(
+      before.rect.height <= before.maxHeight + 1,
+      "Model list exceeded its height limit: " + JSON.stringify(before),
+    );
+    assert(
+      before.rect.left >= 0 &&
+        before.rect.right <= after.viewportWidth + 1 &&
+        before.rect.top >= 0 &&
+        before.rect.bottom <= after.viewportHeight + 1,
+      "Model list escaped the viewport: " + JSON.stringify(before),
+    );
+    assert.equal(
+      after.parentScroll,
+      before.parentScroll,
+      "Scrolling the model list moved its settings panel",
+    );
   }
   await assertModelListScroll("desktop");
-  await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
-  await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape" });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+  });
+  await cdp("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+  });
   await until(`!document.querySelector('.front-select__options')`);
-  assert(await evaluate(`!!document.querySelector('.settings-dialog__panel')`),
-    "Closing the model list dismissed settings");
+  assert(
+    await evaluate(`!!document.querySelector('.settings-dialog__panel')`),
+    "Closing the model list dismissed settings",
+  );
   await cdp("Emulation.setDeviceMetricsOverride", {
-    width: 390, height: 844, deviceScaleFactor: 1, mobile: true,
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
   });
   await click("#provider-settings .front-select__toggle");
   await until(`!!document.querySelector('.front-select__options')`);
@@ -605,7 +707,10 @@ try {
     "Model selection dismissed its settings dialog",
   );
   await cdp("Emulation.setDeviceMetricsOverride", {
-    width: 1440, height: 900, deviceScaleFactor: 1, mobile: false,
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
   });
   await click("#settings-tab-general");
   await clickText("Follow system");
@@ -633,17 +738,29 @@ try {
     `document.querySelector('button[aria-label="Close settings"]').click()`,
   );
   await until(`!document.querySelector('[role="dialog"]')`);
-  const chatArea = () => evaluate(`document.querySelector('.message-list').getBoundingClientRect().toJSON()`);
+  const chatArea = () =>
+    evaluate(
+      `document.querySelector('.message-list').getBoundingClientRect().toJSON()`,
+    );
   const closedChatArea = await chatArea();
   await evaluate(
     `document.querySelector('.model-selector__comparison-toggle').click()`,
   );
-  assert.deepEqual(await chatArea(), closedChatArea, "Opening the model set moved the chat");
+  assert.deepEqual(
+    await chatArea(),
+    closedChatArea,
+    "Opening the model set moved the chat",
+  );
   await snapshot("model-comparison-controls");
   await click(".model-selector__chip .front-select__input");
   await chooseOption("model-one");
-  assert.equal(await evaluate(`document.querySelector('.model-selector__comparison-toggle').getAttribute('aria-expanded')`), "true",
-    "Choosing a target dismissed the model set");
+  assert.equal(
+    await evaluate(
+      `document.querySelector('.model-selector__comparison-toggle').getAttribute('aria-expanded')`,
+    ),
+    "true",
+    "Choosing a target dismissed the model set",
+  );
   await evaluate(
     `document.querySelector('.model-selector__add-button').click()`,
   );
@@ -964,9 +1081,16 @@ try {
   });
   await pause(250);
   await assertLayout("Four-model mobile controls");
-  const modelPanel = await evaluate(`document.querySelector('.model-selector__comparison').getBoundingClientRect().toJSON()`);
-  assert(modelPanel.width > 0 && modelPanel.left >= 0 && modelPanel.right <= 390 && modelPanel.bottom <= 844,
-    "The model set escapes the mobile viewport");
+  const modelPanel = await evaluate(
+    `document.querySelector('.model-selector__comparison').getBoundingClientRect().toJSON()`,
+  );
+  assert(
+    modelPanel.width > 0 &&
+      modelPanel.left >= 0 &&
+      modelPanel.right <= 390 &&
+      modelPanel.bottom <= 844,
+    "The model set escapes the mobile viewport",
+  );
   await snapshot("four-model-controls-390");
   await cdp("Emulation.setDeviceMetricsOverride", {
     width: 1440,
@@ -976,6 +1100,59 @@ try {
   });
   await pause(250);
   await click(".model-selector__comparison-toggle");
+  // Exercise local parsing and the authenticated preview through the production UI.
+  const notesPath = path.join(temp, "source-notes.md");
+  await writeFile(notesPath, "First source line\nSecond source line", {
+    mode: 0o600,
+  });
+  const documentRoot = await cdp("DOM.getDocument");
+  const fileInput = await cdp("DOM.querySelector", {
+    nodeId: documentRoot.root.nodeId,
+    selector: 'input[type="file"][aria-label="Attach files"]',
+  });
+  await cdp("DOM.setFileInputFiles", {
+    nodeId: fileInput.nodeId,
+    files: [notesPath, path.join(repoRoot, "apps/web/e2e/fixtures/source.pdf")],
+  });
+  await until(
+    `document.querySelectorAll('button[aria-label^="Remove attachment:"]').length === 2 && [...document.querySelectorAll('button')].filter(b => b.textContent.includes('Preview extracted text')).length === 2`,
+  );
+  await evaluate(
+    `document.querySelectorAll('button').forEach(b=>{if(b.textContent.includes('Preview extracted text') && b.closest('div').textContent.includes('source.pdf')) b.setAttribute('data-pdf-preview','true')})`,
+  );
+  await click("[data-pdf-preview]");
+  await until(
+    `document.querySelector('[role=dialog]')?.textContent.includes('Synthetic PDF source')`,
+  );
+  await snapshot("source-pdf-preview");
+  const sourceDialogAudits = [];
+  const sourceAxe = await readFile(require.resolve("axe-core/axe.min.js"), "utf8");
+  async function auditSourceDialog(surface) {
+    if (await evaluate("typeof globalThis.axe === 'undefined'")) await evaluate(sourceAxe);
+    const previousTheme = await evaluate("document.documentElement.dataset.theme");
+    for (const theme of ["light", "dark"]) {
+      await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(theme)}`);
+      const violations = await evaluate("axe.run(document.querySelector('[role=dialog]'),{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}).then(r=>r.violations.map(v=>({id:v.id,impact:v.impact,nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))})))");
+      sourceDialogAudits.push({surface,theme,violations});
+      assert.equal(violations.length, 0, `${surface} ${theme}: ${JSON.stringify(violations)}`);
+      await snapshot(surface + "-" + theme);
+    }
+    await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(previousTheme)}`);
+  }
+  await auditSourceDialog("source-preview");
+  await clickText("Close", "[role=dialog]");
+  const beforeContextPreview = requests.length;
+  await clickText("Review context");
+  await until(
+    `document.querySelector('[role=dialog]')?.textContent.includes('Second source line') && document.querySelector('[role=dialog]')?.textContent.includes('Synthetic PDF source')`,
+  );
+  await auditSourceDialog("source-draft-context");
+  assert.equal(
+    requests.length,
+    beforeContextPreview,
+    "Context preview contacted a Provider",
+  );
+  await clickText("Close", "[role=dialog]");
   await fill("#generation-input", "Four model fixture");
   await click('button[aria-label="Send message"]');
   await until(
@@ -986,6 +1163,72 @@ try {
   );
   let latest = await api("/api/conversations/" + current.id);
   assert.equal(latest.generation_batches[0].targets.length, 4);
+  const fileBatch = latest.generation_batches[0];
+  assert.equal(fileBatch.attachments.length, 2);
+  const fileRequests = requests.filter(
+    (r) => r.messages.at(-1)?.content === fileBatch.input_content,
+  );
+  assert.equal(
+    fileRequests.length,
+    4,
+    "All comparison models must receive the same source input",
+  );
+  assert(fileBatch.input_content.includes("Synthetic PDF source"));
+  const originalDownload = await fetch(
+    origin +
+      "/api/generation-batches/" +
+      fileBatch.id +
+      "/attachments/" +
+      fileBatch.attachments[0].id,
+    { headers },
+  );
+  assert.equal(
+    await originalDownload.text(),
+    "First source line\nSecond source line",
+  );
+  assert(
+    originalDownload.headers
+      .get("content-disposition")
+      .startsWith("attachment;"),
+  );
+  // Page.reload acknowledges before navigation; wait for a new document instead
+  // of letting the old page's already-rendered answers satisfy the condition.
+  await evaluate("globalThis.__coveSourceReloadPending = true");
+  await cdp("Page.reload");
+  await until(
+    `globalThis.__coveSourceReloadPending !== true && document.querySelector('.model-selector')?.dataset.catalogStatus === 'ready' && document.querySelectorAll('.model-answer-card').length === 4 && !![...document.querySelectorAll('button')].find(b=>b.textContent==='source.pdf, P1' && b.getBoundingClientRect().width > 0)`,
+  );
+  await clickText("source.pdf, P1");
+  await until(
+    `document.querySelector('[role=dialog]')?.textContent.includes('Synthetic PDF source')`,
+  );
+  await snapshot("source-citation-reloaded");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await snapshot("source-citation-390");
+  assert(
+    await evaluate(`document.documentElement.scrollWidth <= innerWidth`),
+    "Source preview overflows the narrow viewport",
+  );
+  await clickText("Close", "[role=dialog]");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await clickText("View context");
+  await until(
+    `document.querySelector('[role=dialog]')?.textContent.includes('Synthetic PDF source')`,
+  );
+  await snapshot("source-context-snapshot");
+  await auditSourceDialog("source-saved-context");
+  await writeFile(path.join(evidenceDir, "source-accessibility.json"), JSON.stringify(sourceDialogAudits, null, 2));
+  await clickText("Close", "[role=dialog]");
   const selected = latest.generation_batches[0].targets[1].generation.id;
   await evaluate(
     `document.querySelectorAll('.model-answer-card .pick')[1].click()`,
@@ -1025,18 +1268,29 @@ try {
   );
   await clickText("Continue without an answer");
   await fill("#generation-input", "Slow fixture");
-  const composerPosition = () => evaluate(`['#generation-input', '.generation-composer__send'].map(selector => document.querySelector(selector).getBoundingClientRect().toJSON())`);
+  const composerPosition = () =>
+    evaluate(
+      `['#generation-input', '.generation-composer__send'].map(selector => document.querySelector(selector).getBoundingClientRect().toJSON())`,
+    );
   const idleComposer = await composerPosition();
   await click('button[aria-label="Send message"]');
   await until(`document.querySelectorAll('.generation-stop').length>0`);
-  assert.deepEqual(await composerPosition(), idleComposer, "The composer moved when Send became Stop");
+  assert.deepEqual(
+    await composerPosition(),
+    idleComposer,
+    "The composer moved when Send became Stop",
+  );
   await click(".generation-stop");
   await until(`document.querySelector('.model-answer-card--stopped')!==null`);
   await click('.generation-composer__send[aria-label="Stop generation"]');
   await until(
     `!document.querySelector('button[aria-label="Stop generation"]')`,
   );
-  assert.deepEqual(await composerPosition(), idleComposer, "The composer moved when Stop became Send");
+  assert.deepEqual(
+    await composerPosition(),
+    idleComposer,
+    "The composer moved when Stop became Send",
+  );
   await snapshot("four-model-stopped");
   await clickText("Continue without an answer");
   await fill("#generation-input", "Long fixture");
@@ -1344,5 +1598,10 @@ try {
   await new Promise((resolve) => provider.close(resolve));
   // Chrome subprocesses can finish profile writes just after the main process
   // exits on Linux. Retry transient ENOTEMPTY/EBUSY cleanup failures.
-  await rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  await rm(temp, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
 }

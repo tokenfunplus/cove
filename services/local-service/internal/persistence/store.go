@@ -14,10 +14,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 13
+const schemaVersion = 14
 
 const defaultConversationTitle = "New conversation"
 
@@ -57,6 +59,7 @@ type ChatStore interface {
 	SkipGenerationBatchContext(ctx context.Context, batchID string) error
 	LoadBatchContext(ctx context.Context, conversationID string) ([]ContextItem, error)
 	LoadGenerationBatchContext(ctx context.Context, batchID string) ([]ContextItem, error)
+	LoadAttachmentData(ctx context.Context, batchID, documentID string) (documents.Input, error)
 }
 
 // ProviderStore persists only non-secret Provider Profile metadata.
@@ -247,10 +250,12 @@ const (
 )
 
 type GenerationBatch struct {
-	ID              string `json:"id"`
-	ConversationID  string `json:"conversation_id"`
-	ClientRequestID string `json:"client_request_id"`
-	UserMessageID   string `json:"user_message_id"`
+	ID              string               `json:"id"`
+	ConversationID  string               `json:"conversation_id"`
+	ClientRequestID string               `json:"client_request_id"`
+	UserMessageID   string               `json:"user_message_id"`
+	InputContent    string               `json:"input_content,omitempty"`
+	Attachments     []documents.Snapshot `json:"attachments,omitempty"`
 	// Retained for the Batch's original request record and for compatibility with
 	// callers that do not have a SettingsStore. A Generation attempt's own
 	// ConfigurationSnapshot is authoritative for its prompt and parameters.
@@ -284,6 +289,8 @@ type BeginGenerationBatchInput struct {
 	ConversationID       string
 	ClientRequestID      string
 	Body                 string
+	InputContent         string
+	Attachments          []documents.Prepared
 	SystemPrompt         string
 	GenerationParameters GenerationParameters
 	Targets              []GenerationTargetInput
@@ -600,6 +607,16 @@ PRAGMA user_version = 13;
 			return fmt.Errorf("apply SQLite migration 13: %w", err)
 		}
 		version = 13
+	}
+	if version == 13 {
+		if _, err := tx.Exec(`
+ALTER TABLE generation_batches ADD COLUMN input_content TEXT NOT NULL DEFAULT '';
+ALTER TABLE generation_batches ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE generation_batches ADD COLUMN attachment_data TEXT NOT NULL DEFAULT '[]';
+PRAGMA user_version = 14;
+`); err != nil {
+			return fmt.Errorf("apply SQLite migration 14: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit SQLite migration: %w", err)

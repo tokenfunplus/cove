@@ -13,6 +13,7 @@ Choose a workspace skin in **Settings → General → Workspace skin**. Continuu
 
 - Stream responses from OpenAI-compatible providers or the built-in NearAI preset.
 - Compare up to four models in one turn; select the answer used in later context.
+- Attach text, Markdown, code, and text-based PDF files; preview extracted text, inspect Provider context, and open cited source lines or pages. File chat supports four files per turn, up to 4 MiB each; scanned PDFs need OCR first.
 - Inspect the provider, destination, configuration snapshot, and available verification evidence for each response.
 - Use NearAI's browser-side encryption and attestation flow for supported private models.
 - Search, pin, archive, rename, and export local conversations as Markdown or JSON.

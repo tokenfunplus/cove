@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
+	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 )
@@ -34,6 +35,7 @@ type SendInput struct {
 	ModelID              string
 	ClientRequestID      string
 	Body                 string
+	Attachments          []documents.Input
 	SystemPrompt         string
 	GenerationParameters persistence.GenerationParameters
 }
@@ -58,6 +60,9 @@ func emptyProviderResponseFailure(finishReason string) (string, string) {
 }
 
 type Chat interface {
+	PreviewAttachment(ctx context.Context, input documents.Input) (documents.Snapshot, error)
+	ReadAttachment(ctx context.Context, batchID, documentID string) (documents.Input, error)
+	PreviewGenerationContext(ctx context.Context, input SendInput) ([]provider.ProviderMessage, error)
 	CreateConversation(ctx context.Context, title string) (persistence.Conversation, error)
 	ListConversations(ctx context.Context, archived bool) ([]persistence.Conversation, error)
 	ReadConversation(ctx context.Context, conversationID string) (persistence.ConversationView, error)
@@ -115,20 +120,21 @@ type GenerationEvent struct {
 }
 
 type Service struct {
-	store         persistence.ChatStore
-	profiles      ProviderSource
-	provider      provider.Provider
-	hub           *eventHub
-	batchHub      *batchEventHub
-	nextID        atomic.Uint64
-	startMu       sync.Mutex
-	activeMu      sync.Mutex
-	active        map[string]*activeGeneration
-	secureActive  map[string]*time.Timer
-	secureMu      sync.Mutex
-	secureTimeout time.Duration
-	timeout       time.Duration
-	settings      persistence.SettingsStore
+	documentParser documents.Parser
+	store          persistence.ChatStore
+	profiles       ProviderSource
+	provider       provider.Provider
+	hub            *eventHub
+	batchHub       *batchEventHub
+	nextID         atomic.Uint64
+	startMu        sync.Mutex
+	activeMu       sync.Mutex
+	active         map[string]*activeGeneration
+	secureActive   map[string]*time.Timer
+	secureMu       sync.Mutex
+	secureTimeout  time.Duration
+	timeout        time.Duration
+	settings       persistence.SettingsStore
 }
 
 type activeGeneration struct {
@@ -307,6 +313,29 @@ func (service *Service) SetConversationArchived(ctx context.Context, conversatio
 }
 
 func (service *Service) DeleteConversation(ctx context.Context, conversationID string) error {
+	service.startMu.Lock()
+	defer service.startMu.Unlock()
+	service.activeMu.Lock()
+	ids := make([]string, 0, len(service.active)+len(service.secureActive))
+	for id := range service.active {
+		ids = append(ids, id)
+	}
+	for id := range service.secureActive {
+		ids = append(ids, id)
+	}
+	service.activeMu.Unlock()
+	for _, id := range ids {
+		generation, err := service.store.GetGeneration(ctx, id)
+		if err != nil {
+			return err
+		}
+		if generation.ConversationID != conversationID {
+			continue
+		}
+		if _, err := service.CancelGeneration(ctx, id); err != nil {
+			return err
+		}
+	}
 	return service.store.DeleteConversation(ctx, conversationID)
 }
 

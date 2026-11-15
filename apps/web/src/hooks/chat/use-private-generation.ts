@@ -190,8 +190,9 @@ export function usePrivateGeneration({
         if (controller.signal.aborted)
           throw new DOMException("Generation stopped", "AbortError");
         const configuration = target.generation.configuration_snapshot;
-        const { createSecureInferenceTransport } =
-          await import("@/lib/inference/secure-inference");
+        const { createSecureInferenceTransport } = await import(
+          "@/lib/inference/secure-inference"
+        );
         const transport = createSecureInferenceTransport();
         const settleVerification = async (
           event: SecureInferenceVerificationEvent,
@@ -247,7 +248,8 @@ export function usePrivateGeneration({
                     ? "Private response verification timed out."
                     : controller.signal.aborted
                       ? "Private response verification was stopped."
-                      : "Private response verification failed.",
+                      : (event.reason ??
+                        "Private response verification failed."),
                   Boolean(assistantBody),
                 ),
               });
@@ -312,7 +314,7 @@ export function usePrivateGeneration({
               maxTokens: configuration.max_tokens,
             },
             context,
-            message: body,
+            message: next.input_content ?? body,
           },
           controller.signal,
           {
@@ -383,7 +385,7 @@ export function usePrivateGeneration({
                 timedOut ? "timeout" : event.code,
                 timedOut
                   ? "Private response verification timed out."
-                  : "Private response verification failed.",
+                  : (event.reason ?? "Private response verification failed."),
                 Boolean(assistantBody),
               ),
             });

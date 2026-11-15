@@ -11,8 +11,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { type ApplicationCopy } from "@/messages";
 import { chatStyles } from "@/styles/chat";
 import { primitivesStyles } from "@/styles/primitives";
+import { AttachmentDraft } from "@/components/chat/AttachmentDraft";
+import { DraftContext } from "@/components/chat/DraftContext";
+import { type AttachmentDraft as AttachmentDraftState } from "@/hooks/chat/use-attachment-draft";
 
 type Props = {
+  attachmentDraft?: AttachmentDraftState;
   view: ConversationView;
   copy: ApplicationCopy;
   activeModelSet: ActiveModelSet;
@@ -28,6 +32,7 @@ type Props = {
   composerRef: RefObject<HTMLTextAreaElement | null>;
 };
 export function ChatComposer({
+  attachmentDraft,
   view,
   copy,
   activeModelSet,
@@ -43,6 +48,7 @@ export function ChatComposer({
   requiresContextChoice,
 }: Props) {
   const canSend =
+    !attachmentDraft?.invalid &&
     !isSending &&
     !catalogLoading &&
     !requiresContextChoice &&
@@ -50,6 +56,17 @@ export function ChatComposer({
   const actionLabel = isSending ? copy.stopGeneration : copy.sendMessage;
   return (
     <form
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        if (!isSending && attachmentDraft)
+          void attachmentDraft.addAttachments(
+            Array.from(event.dataTransfer.files),
+          );
+      }}
       className={chatStyles.generationComposer}
       data-composer-style="nearai"
       onSubmit={(event) => {
@@ -83,6 +100,9 @@ export function ChatComposer({
         ) : null}
       </div>
       <div className={chatStyles.generationComposer_box}>
+        {attachmentDraft && (
+          <AttachmentDraft state={attachmentDraft} disabled={isSending} />
+        )}
         <label htmlFor="generation-input">{copy.sendMessage}</label>
         <Textarea
           className="focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-transparent"
@@ -105,15 +125,24 @@ export function ChatComposer({
           }}
         />
         <div className={chatStyles.generationComposer_bar}>
-          <span className={chatStyles.generationComposer_contextNote}>
-            {copy.contextSnapshot.toUpperCase()} ·{" "}
-            {
-              (view.generation_batches ?? []).filter(
-                (batch) => batch.context_frozen,
-              ).length
-            }{" "}
-            TURNS
-          </span>
+          {attachmentDraft ? (
+            <DraftContext
+              conversationId={view.id}
+              body={draft}
+              attachments={attachmentDraft}
+              disabled={isSending}
+            />
+          ) : (
+            <span className={chatStyles.generationComposer_contextNote}>
+              {copy.contextSnapshot.toUpperCase()} ·{" "}
+              {
+                (view.generation_batches ?? []).filter(
+                  (batch) => batch.context_frozen,
+                ).length
+              }{" "}
+              TURNS
+            </span>
+          )}
           <div className="flex shrink-0 items-center gap-2">
             {privateMode && (
               <span className={chatStyles.generationComposer_mode}>

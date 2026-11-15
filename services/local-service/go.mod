@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/keybase/go-keychain v0.0.1
+	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
 	modernc.org/sqlite v1.34.4
 )
 

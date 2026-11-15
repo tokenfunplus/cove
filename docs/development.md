@@ -41,6 +41,8 @@ Certificate-backed local builds use Hardened Runtime and omit a secure timestamp
 
 Switching from an ad-hoc build to a certificate-backed build changes the service identity once. Existing Provider Key access controls may need to authorize the new identity; subsequent builds with the same signing identity and identifier preserve that identity. Signing does not change stored Provider Keys or their access controls. See [ADR-0024](adr/0024-sign-local-service-builds-with-stable-identities.md).
 
+Use the default certificate-backed signing path for development sessions that read real Provider Keys. `COVE_SIGNING_IDENTITY=-` is suitable for isolated fixtures; repeatedly rebuilding it changes the identity recognized by Keychain. Do not use a plaintext secret store or broaden item access controls to work around a signing authorization. Provider catalog failures do not retry on focus or reconnect; after granting access, use the Provider's explicit connection test to recover its catalog. Successful key reads are reused within the running service; restart after changing an existing key outside Cove. See [ADR-0026](adr/0026-reuse-authorized-keychain-reads-without-passive-retries.md).
+
 ## Frontend tests
 
 Unit and component tests live beside the module they exercise as `*.test.ts` or `*.test.tsx`. The workspace integration suite lives in `pages/ChatPage.interactions.test.tsx`; it mounts the application with controlled API/inference boundaries. Shared synthetic records belong in `src/test/` and are never imported by production code. Production browser acceptance remains in `apps/web/e2e/`.

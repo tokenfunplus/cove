@@ -38,8 +38,8 @@ func TestSQLiteStoreMigratesAndPreservesConversationHistoryAcrossRestart(t *test
 		t.Fatalf("rename conversation: %v", err)
 	}
 
-	if got := pragmaInt(t, store.db, "user_version"); got != 13 {
-		t.Fatalf("schema version = %d, want 13", got)
+	if got := pragmaInt(t, store.db, "user_version"); got != schemaVersion {
+		t.Fatalf("schema version = %d, want current schema version", got)
 	}
 	if got := pragmaInt(t, store.db, "foreign_keys"); got != 1 {
 		t.Fatalf("foreign_keys = %d, want 1", got)
@@ -100,8 +100,8 @@ func TestSQLiteStorePersistsProviderProfileWithoutASecret(t *testing.T) {
 	if loaded.Endpoint != profile.Endpoint || loaded.ModelID != profile.ModelID || loaded.AuthMethod != profile.AuthMethod {
 		t.Fatalf("loaded provider profile = %#v, want %#v", loaded, profile)
 	}
-	if got := pragmaInt(t, reopened.db, "user_version"); got != 13 {
-		t.Fatalf("schema version = %d, want 13", got)
+	if got := pragmaInt(t, reopened.db, "user_version"); got != schemaVersion {
+		t.Fatalf("schema version = %d, want current schema version", got)
 	}
 
 	var columns string
@@ -891,7 +891,7 @@ func TestSQLiteStoreMigrationFailurePreservesTheExistingDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open seed database: %v", err)
 	}
-	if _, err := db.Exec(`CREATE TABLE sentinel (value TEXT NOT NULL); INSERT INTO sentinel (value) VALUES ('keep me'); PRAGMA user_version = 14;`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE sentinel (value TEXT NOT NULL); INSERT INTO sentinel (value) VALUES ('keep me'); PRAGMA user_version = 99;`); err != nil {
 		db.Close()
 		t.Fatalf("seed database: %v", err)
 	}

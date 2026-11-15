@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
+	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
@@ -105,6 +106,9 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/data", browserSession(http.HandlerFunc(server.clearChatData)))
 	mux.Handle("GET /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.getConversationMessages)))
 	mux.Handle("POST /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.createGeneration)))
+	mux.Handle("POST /api/attachments/preview", browserSession(http.HandlerFunc(server.previewAttachment)))
+	mux.Handle("POST /api/conversations/{id}/context-preview", browserSession(http.HandlerFunc(server.previewGenerationContext)))
+	mux.Handle("GET /api/generation-batches/{id}/attachments/{document}", browserSession(http.HandlerFunc(server.downloadAttachment)))
 	mux.Handle("GET /api/generation-batches/{id}", browserSession(http.HandlerFunc(server.getGenerationBatch)))
 	mux.Handle("GET /api/generation-batches/{id}/context", browserSession(http.HandlerFunc(server.getGenerationBatchContext)))
 	mux.Handle("GET /api/generation-batches/{id}/events", browserSession(http.HandlerFunc(server.generationBatchEvents)))
@@ -418,14 +422,16 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		return
 	}
 	var input struct {
-		ClientRequestID string `json:"client_request_id"`
-		Body            string `json:"body"`
+		ClientRequestID string            `json:"client_request_id"`
+		Body            string            `json:"body"`
+		Attachments     []documents.Input `json:"attachments"`
 	}
+	request.Body = http.MaxBytesReader(writer, request.Body, documents.MaxRequestBytes)
 	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" || strings.TrimSpace(input.Body) == "" {
 		writeError(writer, http.StatusBadRequest, "validation", "The generation request is invalid.")
 		return
 	}
-	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body})
+	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments})
 	if err != nil {
 		writeGenerationError(writer, err)
 		return
@@ -780,6 +786,8 @@ type generationBatchEnvelope struct {
 	ConversationID       string                           `json:"conversation_id"`
 	ClientRequestID      string                           `json:"client_request_id"`
 	UserMessageID        string                           `json:"user_message_id,omitempty"`
+	InputContent         string                           `json:"input_content,omitempty"`
+	Attachments          []documents.Snapshot             `json:"attachments,omitempty"`
 	State                persistence.GenerationBatchState `json:"state"`
 	Targets              []generationTargetEnvelope       `json:"targets"`
 	EventsURL            string                           `json:"events_url"`
@@ -826,6 +834,7 @@ func generationBatchEnvelopeFor(batch persistence.GenerationBatch) generationBat
 		})
 	}
 	return generationBatchEnvelope{
+		InputContent: batch.InputContent, Attachments: batch.Attachments,
 		ID: batch.ID, ConversationID: batch.ConversationID, ClientRequestID: batch.ClientRequestID, UserMessageID: batch.UserMessageID,
 		State: batch.State, Targets: targets, EventsURL: "/api/generation-batches/" + batch.ID + "/events",
 		SelectedGenerationID: batch.SelectedGenerationID, ContextSkipped: batch.ContextSkipped, ContextFrozen: batch.ContextFrozen, CreatedAt: batch.CreatedAt, UpdatedAt: batch.UpdatedAt,
@@ -1001,6 +1010,8 @@ func writeConversationError(writer http.ResponseWriter, err error) {
 
 func writeGenerationError(writer http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, documents.ErrInvalidDocument), errors.Is(err, documents.ErrContextLimit):
+		writeError(writer, http.StatusBadRequest, "invalid_attachment", err.Error())
 	case errors.Is(err, sql.ErrNoRows):
 		writeError(writer, http.StatusNotFound, "not_found", "The requested Generation does not exist.")
 	case errors.Is(err, chat.ErrGenerationInProgress):

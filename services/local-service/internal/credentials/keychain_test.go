@@ -152,7 +152,8 @@ func (backend *recordingKeychainBackend) Replace(_ string, _ string, value []byt
 	return nil
 }
 
-func (*recordingKeychainBackend) Delete(_ string, _ string) error {
+func (backend *recordingKeychainBackend) Delete(_ string, _ string) error {
+	backend.value = nil
 	return nil
 }
 

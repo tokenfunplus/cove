@@ -29,6 +29,7 @@ import {
 import { generationErrorMessage } from "@/lib/error-messages";
 import { type ApplicationCopy } from "@/messages";
 import { type GenerationBatch } from "@cove/api-contract";
+import { type AttachmentDraft } from "@/hooks/chat/use-attachment-draft";
 
 type Dependencies = Pick<
   WorkspaceState,
@@ -42,6 +43,7 @@ type Dependencies = Pick<
   Pick<
     GenerationState,
     | "isSending"
+    | "pendingSubmissionRef"
     | "draft"
     | "setDraft"
     | "setIsSending"
@@ -59,9 +61,12 @@ type Dependencies = Pick<
     selectionStatus: ProviderSelectionStatus;
     catalogs: ModelCatalogs;
     copy: ApplicationCopy;
+    attachmentDraft: AttachmentDraft;
   };
 
 export function useGenerationCommands({
+  attachmentDraft,
+  pendingSubmissionRef,
   activeModelSet,
   providerProfiles,
   isSending,
@@ -108,6 +113,7 @@ export function useGenerationCommands({
     );
     if (
       isSending ||
+      attachmentDraft.invalid ||
       !selectedId ||
       !draft.trim() ||
       selectionStatus !== "ready" ||
@@ -117,7 +123,10 @@ export function useGenerationCommands({
       return;
     }
     const body = draft.trim();
+    const originalAttachments = attachmentDraft.attachments;
     const clientRequestId = crypto.randomUUID();
+    const submission = { cancelRequested: false };
+    pendingSubmissionRef.current = submission;
     setDraft("");
     setFeedback(undefined);
     setIsSending(true);
@@ -125,7 +134,17 @@ export function useGenerationCommands({
       createLiveTurn(selectedId, body, clientRequestId, selectedTargets),
     );
     try {
-      const selection = { clientRequestId, body };
+      const selection = {
+        clientRequestId,
+        body,
+        ...(originalAttachments.length
+          ? {
+              attachments: originalAttachments.flatMap((item) =>
+                item.input ? [item.input] : [],
+              ),
+            }
+          : {}),
+      };
       let next: GenerationBatch;
       try {
         next = await createGenerationBatch({
@@ -139,14 +158,27 @@ export function useGenerationCommands({
           selection: selection,
         });
       }
+      if (pendingSubmissionRef.current === submission)
+        pendingSubmissionRef.current = undefined;
       if (selectedIdRef.current !== selectedId) {
         await cancelGenerationBatch(next.id).catch(() => undefined);
         return;
       }
       setGenerationBatch(next);
+      attachmentDraft.clearAttachments();
       setLiveTurn((current) =>
         current ? hydrateLiveTurnBatch(current, next) : current,
       );
+      if (submission.cancelRequested) {
+        const stopped = await cancelGenerationBatch(next.id);
+        setGenerationBatch(stopped);
+        setLiveTurn((current) =>
+          current ? hydrateLiveTurnBatch(current, stopped) : current,
+        );
+        setIsSending(false);
+        await refreshCurrentConversation();
+        return;
+      }
       void Promise.all([
         getConversation(selectedId),
         getConversations({ archived: showingArchived }),
@@ -178,7 +210,9 @@ export function useGenerationCommands({
         ...secureRuns,
       ]);
     } catch (error) {
+      if (selectedIdRef.current !== selectedId) return;
       setDraft(body);
+      attachmentDraft.restoreAttachments(originalAttachments);
       setIsSending(false);
       setLiveTurn((current) =>
         current
@@ -193,10 +227,19 @@ export function useGenerationCommands({
           : current,
       );
       setFeedback(generationErrorMessage(error, copy));
+    } finally {
+      if (pendingSubmissionRef.current === submission)
+        pendingSubmissionRef.current = undefined;
     }
   }
 
   async function handleCancel() {
+    // File parsing may still be settling the creation command. Stop that new
+    // Batch as soon as its identity arrives, rather than cancelling an older turn.
+    if (pendingSubmissionRef.current) {
+      pendingSubmissionRef.current.cancelRequested = true;
+      return;
+    }
     const activeBatchID = generationBatch?.id;
     const runs = [...secureGenerationRunsRef.current.values()].filter(
       (run) => run.batchID === activeBatchID,

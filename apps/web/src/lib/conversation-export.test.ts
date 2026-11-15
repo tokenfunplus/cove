@@ -115,3 +115,34 @@ test("builds a JSON export from the authoritative ConversationView", () => {
   expect(exported.mimeType).toBe("application/json;charset=utf-8");
   expect(JSON.parse(exported.content)).toEqual(view);
 });
+
+test("exports saved source text and versions without original binary data", () => {
+  const source = {
+    id: "a".repeat(64),
+    name: "notes.md",
+    media_type: "text/plain" as const,
+    size: 6,
+    characters: 6,
+    extraction_version: "cove-text-v1",
+    sections: [{ id: "L1", text: "Source" }],
+  };
+  const batch = {
+    id: "files",
+    conversation_id: view.id,
+    client_request_id: "files",
+    state: "completed" as const,
+    targets: [],
+    events_url: "/unused",
+    created_at: view.created_at,
+    updated_at: view.updated_at,
+    attachments: [source],
+    input_content: "A question with Source",
+  };
+  const data = { ...view, generation_batches: [batch] };
+  expect(buildConversationExport(data, "markdown").content).toContain(
+    "    Source",
+  );
+  const exported = JSON.parse(buildConversationExport(data, "json").content);
+  expect(exported.generation_batches[0].attachments[0]).toEqual(source);
+  expect(exported.generation_batches[0].attachment_data).toBeUndefined();
+});

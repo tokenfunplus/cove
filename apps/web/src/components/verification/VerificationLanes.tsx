@@ -69,14 +69,21 @@ export function VerificationLanes({
     failed: copy.verificationFailed,
     pending: copy.verificationPending,
   };
+  const responseUnavailable = verification?.failure_code === "stream_failed";
+  const statusLabelFor = (lane: (typeof lanes)[number]) =>
+    lane.kind === "response" && responseUnavailable
+      ? copy.verificationUnavailable
+      : statusLabels[lane.status];
   const icons = {
     verified: CircleCheck,
     pending: Clock3,
     failed: CircleAlert,
   };
-  const sharedStatus = lanes.every((lane) => lane.status === lanes[0].status)
-    ? lanes[0].status
-    : undefined;
+  const sharedStatus =
+    !responseUnavailable &&
+    lanes.every((lane) => lane.status === lanes[0].status)
+      ? lanes[0].status
+      : undefined;
   const SharedIcon = sharedStatus && icons[sharedStatus];
   const evidence = verification?.evidence;
   const hasDetails = (kind: VerificationDetailKind) =>
@@ -115,7 +122,7 @@ export function VerificationLanes({
       <ul className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         {lanes.map((lane, index) => {
           const Icon = icons[lane.status];
-          const description = `${lane.description}: ${statusLabels[lane.status]}`;
+          const description = `${lane.description}: ${statusLabelFor(lane)}`;
           return (
             <li
               key={lane.kind}
@@ -147,7 +154,7 @@ export function VerificationLanes({
                     />
                   )}
                   {lane.label}
-                  {!sharedStatus && <span>{statusLabels[lane.status]}</span>}
+                  {!sharedStatus && <span>{statusLabelFor(lane)}</span>}
                 </Button>
               ) : (
                 <>
@@ -163,7 +170,7 @@ export function VerificationLanes({
                   <span aria-hidden="true">{lane.label}</span>
                   {!sharedStatus && (
                     <span aria-hidden="true" className="font-medium">
-                      {statusLabels[lane.status]}
+                      {statusLabelFor(lane)}
                     </span>
                   )}
                 </>

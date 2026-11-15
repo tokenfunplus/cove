@@ -1238,3 +1238,128 @@ function toHex(value: Uint8Array): string {
     "",
   );
 }
+
+test.each([
+  {
+    type: "response.failed",
+    code: "server_error",
+    separator: "\n\n",
+    trailing: true,
+    reason:
+      "Provider error: The upstream model service failed to generate a response (server_error). Try again later or select another model.",
+  },
+  {
+    type: "error",
+    code: "rate_limit_exceeded",
+    separator: "\r\n\r\n",
+    trailing: true,
+    reason:
+      "Provider error: The upstream model service reached its rate limit (rate_limit_exceeded). Try again later.",
+  },
+  {
+    type: "response.incomplete",
+    code: undefined,
+    separator: "\n\n",
+    trailing: false,
+    reason:
+      "Provider error: The upstream model returned an incomplete response.",
+  },
+])(
+  "a $type event fails generation before receipt lookup",
+  async ({ type, code, separator, trailing, reason }) => {
+    const attestation = {
+      nonce: "aa".repeat(32),
+      signer: {
+        signingAlgo: "ed25519" as const,
+        signingAddress: "gateway-signer",
+      },
+      intelQuote: "gateway-quote",
+      eventLog: [],
+      appCompose: "fixture-compose",
+      reportedQuoteData: "bb".repeat(64),
+    };
+    const receipt = vi.fn();
+    const failure = {
+      type,
+      ...(type === "error"
+        ? { error: { code, message: "private fixture data" } }
+        : {
+            response: {
+              id: "response-failed",
+              status: type === "response.incomplete" ? "incomplete" : "failed",
+              error: { code, message: "private fixture data" },
+            },
+          }),
+    };
+    const sse =
+      [
+        { type: "response.created", response: { id: "response-failed" } },
+        failure,
+      ]
+        .map((event) => "data: " + JSON.stringify(event))
+        .join(separator) + (trailing ? separator : "");
+    const client = new BrowserGatewayResponseClient(
+      {
+        baseUrl: "http://127.0.0.1/api/nearai/nearai/v1/",
+        model: "google/gemini-3-pro",
+        messages: [{ role: "user", content: "Reply OK" }],
+      },
+      {
+        attestationClient: {
+          async fetchGatewayAttestation() {
+            return { attestation, clientBinding: { nonce: attestation.nonce } };
+          },
+          fetchCompletionSignature: receipt,
+        },
+        async verifyGatewayAttestationImpl() {
+          return {
+            signer: attestation.signer,
+            tcbStatus: "UpToDate",
+            advisoryIds: [],
+            deployment: {
+              appCompose: "fixture-compose",
+              runtimeMeasurements: {},
+            },
+            deploymentProvenance: "not_checked",
+            tlsBinding: { kind: "none" },
+            report: attestation,
+          };
+        },
+        async fetchImpl() {
+          return new Response(sse, {
+            headers: { "Content-Type": "text/event-stream" },
+          });
+        },
+      },
+    );
+    const transport = createSecureInferenceTransport({
+      create() {
+        return client;
+      },
+    });
+    const events = [];
+    for await (const event of transport.generate({
+      target: { ...privateModel, model_id: "google/gemini-3-pro" },
+      mode: "incognito",
+      configuration: {
+        systemPrompt: "",
+        temperature: null,
+        topP: null,
+        maxTokens: null,
+      },
+      context: [],
+      message: "Reply OK",
+    }))
+      events.push(event);
+    expect(events.at(-1)).toEqual({
+      type: "failed",
+      code: "stream_failed",
+      reason,
+    });
+    expect(receipt).not.toHaveBeenCalled();
+    expect(events.some((event) => event.type === "verifying_response")).toBe(
+      false,
+    );
+    expect(JSON.stringify(events)).not.toContain("private fixture data");
+  },
+);

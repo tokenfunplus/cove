@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 )
 
 var ErrContextDispositionRequired = errors.New("each earlier Generation Batch needs a Selected Answer or context skip")
@@ -81,6 +83,25 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 	if _, err := tx.ExecContext(ctx, `INSERT INTO generation_batches (id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, batchID, input.ConversationID, input.ClientRequestID, userMessageID, input.SystemPrompt, input.GenerationParameters.Temperature, input.GenerationParameters.TopP, input.GenerationParameters.MaxTokens, GenerationBatchPending, now.UnixNano(), now.UnixNano()); err != nil {
 		return GenerationBatch{}, fmt.Errorf("save generation batch: %w", err)
 	}
+	if len(input.Attachments) > 0 {
+		snapshots := make([]documents.Snapshot, 0, len(input.Attachments))
+		data := make([][]byte, 0, len(input.Attachments))
+		for _, attachment := range input.Attachments {
+			snapshots = append(snapshots, attachment.Snapshot)
+			data = append(data, attachment.Data)
+		}
+		metadata, err := json.Marshal(snapshots)
+		if err != nil {
+			return GenerationBatch{}, err
+		}
+		originals, err := json.Marshal(data)
+		if err != nil {
+			return GenerationBatch{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE generation_batches SET input_content = ?, attachments = ?, attachment_data = ? WHERE id = ?`, input.InputContent, string(metadata), string(originals), batchID); err != nil {
+			return GenerationBatch{}, fmt.Errorf("save attachment snapshots: %w", err)
+		}
+	}
 	if err := saveContextItemsTx(ctx, tx, batchID, input.ConversationID); err != nil {
 		return GenerationBatch{}, err
 	}
@@ -118,7 +139,7 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 }
 
 func (store *SQLiteStore) GetGenerationBatch(ctx context.Context, id string) (GenerationBatch, error) {
-	row := store.db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at FROM generation_batches WHERE id = ?`, id)
+	row := store.db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments FROM generation_batches WHERE id = ?`, id)
 	batch, err := scanGenerationBatch(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return GenerationBatch{}, fmt.Errorf("generation batch %q: %w", id, sql.ErrNoRows)
@@ -130,7 +151,7 @@ func (store *SQLiteStore) GetGenerationBatch(ctx context.Context, id string) (Ge
 }
 
 func (store *SQLiteStore) GetGenerationBatchByClientRequestID(ctx context.Context, clientRequestID string) (GenerationBatch, error) {
-	row := store.db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at FROM generation_batches WHERE client_request_id = ?`, strings.TrimSpace(clientRequestID))
+	row := store.db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments FROM generation_batches WHERE client_request_id = ?`, strings.TrimSpace(clientRequestID))
 	batch, err := scanGenerationBatch(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return GenerationBatch{}, fmt.Errorf("generation batch request %q: %w", clientRequestID, sql.ErrNoRows)
@@ -310,7 +331,7 @@ func (store *SQLiteStore) SkipGenerationBatchContext(ctx context.Context, batchI
 
 func (store *SQLiteStore) LoadBatchContext(ctx context.Context, conversationID string) ([]ContextItem, error) {
 	rows, err := store.db.QueryContext(ctx, `
-SELECT b.user_message_id, b.selected_generation_id, user_message.body, assistant_message.body
+SELECT b.user_message_id, b.selected_generation_id, COALESCE(NULLIF(b.input_content, ''), user_message.body), assistant_message.body
 FROM generation_batches b
 JOIN messages user_message ON user_message.id = b.user_message_id
 JOIN generations selected_generation ON selected_generation.id = b.selected_generation_id
@@ -334,9 +355,10 @@ ORDER BY b.created_at ASC, b.id ASC`, conversationID)
 
 func (store *SQLiteStore) LoadGenerationBatchContext(ctx context.Context, batchID string) ([]ContextItem, error) {
 	rows, err := store.db.QueryContext(ctx, `
-SELECT item.user_message_id, item.selected_generation_id, user_message.body, assistant_message.body
+SELECT item.user_message_id, item.selected_generation_id, COALESCE(NULLIF(source_batch.input_content, ''), user_message.body), assistant_message.body
 FROM batch_context_items item
 JOIN messages user_message ON user_message.id = item.user_message_id
+LEFT JOIN generation_batches source_batch ON source_batch.user_message_id = item.user_message_id
 JOIN generations selected_generation ON selected_generation.id = item.selected_generation_id
 JOIN messages assistant_message ON assistant_message.id = selected_generation.assistant_message_id
 WHERE item.generation_batch_id = ?
@@ -420,13 +442,17 @@ func isTerminalBatchState(state GenerationBatchState) bool {
 
 func scanGenerationBatch(row rowScanner) (GenerationBatch, error) {
 	var batch GenerationBatch
+	var attachmentsJSON string
 	var selected sql.NullString
 	var temperature, topP sql.NullFloat64
 	var maxTokens sql.NullInt64
 	var skipped, frozen int
 	var createdAt, updatedAt int64
-	if err := row.Scan(&batch.ID, &batch.ConversationID, &batch.ClientRequestID, &batch.UserMessageID, &batch.SystemPrompt, &temperature, &topP, &maxTokens, &batch.State, &selected, &skipped, &frozen, &createdAt, &updatedAt); err != nil {
+	if err := row.Scan(&batch.ID, &batch.ConversationID, &batch.ClientRequestID, &batch.UserMessageID, &batch.SystemPrompt, &temperature, &topP, &maxTokens, &batch.State, &selected, &skipped, &frozen, &createdAt, &updatedAt, &batch.InputContent, &attachmentsJSON); err != nil {
 		return GenerationBatch{}, err
+	}
+	if err := json.Unmarshal([]byte(attachmentsJSON), &batch.Attachments); err != nil {
+		return GenerationBatch{}, fmt.Errorf("decode attachments: %w", err)
 	}
 	if temperature.Valid {
 		batch.GenerationParameters.Temperature = &temperature.Float64
@@ -447,7 +473,7 @@ func scanGenerationBatch(row rowScanner) (GenerationBatch, error) {
 }
 
 func getGenerationBatchByRequestTx(ctx context.Context, tx *sql.Tx, clientRequestID string) (GenerationBatch, error) {
-	return scanGenerationBatch(tx.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at FROM generation_batches WHERE client_request_id = ?`, clientRequestID))
+	return scanGenerationBatch(tx.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments FROM generation_batches WHERE client_request_id = ?`, clientRequestID))
 }
 
 func ensureContextDispositionTx(ctx context.Context, tx *sql.Tx, conversationID string) error {

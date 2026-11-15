@@ -1,6 +1,9 @@
 import * as api from "@/api";
 import { generationKeys } from "@/api/queryKeys";
-import type { GenerationVerification } from "@cove/api-contract";
+import type {
+  GenerationVerification,
+  AttachmentInput,
+} from "@cove/api-contract";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 export function useCreateGenerationBatch() {
@@ -17,6 +20,21 @@ export function useCreateGenerationBatch() {
     onSuccess: (batch) => {
       cache.setQueryData(generationKeys.batch(batch.id), batch);
     },
+  });
+}
+
+export function usePreviewAttachment() {
+  return useMutation({
+    mutationFn: (input: AttachmentInput) => api.previewAttachment(input),
+    retry: false,
+  });
+}
+
+export function usePreviewGenerationContext() {
+  return useMutation({
+    mutationFn: (input: Parameters<typeof api.previewGenerationContext>[0]) =>
+      api.previewGenerationContext(input),
+    retry: false,
   });
 }
 
