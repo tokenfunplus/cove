@@ -2,14 +2,18 @@
 
 ## Unreleased
 
+## 0.1.0-beta.2 - 2026-11-15
+
 ### Added
 
 - File chat with local text/code/PDF parsing, immutable source snapshots, original-file downloads, source citation navigation, and draft/saved Provider context inspection.
 - Bounded PDF parser subprocesses and application input limits; see ADR-0025 for supported files and compatibility.
+- A user guide covering setup, file chat, comparison context, and beta updates.
 
 ### Changed
 
 - Unify the Chat Surface, favicon, macOS application icon, and menu bar around the blue and teal Cove wave mark.
+- Refresh the README, release documentation, and product website for the second signed and notarized beta.
 
 - Detect failed/incomplete Gateway Responses SSE events before receipt lookup and display bounded upstream errors instead of misreporting them as cryptographic verification failures.
 

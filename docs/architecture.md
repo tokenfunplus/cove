@@ -24,6 +24,7 @@ React Chat Surface
 | `packages/api-contract/` | Shared types, JSON schemas, and fixtures |
 | `services/local-service/internal/api/` | Session-authorized HTTP adapter and static serving |
 | `services/local-service/internal/chat/` | Conversation and Generation Batch orchestration |
+| `services/local-service/internal/documents/` | Bounded source parsing and prompt formatting owned by Chat |
 | `services/local-service/internal/persistence/` | SQLite migrations, settings, and history |
 | `services/local-service/internal/providerconfig/` | Provider validation and key rotation |
 | `services/local-service/internal/provider/` | Provider adapters and fixed-destination evidence proxies |

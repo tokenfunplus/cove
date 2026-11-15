@@ -32,17 +32,26 @@ Without notarization, the workflow still uses Keychain and produces ad-hoc signe
 
 ## Versioning and releases
 
-Use `make version VERSION=0.1.0-beta.1 BUILD=1` for the first beta. The command synchronizes the root and workspace package versions, `CoveReleaseVersion`, `CFBundleShortVersionString`, and `CFBundleVersion`. Omitting `BUILD` increments the existing build number. Keep build numbers increasing for subsequent published packages.
+The current test release is `0.1.0-beta.2`, build `2`, with marketing version `0.1.0`. Use `make version VERSION=0.1.0-beta.3` to prepare the next beta. The command synchronizes the root and workspace package versions, `CoveReleaseVersion`, `CFBundleShortVersionString`, and `CFBundleVersion`. Omitting `BUILD` increments the existing build number; `BUILD=n` overrides it. Keep build numbers increasing for subsequent published packages.
 
-Use `alpha.N`, `beta.N`, and `rc.N` suffixes for test releases, then the plain version for stable releases. Git tags add a `v` prefix, for example `v0.1.0-beta.1`. A prerelease is published with GitHub's prerelease flag and does not enter the stable `releases/latest` update feed. Until the first stable release exists, beta testers download updates from the Releases page.
+Use `alpha.N`, `beta.N`, and `rc.N` suffixes for test releases, then the plain version for stable releases. Git tags add a `v` prefix, for example `v0.1.0-beta.2`. A prerelease is published with GitHub's prerelease flag and does not enter the stable `releases/latest` update feed. Until the first stable release exists, beta testers download updates from the Releases page.
 
 1. Run the version command. `CoveReleaseVersion` is the full version; `CFBundleShortVersionString` is its numeric base.
 2. Move the relevant `CHANGELOG.md` entries into a dated release section.
+   Update the README's release link and package filename, and add matching notes under `docs/releases/`.
 3. Run checks, tests, and package acceptance. Review dependency advisories and bundled notices.
 4. Push a matching `v<version>` tag when authorized to publish artifacts.
 5. Review the draft GitHub Release, signing mode, checksum, notes, and `update.json` before publication.
 
 Tags must match `CoveReleaseVersion`. Manual builds do not create a release. Prerelease tags produce prerelease drafts and are excluded from GitHub's latest stable release.
+
+Published tags and release artifacts are immutable. Correct a published package through a new version and build number rather than replacing an existing download.
+
+### Product website
+
+The product page at https://tokenfunplus.github.io/cove/ is maintained separately in [tokenfunplus/tokenfunplus.github.io](https://github.com/tokenfunplus/tokenfunplus.github.io), under `docs/cove/`. GitHub Pages publishes that repository's `main` branch from `/docs`; Cove's own repository is not its Pages source.
+
+After a release is published, align the website's release badge, download/checksum URLs, version, and feature descriptions with that release. Run the website's `make check`, review desktop and mobile layouts, and verify the live download links after its Pages deployment. Keep screenshots synthetic and record the source revision in the website README. Preserve the other product pages.
 
 ### Publishing a locally signed test package
 

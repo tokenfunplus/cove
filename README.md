@@ -1,10 +1,12 @@
-<img width="640" height="213" alt="exec-a8b3bbb7-0284-493d-a65e-c921033eb0e2" src="https://github.com/user-attachments/assets/ab557daf-f379-4a30-9d9a-a105ebb94081" />
+<img width="640" height="213" alt="Cove" src="https://github.com/user-attachments/assets/ab557daf-f379-4a30-9d9a-a105ebb94081" />
 
+# Cove
 
 A local-first Mac chat app with on-device history and verifiable AI inference.
 
 [![CI](https://github.com/tokenfunplus/cove/actions/workflows/ci.yml/badge.svg)](https://github.com/tokenfunplus/cove/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/7jdddhG8ZG)
 
 Cove keeps conversation history on your Mac and connects to the model providers you choose. A SwiftUI menu-bar Launcher starts a local Go service and opens the Chat Surface in your browser. There is no Cove account or cloud conversation store.
 
@@ -25,9 +27,11 @@ Choose a workspace skin in **Settings → General → Workspace skin**. Continuu
 
 ## Install the beta
 
-Download [Cove 0.1.0-beta.1](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.1) for Apple Silicon Macs running macOS 13 or later. Open the DMG, drag Cove to Applications, and launch it from there. The beta package is Developer ID signed and Apple notarized; a SHA-256 checksum is included with the download.
+Download [Cove 0.1.0-beta.2](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.2) for Apple Silicon Macs running macOS 13 or later. Open the DMG, drag Cove to Applications, and launch it from there. The beta package is Developer ID signed and Apple notarized; a SHA-256 checksum is included with the download.
 
-See the [beta release notes](docs/releases/0.1.0-beta.1.md) for features, setup, and current limitations.
+Beta 2 adds file chat with source previews and citations, reduces repeated Keychain authorization dialogs, improves Provider failure explanations, and introduces Cove's wave branding. Existing Cove history and settings are retained when upgrading.
+
+See the [product website](https://tokenfunplus.github.io/cove/), [user guide](docs/user-guide.md), and [beta release notes](docs/releases/0.1.0-beta.2.md) for setup and current limitations. The interface is English; messages, titles, and prompts support Unicode content.
 
 ## Run from source
 
@@ -54,7 +58,13 @@ The Launcher and packaged app are macOS-only. Web, API contract, and Go checks c
 make dmg
 ```
 
-The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.1-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
+The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.2-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
+
+## Community
+
+Join the [Cove Discord community](https://discord.gg/7jdddhG8ZG) for setup help, provider discussions, feedback, and contributor coordination. Start in `#welcome` and read `#rules`; use `#support` for troubleshooting, `#ideas` for feature discussions, and `#development` to coordinate contributions. Release news appears in `#announcements`.
+
+Keep reproducible bug reports and actionable work in [GitHub issues](https://github.com/tokenfunplus/cove/issues) and [pull requests](https://github.com/tokenfunplus/cove/pulls). Report vulnerabilities privately through [SECURITY.md](SECURITY.md). Never post Provider Keys, launch tokens, or private conversation data.
 
 ## Develop and contribute
 
@@ -67,6 +77,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and [SECURI
 
 | Resource | Purpose |
 | --- | --- |
+| [User guide](docs/user-guide.md) | Installation, Providers, file chat, comparisons, and updates |
 | [Development](docs/development.md) | Commands, prerequisites, and troubleshooting |
 | [Architecture](docs/architecture.md) | Components, data flow, and invariants |
 | [Privacy](docs/privacy.md) | Network destinations, credentials, and verification limits |
