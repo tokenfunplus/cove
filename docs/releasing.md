@@ -47,6 +47,24 @@ Tags must match `CoveReleaseVersion`. Manual builds do not create a release. Pre
 
 Published tags and release artifacts are immutable. Correct a published package through a new version and build number rather than replacing an existing download.
 
+### Detached release signatures
+
+The [Release signatures workflow](../.github/workflows/release-signatures.yml) adds a `.sigstore.json` bundle for the published DMG, checksum file, and `update.json`. It runs when a release is published. To sign an existing published release, dispatch the workflow on `main` with its exact tag. Reruns verify existing bundles and never overwrite them. GitHub Actions uses OIDC for keyless signing; no signing key or additional repository secret is required.
+
+The signer verifies each asset against GitHub's recorded digest, validates the DMG checksum and update destination, and rechecks the release before and after uploading new bundles. Do not edit release assets during signing: GitHub does not provide an atomic asset check and upload operation. A detected change fails the run and requires maintainer investigation; the signer does not repair a signature by replacing published files. It signs the final public bytes, including locally notarized packages. These are publisher signatures created after publication, not SLSA build provenance or a replacement for Apple signing and notarization. Existing releases receive only new detached bundles; their downloads and update manifests stay unchanged. See [ADR-0028](adr/0028-require-pr-checks-and-sign-published-downloads.md).
+
+Download the asset and its matching bundle, then verify with Cosign 3:
+
+```sh
+cosign verify-blob \
+  --bundle Cove-0.1.0-beta.3-arm64.dmg.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/tokenfunplus/cove/\.github/workflows/release-signatures\.yml@refs/(heads/main|tags/v0\.1\.0-beta\.3)$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  Cove-0.1.0-beta.3-arm64.dmg
+```
+
+For another release, update both filenames and the exact tag in the expected identity. Verification checks the artifact digest, signing identity, certificate, and transparency proof.
+
 ### Product website
 
 The product page at https://tokenfunplus.github.io/cove/ is maintained separately in [tokenfunplus/tokenfunplus.github.io](https://github.com/tokenfunplus/tokenfunplus.github.io), under `docs/cove/`. GitHub Pages publishes that repository's `main` branch from `/docs`; Cove's own repository is not its Pages source.
