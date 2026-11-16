@@ -57,18 +57,18 @@ function command(executable, args) {
   return execFileSync(executable, args, { encoding: "utf8", maxBuffer: 4 << 20 });
 }
 
-async function signRelease(repository, tag) {
+export async function signRelease(repository, tag, { run = command, environment = process.env, log = console.log } = {}) {
   signatureIdentity(repository, tag);
-  if (process.env.GITHUB_ACTIONS !== "true" || process.env.GITHUB_REPOSITORY !== repository) {
+  if (environment.GITHUB_ACTIONS !== "true" || environment.GITHUB_REPOSITORY !== repository) {
     throw new Error("Keyless release signing must run in the repository's GitHub Actions workflow");
   }
-  const loadRelease = () => JSON.parse(command("gh", ["api", `repos/${repository}/releases/tags/${tag}`]));
+  const loadRelease = () => JSON.parse(run("gh", ["api", `repos/${repository}/releases/tags/${tag}`]));
   const release = loadRelease();
   const assets = selectReleaseAssets(release, tag);
   const directory = await mkdtemp(path.join(tmpdir(), "cove-release-signatures-"));
   try {
     const files = new Map();
-    const download = (name) => command("gh", ["release", "download", tag, "--repo", repository, "--dir", directory, "--pattern", name]);
+    const download = (name) => run("gh", ["release", "download", tag, "--repo", repository, "--dir", directory, "--pattern", name]);
     for (const asset of assets) {
       download(asset.name);
       files.set(asset.name, await readFile(path.join(directory, asset.name)));
@@ -83,19 +83,27 @@ async function signRelease(repository, tag) {
       if (existing) {
         download(name);
       } else {
-        command("cosign", ["sign-blob", "--yes", "--bundle", bundle, file]);
+        run("cosign", ["sign-blob", "--yes", "--bundle", bundle, file]);
       }
-      command("cosign", ["verify-blob", "--bundle", bundle,
+      run("cosign", ["verify-blob", "--bundle", bundle,
         "--certificate-identity-regexp", signatureIdentity(repository, tag),
         "--certificate-oidc-issuer", "https://token.actions.githubusercontent.com", file]);
       if (!existing) bundles.push(bundle);
     }
-    // A concurrent release edit must not turn a signature of old bytes into a current endorsement.
-    const current = loadRelease();
-    const latest = verifyReleaseAssets(current, tag, repository, files);
-    if (latest.some((asset, index) => asset.id !== assets[index].id)) throw new Error("Release assets changed during signing");
-    if (bundles.length) command("gh", ["release", "upload", tag, ...bundles, "--repo", repository]);
-    console.log(`Verified signatures for ${assets.length} release assets; added ${bundles.length} bundles without replacing downloads.`);
+    // GitHub does not provide an atomic release check and bundle upload operation.
+    const assertUnchanged = () => {
+      const current = loadRelease();
+      const latest = verifyReleaseAssets(current, tag, repository, files);
+      if (current.id !== release.id || latest.some((asset, index) => asset.id !== assets[index].id)) {
+        throw new Error("Release assets changed during signing; investigate without overwriting published files");
+      }
+    };
+    assertUnchanged();
+    if (bundles.length) {
+      run("gh", ["release", "upload", tag, ...bundles, "--repo", repository]);
+      assertUnchanged();
+    }
+    log(`Verified signatures for ${assets.length} release assets; added ${bundles.length} bundles without replacing downloads.`);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
