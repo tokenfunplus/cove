@@ -73,7 +73,7 @@ Tests are development checks and are excluded from the application import graph.
 
 ### Focus mode
 
-Development builds offer Focus beside Model comparison. It hides the sidebar, compacts the header and composer, and widens comparison responses. Exit Focus or Escape restores the normal layout and prior sidebar state. Escape dismisses an open dialog first and does not exit while the user is composing with an input method.
+Focus is available beside Model comparison. It hides the sidebar, compacts the header and composer, and widens comparison responses. Exit Focus or Escape restores the normal layout and prior sidebar state. Escape dismisses an open dialog first and does not exit while the user is composing with an input method.
 
 Focus is in-memory presentation state. It preserves drafts, attachments, model selection, active streams, and answer-selection requirements, without writing settings or changing Generation commands. The composer grows for multiline drafts and attachments. Model headers stay visible while reading long comparisons. Provider identity and verification remain available in the responses and the header's privacy action. The desktop conversation-search shortcut leaves Focus and reveals the sidebar search.
 
@@ -111,7 +111,7 @@ Integration fixtures configure temporary directories. Never point tests at perso
 
 ## Troubleshooting
 
-For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.2](releases/0.1.0-beta.2.md).
+For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.3](releases/0.1.0-beta.3.md).
 
 - **Expired browser session:** reopen with `make start-local` or the Launcher. Restarting the service invalidates sessions.
 - **Provider unavailable:** verify endpoint, authentication, model catalog, and availability. The NearAI preset uses a fixed staging endpoint.

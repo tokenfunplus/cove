@@ -4,7 +4,7 @@ Cove is a local-first AI chat application for Apple Silicon Macs running macOS 1
 
 ## Install and upgrade
 
-Download [0.1.0-beta.2](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.2), open the DMG, and drag Cove to Applications. Published beta packages are Developer ID signed and Apple notarized. A checksum file accompanies each download.
+Download [0.1.0-beta.3](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.3), open the DMG, and drag Cove to Applications. Published beta packages are Developer ID signed and Apple notarized. A checksum file accompanies each download.
 
 For an upgrade, quit Cove from its menu-bar menu before replacing the app. Existing Cove history and settings remain in the local data directory. Provider Keys remain in macOS Keychain. The beta's Check for Updates action follows the stable channel; download beta updates from GitHub Releases.
 
@@ -21,6 +21,14 @@ macOS may request permission when Cove first reads an existing Provider Key or w
 Choose one model for an ordinary conversation, or up to four targets for a comparison. Each answer retains its Provider Snapshot and available verification evidence. Select the answer you want to include in the next turn's context, or continue without an answer from that turn.
 
 A submitted turn captures its context. Retrying a target uses that same saved context and attached source input. Later changes to an earlier answer selection do not rewrite a turn already submitted.
+
+### Focus and timeline bookmarks
+
+Click the four-corner button beside Model comparison to enter Focus. It hides the sidebar, compacts the header and composer, and gives replies more room. Exit Focus or press Escape to restore the previous layout. Escape closes an open preview or dialog first. Drafts, attachments, model selections, and active responses are preserved. Command-K or Control-K leaves Focus and opens conversation search.
+
+The slim timeline on the right has one marker per user turn; the longer, darker marker follows your reading position. Hover or keyboard-focus a marker to preview its prompt and a short answer excerpt. Move into the card to save or remove a bookmark, or click a marker to jump to that turn. The card stays open while moving between the marker and its controls. On touch screens, tap a marker to open its preview and navigate.
+
+Bookmarks save conversation/message identifiers only in this browser profile for the Local Service address. They survive reloads but are not included in database backups or conversation exports. Clearing browser data removes them. If storage is unavailable, the card reports that changes last for the current session only. Previewing and bookmarking do not contact a Provider or change later conversation context.
 
 ## Ask about files
 
@@ -52,4 +60,4 @@ Deleting a conversation or clearing history removes its saved attachment records
 
 ## Get help
 
-Read the [beta release notes](releases/0.1.0-beta.2.md), use [GitHub Issues](https://github.com/tokenfunplus/cove/issues) for reproducible problems, or join the [Cove Discord community](https://discord.gg/7jdddhG8ZG) for setup discussion. Include the app and macOS versions in bug reports, and remove credentials, launch URLs, and private content from diagnostics.
+Read the [beta release notes](releases/0.1.0-beta.3.md), use [GitHub Issues](https://github.com/tokenfunplus/cove/issues) for reproducible problems, or join the [Cove Discord community](https://discord.gg/7jdddhG8ZG) for setup discussion. Include the app and macOS versions in bug reports, and remove credentials, launch URLs, and private content from diagnostics.

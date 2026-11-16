@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-beta.3 - 2026-11-16
+
 ### Added
 
 - A compact conversation timeline with turn previews, click-to-jump navigation, and browser-local bookmarks that store message references only.
@@ -12,6 +14,11 @@
 ### Fixed
 
 - Render the menu-bar wave mark through AppKit so SwiftUI cannot silently display an empty named image from the packaged resource bundle; show a system wave symbol if the resource is missing.
+
+### Changed
+
+- Update x/sys and add CodeQL, OpenSSF Scorecard, and active fuzzing to repository security checks.
+- Publish build 3 with updated setup, Focus, timeline bookmark, and beta compatibility documentation.
 
 ## 0.1.0-beta.2 - 2026-11-15
 

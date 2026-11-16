@@ -17,6 +17,7 @@ Choose a workspace skin in **Settings → General → Workspace skin**. Continuu
 
 - Stream responses from OpenAI-compatible providers or the built-in NearAI preset.
 - Compare up to four models in one turn; select the answer used in later context.
+- Expand the reading area with Focus mode and jump between turns using timeline previews and browser-local bookmarks.
 - Attach text, Markdown, code, and text-based PDF files; preview extracted text, inspect Provider context, and open cited source lines or pages. File chat supports four files per turn, up to 4 MiB each; scanned PDFs need OCR first.
 - Inspect the provider, destination, configuration snapshot, and available verification evidence for each response.
 - Use NearAI's browser-side encryption and attestation flow for supported private models.
@@ -28,11 +29,11 @@ Choose a workspace skin in **Settings → General → Workspace skin**. Continuu
 
 ## Install the beta
 
-Download [Cove 0.1.0-beta.2](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.2) for Apple Silicon Macs running macOS 13 or later. Open the DMG, drag Cove to Applications, and launch it from there. The beta package is Developer ID signed and Apple notarized; a SHA-256 checksum is included with the download.
+Download [Cove 0.1.0-beta.3](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.3) for Apple Silicon Macs running macOS 13 or later. Open the DMG, drag Cove to Applications, and launch it from there. The beta package is Developer ID signed and Apple notarized; a SHA-256 checksum is included with the download.
 
-Beta 2 adds file chat with source previews and citations, reduces repeated Keychain authorization dialogs, improves Provider failure explanations, and introduces Cove's wave branding. Existing Cove history and settings are retained when upgrading.
+Beta 3 adds Focus mode, a conversation timeline with bookmark previews, and a refined native Launcher menu with optional login and keyboard shortcuts. Existing Cove history, file attachments, and settings are retained when upgrading. Timeline bookmarks stay in the browser profile where they were saved.
 
-See the [product website](https://tokenfunplus.github.io/cove/), [user guide](docs/user-guide.md), and [beta release notes](docs/releases/0.1.0-beta.2.md) for setup and current limitations. The interface is English; messages, titles, and prompts support Unicode content.
+See the [product website](https://tokenfunplus.github.io/cove/), [user guide](docs/user-guide.md), and [beta release notes](docs/releases/0.1.0-beta.3.md) for setup and current limitations. The interface is English; messages, titles, and prompts support Unicode content.
 
 ## Run from source
 
@@ -59,7 +60,7 @@ The Launcher and packaged app are macOS-only. Web, API contract, and Go checks c
 make dmg
 ```
 
-The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.2-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
+The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.3-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
 
 ## Community
 
