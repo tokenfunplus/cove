@@ -248,6 +248,88 @@ async function sendPrompt() {
   return workspace;
 }
 
+test("Focus mode preserves the draft and restores the previous sidebar and keyboard focus", async () => {
+  const { composer, user } = await openWorkspace();
+  await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+  await user.type(composer, "Keep my draft");
+  const enter = screen.getByRole("button", { name: "Enter Focus mode" });
+  await user.click(enter);
+  const surface = screen.getByRole("main");
+  expect(surface.getAttribute("data-focus-mode")).toBe("true");
+  expect(document.getElementById("conversation-sidebar")?.hidden).toBe(true);
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Exit Focus" }));
+  expect(screen.getByRole("textbox", { name: "Send message" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep my draft");
+  await act(async () => {
+    composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true }));
+  });
+  expect(surface.getAttribute("data-focus-mode")).toBe("true");
+  await user.keyboard("{Escape}");
+  expect(surface.hasAttribute("data-focus-mode")).toBe(false);
+  expect(document.getElementById("conversation-sidebar")?.hidden).toBe(false);
+  expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
+  expect(document.activeElement).toBe(enter);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep my draft");
+  expect(transport.updateSettings).not.toHaveBeenCalled();
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+test("Escape closes a Focus context dialog before exiting Focus", async () => {
+  vi.mocked(transport.previewGenerationContext).mockResolvedValue([
+    { role: "user", content: "Synthetic Focus context" },
+  ]);
+  const { user } = await openWorkspace();
+  await user.click(screen.getByRole("button", { name: "Enter Focus mode" }));
+  await user.click(screen.getByRole("button", { name: "Review context" }));
+  await screen.findByText("Synthetic Focus context");
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("main").getAttribute("data-focus-mode")).toBe("true");
+  await user.keyboard("{Escape}");
+  expect(screen.getByRole("main").hasAttribute("data-focus-mode")).toBe(false);
+});
+
+test("conversation search exits Focus and reveals the search field", async () => {
+  const { user } = await openWorkspace();
+  await user.click(screen.getByRole("button", { name: "Enter Focus mode" }));
+  await user.keyboard("{Control>}k{/Control}");
+  await waitFor(() => expect(screen.getByRole("main").hasAttribute("data-focus-mode")).toBe(false));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Search conversations" })));
+});
+
+test("Focus transitions leave an active stream and its stop control intact", async () => {
+  const { user } = await sendPrompt();
+  await user.click(screen.getByRole("button", { name: "Enter Focus mode" }));
+  await act(async () => feed.emit(0, "delta", "Still streaming in Focus"));
+  await screen.findByText("Still streaming in Focus", { exact: true });
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "Stop generation" }).disabled).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Exit Focus" }));
+  expect(screen.getByText("Still streaming in Focus", { exact: true })).toBeTruthy();
+  expect(transport.createGenerationBatch).toHaveBeenCalledTimes(1);
+  expect(transport.cancelGenerationBatch).not.toHaveBeenCalled();
+  vi.mocked(transport.getConversation).mockResolvedValue(fixture.completedView);
+  await act(async () => { feed.emit(0, "completed"); feed.close(); });
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Stop generation" })).toBeNull());
+});
+
+test("Focus transitions retain locally previewed attachments without reparsing", async () => {
+  vi.mocked(transport.previewAttachment).mockResolvedValue({
+    id: "f".repeat(64), name: "focus-notes.md", media_type: "text/plain",
+    size: 6, characters: 6, extraction_version: "cove-text-v1",
+    sections: [{ id: "L1", text: "Source" }],
+  });
+  const { composer, user } = await openWorkspace();
+  await user.upload(screen.getByLabelText("Attach files"), new File(["Source"], "focus-notes.md", { type: "text/markdown" }));
+  await screen.findByRole("button", { name: /Preview extracted text/ });
+  await user.type(composer, "Use this source");
+  await user.click(screen.getByRole("button", { name: "Enter Focus mode" }));
+  expect(screen.getByRole("button", { name: "Remove attachment: focus-notes.md" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Exit Focus" }));
+  expect(screen.getByRole("button", { name: "Remove attachment: focus-notes.md" })).toBeTruthy();
+  expect((composer as HTMLTextAreaElement).value).toBe("Use this source");
+  expect(transport.previewAttachment).toHaveBeenCalledTimes(1);
+});
+
 test("a streamed answer reconciles with saved history without appearing twice", async () => {
   const { composer } = await sendPrompt();
   expect(transport.createGenerationBatch).toHaveBeenCalledWith(

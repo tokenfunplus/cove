@@ -5,17 +5,20 @@ import type { AttachmentDraft } from "@/hooks/chat/use-attachment-draft";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogOverlay } from "@/components/ui/dialog";
 import { englishConversationCopy as copy } from "@/messages";
+import { ListFilter } from "lucide-react";
 
 export function DraftContext({
   conversationId,
   body,
   attachments,
   disabled,
+  compact = false,
 }: {
   conversationId: string;
   body: string;
   attachments: AttachmentDraft;
   disabled: boolean;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const preview = usePreviewGenerationContext();
@@ -38,11 +41,14 @@ export function DraftContext({
       <Button
         type="button"
         variant="ghost"
-        size="sm"
+        size={compact ? "icon-sm" : "sm"}
+        className={compact ? "rounded-lg text-muted-foreground" : undefined}
+        title={copy.reviewContext}
         disabled={disabled || attachments.invalid}
         onClick={review}
       >
-        {copy.reviewContext}
+        {compact && <ListFilter aria-hidden="true" size={16} />}
+        <span className={compact ? "sr-only" : undefined}>{copy.reviewContext}</span>
       </Button>
       {open && (
         <Dialog

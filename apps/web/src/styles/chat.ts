@@ -2,6 +2,29 @@ import { cn } from "@/lib/utils";
 
 // Tailwind recipes for chat presentation. Semantic colors come from theme/tokens.css.
 export const chatStyles = {
+  focusMessages: cn(String.raw`
+    px-4 py-0 pb-5 max-[767px]:px-3 max-[767px]:py-0 max-[767px]:pb-4
+    [&>:first-child]:mt-5 max-[767px]:[&>:first-child]:mt-4
+    [&_.model-comparison-grid]:w-full [&_.model-comparison-grid]:max-w-[1680px]
+    [&_.model-comparison-grid\_\_cards]:grid-cols-2 max-[767px]:[&_.model-comparison-grid\_\_cards]:grid-cols-1
+    [&_.message]:max-w-[960px]
+    [&_.message\_\_markdown]:text-[15px] [&_.message\_\_markdown]:leading-[1.85]
+    [&_.model-answer-card\_\_body_.message\_\_markdown]:text-[15px]
+    [&_.model-answer-card\_\_body_.message\_\_markdown]:leading-[1.85]
+    [&_.model-answer-card\_\_header]:sticky [&_.model-answer-card\_\_header]:top-0
+    [&_.model-answer-card\_\_header]:z-10 [&_.model-answer-card\_\_header]:bg-popover
+  `),
+  focusComposer: cn(String.raw`
+    max-w-[1200px] [padding:6px_16px_10px]
+    [&_textarea]:min-h-8 [&_textarea]:max-h-[min(144px,20dvh)]
+    [&_textarea]:w-0 [&_textarea]:flex-1 [&_textarea]:py-1 [&_textarea]:leading-6
+    max-[767px]:[padding:6px_12px_max(8px,env(safe-area-inset-bottom))]
+  `),
+  focusComposerBox: "flex flex-wrap items-end gap-2 rounded-xl p-2 max-[767px]:rounded-xl",
+  focusNoteBand: "max-w-[1200px] px-4 py-1 max-[767px]:px-3",
+  focusNoteInner: "flex-nowrap gap-2 rounded-lg px-2.5 py-1.5 max-[767px]:flex-nowrap",
+  focusNoteText: "text-[11px] leading-4 max-[767px]:basis-auto max-[767px]:text-[10px]",
+  focusNoteAction: "h-7 rounded-md px-2 text-[10px] max-[767px]:w-auto",
   noteBand_cta: cn(
     String.raw`note-band__cta max-[767px]:w-full shrink-0 text-[10px] bg-popover max-[767px]:ml-auto`,
   ),
@@ -27,7 +50,7 @@ export const chatStyles = {
     generation-stop__label text-[11px]
   `),
   conversationPanel_latest: cn(String.raw`
-    conversation-panel__latest absolute bottom-[225px] left-[50%] [transform:translateX(-50%)]
+    conversation-panel__latest absolute left-[50%] [transform:translateX(-50%)]
     rounded-full bg-popover shadow-popover z-10 whitespace-nowrap
     enabled:active:[transform:translateX(-50%)_scale(0.98)]
   `),

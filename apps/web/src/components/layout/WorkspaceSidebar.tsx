@@ -12,6 +12,8 @@ type Props = {
   workspace: Pick<
     ChatWorkspace,
     | "copy"
+    | "focusMode"
+    | "exitFocusMode"
     | "narrowLayout"
     | "mobileSidebarOpen"
     | "sidebarCollapsed"
@@ -36,6 +38,8 @@ type Props = {
 export function WorkspaceSidebar({ workspace }: Props) {
   const {
     copy,
+    focusMode,
+    exitFocusMode,
     narrowLayout,
     mobileSidebarOpen,
     sidebarCollapsed,
@@ -79,7 +83,12 @@ export function WorkspaceSidebar({ workspace }: Props) {
       </div>
       <ConversationList
         revealSearch={
-          !narrowLayout && sidebarCollapsed
+          focusMode
+            ? () => {
+                exitFocusMode();
+                setSidebarCollapsed(false);
+              }
+            : !narrowLayout && sidebarCollapsed
             ? () => setSidebarCollapsed(false)
             : undefined
         }
@@ -125,7 +134,7 @@ export function WorkspaceSidebar({ workspace }: Props) {
     <Dialog
       label={copy.chats}
       className={workspaceStyles.mobileSidebarDialog}
-      open={mobileSidebarOpen}
+      open={mobileSidebarOpen && !focusMode}
       onClose={() => setMobileSidebarOpen(false)}
     >
       <DialogOverlay className={workspaceStyles.mobileSidebarDialog_backdrop} />
@@ -146,7 +155,9 @@ export function WorkspaceSidebar({ workspace }: Props) {
       className={cn(
         workspaceStyles.conversationSidebar,
         `conversation-sidebar conversation-sidebar--nearai${sidebarCollapsed ? " conversation-sidebar--collapsed" : ""}`,
+        focusMode && "hidden",
       )}
+      hidden={focusMode}
       id="conversation-sidebar"
     >
       {sidebarContents}

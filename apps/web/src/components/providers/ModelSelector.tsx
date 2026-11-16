@@ -36,7 +36,7 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 function ModelOptionLabel({
   modelId,
@@ -80,6 +80,7 @@ export function ModelSelector({
   onTargetModelChange,
   onAddModel,
   onRemoveModel,
+  trailingAction,
   disabled = false,
   copy = englishConversationCopy,
 }: {
@@ -94,6 +95,7 @@ export function ModelSelector({
   onTargetModelChange?: (targetIndex: number, modelId: string) => void;
   onAddModel?: (profile: ProviderProfile, modelId: string) => void;
   onRemoveModel?: (target: ActiveSelection) => void;
+  trailingAction?: ReactNode;
   disabled?: boolean;
   copy?: ApplicationCopy;
 }) {
@@ -249,7 +251,7 @@ export function ModelSelector({
             }
           />
         </div>
-        <Popover className="relative shrink-0">
+        <Popover className="static shrink-0">
           <PopoverButton
             as={Button}
             variant="outline"
@@ -486,6 +488,7 @@ export function ModelSelector({
             ) : null}
           </PopoverPanel>
         </Popover>
+        {trailingAction}
       </div>
       <div className={modelsStyles.modelSelector_status} aria-live="polite">
         {selectedCatalog.status === "error" ? copy.modelsUnavailable : null}

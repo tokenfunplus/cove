@@ -1,5 +1,5 @@
 import { ArrowUp, LockKeyhole, Square } from "lucide-react";
-import { type RefObject } from "react";
+import { useEffect, type RefObject } from "react";
 import {
   type ConversationView,
   type ProviderProfile,
@@ -10,12 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { type ApplicationCopy } from "@/messages";
 import { chatStyles } from "@/styles/chat";
+import { cn } from "@/lib/utils";
 import { primitivesStyles } from "@/styles/primitives";
 import { AttachmentDraft } from "@/components/chat/AttachmentDraft";
 import { DraftContext } from "@/components/chat/DraftContext";
 import { type AttachmentDraft as AttachmentDraftState } from "@/hooks/chat/use-attachment-draft";
 
 type Props = {
+  compact?: boolean;
   attachmentDraft?: AttachmentDraftState;
   view: ConversationView;
   copy: ApplicationCopy;
@@ -32,6 +34,7 @@ type Props = {
   composerRef: RefObject<HTMLTextAreaElement | null>;
 };
 export function ChatComposer({
+  compact = false,
   attachmentDraft,
   view,
   copy,
@@ -47,6 +50,21 @@ export function ChatComposer({
   composerRef,
   requiresContextChoice,
 }: Props) {
+  useEffect(() => {
+    const textarea = composerRef.current;
+    if (!compact || !textarea) return;
+    const resize = () => {
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      textarea.style.removeProperty("height");
+    };
+  }, [compact, draft, composerRef]);
+
   const canSend =
     !attachmentDraft?.invalid &&
     !isSending &&
@@ -67,14 +85,15 @@ export function ChatComposer({
             Array.from(event.dataTransfer.files),
           );
       }}
-      className={chatStyles.generationComposer}
+      className={cn(chatStyles.generationComposer, compact && chatStyles.focusComposer)}
       data-composer-style="nearai"
+      data-compact={compact ? "true" : undefined}
       onSubmit={(event) => {
         event.preventDefault();
         if (canSend) onSend();
       }}
     >
-      <div className={chatStyles.generationComposer_models}>
+      <div className={cn(chatStyles.generationComposer_models, compact && "hidden")} hidden={compact}>
         <span className={chatStyles.generationComposer_label}>
           {copy.activeModelSet}
         </span>
@@ -99,16 +118,17 @@ export function ChatComposer({
           </span>
         ) : null}
       </div>
-      <div className={chatStyles.generationComposer_box}>
+      <div className={cn(chatStyles.generationComposer_box, compact && chatStyles.focusComposerBox)}>
         {attachmentDraft && (
-          <AttachmentDraft state={attachmentDraft} disabled={isSending} />
+          <AttachmentDraft state={attachmentDraft} disabled={isSending} compact={compact} />
         )}
         <label htmlFor="generation-input">{copy.sendMessage}</label>
         <Textarea
           className="focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-transparent"
           id="generation-input"
           value={draft}
-          placeholder={copy.composerPlaceholder}
+          placeholder={compact ? copy.focusComposerPlaceholder : copy.composerPlaceholder}
+          rows={compact ? 1 : undefined}
           onChange={(event) => onDraftChange(event.target.value)}
           ref={composerRef}
           onKeyDown={(event) => {
@@ -124,16 +144,17 @@ export function ChatComposer({
             }
           }}
         />
-        <div className={chatStyles.generationComposer_bar}>
+        <div className={cn(chatStyles.generationComposer_bar, compact && "contents")}>
           {attachmentDraft ? (
             <DraftContext
+              compact={compact}
               conversationId={view.id}
               body={draft}
               attachments={attachmentDraft}
               disabled={isSending}
             />
           ) : (
-            <span className={chatStyles.generationComposer_contextNote}>
+            <span className={cn(chatStyles.generationComposer_contextNote, compact && "sr-only")}>
               {copy.contextSnapshot.toUpperCase()} ·{" "}
               {
                 (view.generation_batches ?? []).filter(
@@ -145,7 +166,7 @@ export function ChatComposer({
           )}
           <div className="flex shrink-0 items-center gap-2">
             {privateMode && (
-              <span className={chatStyles.generationComposer_mode}>
+              <span className={cn(chatStyles.generationComposer_mode, compact && "hidden")} hidden={compact}>
                 <span />
                 {copy.privateMode}
               </span>
@@ -154,7 +175,7 @@ export function ChatComposer({
               variant="default"
               aria-label={actionLabel}
               title={actionLabel}
-              className={chatStyles.generationComposer_send}
+              className={cn(chatStyles.generationComposer_send, compact && "size-8 rounded-lg")}
               type={isSending ? "button" : "submit"}
               onClick={isSending ? onCancel : undefined}
               disabled={isSending ? !onCancel : !canSend}
@@ -173,7 +194,7 @@ export function ChatComposer({
           </div>
         </div>
       </div>
-      <p className={chatStyles.generationComposer_foot}>
+      <p className={cn(chatStyles.generationComposer_foot, compact && "hidden")} hidden={compact}>
         <LockKeyhole aria-hidden="true" size={11} strokeWidth={1.8} />
         {copy.composerFoot}
       </p>

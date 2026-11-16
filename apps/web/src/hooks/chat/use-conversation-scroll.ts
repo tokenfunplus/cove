@@ -22,9 +22,21 @@ export function useConversationScroll({
   const hasContent = Boolean(view?.messages.length || liveTurn);
   const messageListRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
+  const [footerHeight, setFooterHeight] = useState(0);
   const followLatestRef = useRef(true);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const [showReturnToLatest, setShowReturnToLatest] = useState(false);
+
+  useEffect(() => {
+    const node = footerRef.current;
+    if (!node) return;
+    const measure = () => setFooterHeight(node.getBoundingClientRect().height);
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    measure();
+    return () => observer.disconnect();
+  }, [view?.id, isLoading, hasContent]);
 
   useEffect(() => {
     const node = messageListRef.current;
@@ -110,6 +122,8 @@ export function useConversationScroll({
   return {
     messageListRef,
     composerRef,
+    footerRef,
+    footerHeight,
     showReturnToLatest,
     handleMessageScroll,
     returnToLatest,

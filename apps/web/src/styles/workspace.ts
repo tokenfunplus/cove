@@ -2,6 +2,17 @@ import { cn } from "@/lib/utils";
 
 // Tailwind recipes for workspace presentation. Semantic colors come from theme/tokens.css.
 export const workspaceStyles = {
+  focusSurface: "surface h-[100dvh] bg-background",
+  focusWorkspace: "workspace h-full w-full overflow-hidden bg-card",
+  focusBody: "workspace__body grid h-full grid-cols-1",
+  focusHeader: "workspace__header relative flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2 max-[500px]:px-3",
+  focusIdentity: "workspace__header-identity flex min-w-0 flex-1 items-center gap-2.5",
+  focusBadge: "shrink-0 rounded-md bg-accent px-2 py-1 text-[10px] font-semibold text-primary",
+  focusTitle: "masthead__title min-w-0 truncate text-xs font-medium",
+  focusModel: "hidden max-w-[30vw] truncate border-l border-border pl-2.5 text-[11px] text-muted-foreground min-[768px]:block",
+  focusUtilities: "workspace__header-utilities flex shrink-0 items-center gap-1.5",
+  focusEnter: "workspace__focus-enter size-10 p-0 rounded-[calc(var(--radius)*0.75)] shadow-none max-[500px]:w-9",
+  focusExit: "workspace__focus-exit h-8 gap-1.5 rounded-lg px-2.5 text-xs shadow-none",
   workspace_privacyStatus: cn(
     String.raw`workspace__privacy-status h-auto rounded-full bg-transparent px-2.5 py-[7px] text-[10px] shadow-none [&[data-privacy-tone="confidential"]]:bg-accent [&[data-privacy-tone="confidential"]]:text-primary [&[data-privacy-tone="gateway"]]:bg-accent [&[data-privacy-tone="gateway"]]:text-primary max-[980px]:size-8 max-[980px]:p-0 max-[980px]:[&>span]:hidden`,
   ),

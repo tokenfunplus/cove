@@ -17,13 +17,19 @@ import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
   BadgeCheck,
   ChevronDown,
+  Maximize,
+  Minimize,
   Moon,
   PanelLeftOpen,
   ShieldCheck,
   Sun,
 } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 export function WorkspaceHeader({
+  focusMode = false,
+  onEnterFocus,
+  onExitFocus,
   profiles,
   activeProviderId,
   activeModelId,
@@ -49,6 +55,9 @@ export function WorkspaceHeader({
   disabled = false,
   copy = englishConversationCopy,
 }: {
+  focusMode?: boolean;
+  onEnterFocus?: () => void;
+  onExitFocus?: () => void;
   profiles: ProviderProfile[];
   activeProviderId: string;
   activeModelId: string;
@@ -75,15 +84,26 @@ export function WorkspaceHeader({
   copy?: ApplicationCopy;
 }) {
   const effectiveTheme = appearance ?? resolvedThemePreference(theme);
+  const enterFocusRef = useRef<HTMLButtonElement>(null);
+  const exitFocusRef = useRef<HTMLButtonElement>(null);
+  const previousFocus = useRef(false);
+  useEffect(() => {
+    if (previousFocus.current === focusMode) return;
+    previousFocus.current = focusMode;
+    // Conversation search deliberately moves focus into the restored sidebar.
+    if (!focusMode && document.activeElement?.closest("#conversation-sidebar")) return;
+    (focusMode ? exitFocusRef : enterFocusRef).current?.focus({ preventScroll: true });
+  }, [focusMode]);
   return (
     <header
       className={cn(
-        workspaceStyles.workspace_header,
+        focusMode ? workspaceStyles.focusHeader : workspaceStyles.workspace_header,
         "workspace__header--nearai masthead",
       )}
       data-workspace-region="workspace-header"
+      data-focus-mode={focusMode ? "true" : undefined}
     >
-      {onOpenSidebar ? (
+      {onOpenSidebar && !focusMode ? (
         <Button
           variant="outline"
           aria-controls="conversation-sidebar"
@@ -96,19 +116,39 @@ export function WorkspaceHeader({
           <PanelLeftOpen aria-hidden="true" size={17} strokeWidth={1.8} />
         </Button>
       ) : null}
-      <div className={workspaceStyles.workspace_headerIdentity}>
-        <div className={workspaceStyles.masthead_eyebrow}>
+      <div className={focusMode ? workspaceStyles.focusIdentity : workspaceStyles.workspace_headerIdentity}>
+        {focusMode && <span className={workspaceStyles.focusBadge}>{copy.focusMode}</span>}
+        <div className={cn(workspaceStyles.masthead_eyebrow, focusMode && "hidden")} hidden={focusMode}>
           <span>{copy.conversationSection}</span>
         </div>
-        <div className={workspaceStyles.masthead_title} title={title}>
+        <div className={focusMode ? workspaceStyles.focusTitle : workspaceStyles.masthead_title} title={title}>
           {title ?? copy.chatSurface}
         </div>
+        {focusMode && activeModelSet.length > 0 && (
+          <span className={workspaceStyles.focusModel} title={activeModelSet.map((target) => target.modelId).join(", ")}>
+            {activeModelSet.length > 1 ? `${copy.modelComparison} · ${activeModelSet.length}` : activeModelId}
+          </span>
+        )}
       </div>
       <div
-        className={workspaceStyles.workspace_headerModel}
+        className={focusMode ? "hidden" : workspaceStyles.workspace_headerModel}
+        hidden={focusMode}
         data-workspace-model-controls="compact"
       >
         <ModelSelector
+          trailingAction={onEnterFocus ? (
+            <Button
+              ref={enterFocusRef}
+              type="button"
+              variant="outline"
+              className={workspaceStyles.focusEnter}
+              aria-label={copy.enterFocus}
+              title={copy.enterFocus}
+              onClick={onEnterFocus}
+            >
+              <Maximize aria-hidden="true" size={17} strokeWidth={1.8} />
+            </Button>
+          ) : undefined}
           profiles={profiles}
           activeProviderId={activeProviderId}
           activeModelId={activeModelId}
@@ -124,12 +164,12 @@ export function WorkspaceHeader({
           copy={copy}
         />
       </div>
-      <div className={workspaceStyles.workspace_headerUtilities}>
+      <div className={focusMode ? workspaceStyles.focusUtilities : workspaceStyles.workspace_headerUtilities}>
         {onToggleTheme ? (
           <Button
             variant="outline"
             aria-label={copy.toggleTheme}
-            className={workspaceStyles.themeBtn}
+            className={cn(workspaceStyles.themeBtn, focusMode && "size-8")}
             data-theme-preference={theme}
             onClick={onToggleTheme}
             title={copy.toggleTheme}
@@ -155,17 +195,19 @@ export function WorkspaceHeader({
         <div
           className={cn(
             primitivesStyles.status,
-            workspaceStyles.masthead_connection,
+            focusMode ? "p-1.5" : workspaceStyles.masthead_connection,
             `status status--${connection} masthead__connection`,
           )}
+          title={copy[connection]}
+          role="status"
         >
           <span
             aria-hidden="true"
             className={primitivesStyles.workspace_securityIcon}
           />
-          <span className="workspace__status-label">{copy[connection]}</span>
+          <span className={cn("workspace__status-label", focusMode && "sr-only")}>{copy[connection]}</span>
         </div>
-        {onVerifyPrivateConnection || onOpenPrivateVerification ? (
+        {!focusMode && (onVerifyPrivateConnection || onOpenPrivateVerification) ? (
           <Menu
             as="div"
             className={primitivesStyles.workspace_verificationMenu}
@@ -218,7 +260,8 @@ export function WorkspaceHeader({
           <Button
             variant="outline"
             aria-label={copy.privacyStatus}
-            className={cn(workspaceStyles.workspace_privacyStatus, "pill")}
+            className={cn(workspaceStyles.workspace_privacyStatus, "pill", focusMode && "size-8 p-0 [&>span]:sr-only")}
+            title={privacyLabel ?? copy.privacyStatus}
             data-privacy-tone={privacyTone}
             onClick={onOpenPrivacyStatus}
             type="button"
@@ -227,6 +270,20 @@ export function WorkspaceHeader({
             <span>{privacyLabel ?? copy.privacyStatus}</span>
           </Button>
         ) : null}
+        {focusMode && onExitFocus && (
+          <Button
+            ref={exitFocusRef}
+            variant="outline"
+            className={workspaceStyles.focusExit}
+            type="button"
+            onClick={onExitFocus}
+            aria-keyshortcuts="Escape"
+          >
+            <Minimize aria-hidden="true" size={15} strokeWidth={1.8} />
+            {copy.exitFocus}
+            <kbd aria-hidden="true" className="hidden rounded border border-border px-1 text-[9px] font-normal text-muted-foreground min-[768px]:inline">Esc</kbd>
+          </Button>
+        )}
       </div>
     </header>
   );

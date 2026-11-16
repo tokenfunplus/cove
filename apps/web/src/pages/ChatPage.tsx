@@ -29,6 +29,9 @@ export function ChatPage() {
     setPrivacyStatusOpen,
     setSettingsEntry,
     sidebarCollapsed,
+    focusMode,
+    enterFocusMode,
+    exitFocusMode,
     setMobileSidebarOpen,
     generationBatch,
     draft,
@@ -69,21 +72,22 @@ export function ChatPage() {
   return (
     <main
       className={cn(
-        workspaceStyles.surface,
+        focusMode ? workspaceStyles.focusSurface : workspaceStyles.surface,
         "surface surface--focused surface--nearai",
       )}
       aria-label={copy.chatSurface}
+      data-focus-mode={focusMode ? "true" : undefined}
     >
       <section
         className={cn(
-          workspaceStyles.workspace,
+          focusMode ? workspaceStyles.focusWorkspace : workspaceStyles.workspace,
           "workspace workspace--focused workspace--nearai",
         )}
         aria-label={copy.chatSurface}
       >
         <div
           className={cn(
-            workspaceStyles.workspace_body,
+            focusMode ? workspaceStyles.focusBody : workspaceStyles.workspace_body,
             `workspace__body workspace__body--nearai${sidebarCollapsed ? " workspace__body--sidebar-collapsed" : ""}`,
           )}
         >
@@ -92,6 +96,9 @@ export function ChatPage() {
             className={cn(workspaceStyles.workspace_main, "workspace__main")}
           >
             <WorkspaceHeader
+              focusMode={focusMode}
+              onEnterFocus={enterFocusMode}
+              onExitFocus={exitFocusMode}
               profiles={providerProfiles}
               activeProviderId={activeSelection.providerId}
               activeModelId={activeSelection.modelId}
@@ -153,6 +160,7 @@ export function ChatPage() {
               {feedback ? <WorkspaceToast feedback={feedback} onDismiss={setFeedback} /> : null}
             </div>
             <ConversationPanel
+              focusMode={focusMode}
               attachmentDraft={workspace.attachmentDraft}
               view={isLoadingConversation ? undefined : conversationView}
 

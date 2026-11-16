@@ -5,7 +5,7 @@ import {
   type ConversationView,
   type VerificationEvidence,
 } from "@cove/api-contract";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type WorkspaceFeedback = {
   message: string;
@@ -41,6 +41,45 @@ export function useWorkspaceUi() {
 
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
+  const [focusMode, setFocusMode] = useState(false);
+  const enterFocusMode = useCallback(() => {
+    setMobileSidebarOpen(false);
+    setFocusMode(true);
+  }, []);
+  const exitFocusMode = useCallback(() => setFocusMode(false), []);
+
+  useEffect(() => {
+    if (!focusMode) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.metaKey
+      ) {
+        return;
+      }
+      // A dialog or popup gets the first Escape, including during its dismissal.
+      if (
+        (event.target instanceof Element &&
+          event.target.closest(
+            '[role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"]',
+          )) ||
+        document.querySelector(
+          '[data-slot="dialog-content"][data-state="open"], dialog[open]',
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      exitFocusMode();
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [focusMode, exitFocusMode]);
+
   const [confirmation, setConfirmation] = useState<ConfirmationRequest>();
 
   const [showingArchived, setShowingArchived] = useState(false);
@@ -68,6 +107,9 @@ export function useWorkspaceUi() {
     setSidebarCollapsed,
     mobileSidebarOpen,
     setMobileSidebarOpen,
+    focusMode,
+    enterFocusMode,
+    exitFocusMode,
     confirmation,
     setConfirmation,
     showingArchived,

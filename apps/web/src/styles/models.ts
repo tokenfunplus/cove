@@ -6,7 +6,7 @@ export const modelsStyles = {
     model-selector relative min-w-0
   `),
   modelSelector_topline: cn(String.raw`
-    model-selector__topline flex gap-2.5 items-end max-[500px]:gap-[7px]
+    model-selector__topline relative inline-flex max-w-full gap-2.5 items-end max-[500px]:gap-[7px]
   `),
   modelSelector_fields: cn(String.raw`
     model-selector__fields grid grid-cols-[minmax(120px,_150px)_minmax(150px,_320px)] gap-2.5 min-w-0

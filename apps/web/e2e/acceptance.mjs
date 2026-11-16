@@ -692,11 +692,11 @@ try {
   await until(`!!document.querySelector('.front-select__options')`);
   await assertModelListScroll("mobile");
   await evaluate(
-    `document.querySelector('#provider-settings .front-select__input').select()`,
+    `(()=>{const input=document.querySelector('#provider-settings .front-select__input');input.focus();input.select();})()`,
   );
   await cdp("Input.insertText", { text: "model-t" });
   await until(
-    `document.querySelector('.front-select__options')?.textContent.includes('model-two')`,
+    `document.querySelector('#provider-settings .front-select__input').value==='model-t' && document.querySelector('.front-select__options')?.textContent.includes('model-two')`,
   );
   await chooseOption("model-two");
   await until(
@@ -803,6 +803,72 @@ try {
   assert.equal(view.generation_batches.length, 1);
   assert.equal(view.generation_batches[0].state, "completed");
   assert.equal(view.messages.filter((m) => m.role === "assistant").length, 2);
+  const normalReadingLayout = await evaluate(`({
+    height:document.querySelector('.message-list').clientHeight,
+    width:document.querySelector('.model-comparison-grid').getBoundingClientRect().width,
+    sidebar:document.querySelector('.conversation-sidebar').className
+  })`);
+  const focusEntryPlacement = await evaluate(`({
+    entry:document.querySelector('.workspace__focus-enter').getBoundingClientRect().toJSON(),
+    comparison:document.querySelector('.model-selector__comparison-toggle').getBoundingClientRect().toJSON()
+  })`);
+  assert(focusEntryPlacement.entry.left >= focusEntryPlacement.comparison.right, "Focus must follow Model comparison");
+  await fill("#generation-input", "Keep this Focus draft");
+  await click('button[aria-label="Enter Focus mode"]');
+  await until(`document.querySelector('main').dataset.focusMode==='true'`);
+  await pause(250);
+  const focusReadingLayout = await evaluate(`({
+    height:document.querySelector('.message-list').clientHeight,
+    width:document.querySelector('.model-comparison-grid').getBoundingClientRect().width,
+    header:document.querySelector('.workspace__header').getBoundingClientRect().height,
+    composer:document.querySelector('.generation-composer').getBoundingClientRect().height,
+    sidebar:getComputedStyle(document.querySelector('.conversation-sidebar')).display
+  })`);
+  await writeFile(path.join(evidenceDir, "focus-layout.json"), JSON.stringify({ normal: normalReadingLayout, focus: focusReadingLayout }, null, 2));
+  assert(focusReadingLayout.height > normalReadingLayout.height + 100, "Focus must give more height to responses");
+  assert(focusReadingLayout.width > normalReadingLayout.width, "Focus must widen comparisons");
+  assert(focusReadingLayout.header <= 60 && focusReadingLayout.composer <= 90, "Focus chrome must remain compact");
+  assert.equal(focusReadingLayout.sidebar, "none");
+  await until(`getComputedStyle(document.querySelector('.model-answer-card__body .message__markdown')).fontSize==='15px'`);
+  await snapshot("focus-comparison-light-1440");
+  for (const [width, height] of [[980, 800], [768, 1024], [390, 844], [320, 740]]) {
+    await cdp("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: width < 768 });
+    await pause(250);
+    await assertLayout("Focus " + width);
+    assert.equal(await evaluate(`getComputedStyle(document.querySelector('.model-comparison-grid__cards')).gridTemplateColumns.trim().split(/\\s+/).length`), width >= 768 ? 2 : 1, "Focus comparisons must use available width");
+    assert(await evaluate(`document.querySelector('.workspace__focus-exit').getBoundingClientRect().right<=innerWidth`), "Focus exit must stay on screen");
+    assert(await evaluate(`document.querySelector('.generation-composer').getBoundingClientRect().height<=90`), "Focus input must stay compact on narrow screens");
+    if (width === 390) await snapshot("focus-comparison-light-390");
+  }
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await fill("#generation-input", "Focus line one\nFocus line two\nFocus line three");
+  await until(`document.querySelector('#generation-input').getBoundingClientRect().height>=72`);
+  assert(await evaluate(`document.querySelector('#generation-input').getBoundingClientRect().height<=144`), "Focus multiline drafts must grow within their reading-space limit");
+  await fill("#generation-input", "Keep this Focus draft");
+  await until(`document.querySelector('#generation-input').getBoundingClientRect().height<=40`);
+  await click('button[aria-label="Toggle day / night edition"]');
+  await snapshot("focus-comparison-dark-1440");
+  await click('button[aria-label="Toggle day / night edition"]');
+  await click('.workspace__header button[aria-label="Privacy Status"]');
+  await until(`!!document.querySelector('[role="dialog"]')`);
+  async function escapeKey() {
+    await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape" });
+    await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape" });
+  }
+  await escapeKey();
+  await until(`!document.querySelector('[role="dialog"]')`);
+  assert.equal(await evaluate(`document.querySelector('main').dataset.focusMode`), "true", "Escape must dismiss a dialog before Focus");
+  await escapeKey();
+  await until(`!document.querySelector('main').dataset.focusMode`);
+  assert.equal(await evaluate(`document.querySelector('.conversation-sidebar').className`), normalReadingLayout.sidebar);
+  assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "Keep this Focus draft");
+  assert(await evaluate(`document.activeElement?.classList.contains('workspace__focus-enter')`), "Exit must restore keyboard focus");
+  await click('button[aria-label="Enter Focus mode"]');
+  await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "k", code: "KeyK", modifiers: 4 });
+  await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "k", code: "KeyK", modifiers: 4 });
+  await until(`!document.querySelector('main').dataset.focusMode && document.activeElement===document.querySelector('.conversation-list__search input')`);
+  assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "Keep this Focus draft");
+  await fill("#generation-input", "");
   await evaluate(
     `(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Use for next turn');if(!b)throw new Error('Choice missing');b.click();})()`,
   );
@@ -1268,6 +1334,8 @@ try {
   );
   await clickText("Continue without an answer");
   await fill("#generation-input", "Slow fixture");
+  await click('button[aria-label="Enter Focus mode"]');
+  await until(`document.querySelector('main').dataset.focusMode==='true'`);
   const composerPosition = () =>
     evaluate(
       `['#generation-input', '.generation-composer__send'].map(selector => document.querySelector(selector).getBoundingClientRect().toJSON())`,
@@ -1291,6 +1359,8 @@ try {
     idleComposer,
     "The composer moved when Stop became Send",
   );
+  await snapshot("focus-four-model-stopped");
+  await click(".workspace__focus-exit");
   await snapshot("four-model-stopped");
   await clickText("Continue without an answer");
   await fill("#generation-input", "Long fixture");
@@ -1310,6 +1380,18 @@ try {
     ),
     "Jump to latest failed",
   );
+  await evaluate(`const node=document.querySelector('.message-list');node.scrollTop=0;node.dispatchEvent(new Event('scroll',{bubbles:true}));`);
+  await click('button[aria-label="Enter Focus mode"]');
+  await until(`document.querySelector('main').dataset.focusMode==='true'`);
+  await pause(250);
+  assert(await evaluate(`(()=>{const n=document.querySelector('.message-list');return n.scrollHeight-n.clientHeight-n.scrollTop>200})()`), "Focus must preserve the reader's position instead of jumping to the end");
+  assert(await evaluate(`document.querySelector('.conversation-panel__latest').getBoundingClientRect().bottom<document.querySelector('[data-workspace-region="composer"]').getBoundingClientRect().top`), "Jump to latest must not overlap the composer or context choice");
+  await evaluate(`(()=>{const list=document.querySelector('.message-list');const card=[...document.querySelectorAll('.model-answer-card')].find(e=>e.querySelector('pre'));list.scrollTop+=card.getBoundingClientRect().top-list.getBoundingClientRect().top+180;list.dispatchEvent(new Event('scroll',{bubbles:true}));})()`);
+  await pause(200);
+  const pinnedModelHeader = await evaluate(`(()=>{const list=document.querySelector('.message-list').getBoundingClientRect();const card=[...document.querySelectorAll('.model-answer-card')].find(e=>e.querySelector('pre'));const header=card.querySelector('.model-answer-card__header').getBoundingClientRect();return {top:header.top,listTop:list.top};})()`);
+  assert(pinnedModelHeader.top >= pinnedModelHeader.listTop - 1 && pinnedModelHeader.top <= pinnedModelHeader.listTop + 20, "Focus must keep model identity visible while reading a long comparison: " + JSON.stringify(pinnedModelHeader));
+  await snapshot("focus-long-markdown");
+  await click(".workspace__focus-exit");
   await cdp("Emulation.setDeviceMetricsOverride", {
     width: 390,
     height: 844,
@@ -1428,7 +1510,20 @@ try {
       `[...document.querySelectorAll('[role=option]')].some(e=>e.textContent.trim()===${JSON.stringify(label)})`,
     );
     await evaluate(
-      `(()=>{const e=[...document.querySelectorAll('[role=option]')].find(e=>e.textContent.trim()===${JSON.stringify(label)});if(!e)throw Error('Option missing');e.setAttribute('data-fixture-option','yes')})()`,
+      `(async()=>{
+        document.querySelectorAll('[data-fixture-option]').forEach(e=>e.removeAttribute('data-fixture-option'));
+        const e=[...document.querySelectorAll('[role=option]')].find(e=>e.textContent.trim()===${JSON.stringify(label)} && e.getBoundingClientRect().width>0);
+        if(!e)throw Error('Option missing');
+        e.setAttribute('data-fixture-option','yes');
+        let previous=e.getBoundingClientRect(),stable=0;
+        for(let i=0;i<20 && stable<2;i++){
+          await new Promise(requestAnimationFrame);
+          const next=e.getBoundingClientRect();
+          stable=Math.abs(next.top-previous.top)<0.5 && Math.abs(next.left-previous.left)<0.5 && Math.abs(next.height-previous.height)<0.5?stable+1:0;
+          previous=next;
+        }
+        if(stable<2)throw Error('Option layout did not settle');
+      })()`,
     );
     await click("[data-fixture-option]");
   }

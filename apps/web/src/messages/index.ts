@@ -2,6 +2,11 @@ import type { LocalePreference } from "@cove/api-contract";
 
 const messages = {
   close: "Close",
+  focusMode: "Focus",
+  enterFocus: "Enter Focus mode",
+  exitFocus: "Exit Focus",
+  focusContextChoice: "Choose a reply to continue",
+  focusComposerPlaceholder: "Message…",
   attachFiles: "Attach files",
   attachmentLimits: "Up to 4 files · 4 MiB each · Text, code, PDF",
   removeAttachment: "Remove attachment",

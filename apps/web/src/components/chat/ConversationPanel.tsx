@@ -48,6 +48,7 @@ import { ArrowRight } from "lucide-react";
 import { useConversationScroll } from "@/hooks/chat/use-conversation-scroll";
 
 export function ConversationPanel({
+  focusMode = false,
   attachmentDraft,
   view,
   copy = englishConversationCopy,
@@ -74,6 +75,7 @@ export function ConversationPanel({
   onSkipContext,
   onVerifyAgain,
 }: {
+  focusMode?: boolean;
   attachmentDraft?: AttachmentDraft;
   view: ConversationView | undefined;
   copy?: ApplicationCopy;
@@ -107,6 +109,8 @@ export function ConversationPanel({
   const {
     messageListRef,
     composerRef,
+    footerRef,
+    footerHeight,
     showReturnToLatest,
     handleMessageScroll,
     returnToLatest,
@@ -347,6 +351,7 @@ export function ConversationPanel({
           onScroll={handleMessageScroll}
           className={cn(
             chatStyles.messageList,
+            focusMode && chatStyles.focusMessages,
             `message-list${view.messages.length === 0 && liveTargets.length === 0 && !liveTurn ? " message-list--empty" : ""}`,
           )}
           aria-label={copy.conversationMessages}
@@ -771,6 +776,7 @@ export function ConversationPanel({
           <Button
             variant="outline"
             className={chatStyles.conversationPanel_latest}
+            style={{ bottom: footerHeight + 12 }}
             onClick={returnToLatest}
             type="button"
           >
@@ -788,46 +794,50 @@ export function ConversationPanel({
               ? copy.modelComparison
               : ""}
         </p>
-        {contextDispositionBatch && onSkipContext ? (
-          <div className={chatStyles.noteBand}>
-            <div className={chatStyles.noteBand_inner}>
-              <span className={chatStyles.noteBand_no}>※</span>
-              <p className={chatStyles.noteBand_text}>
-                {copy.contextDispositionNote}
-              </p>
-              <Button
-                variant="outline"
-                className={cn(
-                  chatStyles.noteBand_cta,
-                  "conversation-panel__skip-context",
-                )}
-                type="button"
-                onClick={() => onSkipContext(contextDispositionBatch.id)}
-              >
-                <span>{copy.continueWithoutAnswer}</span>
-                <ArrowRight aria-hidden="true" size={15} strokeWidth={2} />
-              </Button>
+        <div ref={footerRef} className="flex shrink-0 flex-col" data-workspace-region="composer">
+          {contextDispositionBatch && onSkipContext ? (
+            <div className={cn(chatStyles.noteBand, focusMode && chatStyles.focusNoteBand)}>
+              <div className={cn(chatStyles.noteBand_inner, focusMode && chatStyles.focusNoteInner)}>
+                <span className={cn(chatStyles.noteBand_no, focusMode && "hidden")}>※</span>
+                <p className={cn(chatStyles.noteBand_text, focusMode && chatStyles.focusNoteText)}>
+                  {focusMode ? copy.focusContextChoice : copy.contextDispositionNote}
+                </p>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    chatStyles.noteBand_cta,
+                    "conversation-panel__skip-context",
+                    focusMode && chatStyles.focusNoteAction,
+                  )}
+                  type="button"
+                  onClick={() => onSkipContext(contextDispositionBatch.id)}
+                >
+                  <span>{copy.continueWithoutAnswer}</span>
+                  <ArrowRight aria-hidden="true" size={15} strokeWidth={2} />
+                </Button>
+              </div>
             </div>
-          </div>
-        ) : null}
-        {showComposer ? (
-          <ChatComposer
-            attachmentDraft={attachmentDraft}
-            view={view}
-            copy={copy}
-            activeModelSet={activeModelSet}
-            profiles={profiles}
-            draft={draft}
-            onDraftChange={onDraftChange}
-            onSend={onSend}
-            onCancel={onCancel}
-            isSending={isSending}
-            catalogLoading={catalogLoading}
-            privateMode={privateMode}
-            composerRef={composerRef}
-            requiresContextChoice={Boolean(contextDispositionBatch)}
-          />
-        ) : null}
+          ) : null}
+          {showComposer ? (
+            <ChatComposer
+              compact={focusMode}
+              attachmentDraft={attachmentDraft}
+              view={view}
+              copy={copy}
+              activeModelSet={activeModelSet}
+              profiles={profiles}
+              draft={draft}
+              onDraftChange={onDraftChange}
+              onSend={onSend}
+              onCancel={onCancel}
+              isSending={isSending}
+              catalogLoading={catalogLoading}
+              privateMode={privateMode}
+              composerRef={composerRef}
+              requiresContextChoice={Boolean(contextDispositionBatch)}
+            />
+          ) : null}
+        </div>
       </section>
     </SourceDocuments>
   );
