@@ -21,8 +21,10 @@ Requires an Apple Silicon Mac running macOS 13 or later.
 
 1. Download [Cove 0.1.0-beta.3 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.3/Cove-0.1.0-beta.3-arm64.dmg).
 2. Quit an earlier Cove instance, open the DMG, and drag **Cove.app** to **Applications**.
-3. Launch Cove, open **Settings → Provider settings**, enter your Provider key, click **Test connection**, choose a model, then click **Save Provider**.
-4. Send your first message, or use **Model comparison** to select up to four models.
+3. Launch Cove, open **Settings → Provider settings**, enter your Provider key, click **Test connection**, choose a model for your initial Active Model Set, then click **Save Provider**.
+4. Confirm the Provider/model target in the workspace, then send your first message. Use **Model comparison** to select up to four targets.
+
+Provider Profiles describe connections; model targets belong to the Active Model Set. Initial setup adds the chosen target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; change its targets through the workspace's model controls.
 
 The package is Developer ID signed and Apple notarized. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.3) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English; messages, titles, and prompts support Unicode content.
 
@@ -39,7 +41,7 @@ pnpm install --frozen-lockfile
 make start-local
 ```
 
-The command builds the web assets and Local Service, then opens an authenticated browser session. Configure your Provider in Settings as above. Stop the service with:
+When no Local Service is running, the command builds the web assets and service, then opens an authenticated browser session. It reuses an already-running service without rebuilding. After changing Go or web source, run `make stop-local` before `make start-local` to rebuild. Configure your Provider in Settings as above. Stop the service when your development session ends:
 
 ```sh
 make stop-local

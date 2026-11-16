@@ -41,7 +41,7 @@ Startup rebuilds web assets before compiling the service and opens a fresh authe
 
 Provider catalog errors do not automatically retry on browser focus or reconnect. Open **Settings → Provider settings** and use the explicit connection test after granting access. Check the endpoint, authentication method, Provider availability, and model catalog if the test still fails.
 
-If you entered a new key, choose a model and click **Save Provider** after testing; a connection test alone does not save it.
+If you entered a new key, choose a model target for initial setup and click **Save Provider** after testing; a connection test alone does not save it. Provider Profiles describe connections, while model targets belong to the Active Model Set. Setup initializes that target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; confirm or change its targets through the workspace's model controls.
 
 The NearAI preset uses its staging service, so availability and verification capabilities depend on that service and model. See [Provider configuration](configuration.md#provider-profiles).
 

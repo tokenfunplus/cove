@@ -4,7 +4,7 @@ For a first run, follow the [quick start](../README.md#quick-start). Manage ever
 
 ## Provider Profiles
 
-Open **Settings → Provider settings** to configure a connection. Enter a key, click **Test connection** to load the model catalog, choose a model, then click **Save Provider**. Testing alone does not save the key or profile. The NearAI preset uses a fixed staging endpoint; custom Providers use OpenAI-compatible APIs.
+Open **Settings → Provider settings** to configure a connection. Enter a key, click **Test connection** to load the model catalog, choose a model target for initial setup, then click **Save Provider**. Testing alone does not save the key or profile. The NearAI preset uses a fixed staging endpoint; custom Providers use OpenAI-compatible APIs.
 
 | Field | Meaning |
 | --- | --- |
@@ -13,11 +13,14 @@ Open **Settings → Provider settings** to configure a connection. Enter a key, 
 | Endpoint (`endpoint`) | Custom Provider URL. HTTPS is required except for loopback HTTP destinations. The preset's service endpoint is managed by Cove. |
 | Authentication (`auth_method`) | `bearer` sends `Authorization: Bearer <key>`; `x_api_key` sends the key in `X-API-Key`. |
 | API key (`secret` on writes) | Entered through Settings and stored in macOS Keychain by default. Profile read responses exclude the key. Key rotation preserves the previous usable key if replacement validation fails. |
-| Models | Select an initial model before saving the Provider. After setup, use the workspace's model controls to manage Provider/model targets in the Active Model Set. |
-
-The Active Model Set holds up to four distinct Provider/model targets. It can be empty before setup; sending requires a usable selection. One target produces an ordinary answer, and several produce a Model Comparison. A connection test can refresh a catalog after a denied or failed credential read.
 
 The NearAI preset currently uses `https://cloud-stg-api.near.ai`. Model availability and verification support depend on its service and catalog. See the [privacy model](privacy.md) for the distinction between transport, execution, and verification claims.
+
+### Active Model Set
+
+Provider Profiles describe connections; model selection belongs to the Active Model Set. The setup form's model choice initializes one Provider/model target only when no targets are selected. Saving Provider edits does not replace an existing set. After setup, use the workspace's model controls to change targets.
+
+An established Active Model Set contains one to four distinct Provider/model targets. The saved value `active_model_set: []` represents an unconfigured workspace with no selected targets; it cannot be used to send a message. One target produces an ordinary answer, and several produce a Model Comparison. A connection test can refresh a catalog after a denied or failed credential read.
 
 ## Workspace settings
 
@@ -30,7 +33,7 @@ Set generation parameters and appearance in **Settings → General**. The Local 
 | Temperature / `temperature` | Blank (`null`) | Finite number from `0` to `2`, inclusive. Blank omits the parameter and keeps the Provider default. |
 | Top P / `top_p` | Blank (`null`) | Finite number from `0` to `1`, inclusive. Blank keeps the Provider default. |
 | Max Tokens / `max_tokens` | Blank (`null`) | Positive integer, at least `1`. Blank keeps the Provider default; supported limits remain model-specific. |
-| Active Model Set / `active_model_set` | Empty | Zero to four `{provider_id, model_id}` entries; select at least one usable target before sending. |
+| Active Model Set / `active_model_set` | `[]` (unconfigured) | One to four distinct `{provider_id, model_id}` targets once configured. The contract also accepts `[]` to represent no configured selection; sending requires at least one usable target. |
 | Legacy locale / `locale` | `system` in persisted defaults | The contract retains `system`, `en`, `zh`, and `ja` for compatibility. The current interface uses English; this field does not enable translated UI. |
 
 Provider/model support may be narrower than Cove's accepted parameter ranges. Configuration changes apply to new submissions. Retries retain their saved configuration and Context Snapshot; changing current settings does not rewrite earlier Generations.
@@ -77,8 +80,9 @@ For an isolated development database, stop any source service first, then run:
 ```sh
 make stop-local
 COVE_DATA_DIR="$(mktemp -d)" make start-local
-make stop-local
 ```
+
+Run `make stop-local` separately when the development session ends.
 
 For integration checks, also explicitly opt into the test file store with disposable credentials when needed. Do not point tests at personal history. Runtime launch/control tokens are managed by the Launcher and development scripts; keep their URLs and state files out of documentation and shared diagnostics.
 
