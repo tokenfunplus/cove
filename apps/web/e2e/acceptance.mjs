@@ -350,6 +350,25 @@ try {
     await snapshot("failure");
     throw new Error("Browser condition timed out: " + expression);
   }
+  async function reloadPage() {
+    await cdp("Page.enable");
+    let timeout;
+    let onLoad;
+    // Polling the old execution context can fail while Chrome commits a reload.
+    const loaded = new Promise((resolve, reject) => {
+      onLoad = (event) => {
+        if (JSON.parse(event.data).method === "Page.loadEventFired") resolve();
+      };
+      socket.addEventListener("message", onLoad);
+      timeout = setTimeout(() => reject(new Error("Browser reload did not finish")), 15000);
+    });
+    try {
+      await Promise.all([loaded, cdp("Page.reload")]);
+    } finally {
+      clearTimeout(timeout);
+      socket.removeEventListener("message", onLoad);
+    }
+  }
   async function click(selector) {
     await until(`!!document.querySelector(${JSON.stringify(selector)})`);
     await evaluate(
@@ -564,7 +583,7 @@ try {
     await assertLayout(id + " light");
     await snapshot("skin-" + id + "-light");
   }
-  await cdp("Page.reload");
+  await reloadPage();
   await until(
     `!!document.querySelector('.conversation-welcome') && document.documentElement.dataset.skin === "studio"`,
   );
@@ -875,7 +894,7 @@ try {
   await until(
     `!![...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Selected · Answer of record')`,
   );
-  await cdp("Page.reload");
+  await reloadPage();
   await pause(500);
   await until(
     `document.readyState==='complete' && !!document.querySelector('button[aria-label="Toggle day / night edition"]')`,
@@ -1260,7 +1279,7 @@ try {
   // Page.reload acknowledges before navigation; wait for a new document instead
   // of letting the old page's already-rendered answers satisfy the condition.
   await evaluate("globalThis.__coveSourceReloadPending = true");
-  await cdp("Page.reload");
+  await reloadPage();
   await until(
     `globalThis.__coveSourceReloadPending !== true && document.querySelector('.model-selector')?.dataset.catalogStatus === 'ready' && document.querySelectorAll('.model-answer-card').length === 4 && !![...document.querySelectorAll('button')].find(b=>b.textContent==='source.pdf, P1' && b.getBoundingClientRect().width > 0)`,
   );
@@ -1433,7 +1452,7 @@ try {
   assert(await evaluate(`(()=>{const r=document.querySelector('[data-timeline-preview]').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight})()`), "Timeline previews must fit narrow screens");
   await snapshot("timeline-preview-390");
   await evaluate(`window.__timelineFixtureBeforeReload=true`);
-  await cdp("Page.reload");
+  await reloadPage();
   await until(`!window.__timelineFixtureBeforeReload && !!document.querySelector('[data-timeline-marker]')`);
   assert((await evaluate(`document.querySelector('[data-timeline-marker]').getAttribute('aria-label')`)).includes("Bookmarked"), "Timeline bookmarks must survive reloads");
   await click('[data-timeline-marker]');
