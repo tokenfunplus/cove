@@ -1,4 +1,5 @@
 import { ChatComposer } from "@/components/chat/ChatComposer";
+import { ConversationTimeline } from "@/components/chat/ConversationTimeline";
 import {
   SourceDocuments,
   BatchSources,
@@ -35,6 +36,8 @@ import {
 import { ProviderStatusNotice } from "@/components/providers/ProviderStatusNotice";
 import { VerificationDetailsButton } from "@/components/verification/VerificationDetailsButton";
 import { type LiveTurn } from "@/lib/chat/live-turn";
+import { conversationTimeline } from "@/lib/chat/timeline";
+import { timelineStyles } from "@/styles/timeline";
 import { formatTime } from "@/lib/format-date";
 import { type ApplicationCopy, englishConversationCopy } from "@/messages";
 import {
@@ -114,6 +117,7 @@ export function ConversationPanel({
     showReturnToLatest,
     handleMessageScroll,
     returnToLatest,
+    scrollToMessage,
   } = useConversationScroll({
     view,
     liveTurn,
@@ -321,6 +325,7 @@ export function ConversationPanel({
   const liveComparisonAlreadyInHistory = Boolean(
     liveBatch && comparisonFirstAssistantMessageID.has(liveBatch.id),
   );
+  const timelineEntries = conversationTimeline(view, liveTurn);
 
   return (
     <SourceDocuments batches={allGenerationBatches}>
@@ -346,12 +351,14 @@ export function ConversationPanel({
             copy={copy}
           />
         ) : null}
-        <div
+        <div className={timelineStyles.viewport}>
+          <div
           ref={messageListRef}
           onScroll={handleMessageScroll}
           className={cn(
             chatStyles.messageList,
             focusMode && chatStyles.focusMessages,
+            timelineEntries.length > 0 && timelineStyles.messages,
             `message-list${view.messages.length === 0 && liveTargets.length === 0 && !liveTurn ? " message-list--empty" : ""}`,
           )}
           aria-label={copy.conversationMessages}
@@ -410,6 +417,7 @@ export function ConversationPanel({
                     `message message--${message.role}`,
                   )}
                   data-generation-target={generationTarget?.target.id}
+                  data-timeline-anchor={message.role === "user" ? message.id : undefined}
                   key={message.id}
                 >
                   {message.role === "user" ? (
@@ -504,6 +512,7 @@ export function ConversationPanel({
           )}
           {liveTurn && !liveUserAlreadyPersisted ? (
             <article
+              data-timeline-anchor={liveTurn.userMessageId}
               className={cn(
                 messagesStyles.message,
                 "message--user message--live",
@@ -771,6 +780,15 @@ export function ConversationPanel({
               onVerifyAgain={onVerifyAgain}
             />
           ))}
+          </div>
+          <ConversationTimeline
+            key={view.id}
+            conversationId={view.id}
+            entries={timelineEntries}
+            scrollRef={messageListRef}
+            onNavigate={scrollToMessage}
+            copy={copy}
+          />
         </div>
         {showReturnToLatest ? (
           <Button

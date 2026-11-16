@@ -1391,6 +1391,33 @@ try {
   const pinnedModelHeader = await evaluate(`(()=>{const list=document.querySelector('.message-list').getBoundingClientRect();const card=[...document.querySelectorAll('.model-answer-card')].find(e=>e.querySelector('pre'));const header=card.querySelector('.model-answer-card__header').getBoundingClientRect();return {top:header.top,listTop:list.top};})()`);
   assert(pinnedModelHeader.top >= pinnedModelHeader.listTop - 1 && pinnedModelHeader.top <= pinnedModelHeader.listTop + 20, "Focus must keep model identity visible while reading a long comparison: " + JSON.stringify(pinnedModelHeader));
   await snapshot("focus-long-markdown");
+  const timelineMarkerCount = await evaluate(`document.querySelectorAll('[data-timeline-marker]').length`);
+  assert(timelineMarkerCount >= 2, "Long conversations must expose timeline positions");
+  assert.equal(timelineMarkerCount, await evaluate(`document.querySelectorAll('[data-timeline-anchor]').length`), "Comparison answers must share one marker per user turn");
+  const firstTimelineId = await evaluate(`document.querySelector('[data-timeline-marker]').dataset.timelineMarker`);
+  const timelineScrollBeforeHover = await evaluate(`document.querySelector('.message-list').scrollTop`);
+  const timelineMarkerRect = await evaluate(`document.querySelector('[data-timeline-marker]').getBoundingClientRect().toJSON()`);
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: timelineMarkerRect.x + timelineMarkerRect.width / 2, y: timelineMarkerRect.y + timelineMarkerRect.height / 2 });
+  await until(`(()=>{const card=document.querySelector('[data-timeline-preview]');if(!card)return false;const r=card.getBoundingClientRect();return r.top>=0&&r.left>=0&&r.right<=innerWidth})()`);
+  const timelinePreviewRect = await evaluate(`document.querySelector('[data-timeline-preview]').getBoundingClientRect().toJSON()`);
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: (timelineMarkerRect.left + timelinePreviewRect.right) / 2, y: timelineMarkerRect.y + timelineMarkerRect.height / 2 });
+  await pause(250);
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: timelinePreviewRect.x + timelinePreviewRect.width / 2, y: timelinePreviewRect.y + timelinePreviewRect.height / 2 });
+  await pause(250);
+  assert(await evaluate(`!!document.querySelector('[data-timeline-preview] h3')`), "The preview must stay open across the marker-to-card gap");
+  assert.equal(await evaluate(`document.querySelector('.message-list').scrollTop`), timelineScrollBeforeHover, "Hovering a timeline marker must preserve reading position");
+  await click('[data-timeline-preview] button[aria-label="Save bookmark"]');
+  await until(`!!document.querySelector('[data-timeline-preview] button[aria-label="Remove bookmark"][aria-pressed="true"]')`);
+  const timelineSavedReferences = await evaluate(`localStorage.getItem('cove.timeline.bookmarks.'+document.querySelector('[data-timeline-conversation]').dataset.timelineConversation)`);
+  assert.equal(timelineSavedReferences, JSON.stringify([firstTimelineId]), "Bookmarks must persist identifiers only");
+  await snapshot("timeline-preview-desktop");
+  await escapeKey();
+  await until(`!document.querySelector('[data-timeline-preview]')`);
+  assert.equal(await evaluate(`document.querySelector('main').dataset.focusMode`), "true", "Escape must dismiss the timeline preview before Focus");
+  await click('[data-timeline-marker]');
+  await until(`document.querySelector('[data-timeline-marker]').getAttribute('aria-current')==='location'`);
+  assert(await evaluate(`document.querySelector('.message-list').scrollTop<100`), "Clicking a marker must navigate to its turn");
+  await escapeKey();
   await click(".workspace__focus-exit");
   await cdp("Emulation.setDeviceMetricsOverride", {
     width: 390,
@@ -1401,6 +1428,18 @@ try {
   await pause(250);
   assert.equal(await evaluate("document.documentElement.scrollWidth"), 390);
   await snapshot("long-markdown-390");
+  await click('[data-timeline-marker]');
+  await until(`!!document.querySelector('[data-timeline-preview]')`);
+  assert(await evaluate(`(()=>{const r=document.querySelector('[data-timeline-preview]').getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight})()`), "Timeline previews must fit narrow screens");
+  await snapshot("timeline-preview-390");
+  await evaluate(`window.__timelineFixtureBeforeReload=true`);
+  await cdp("Page.reload");
+  await until(`!window.__timelineFixtureBeforeReload && !!document.querySelector('[data-timeline-marker]')`);
+  assert((await evaluate(`document.querySelector('[data-timeline-marker]').getAttribute('aria-label')`)).includes("Bookmarked"), "Timeline bookmarks must survive reloads");
+  await click('[data-timeline-marker]');
+  await click('[data-timeline-preview] button[aria-label="Remove bookmark"]');
+  await until(`!document.querySelector('[data-timeline-marker]').getAttribute('aria-label').includes('Bookmarked')`);
+  await escapeKey();
   await cdp("Emulation.setDeviceMetricsOverride", {
     width: 1440,
     height: 900,

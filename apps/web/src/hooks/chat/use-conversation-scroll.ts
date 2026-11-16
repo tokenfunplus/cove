@@ -104,6 +104,17 @@ export function useConversationScroll({
     });
   }
 
+  function scrollToMessage(id: string) {
+    const node = messageListRef.current;
+    const anchor = node && [...node.querySelectorAll<HTMLElement>("[data-timeline-anchor]")]
+      .find((item) => item.dataset.timelineAnchor === id);
+    if (!node || !anchor || !view) return;
+    // Stop following a stream before navigating to an earlier turn.
+    followLatestRef.current = false;
+    node.scrollTo({ top: node.scrollTop + anchor.getBoundingClientRect().top - node.getBoundingClientRect().top - 12, behavior: "instant" });
+    handleMessageScroll();
+  }
+
   useEffect(() => {
     const node = messageListRef.current;
     if (!node || !hasContent) return;
@@ -127,5 +138,6 @@ export function useConversationScroll({
     showReturnToLatest,
     handleMessageScroll,
     returnToLatest,
+    scrollToMessage,
   };
 }

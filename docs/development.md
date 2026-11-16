@@ -79,6 +79,12 @@ Focus is in-memory presentation state. It preserves drafts, attachments, model s
 
 Browser acceptance covers desktop/mobile layout, response-space gains, nested Escape handling, stream cancellation, long-answer reading position, and the adaptive Jump to latest position. Component tests cover draft/file preservation and keyboard focus restoration.
 
+### Conversation timeline
+
+The timeline beside the message list has one marker per user turn, including Model Comparisons. Its active marker follows the reading position. Hover or keyboard-focus a marker for a plain-text title and answer excerpt, click to jump, and use the preview's bookmark action to save or remove that position. The preview remains interactive across the gap to the rail; Escape dismisses it before leaving Focus.
+
+Bookmarks store only conversation/message identifiers in browser local storage, separately for each conversation. They survive reloads in the same browser profile and Local Service origin; they are not included in database backups or exports. Clearing browser data removes them. If browser storage is unavailable, the preview reports that a bookmark lasts for the current session only. Previews do not contact a Provider or change generation context.
+
 ## Browser acceptance
 
 `make test-web-browser` builds the embedded production application and drives Chromium through the DevTools protocol. The fixture creates its own service, loopback Provider, disposable credentials, browser profile, and temporary data directory, then removes them on exit. It never reads personal conversations or Provider Keys. Chrome on macOS is the default browser; set `COVE_BROWSER_BIN` to a compatible Chromium executable on another platform. Port 19520 must be available.

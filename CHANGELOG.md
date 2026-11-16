@@ -4,6 +4,7 @@
 
 ### Added
 
+- A compact conversation timeline with turn previews, click-to-jump navigation, and browser-local bookmarks that store message references only.
 - A compact native Launcher menu with authenticated New Chat and Settings shortcuts, opt-in launch at login and Control-Option-Space, grouped troubleshooting, private diagnostic summaries, and a version link to the matching GitHub Release tag.
 - Focus mode with an expanded reading area, compact header and composer, reversible sidebar layout, and an Exit Focus action with Escape support.
 - Position Jump to latest above the actual composer and context-choice height, including attachment and multiline drafts.

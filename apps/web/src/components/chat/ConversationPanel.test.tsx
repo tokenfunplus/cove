@@ -342,7 +342,8 @@ test("conversation workspace keeps a repeated Live Turn visible until its user m
     />,
   );
 
-  expect((markup.match(/Repeat/g) ?? []).length).toBe(2);
+  // Timeline trigger labels also contain the prompt; count the rendered bodies.
+  expect((markup.match(/>Repeat<\/p>/g) ?? []).length).toBe(2);
 });
 
 test("conversation workspace renders a Live Turn before generation creation resolves", () => {

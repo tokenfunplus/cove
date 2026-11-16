@@ -39,7 +39,7 @@ React Chat Surface
 
 `hooks/workspace/use-chat-workspace.ts` composes UI state and focused domain controllers. Conversation actions, model selection, ordinary batch streaming, private inference, and private connection verification have separate hooks. Query data owns server records. Workspace UI state and the transient Live Turn remain separate from durable history. Session query data contains readiness only, while the CSRF proof stays in the HTTP client.
 
-`lib/inference` isolates the browser SDK, protocol adapters, evidence conversion, and verifiers. `lib/chat` owns the pure Live Turn projection. `messages` owns interface copy and `theme` owns system appearance resolution, skin selection, and semantic variables. Skin preference contains only presentation state in browser local storage; appearance continues to use the settings API.
+`lib/inference` isolates the browser SDK, protocol adapters, evidence conversion, and verifiers. `lib/chat` owns pure Live Turn and timeline projections. `messages` owns interface copy and `theme` owns system appearance resolution, skin selection, and semantic variables. Skin preferences and timeline bookmark references are browser-local presentation state; bookmark storage contains identifiers only, never message bodies or excerpts. Appearance continues to use the settings API.
 
 Unit/component tests are colocated with their owning modules. `pages/ChatPage.interactions.test.tsx` covers the composed workspace, `test` contains synthetic fixtures, and `e2e` owns the production browser acceptance harness. Test modules and fixtures are outside the production import graph.
 
