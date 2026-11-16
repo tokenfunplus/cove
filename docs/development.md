@@ -6,6 +6,8 @@ For the full application, use an Apple Silicon Mac with macOS 13+, Swift 5.10+ f
 
 Web, contract, and Go tests also run on Linux. The Launcher, Keychain adapter, and DMG require macOS. Unsupported platforms must explicitly use the test file store to exercise provider credentials.
 
+For workspace field values, defaults, storage, Local Service flags, and environment variables, see the [configuration reference](configuration.md). Everyday setup and recovery questions are in the [FAQ](faq.md).
+
 ## Commands
 
 | Command | Purpose |
