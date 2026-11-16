@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- A compact native Launcher menu with authenticated New Chat and Settings shortcuts, opt-in launch at login and Control-Option-Space, grouped troubleshooting, private diagnostic summaries, and a version link to the matching GitHub Release tag.
+
+### Fixed
+
+- Render the menu-bar wave mark through AppKit so SwiftUI cannot silently display an empty named image from the packaged resource bundle; show a system wave symbol if the resource is missing.
+
 ## 0.1.0-beta.2 - 2026-11-15
 
 ### Added

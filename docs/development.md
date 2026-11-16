@@ -34,6 +34,12 @@ The editable wave mark is `apps/web/public/assets/cove-mark.svg`. Run `node scri
 
 The Launcher resolves image and localization resources from its installed application bundle. Package acceptance temporarily hides the SwiftPM build resource directory, then restores it during cleanup, so an installed app cannot accidentally rely on resources left on the build machine. Avoid concurrent builds in that checkout while this acceptance test runs.
 
+## Launcher menu
+
+The Launcher uses a native menu. Its version item reads `CoveReleaseVersion` and opens `https://github.com/tokenfunplus/cove/releases/tag/v<version>`, retaining prerelease suffixes. New Chat and Settings use a newly minted, one-time authenticated launch URL with an allowlisted `#new-chat` or `#settings` fragment. Browsers retain the fragment across the launch redirect; the Chat Surface consumes it only after its Browser Session is ready. New Chat calls the existing conversation creation action once. Unknown fragments do not dispatch actions.
+
+Launch at Login uses `SMAppService.mainApp` and reports pending system approval. The optional global shortcut uses Carbon hot-key registration for Control-Option-Space, stays off by default, and reports key conflicts without requesting Accessibility access. Troubleshooting diagnostics contain only version/build, macOS, architecture, and bounded service/option statuses; they exclude runtime URLs, tokens, keys, errors, and conversation data. The script tests exercise native icon rendering, authenticated destinations, release-tag mapping, and diagnostic privacy with Command Line Tools; the XCTest suite still requires full Xcode.
+
 ## Local code signing
 
 On macOS, `make build-service` signs and verifies the Local Service after compilation, so `make start-local` uses the same signing path. The signing identifier is always `io.github.tokenfunplus.cove.local-service`. With no explicit selection, the build uses a single valid Developer ID Application identity, or a single Apple Development identity if no Developer ID identity exists. Multiple identities of the preferred type require an explicit selection:

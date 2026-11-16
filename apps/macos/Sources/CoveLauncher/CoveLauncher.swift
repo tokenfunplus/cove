@@ -45,6 +45,12 @@ public enum LauncherState: Equatable {
     case failed(String)
 }
 
+public enum ChatLaunchDestination: String {
+    case chat
+    case newChat = "new-chat"
+    case settings
+}
+
 @MainActor
 public final class LauncherStateMachine: ObservableObject {
     @Published public private(set) var state: LauncherState = .stopped
@@ -93,7 +99,7 @@ public final class LauncherStateMachine: ObservableObject {
         stop()
     }
 
-    public func openChat() {
+    public func openChat(destination: ChatLaunchDestination = .chat) {
         guard case let .ready(readiness) = state,
               var components = URLComponents(url: readiness.baseURL, resolvingAgainstBaseURL: false)
         else {
@@ -108,6 +114,9 @@ public final class LauncherStateMachine: ObservableObject {
             return
         }
         components.queryItems = [URLQueryItem(name: "token", value: launchToken)]
+        if destination != .chat {
+            components.fragment = destination.rawValue
+        }
         guard let url = components.url else {
             return
         }

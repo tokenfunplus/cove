@@ -8,6 +8,8 @@ Download [0.1.0-beta.2](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0
 
 For an upgrade, quit Cove from its menu-bar menu before replacing the app. Existing Cove history and settings remain in the local data directory. Provider Keys remain in macOS Keychain. The beta's Check for Updates action follows the stable channel; download beta updates from GitHub Releases.
 
+The Launcher menu offers Open Chat, New Chat, and Settings. Launch at Login and the global Control-Option-Space shortcut are optional; macOS may require approval for a login item. Troubleshooting contains Restart Local Service, Open Data Folder, and Copy Diagnostics. The diagnostic summary excludes credentials, launch URLs, errors, and conversations. Click the full version number to read that exact version's GitHub Release notes, including beta releases. Help & Feedback opens the user guide or issue tracker without submitting a report.
+
 ## Connect a Provider
 
 Open Settings, choose a Provider, configure its API key, test the connection, and choose a model. Custom Providers use OpenAI-compatible APIs and require HTTPS, except for loopback HTTP endpoints. The NearAI preset has a fixed staging endpoint; its availability and model catalog depend on that service.

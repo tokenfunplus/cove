@@ -1,13 +1,12 @@
 import AppKit
 import SwiftUI
 import CoveLauncher
+import ServiceManagement
 
 @main
 struct CoveLauncherApp: App {
     @StateObject private var launcher: LauncherStateMachine
-    @State private var updateNotice: UpdateNotice?
-    private let browser: BrowserOpening
-    private let updateChecker: UpdateChecker
+    @StateObject private var desktop: LauncherDesktopActions
 
     init() {
         let service = BundledServiceManager(
@@ -22,39 +21,79 @@ struct CoveLauncherApp: App {
             }
         }
         _launcher = StateObject(wrappedValue: stateMachine)
+        _desktop = StateObject(wrappedValue: LauncherDesktopActions(
+            launcher: stateMachine, browser: browser, resources: launcherResourceBundle
+        ))
         Task { @MainActor in
             stateMachine.startIfNeededAndOpenChat()
         }
-        self.browser = browser
-        self.updateChecker = UpdateChecker(
-            currentVersion: currentAppVersion(),
-            manifestURL: updateManifestURL(),
-            requester: URLSessionUpdateRequester()
-        )
     }
 
     var body: some Scene {
         MenuBarExtra {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Cove")
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+            Group {
+                Text("Cove").font(.headline)
                 Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
 
                 Divider()
 
-                Button(localized("Open Chat")) {
+                Button {
                     launcher.openChat()
+                } label: {
+                    Label(localized("Open Chat"), systemImage: "bubble.left.and.bubble.right")
                 }
+                .keyboardShortcut("o")
                 .disabled(!isReady)
 
-                Button(localized("Restart Local Service")) {
-                    try? launcher.restart()
+                Button {
+                    launcher.openChat(destination: .newChat)
+                } label: {
+                    Label(localized("New Chat"), systemImage: "square.and.pencil")
+                }
+                .keyboardShortcut("n")
+                .disabled(!isReady)
+
+                Button {
+                    launcher.openChat(destination: .settings)
+                } label: {
+                    Label(localized("Settings…"), systemImage: "gearshape")
+                }
+                .keyboardShortcut(",")
+                .disabled(!isReady)
+
+                Divider()
+
+                Toggle(localized("Launch at Login"), isOn: Binding(
+                    get: { desktop.launchAtLogin },
+                    set: { desktop.setLaunchAtLogin($0) }
+                ))
+                if desktop.loginStatus == .requiresApproval {
+                    Button(localized("Allow Launch at Login…")) {
+                        SMAppService.openSystemSettingsLoginItems()
+                    }
+                }
+                Toggle(localized("Global Shortcut: ⌃⌥Space"), isOn: Binding(
+                    get: { desktop.shortcutEnabled },
+                    set: { desktop.setShortcutEnabled($0) }
+                ))
+
+                Menu(localized("Troubleshooting")) {
+                    Button(localized("Restart Local Service")) { desktop.restart() }
+                    Button(localized("Copy Diagnostics")) { desktop.copyDiagnostics() }
+                    Button(localized("Open Data Folder")) { desktop.openDataFolder() }
                 }
 
-                Button(localized("Check for Updates")) {
-                    checkForUpdates()
+                Divider()
+
+                Button(localized("About Cove")) { desktop.showAbout() }
+                Button("Version \(desktop.release.version)") { desktop.openReleaseNotes() }
+                Button(localized(desktop.checkingForUpdates ? "Checking for Updates…" : "Check for Updates…")) {
+                    desktop.checkForUpdates()
+                }
+                .disabled(desktop.checkingForUpdates)
+                Menu(localized("Help & Feedback")) {
+                    Button(localized("User Guide")) { desktop.openUserGuide() }
+                    Button(localized("Report an Issue…")) { desktop.openIssueTracker() }
                 }
 
                 Divider()
@@ -63,32 +102,17 @@ struct CoveLauncherApp: App {
                     launcher.quit()
                     NSApplication.shared.terminate(nil)
                 }
+                .keyboardShortcut("q")
             }
-            .padding(14)
-            .frame(width: 240)
-            .alert(item: $updateNotice) { notice in
-                switch notice {
-                case let .available(update):
-                    return Alert(
-                        title: Text(localized("Update Available")),
-                        message: Text(String(format: localized("A new version %@ is available."), update.version)),
-                        primaryButton: .default(Text(localized("Open Download Page"))) {
-                            browser.open(update.downloadURL)
-                        },
-                        secondaryButton: .cancel(Text(localized("Later")))
-                    )
-                case .current:
-                    return Alert(title: Text(localized("Cove is up to date.")))
-                case .failed:
-                    return Alert(title: Text(localized("Update check unavailable.")))
-                }
+            .onAppear { desktop.refreshLoginStatus() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                desktop.refreshLoginStatus()
             }
         } label: {
-            Image("CoveMenuBarTemplate", bundle: launcherResourceBundle)
-                .renderingMode(.template)
+            LauncherMenuBarIcon(bundle: launcherResourceBundle)
                 .accessibilityLabel("Cove")
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
     }
 
     private var isReady: Bool {
@@ -108,36 +132,6 @@ struct CoveLauncherApp: App {
             return localized("Local Service ready")
         case .failed:
             return localized("Local Service unavailable")
-        }
-    }
-
-    private func checkForUpdates() {
-        updateChecker.check { result in
-            Task { @MainActor in
-                switch result {
-                case let .success(update):
-                    updateNotice = update.map(UpdateNotice.available) ?? .current
-                case .failure:
-                    updateNotice = .failed
-                }
-            }
-        }
-    }
-}
-
-private enum UpdateNotice: Identifiable {
-    case available(AppUpdate)
-    case current
-    case failed
-
-    var id: String {
-        switch self {
-        case let .available(update):
-            return "available-\(update.version)"
-        case .current:
-            return "current"
-        case .failed:
-            return "failed"
         }
     }
 }
@@ -172,17 +166,8 @@ private func bundledServiceURL() -> URL {
     return URL(fileURLWithPath: "cove-local-service", relativeTo: URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
 }
 
-private func currentAppVersion() -> String {
-    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
-}
-
 private func insecureFileSecretStoreEnabled() -> Bool {
     Bundle.main.object(forInfoDictionaryKey: "CoveInsecureFileSecretStore") as? Bool == true
-}
-
-private func updateManifestURL() -> URL {
-    let configured = Bundle.main.object(forInfoDictionaryKey: "CoveUpdateManifestURL") as? String
-    return URL(string: configured ?? "https://github.com/tokenfunplus/cove/releases/latest/download/update.json")!
 }
 
 private func localized(_ key: String) -> String {

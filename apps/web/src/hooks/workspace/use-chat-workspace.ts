@@ -15,6 +15,7 @@ import { useNarrowLayout } from "@/hooks/use-media-query";
 import { usePrivateVerification } from "@/hooks/verification/use-private-verification";
 import { useWorkspaceState } from "@/hooks/workspace/use-workspace-state";
 import { useWorkspaceUi } from "@/hooks/workspace/use-workspace-ui";
+import { useLauncherNavigation } from "@/hooks/workspace/use-launcher-navigation";
 import { liveTurnFromBatch } from "@/lib/chat/live-turn";
 import { isTerminalGenerationState } from "@/lib/generation";
 import { applicationMessages } from "@/messages";
@@ -155,6 +156,11 @@ export function useChatWorkspace() {
     copy,
   });
   const { refreshCurrentConversation } = conversationActions;
+  useLauncherNavigation({
+    connection: workspaceState.connection,
+    onNewChat: conversationActions.handleCreateConversation,
+    onOpenSettings: workspaceUi.setSettingsEntry,
+  });
   const batchEvents = useBatchEvents({
     ...workspaceState,
     ...workspaceUi,
