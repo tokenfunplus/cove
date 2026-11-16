@@ -34,7 +34,7 @@ jobs:
       - name: Run production browser acceptance
         run: |
           browser_binary="$(command -v google-chrome || command -v chromium)"
-          COVE_BROWSER_BIN="$browser_binary" make test-web-browser
+          dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" make test-web-browser
       - name: Upload browser acceptance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

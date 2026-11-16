@@ -207,10 +207,6 @@ try {
   const conversation = await api("/api/conversations", "POST", {
     title: "A little room for bright ideas",
   });
-  const token = await fetch(origin + "/internal/control/launch-token", {
-    method: "POST",
-    headers: { "X-Cove-Control-Token": control },
-  }).then((r) => r.json());
   catalogGate = Promise.withResolvers();
   chrome = spawn(
     browserBinary,
@@ -225,12 +221,13 @@ try {
       "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
       "--remote-debugging-port=0",
       "--user-data-dir=" + path.join(temp, "chrome"),
-      origin + "/launch?token=" + encodeURIComponent(token.launch_token),
+      "about:blank",
     ],
     { stdio: ["ignore", "ignore", "pipe"] },
   );
   let browserError;
   let browserDiagnostics = "";
+  let browserStartupPhase = "waiting for DevToolsActivePort";
   chrome.on("error", (error) => {
     browserError = error;
   });
@@ -240,18 +237,18 @@ try {
   const startupFailure = () =>
     [
       "Browser debugging endpoint did not start",
+      `Startup phase: ${browserStartupPhase}`,
       browserError?.message,
       `Exit code: ${chrome.exitCode}; signal: ${chrome.signalCode}`,
       browserDiagnostics,
     ]
       .filter(Boolean)
       .join("\n")
-      .replaceAll(token.launch_token, "[redacted]")
       .replaceAll(control, "[redacted]")
       .replace(/([?&]token=)[^\s"<>]+/g, "$1[redacted]");
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   let tab;
-  const browserDeadline = Date.now() + 30_000;
+  const browserDeadline = Date.now() + 60_000;
   while (Date.now() < browserDeadline) {
     assert(
       !browserError && chrome.exitCode === null && chrome.signalCode === null,
@@ -269,6 +266,7 @@ try {
         Number(debugPort) > 0 &&
         Number(debugPort) <= 65535
       ) {
+        browserStartupPhase = "waiting for a page target on the debugging endpoint";
         const tabs = await fetch(
           "http://127.0.0.1:" + debugPort + "/json/list",
           {
@@ -350,24 +348,27 @@ try {
     await snapshot("failure");
     throw new Error("Browser condition timed out: " + expression);
   }
-  async function reloadPage() {
+  async function loadPage(method, params = {}) {
     await cdp("Page.enable");
     let timeout;
     let onLoad;
-    // Polling the old execution context can fail while Chrome commits a reload.
+    // Navigation replaces the execution context; wait for the load event first.
     const loaded = new Promise((resolve, reject) => {
       onLoad = (event) => {
         if (JSON.parse(event.data).method === "Page.loadEventFired") resolve();
       };
       socket.addEventListener("message", onLoad);
-      timeout = setTimeout(() => reject(new Error("Browser reload did not finish")), 15000);
+      timeout = setTimeout(() => reject(new Error("Browser navigation did not finish")), 15000);
     });
     try {
-      await Promise.all([loaded, cdp("Page.reload")]);
+      await Promise.all([loaded, cdp(method, params)]);
     } finally {
       clearTimeout(timeout);
       socket.removeEventListener("message", onLoad);
     }
+  }
+  function reloadPage() {
+    return loadPage("Page.reload");
   }
   async function click(selector) {
     await until(`!!document.querySelector(${JSON.stringify(selector)})`);
@@ -414,6 +415,16 @@ try {
       `document.body.textContent.includes('Browser answer from model-one') && document.body.textContent.includes('Browser answer from model-two') && !document.querySelector('button[aria-label="Stop generation"]')`,
     );
   }
+  // A cold browser can outlive the 45-second launch token. Mint it only after
+  // DevTools is ready, then navigate from the blank startup page.
+  const token = await fetch(origin + "/internal/control/launch-token", {
+    method: "POST",
+    headers: { "X-Cove-Control-Token": control },
+    signal: AbortSignal.timeout(5000),
+  }).then((r) => r.json());
+  await loadPage("Page.navigate", {
+    url: origin + "/launch?token=" + encodeURIComponent(token.launch_token),
+  });
   await until('!!document.querySelector(".conversation-welcome")');
   await until(
     `document.querySelector('.model-selector')?.dataset.catalogStatus === 'loading' && !!document.querySelector('#generation-input')`,
@@ -881,7 +892,8 @@ try {
   await until(`!document.querySelector('main').dataset.focusMode`);
   assert.equal(await evaluate(`document.querySelector('.conversation-sidebar').className`), normalReadingLayout.sidebar);
   assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "Keep this Focus draft");
-  assert(await evaluate(`document.activeElement?.classList.contains('workspace__focus-enter')`), "Exit must restore keyboard focus");
+  // Keyboard focus is restored by an effect after the layout changes.
+  await until(`document.activeElement?.classList.contains('workspace__focus-enter')`);
   await click('button[aria-label="Enter Focus mode"]');
   await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "k", code: "KeyK", modifiers: 4 });
   await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "k", code: "KeyK", modifiers: 4 });
