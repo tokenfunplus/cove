@@ -1,0 +1,9 @@
+# Require pull requests and sign published downloads
+
+The `main` branch uses the active ruleset recorded in `.github/rulesets/main.json`. Changes require a pull request, resolved review threads, and passing GitHub Actions checks for portable tests, macOS packaging, and both CodeQL languages against the current base branch. Force pushes and deletion are blocked, including for administrators; the ruleset has no bypass actors.
+
+There is currently one human maintainer. Mandatory independent approvals and code-owner approvals stay disabled so that the maintainer can merge after checks pass. Add an independent reviewer before increasing the required approval count. Sourcery provides optional review comments and cannot replace human review history in OpenSSF Scorecard.
+
+Published DMGs, their checksum files, and update manifests receive detached Sigstore bundles through `release-signatures.yml`. The signer downloads only the expected assets, checks their GitHub SHA-256 digests, the DMG checksum, and the update manifest, signs with GitHub OIDC, and verifies each signature before adding its bundle. It rechecks the release before upload and never replaces existing downloads or signatures. Existing signatures are verified on reruns. Manual runs on `main` support published releases that predate this workflow.
+
+These signatures attest to publisher endorsement of the downloaded bytes at signing time. They do not claim that those bytes were built by this workflow or provide SLSA build provenance. Published release bytes remain immutable; adding a detached verification bundle is an additive metadata operation. Apple Developer ID signing and notarization continue to follow ADR-0016 and the existing release process.

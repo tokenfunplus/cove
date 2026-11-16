@@ -17,6 +17,8 @@ Search existing [issues](https://github.com/tokenfunplus/cove/issues) and discus
 
 Keep credentials and personal conversations out of examples and screenshots. Integration tests should use temporary data directories and mock providers rather than paid external services.
 
+Changes to `main` go through a pull request with passing portable tests, macOS packaging, and Go/JavaScript CodeQL checks. Keep the branch up to date and resolve review threads before merging. Force pushes and branch deletion on `main` are blocked. Independent approval is optional while the project has one human maintainer. Sourcery reviews new non-draft pull requests automatically; request a review of an existing pull request with `@sourcery-ai review`. Treat its comments as suggestions to validate, and retain human judgement for merging.
+
 ## Design expectations
 
 Use the [domain glossary](CONTEXT.md). Preserve idempotent sends, immutable context snapshots, explicit comparison-answer selection, cancellation before deletion, and the distinction between transport security and response verification. Record material design changes in `docs/adr/`.
