@@ -881,7 +881,8 @@ try {
   await until(`!document.querySelector('main').dataset.focusMode`);
   assert.equal(await evaluate(`document.querySelector('.conversation-sidebar').className`), normalReadingLayout.sidebar);
   assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "Keep this Focus draft");
-  assert(await evaluate(`document.activeElement?.classList.contains('workspace__focus-enter')`), "Exit must restore keyboard focus");
+  // Keyboard focus is restored by an effect after the layout changes.
+  await until(`document.activeElement?.classList.contains('workspace__focus-enter')`);
   await click('button[aria-label="Enter Focus mode"]');
   await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "k", code: "KeyK", modifiers: 4 });
   await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "k", code: "KeyK", modifiers: 4 });
