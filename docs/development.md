@@ -93,7 +93,9 @@ Bookmarks store only conversation/message identifiers in browser local storage, 
 
 Screenshots and the accessibility report are written to `.artifacts/frontend-acceptance/` (override with `COVE_BROWSER_ARTIFACT_DIR`). The suite checks authenticated startup, native control interactions, all skins, appearance persistence/system changes, responsive layouts, comparison selection and frozen context, retries/stops, conversation management, exports, settings, Provider/key maintenance, reduced motion, and WCAG rule violations on welcome/settings surfaces in every skin and appearance. Inference protocol and failure transitions also have focused unit/service coverage; real NearAI verification requires a separate disposable live credential.
 
-CI runs this acceptance suite against its installed Chrome or Chromium and uploads the synthetic browser evidence for seven days, including on failure when artifacts are available.
+The harness starts Chrome on a blank page, waits up to 60 seconds for its debugging endpoint and page target, then requests a fresh one-time launch token and navigates to Cove. Slow browser startup does not consume the token's 45-second lifetime. Startup failures report the readiness phase and bounded, redacted browser diagnostics.
+
+Linux CI runs the installed Chrome or Chromium inside `dbus-run-session` to provide a temporary session bus. It uploads the synthetic browser evidence for seven days, including on failure when artifacts are available.
 
 ## Local state and credentials
 
