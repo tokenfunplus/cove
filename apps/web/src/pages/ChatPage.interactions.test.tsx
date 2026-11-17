@@ -38,6 +38,7 @@ vi.mock("@/api", async (importOriginal) => {
     getConversations: vi.fn(),
     searchConversations: vi.fn(),
     createConversation: vi.fn(),
+    updateConversation: vi.fn(),
     getConversation: vi.fn(),
     getProviderProfiles: vi.fn(),
     getProviderCatalog: vi.fn(),
@@ -373,6 +374,29 @@ test.each(["empty", "draft", "failed"])("New Chat protects editing while %s crea
     await waitFor(() => expect(document.querySelector(".masthead__title")?.textContent).toBe("Created chat"));
     expect((screen.getByRole("textbox", { name: "Send message" }) as HTMLTextAreaElement).value).toBe("");
   }
+});
+
+test.each(["filter", "selected-archive"])("empty-draft %s navigation blocks edits until the request finishes", async (operation) => {
+  const { composer, user } = await openWorkspace();
+  let finish!: () => void;
+  if (operation === "filter") {
+    vi.mocked(transport.getConversations).mockReturnValueOnce(new Promise((resolve) => { finish = () => resolve([fixture.secondConversation]); }));
+    await user.click(screen.getByRole("button", { name: "Archived chats" }));
+    await waitFor(() => expect(transport.getConversations).toHaveBeenCalledWith({ archived: true }));
+  } else {
+    vi.mocked(transport.updateConversation).mockReturnValueOnce(new Promise((resolve) => { finish = () => resolve(); }));
+    vi.mocked(transport.getConversations).mockResolvedValue([fixture.secondConversation]);
+    await user.click(screen.getByRole("button", { name: /Conversation actions: First chat/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "Archive" }));
+    await waitFor(() => expect(transport.updateConversation).toHaveBeenCalled());
+  }
+  expect((composer as HTMLTextAreaElement).disabled).toBe(true);
+  await user.type(composer, "Do not lose this edit");
+  expect((composer as HTMLTextAreaElement).value).toBe("");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await act(async () => finish());
+  await waitFor(() => expect(document.querySelector(".masthead__title")?.textContent).toBe("Second chat"));
+  expect((screen.getByRole("textbox", { name: "Send message" }) as HTMLTextAreaElement).disabled).toBe(false);
 });
 
 test("an empty draft switches immediately, and body search opens its matching conversation", async () => {
