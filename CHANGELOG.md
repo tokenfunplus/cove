@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-beta.4 - 2026-11-17
+
 ### Added
 
 - Search local conversation titles and saved user/assistant text with Unicode-aware matching, bounded excerpts, archive filtering, and turn navigation (#17).
@@ -13,6 +15,14 @@
 - Confirm before discarding unsent text or attachments when switching conversations, starting a new chat, or changing archive views; preserve drafts when staying or cancellation fails, and protect edits while creating a conversation (#18).
 - Include Selected Answer, context-skip, and unresolved-comparison state in grouped Markdown exports without changing saved context (#19).
 - Keep answer selection atomic with retries and archived search results ordered by archive time.
+
+### Changed
+
+- Isolate Browser Sessions per tab and Local Service instance through an explicit session header rather than host-wide cookies.
+- Validate requested Provider/model targets against current catalogs and retain Private TEE requirements across retries.
+- Harden Provider connection updates, credential replacement, generation transitions, and stream handling.
+- Add detached publisher signatures for published downloads and require pull-request checks on the main branch.
+- Prepare build 4 with updated onboarding, configuration, history-search, draft, export, and beta-update documentation.
 
 ## 0.1.0-beta.3 - 2026-11-16
 

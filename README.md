@@ -19,14 +19,14 @@ Cove keeps conversation history on your Mac and connects to the model providers 
 
 Requires an Apple Silicon Mac running macOS 13 or later.
 
-1. Download [Cove 0.1.0-beta.3 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.3/Cove-0.1.0-beta.3-arm64.dmg).
+1. Download [Cove 0.1.0-beta.4 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.4/Cove-0.1.0-beta.4-arm64.dmg).
 2. Quit an earlier Cove instance, open the DMG, and drag **Cove.app** to **Applications**.
 3. Launch Cove, open **Settings → Provider settings**, enter your Provider key, click **Test connection**, choose a model for your initial Active Model Set, then click **Save Provider**.
 4. Confirm the Provider/model target in the workspace, then send your first message. Use **Model comparison** to select up to four targets.
 
 Provider Profiles describe connections; model targets belong to the Active Model Set. Initial setup adds the chosen target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; change its targets through the workspace's model controls.
 
-The package is Developer ID signed and Apple notarized. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.3) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English; messages, titles, and prompts support Unicode content.
+The package is Developer ID signed and Apple notarized. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.4) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English; messages, titles, and prompts support Unicode content.
 
 See the [user guide](docs/user-guide.md) for file chat, Focus mode, and timeline bookmarks, or the [configuration reference](docs/configuration.md) for Provider and generation settings.
 
@@ -63,7 +63,9 @@ The actual Cove interface with synthetic conversation content and simulated Atla
 - Attach text, Markdown, code, and text-based PDF files; preview extracted text, inspect Provider context, and open cited source lines or pages. File chat supports four files per turn, up to 4 MiB each; scanned PDFs need OCR first.
 - Inspect the provider, destination, configuration snapshot, and available verification evidence for each response.
 - Use NearAI's browser-side encryption and attestation flow for supported private models.
-- Search, pin, archive, rename, and export local conversations as Markdown or JSON.
+- Search titles and saved message text locally, read matching excerpts, and jump to the relevant turn; pin, archive, and rename conversations.
+- Protect unsent text and attachments when navigating, and export comparison choices with saved answers as Markdown or JSON.
+- Check for beta updates explicitly from the Launcher without changing the stable update channel.
 - Configure a System Prompt, generation parameters, and light or dark appearance.
 - Store provider credentials in macOS Keychain by default.
 
@@ -94,7 +96,7 @@ Browse the [full FAQ](docs/faq.md) for language and support questions. For build
 make dmg
 ```
 
-The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.3-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
+The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.4-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
 
 ## Community
 
