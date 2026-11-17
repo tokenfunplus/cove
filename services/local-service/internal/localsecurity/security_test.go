@@ -91,9 +91,9 @@ func TestHTTPMiddlewareProtectsLoopbackBrowserAndControlBoundaries(t *testing.T)
 	mutation.Host = "127.0.0.1:47123"
 	mutation.Header.Set("Origin", "http://127.0.0.1:47123")
 	mutation.Header.Set("X-Cove-CSRF-Token", session.CSRFToken)
-	mutation.AddCookie(&http.Cookie{Name: "cove_session", Value: session.ID})
+	mutation.Header.Set(SessionHeader, session.ID)
 	mutationResponse := httptest.NewRecorder()
-	manager.RequireBrowserMutations("cove_session", reject)(next).ServeHTTP(mutationResponse, mutation)
+	manager.RequireBrowserMutations(reject)(next).ServeHTTP(mutationResponse, mutation)
 	if rejected != nil || !called {
 		t.Fatalf("browser mutation rejection = %v, called = %t", rejected, called)
 	}

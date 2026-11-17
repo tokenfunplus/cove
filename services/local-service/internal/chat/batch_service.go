@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,51 +22,55 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		return GenerationBatchStart{}, errors.New("chat service dependencies are required")
 	}
 	service.startMu.Lock()
-	defer service.startMu.Unlock()
-	service.secureMu.Lock()
-	defer service.secureMu.Unlock()
-	if existing, err := service.store.GetGenerationBatchByClientRequestID(ctx, input.ClientRequestID); err == nil {
-		return GenerationBatchStart{Batch: existing}, nil
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return GenerationBatchStart{}, err
+	existing, err := service.checkBatchStart(ctx, input.ClientRequestID)
+	service.startMu.Unlock()
+	if err != nil || existing.ID != "" {
+		return GenerationBatchStart{Batch: existing}, err
 	}
-	activeGenerationExists, err := service.generationInProgress(ctx)
-	if err != nil {
-		return GenerationBatchStart{}, err
-	}
-	if activeGenerationExists {
-		return GenerationBatchStart{}, ErrGenerationBatchInProgress
-	}
-
 	activeModelSet, systemPrompt, parameters, err := service.activeModelSet(ctx, input)
 	if err != nil {
 		return GenerationBatchStart{}, err
 	}
-	attachments, inputContent, err := service.prepareAttachments(ctx, input, systemPrompt)
+	if err := matchExpectedTargets(activeModelSet, input.ExpectedTargets); err != nil {
+		return GenerationBatchStart{}, err
+	}
+
+	resolved, resolveErr := service.resolveTargets(ctx, activeModelSet)
+	service.startMu.Lock()
+	defer service.startMu.Unlock()
+	service.secureMu.Lock()
+	defer service.secureMu.Unlock()
+	if batch, err := service.checkBatchStart(ctx, input.ClientRequestID); err != nil || batch.ID != "" {
+		return GenerationBatchStart{Batch: batch}, err
+	}
+	if resolveErr != nil {
+		return GenerationBatchStart{}, resolveErr
+	}
+	current, currentPrompt, currentParameters, err := service.activeModelSet(ctx, input)
 	if err != nil {
 		return GenerationBatchStart{}, err
 	}
-	resolved := make([]resolvedTarget, 0, len(activeModelSet))
+	if !reflect.DeepEqual(current, activeModelSet) || currentPrompt != systemPrompt || !reflect.DeepEqual(currentParameters, parameters) {
+		return GenerationBatchStart{}, ErrGenerationSelectionChanged
+	}
+
 	batchTargets := make([]persistence.GenerationTargetInput, 0, len(activeModelSet))
-	for _, target := range activeModelSet {
-		if err := service.profiles.ValidateSelection(ctx, target.ProviderID, target.ModelID); err != nil {
+	hasOrdinaryTarget := false
+	for index, target := range activeModelSet {
+		connection := resolved[index]
+		if input.ExpectedTargets != nil && input.ExpectedTargets[index].RequirePrivateTEE && !connection.isPrivateTEE() {
+			return GenerationBatchStart{}, ErrPrivateTEEUnavailable
+		}
+		if err := service.checkResolvedProfile(ctx, connection.profile); err != nil {
 			return GenerationBatchStart{}, err
 		}
-		profile, secret, err := service.profiles.Resolve(ctx, target.ProviderID)
-		if err != nil {
-			return GenerationBatchStart{}, err
-		}
-		profile.Model = target.ModelID
-		metadata := provider.ModelMetadata{ID: target.ModelID, PrivacyMode: provider.PrivacyModeIncognito, Verifiable: false}
-		if source, ok := service.profiles.(ModelMetadataSource); ok {
-			metadata, err = source.ModelMetadata(ctx, target.ProviderID, target.ModelID)
-			if err != nil {
-				return GenerationBatchStart{}, err
-			}
-		}
-		snapshot := snapshotFor(profile, metadata.PrivacyMode)
-		resolved = append(resolved, resolvedTarget{profile: profile, secret: secret, metadata: metadata})
+		hasOrdinaryTarget = hasOrdinaryTarget || !connection.isSecure()
+		snapshot := snapshotFor(connection.profile, connection.metadata.PrivacyMode)
 		batchTargets = append(batchTargets, persistence.GenerationTargetInput{ProviderID: target.ProviderID, ModelID: target.ModelID, Snapshot: snapshot})
+	}
+	attachments, inputContent, err := service.prepareAttachments(ctx, input, systemPrompt)
+	if err != nil {
+		return GenerationBatchStart{}, err
 	}
 	batch, err := service.store.BeginGenerationBatch(ctx, persistence.BeginGenerationBatchInput{
 		ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID, Body: input.Body, InputContent: inputContent, Attachments: attachments, SystemPrompt: systemPrompt, GenerationParameters: parameters, Targets: batchTargets,
@@ -74,32 +79,17 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		return GenerationBatchStart{}, err
 	}
 	service.batchHub.activate(batch.ID, len(batch.Targets))
-	// NearAI Private TEE, Incognito, and Chutes targets are driven by the
-	// browser Secure Inference Transport. Ordinary OpenAI-compatible Providers
-	// keep the Local Service plaintext stream.
-	hasLegacyTarget := false
-	for _, target := range resolved {
-		if !target.isSecure() {
-			hasLegacyTarget = true
-			break
-		}
-	}
-	var messages []provider.ProviderMessage
-	if hasLegacyTarget {
-		configuration := batch.Targets[0].Generation.ConfigurationSnapshot
-		messages, err = service.messagesForBatch(ctx, batch, input.Body, configuration)
-		if err != nil {
-			return GenerationBatchStart{}, err
-		}
-	}
 	for _, target := range batch.Targets {
 		if resolved[target.Position].isSecure() {
 			service.trackSecureGeneration(target.Generation.ID)
 		}
 	}
-	if !hasLegacyTarget {
+	if !hasOrdinaryTarget {
 		return GenerationBatchStart{Batch: batch}, nil
 	}
+	configuration := batch.Targets[0].Generation.ConfigurationSnapshot
+	messages := messagesFromBatchContext(batch, input.Body, configuration, batch.ContextItems)
+
 	type batchRun struct {
 		context       context.Context
 		batchID       string
@@ -126,6 +116,101 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		go service.runBatchGeneration(run.context, run.batchID, run.targetID, run.generation, run.profile, run.secret, run.messages, run.configuration)
 	}
 	return GenerationBatchStart{Batch: batch}, nil
+}
+
+func (service *Service) checkBatchStart(ctx context.Context, requestID string) (persistence.GenerationBatch, error) {
+	batch, err := service.store.GetGenerationBatchByClientRequestID(ctx, requestID)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return batch, err
+	}
+	return persistence.GenerationBatch{}, service.requireGenerationIdle(ctx)
+}
+
+func (service *Service) requireGenerationIdle(ctx context.Context) error {
+	active, err := service.generationInProgress(ctx)
+	if err != nil {
+		return err
+	}
+	if active {
+		return ErrGenerationBatchInProgress
+	}
+	return nil
+}
+
+func matchExpectedTargets(actual []persistence.ActiveModelTarget, expected []ExpectedGenerationTarget) error {
+	if expected == nil {
+		return nil
+	}
+	if len(actual) != len(expected) {
+		return ErrGenerationSelectionChanged
+	}
+	for index, target := range actual {
+		if target.ProviderID != expected[index].ProviderID || target.ModelID != expected[index].ModelID {
+			return ErrGenerationSelectionChanged
+		}
+	}
+	return nil
+}
+
+type resolvedCatalog struct {
+	profile provider.Profile
+	secret  credentials.Secret
+	models  []provider.ModelMetadata
+}
+
+func (service *Service) resolveTargets(ctx context.Context, targets []persistence.ActiveModelTarget) ([]resolvedTarget, error) {
+	catalogs := make(map[string]resolvedCatalog)
+	resolved := make([]resolvedTarget, 0, len(targets))
+	for _, target := range targets {
+		var connection resolvedTarget
+		if source, ok := service.profiles.(ProviderCatalogSource); ok {
+			catalog, cached := catalogs[target.ProviderID]
+			if !cached {
+				profile, secret, models, err := source.ResolveCatalog(ctx, target.ProviderID)
+				if err != nil {
+					return nil, err
+				}
+				catalog = resolvedCatalog{profile: profile, secret: secret, models: models}
+				catalogs[target.ProviderID] = catalog
+			}
+			connection.profile, connection.secret = catalog.profile, catalog.secret
+			for _, model := range catalog.models {
+				if model.ID == target.ModelID {
+					connection.metadata = model
+					break
+				}
+			}
+			if connection.metadata.ID == "" {
+				return nil, provider.ErrModelUnavailable
+			}
+		} else {
+			if err := service.profiles.ValidateSelection(ctx, target.ProviderID, target.ModelID); err != nil {
+				return nil, err
+			}
+			profile, secret, err := service.profiles.Resolve(ctx, target.ProviderID)
+			if err != nil {
+				return nil, err
+			}
+			connection.profile, connection.secret = profile, secret
+			connection.metadata = provider.ModelMetadata{ID: target.ModelID, PrivacyMode: provider.PrivacyModeIncognito}
+			if source, ok := service.profiles.(ModelMetadataSource); ok {
+				connection.metadata, err = source.ModelMetadata(ctx, target.ProviderID, target.ModelID)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		connection.profile.Model = target.ModelID
+		resolved = append(resolved, connection)
+	}
+	return resolved, nil
+}
+
+func (service *Service) checkResolvedProfile(ctx context.Context, profile provider.Profile) error {
+	if source, ok := service.profiles.(ProviderCatalogSource); ok {
+		return source.CheckResolvedProfile(ctx, profile)
+	}
+	return nil
 }
 
 func (service *Service) GetGenerationBatch(ctx context.Context, batchID string) (persistence.GenerationBatch, error) {
@@ -178,30 +263,22 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 		return GenerationStart{}, errors.New("chat service dependencies are required")
 	}
 	service.startMu.Lock()
+	target, existing, err := service.checkRetry(ctx, targetID, clientRequestID)
+	service.startMu.Unlock()
+	if err != nil || existing.ID != "" {
+		return GenerationStart{Generation: existing}, err
+	}
+	resolved, resolveErr := service.resolveTargets(ctx, []persistence.ActiveModelTarget{{ProviderID: target.ProviderID, ModelID: target.ModelID}})
+	service.startMu.Lock()
 	defer service.startMu.Unlock()
 	service.secureMu.Lock()
 	defer service.secureMu.Unlock()
-	target, err := service.store.GetGenerationTarget(ctx, targetID)
-	if err != nil {
-		return GenerationStart{}, err
+	current, existing, err := service.checkRetry(ctx, targetID, clientRequestID)
+	if err != nil || existing.ID != "" {
+		return GenerationStart{Generation: existing}, err
 	}
-	if existing, err := service.store.GetGenerationByClientRequestID(ctx, clientRequestID); err == nil {
-		if existing.GenerationTargetID != target.ID {
-			return GenerationStart{}, errors.New("generation retry request ID belongs to another target")
-		}
-		return GenerationStart{Generation: existing}, nil
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return GenerationStart{}, err
-	}
-	activeGenerationExists, err := service.generationInProgress(ctx)
-	if err != nil {
-		return GenerationStart{}, err
-	}
-	if activeGenerationExists {
-		return GenerationStart{}, ErrGenerationBatchInProgress
-	}
-	if !isTerminal(target.Generation.State) {
-		return GenerationStart{}, errors.New("only a terminal Generation Target can be retried")
+	if current.Generation.ID != target.Generation.ID {
+		return GenerationStart{}, ErrGenerationSelectionChanged
 	}
 	batch, err := service.store.GetGenerationBatch(ctx, target.BatchID)
 	if err != nil {
@@ -219,28 +296,22 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 	if err != nil {
 		return GenerationStart{}, err
 	}
-	// A retry fixes the target identity but deliberately captures the current
-	// connection profile. If that target can no longer be resolved, it still
-	// becomes a durable failed attempt rather than silently substituting a model
-	// or losing the user's retry action.
+	// Keep the prior snapshot on a failed retry so a Private TEE requirement
+	// also survives subsequent retries of this target.
 	snapshot := target.Generation.Snapshot
-	profile, secret, resolveErr := service.profiles.Resolve(ctx, target.ProviderID)
-	var selectionErr error
-	metadata := provider.ModelMetadata{ID: target.ModelID, PrivacyMode: snapshot.PrivacyMode, Verifiable: snapshot.PrivacyMode == provider.PrivacyModePrivateTEE}
+	var connection resolvedTarget
 	if resolveErr == nil {
-		profile.Model = target.ModelID
-		selectionErr = service.profiles.ValidateSelection(ctx, target.ProviderID, target.ModelID)
-		if source, ok := service.profiles.(ModelMetadataSource); ok {
-			if catalogMetadata, catalogErr := source.ModelMetadata(ctx, target.ProviderID, target.ModelID); catalogErr == nil {
-				metadata = catalogMetadata
-			} else {
-				selectionErr = catalogErr
-			}
+		connection = resolved[0]
+		resolveErr = service.checkResolvedProfile(ctx, connection.profile)
+		if resolveErr == nil && snapshot.IsNearAI() && snapshot.PrivacyMode == provider.PrivacyModePrivateTEE && !connection.isPrivateTEE() {
+			resolveErr = ErrPrivateTEEUnavailable
 		}
-		snapshot = snapshotFor(profile, metadata.PrivacyMode)
+		if resolveErr == nil {
+			snapshot = snapshotFor(connection.profile, connection.metadata.PrivacyMode)
+		}
 	}
 	var messages []provider.ProviderMessage
-	if resolveErr == nil && selectionErr == nil {
+	if resolveErr == nil {
 		messages, err = service.messagesForBatch(ctx, batch, userBody, configuration)
 		if err != nil {
 			return GenerationStart{}, err
@@ -253,26 +324,33 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 			return GenerationStart{}, documents.ErrContextLimit
 		}
 	}
-	generation, err := service.store.BeginGenerationAttempt(ctx, persistence.BeginGenerationAttemptInput{TargetID: target.ID, ClientRequestID: clientRequestID, Snapshot: snapshot, ConfigurationSnapshot: configuration})
+	attempt := persistence.BeginGenerationAttemptInput{
+		TargetID: target.ID, ClientRequestID: clientRequestID, Snapshot: snapshot, ConfigurationSnapshot: configuration,
+	}
+	if errors.Is(resolveErr, ErrPrivateTEEUnavailable) {
+		attempt.Failure = &persistence.GenerationAttemptFailure{
+			Code: "private_tee_unavailable", Message: "Private TEE is no longer available for this model.",
+		}
+	} else if resolveErr != nil {
+		attempt.Failure = &persistence.GenerationAttemptFailure{
+			Code: "target_unavailable", Message: "The original Provider target is no longer available for retry.",
+		}
+	}
+	generation, err := service.store.BeginGenerationAttempt(ctx, attempt)
 	if err != nil {
 		return GenerationStart{}, err
 	}
 	// A retry stream contains one new attempt; earlier terminal targets do not
 	// emit duplicate terminal events. The hub therefore waits for this target.
 	service.batchHub.activate(batch.ID, 1)
-	if resolveErr != nil || selectionErr != nil {
-		if err := service.store.TerminateGeneration(context.Background(), persistence.TerminateGenerationInput{
-			GenerationID: generation.ID, State: persistence.GenerationFailed, ErrorCode: "target_unavailable", ErrorMessage: "The original Provider target is no longer available for retry.",
-		}); err != nil {
-			return GenerationStart{}, err
-		}
+	if attempt.Failure != nil {
 		service.publishBatchTerminal(batch.ID, GenerationEvent{
 			BatchID: batch.ID, TargetID: target.ID, GenerationID: generation.ID, Type: EventFailed,
-			ErrorCode: "target_unavailable", ErrorMessage: "The original Provider target is no longer available for retry.",
+			ErrorCode: generation.ErrorCode, ErrorMessage: generation.ErrorMessage,
 		})
 		return GenerationStart{Generation: generation}, nil
 	}
-	if profile.Kind == provider.KindNearAIPreset && isNearAIVerifiedTransport(metadata.PrivacyMode) {
+	if connection.isSecure() {
 		service.trackSecureGeneration(generation.ID)
 		return GenerationStart{Generation: generation}, nil
 	}
@@ -280,8 +358,32 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 	service.activeMu.Lock()
 	service.active[generation.ID] = &activeGeneration{cancel: cancel, done: make(chan struct{})}
 	service.activeMu.Unlock()
-	go service.runBatchGeneration(runContext, batch.ID, target.ID, generation, profile, secret, messages, generation.ConfigurationSnapshot)
+	go service.runBatchGeneration(runContext, batch.ID, target.ID, generation, connection.profile, connection.secret, messages, generation.ConfigurationSnapshot)
 	return GenerationStart{Generation: generation}, nil
+}
+
+func (service *Service) checkRetry(ctx context.Context, targetID, requestID string) (persistence.GenerationTarget, persistence.Generation, error) {
+	target, err := service.store.GetGenerationTarget(ctx, targetID)
+	if err != nil {
+		return target, persistence.Generation{}, err
+	}
+	existing, err := service.store.GetGenerationByClientRequestID(ctx, requestID)
+	if err == nil {
+		if existing.GenerationTargetID != target.ID {
+			return target, persistence.Generation{}, errors.New("generation retry request ID belongs to another target")
+		}
+		return target, existing, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return target, persistence.Generation{}, err
+	}
+	if err := service.requireGenerationIdle(ctx); err != nil {
+		return target, persistence.Generation{}, err
+	}
+	if !isTerminal(target.Generation.State) {
+		return target, persistence.Generation{}, errors.New("only a terminal Generation Target can be retried")
+	}
+	return target, persistence.Generation{}, nil
 }
 
 func (service *Service) SelectGenerationAnswer(ctx context.Context, generationID string) error {
@@ -310,12 +412,16 @@ func (service *Service) activeModelSet(ctx context.Context, fallback SendInput) 
 }
 
 func (service *Service) messagesForBatch(ctx context.Context, batch persistence.GenerationBatch, currentBody string, configuration persistence.GenerationConfigurationSnapshot) ([]provider.ProviderMessage, error) {
-	if batch.InputContent != "" {
-		currentBody = batch.InputContent
-	}
 	contextItems, err := service.store.LoadGenerationBatchContext(ctx, batch.ID)
 	if err != nil {
 		return nil, err
+	}
+	return messagesFromBatchContext(batch, currentBody, configuration, contextItems), nil
+}
+
+func messagesFromBatchContext(batch persistence.GenerationBatch, currentBody string, configuration persistence.GenerationConfigurationSnapshot, contextItems []persistence.ContextItem) []provider.ProviderMessage {
+	if batch.InputContent != "" {
+		currentBody = batch.InputContent
 	}
 	messages := make([]provider.ProviderMessage, 0, 1+len(contextItems)*2+1)
 	if strings.TrimSpace(configuration.SystemPrompt) != "" {
@@ -325,7 +431,7 @@ func (service *Service) messagesForBatch(ctx context.Context, batch persistence.
 		messages = append(messages, provider.ProviderMessage{Role: "user", Content: item.UserBody}, provider.ProviderMessage{Role: "assistant", Content: item.AssistantBody})
 	}
 	messages = append(messages, provider.ProviderMessage{Role: "user", Content: currentBody})
-	return messages, nil
+	return messages
 }
 
 func (service *Service) batchUserBody(ctx context.Context, batch persistence.GenerationBatch) (string, error) {
@@ -347,21 +453,17 @@ type resolvedTarget struct {
 	metadata provider.ModelMetadata
 }
 
+func (target resolvedTarget) isPrivateTEE() bool {
+	return target.profile.Kind == provider.KindNearAIPreset && target.metadata.PrivacyMode == provider.PrivacyModePrivateTEE && target.metadata.Verifiable
+}
+
 func (target resolvedTarget) isSecure() bool {
-	if target.profile.Kind != provider.KindNearAIPreset {
-		return false
-	}
-	switch target.metadata.PrivacyMode {
-	case provider.PrivacyModePrivateTEE, provider.PrivacyModeIncognito, provider.PrivacyModeChutes:
-		return true
-	default:
-		return false
-	}
+	return target.profile.Kind == provider.KindNearAIPreset && isNearAIVerifiedTransport(target.metadata.PrivacyMode)
 }
 
 func snapshotFor(profile provider.Profile, privacyMode string) persistence.ProviderSnapshot {
 	return persistence.ProviderSnapshot{
-		ProviderID: profile.ID, ProviderName: profile.Name, ModelID: profile.Model,
+		ProviderKind: profile.Kind, ProviderID: profile.ID, ProviderName: profile.Name, ModelID: profile.Model,
 		RuntimeLocation: profile.RuntimeLocation, Destination: profile.Destination,
 		TransportSecurity: profile.TransportSecurity, PrivacyNotice: profile.PrivacyNotice,
 		PrivacyMode: privacyMode,
@@ -388,7 +490,8 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 		return
 	}
 	defer stream.Close()
-	var body, finishReason string
+	var body strings.Builder
+	var finishReason string
 	for {
 		event, err := stream.Recv(ctx)
 		if err != nil {
@@ -404,7 +507,11 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 			_ = service.store.MarkGenerationStreaming(context.Background(), generation.ID)
 			service.publishBatch(GenerationEvent{BatchID: batchID, TargetID: targetID, GenerationID: generation.ID, Type: EventStarted, Snapshot: &generation.Snapshot})
 		case provider.EventDelta:
-			body += event.Delta
+			if len(event.Delta) > provider.MaxCompletionBytes-body.Len() {
+				service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationFailed, "protocol_error", "The Provider response exceeded the size limit.")
+				return
+			}
+			body.WriteString(event.Delta)
 			if event.FinishReason != "" {
 				finishReason = event.FinishReason
 			}
@@ -413,7 +520,7 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 			if event.FinishReason != "" {
 				finishReason = event.FinishReason
 			}
-			if strings.TrimSpace(body) == "" {
+			if strings.TrimSpace(body.String()) == "" {
 				code, message := emptyProviderResponseFailure(finishReason)
 				service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationFailed, code, message)
 				return
@@ -421,7 +528,7 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 			if !service.claimTerminal(generation.ID) {
 				return
 			}
-			if err := service.store.CompleteGeneration(context.Background(), persistence.CompleteGenerationInput{GenerationID: generation.ID, Body: body}); err != nil {
+			if err := service.store.CompleteGeneration(context.Background(), persistence.CompleteGenerationInput{GenerationID: generation.ID, Body: body.String()}); err != nil {
 				_ = service.store.TerminateGeneration(context.Background(), persistence.TerminateGenerationInput{GenerationID: generation.ID, State: persistence.GenerationFailed, ErrorCode: "internal_error", ErrorMessage: "The completed response could not be saved."})
 				service.publishBatchTerminal(batchID, GenerationEvent{BatchID: batchID, TargetID: targetID, GenerationID: generation.ID, Type: EventFailed, ErrorCode: "internal_error", ErrorMessage: "The completed response could not be saved."})
 				return
@@ -491,7 +598,7 @@ type batchEventHub struct {
 }
 
 type batchEvents struct {
-	events          []GenerationEvent
+	replay
 	subscribers     map[chan GenerationEvent]struct{}
 	terminal        bool
 	expectedTargets int
@@ -502,7 +609,18 @@ func newBatchEventHub() *batchEventHub {
 	return &batchEventHub{streams: make(map[string]*batchEvents)}
 }
 
+func (hub *batchEventHub) forgetCompleted(keep string) {
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	for id, stream := range hub.streams {
+		if id != keep && stream.terminal && len(stream.subscribers) == 0 {
+			delete(hub.streams, id)
+		}
+	}
+}
+
 func (hub *batchEventHub) activate(batchID string, expectedTargets ...int) {
+	hub.forgetCompleted(batchID)
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
 	stream := hub.streams[batchID]
@@ -525,15 +643,12 @@ func (hub *batchEventHub) publish(event GenerationEvent, terminal bool) {
 		stream = &batchEvents{subscribers: make(map[chan GenerationEvent]struct{}), terminalTargets: make(map[string]struct{})}
 		hub.streams[event.BatchID] = stream
 	}
-	stream.events = append(stream.events, event)
+	stream.replay.append(event)
 	if event.Type == EventCompleted || event.Type == EventStopped || event.Type == EventFailed {
 		if event.TargetID != "" && stream.expectedTargets > 0 {
 			stream.terminalTargets[event.TargetID] = struct{}{}
 			terminal = len(stream.terminalTargets) >= stream.expectedTargets
 		}
-	}
-	if len(stream.events) > 256 {
-		stream.events = stream.events[len(stream.events)-256:]
 	}
 	for subscriber := range stream.subscribers {
 		select {
@@ -556,11 +671,16 @@ func (hub *batchEventHub) publish(event GenerationEvent, terminal bool) {
 }
 
 func (hub *batchEventHub) subscribe(ctx context.Context, batchID, afterID string, terminal bool) <-chan GenerationEvent {
-	channel := make(chan GenerationEvent, 256)
+	channel := make(chan GenerationEvent, maxReplayEvents)
 	hub.mu.Lock()
 	stream := hub.streams[batchID]
 	if stream == nil {
-		stream = &batchEvents{subscribers: make(map[chan GenerationEvent]struct{}), terminal: terminal}
+		if terminal {
+			hub.mu.Unlock()
+			close(channel)
+			return channel
+		}
+		stream = &batchEvents{subscribers: make(map[chan GenerationEvent]struct{})}
 		hub.streams[batchID] = stream
 	} else if terminal {
 		stream.terminal = true

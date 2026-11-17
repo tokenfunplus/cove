@@ -115,7 +115,7 @@ public final class LauncherStateMachine: ObservableObject {
         }
         components.queryItems = [URLQueryItem(name: "token", value: launchToken)]
         if destination != .chat {
-            components.fragment = destination.rawValue
+            components.queryItems?.append(URLQueryItem(name: "intent", value: destination.rawValue))
         }
         guard let url = components.url else {
             return

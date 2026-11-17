@@ -10,7 +10,8 @@ import {
   useSkipGenerationBatchContext,
 } from "@/api/hooks/useGenerations";
 import {
-  secureTargetForCatalog,
+  inferenceModeForSnapshot,
+  modelMetadataForTarget,
   type ModelCatalogs,
   type ProviderSelectionStatus,
 } from "@/components/providers/model-selection";
@@ -137,6 +138,13 @@ export function useGenerationCommands({
       const selection = {
         clientRequestId,
         body,
+        expectedTargets: selectedTargets.map((target) => ({
+          provider_id: target.providerId,
+          model_id: target.modelId,
+          require_private_tee:
+            providerProfiles.some((profile) => profile.id === target.providerId && profile.kind === "nearai") &&
+            modelMetadataForTarget(catalogs, target)?.privacy_mode === "private_tee",
+        })),
         ...(originalAttachments.length
           ? {
               attachments: originalAttachments.flatMap((item) =>
@@ -156,6 +164,25 @@ export function useGenerationCommands({
         next = await createGenerationBatch({
           conversationId: selectedId,
           selection: selection,
+        });
+      }
+      const privacyMismatch = selection.expectedTargets.some((target) =>
+        target.require_private_tee &&
+        !next.targets.some((accepted) =>
+          accepted.provider_id === target.provider_id &&
+          accepted.model_id === target.model_id &&
+          inferenceModeForSnapshot(accepted.generation.snapshot) === "private_tee",
+        ),
+      );
+      if (privacyMismatch) {
+        await cancelGenerationBatch(next.id).catch(() => undefined);
+        throw new LocalServiceError({
+          error: {
+            code: "private_tee_unavailable",
+            message: copy.privateTEEUnavailable,
+            details: null,
+            request_id: "local",
+          },
         });
       }
       if (pendingSubmissionRef.current === submission)
@@ -190,11 +217,7 @@ export function useGenerationCommands({
         })
         .catch(() => undefined);
       const secureTargets = next.targets.filter((target) =>
-        secureTargetForCatalog(
-          { providerId: target.provider_id, modelId: target.model_id },
-          providerProfiles,
-          catalogs,
-        ),
+        inferenceModeForSnapshot(target.generation.snapshot),
       );
       const hasNonSecureTargets = secureTargets.length < next.targets.length;
       const secureRuns = secureTargets.flatMap((target) => {
@@ -317,29 +340,21 @@ export function useGenerationCommands({
               next,
             ),
       );
+      const retryTarget = batch.targets.find((target) => target.id === targetID);
       const retryProfile = providerProfiles.find(
-        (profile) =>
-          profile.id ===
-          batch.targets.find((target) => target.id === targetID)?.provider_id,
+        (profile) => profile.id === retryTarget?.provider_id,
       );
       if (
+        retryTarget &&
         retryProfile &&
-        secureTargetForCatalog(
-          {
-            providerId: retryProfile.id,
-            modelId:
-              batch.targets.find((target) => target.id === targetID)
-                ?.model_id ?? "",
-          },
-          providerProfiles,
-          catalogs,
-        )
+        next.state === "pending" &&
+        inferenceModeForSnapshot(next.snapshot)
       ) {
         await Promise.all([
           streamGenerationBatch(batch),
           streamSecureGeneration(
             batch,
-            batch.targets.find((target) => target.id === targetID)!,
+            retryTarget,
             retryProfile,
             userBody,
           ),

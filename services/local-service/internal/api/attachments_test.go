@@ -16,7 +16,7 @@ import (
 
 func TestAttachmentEndpointsRequireSessionAndPreviewRequiresCSRF(t *testing.T) {
 	server := NewServer(Config{LaunchToken: "launch-token", Chat: &fakeChat{}})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 	data, err := json.Marshal(documents.Input{Name: "notes.md", Data: []byte("Synthetic source")})
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +31,7 @@ func TestAttachmentEndpointsRequireSessionAndPreviewRequiresCSRF(t *testing.T) {
 		request.Header.Set("Origin", "http://127.0.0.1:47123")
 		request.Header.Set("Content-Type", "application/json")
 		if scenario.cookie {
-			request.AddCookie(cookie)
+			request.Header.Set("X-Cove-Session-Token", token)
 		}
 		if scenario.csrf {
 			request.Header.Set("X-Cove-CSRF-Token", csrf)
@@ -86,7 +86,7 @@ func TestOriginalDownloadIsLocalAttachmentAndDisappearsWithHistory(t *testing.T)
 		t.Fatal(err)
 	}
 	server := NewServer(Config{LaunchToken: "launch-token", Chat: historyFakeChat(store)})
-	cookie, _ := launchBrowserSession(t, server)
+	token, _ := launchBrowserSession(t, server)
 	route := "http://127.0.0.1:47123/api/generation-batches/" + batch.ID + "/attachments/" + source.ID
 	for _, deleted := range []bool{false, true} {
 		if deleted {
@@ -95,7 +95,7 @@ func TestOriginalDownloadIsLocalAttachmentAndDisappearsWithHistory(t *testing.T)
 			}
 		}
 		request := httptest.NewRequest(http.MethodGet, route, nil)
-		request.AddCookie(cookie)
+		request.Header.Set("X-Cove-Session-Token", token)
 		response := httptest.NewRecorder()
 		server.Handler().ServeHTTP(response, request)
 		if deleted {

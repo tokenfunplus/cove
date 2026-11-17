@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -183,4 +184,17 @@ func mustOpenTestStream(t *testing.T, endpoint string) CompletionStream {
 		t.Fatalf("open completion stream: %v", err)
 	}
 	return stream
+}
+
+func TestCompletionStreamLimitsAnEntireEvent(t *testing.T) {
+	line := "data: " + strings.Repeat("a", maxSSELineSize/2) + "\n"
+	stream := newSSECompletionStream(io.NopCloser(strings.NewReader(strings.Repeat(line, 33))))
+	defer stream.Close()
+	ctx := context.Background()
+	if _, err := stream.Recv(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stream.Recv(ctx); !errors.Is(err, ErrProtocol) {
+		t.Fatalf("oversized event returned %v", err)
+	}
 }

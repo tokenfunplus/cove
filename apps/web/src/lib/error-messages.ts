@@ -7,7 +7,13 @@ export function generationErrorMessage(
   copy: ApplicationCopy,
 ): string {
   if (error instanceof LocalServiceError) {
-    if (error.envelope.error.code === "invalid_attachment") return error.envelope.error.message;
+    if (
+      error.envelope.error.code === "invalid_attachment" ||
+      error.envelope.error.code === "generation_selection_changed"
+    )
+      return error.envelope.error.message;
+    if (error.envelope.error.code === "private_tee_unavailable")
+      return copy.privateTEEUnavailable;
     if (error.envelope.error.code === "protocol_error")
       return copy.providerProtocolError;
     if (error.envelope.error.code === "provider_unconfigured")

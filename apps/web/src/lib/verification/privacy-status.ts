@@ -1,3 +1,4 @@
+import { isNearAISnapshot } from "@/components/providers/model-selection";
 import { englishConversationCopy, type ApplicationCopy } from "@/messages";
 import {
   type ConversationView,
@@ -116,7 +117,7 @@ export function privacyStatusFromConversation(
     const verified =
       status === "verified_model" || status === "verified_gateway";
     const privateTarget =
-      target.generation.snapshot.provider_id === "nearai" || providerTee;
+      isNearAISnapshot(target.generation.snapshot) || providerTee;
     if (privateTarget)
       privateModels.add(
         `${target.generation.snapshot.provider_id}:${target.generation.snapshot.model_id}`,
@@ -151,10 +152,7 @@ export function privacyStatusFromConversation(
       const providerTee =
         verification?.status === "verified_model" &&
         verification.signature_kind === "provider_tee";
-      const privateTarget =
-        target.generation.snapshot.provider_id === "nearai" || providerTee;
       return (
-        privateTarget &&
         providerTee &&
         target.generation.state === "completed" &&
         Boolean(target.generation.assistant_message_id)

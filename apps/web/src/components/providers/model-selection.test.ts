@@ -170,6 +170,20 @@ test("an ordinary snapshot's catalog classification does not enable private veri
       privacy_mode: "incognito",
     }),
   ).toBe("incognito");
+  expect(
+    inferenceModeForSnapshot({
+      provider_id: "nearai",
+      provider_kind: "openai_compatible",
+      privacy_mode: "private_tee",
+    }),
+  ).toBeUndefined();
+  expect(
+    inferenceModeForSnapshot({
+      provider_id: "nearai-fixture",
+      provider_kind: "nearai",
+      privacy_mode: "private_tee",
+    }),
+  ).toBe("private_tee");
 });
 
 test("Chat Surface allows private connection verification for an all-NearAI comparison", () => {

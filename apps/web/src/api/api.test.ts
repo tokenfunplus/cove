@@ -49,10 +49,10 @@ test("web transport reads the local session CSRF contract", async () => {
   vi.stubGlobal("fetch", fetch);
 
   await expect(getSession()).resolves.toEqual({ csrf_token: "csrf-token" });
-  expect(fetch).toHaveBeenCalledWith("/api/session", {
-    credentials: "same-origin",
-    headers: { Accept: "application/json" },
-  });
+  const [path, init] = fetch.mock.calls[0] as [string, RequestInit];
+  expect(path).toBe("/api/session");
+  expect(init).toMatchObject({ credentials: "omit", redirect: "error" });
+  expect(new Headers(init.headers).get("Accept")).toBe("application/json");
   expect(browserSessionHeaders()).toEqual({
     "X-Cove-CSRF-Token": "csrf-token",
   });
@@ -80,7 +80,7 @@ test("web transport reads the locally persisted conversation list", async () => 
   await expect(getConversations()).resolves.toHaveLength(1);
   const [path, init] = fetch.mock.calls[0] as [string, RequestInit];
   expect(path).toBe("/api/conversations");
-  expect(init.credentials).toBe("same-origin");
+  expect(init.credentials).toBe("omit");
   expect(new Headers(init.headers).get("Accept")).toBe("application/json");
 });
 

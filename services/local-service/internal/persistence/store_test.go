@@ -1455,3 +1455,38 @@ func pragmaString(t *testing.T, db *sql.DB, name string) string {
 	}
 	return value
 }
+
+func TestSQLiteStoreRollsBackCompletionWhenBatchUpdateFails(t *testing.T) {
+	store, err := OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	conversation, err := store.CreateConversation(ctx, "Atomic completion")
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, err := store.BeginGenerationBatch(ctx, BeginGenerationBatchInput{
+		ConversationID: conversation.ID, ClientRequestID: "atomic-batch", Body: "Question",
+		Targets: []GenerationTargetInput{{ProviderID: "fixture", ModelID: "model", Snapshot: ProviderSnapshot{ProviderID: "fixture", ModelID: "model"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`CREATE TRIGGER reject_batch_update BEFORE UPDATE OF state ON generation_batches BEGIN SELECT RAISE(ABORT, 'fixture batch failure'); END;`); err != nil {
+		t.Fatal(err)
+	}
+	generationID := batch.Targets[0].Generation.ID
+	if err := store.CompleteGeneration(ctx, CompleteGenerationInput{GenerationID: generationID, Body: "Answer"}); err == nil {
+		t.Fatal("completion succeeded despite the failed batch write")
+	}
+	view, err := store.LoadConversation(ctx, conversation.ID)
+	if err != nil || len(view.Messages) != 1 {
+		t.Fatalf("failed completion changed saved messages: %v", err)
+	}
+	generation, err := store.GetGeneration(ctx, generationID)
+	if err != nil || generation.State != GenerationPending {
+		t.Fatalf("failed completion changed generation state: %v", err)
+	}
+}

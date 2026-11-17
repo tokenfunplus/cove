@@ -56,8 +56,12 @@ MainActor.assumeIsolated {
         let url = URLComponents(url: browser.urls.last!, resolvingAgainstBaseURL: false)!
         precondition(url.scheme == "http" && url.host == "127.0.0.1" && url.port == 47123)
         precondition(url.path == "/launch")
-        precondition(url.queryItems == [URLQueryItem(name: "token", value: "one-time-" + String(service.minted))])
-        precondition(url.fragment == (destination == .chat ? nil : destination.rawValue))
+        var expectedQuery = [URLQueryItem(name: "token", value: "one-time-" + String(service.minted))]
+        if destination != .chat {
+            expectedQuery.append(URLQueryItem(name: "intent", value: destination.rawValue))
+        }
+        precondition(url.queryItems == expectedQuery)
+        precondition(url.fragment == nil)
     }
     precondition(service.minted == 3)
     let release = LauncherRelease(info: ["CoveReleaseVersion": "0.1.0-beta.2"])

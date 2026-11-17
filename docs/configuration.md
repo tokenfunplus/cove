@@ -4,7 +4,7 @@ For a first run, follow the [quick start](../README.md#quick-start). Manage ever
 
 ## Provider Profiles
 
-Open **Settings → Provider settings** to configure a connection. Enter a key, click **Test connection** to load the model catalog, choose a model target for initial setup, then click **Save Provider**. Testing alone does not save the key or profile. The NearAI preset uses a fixed staging endpoint; custom Providers use OpenAI-compatible APIs.
+Open **Settings → Provider settings** to configure a connection. Enter a key, click **Test connection** to load the model catalog, choose a model target for initial setup, then click **Save Provider**. Testing alone does not save the key or profile. Enter a Key again when changing a configured connection’s endpoint or authentication method. A saved Key is only used with its saved destination and authentication method. The NearAI preset uses a fixed staging endpoint; custom Providers use OpenAI-compatible APIs.
 
 | Field | Meaning |
 | --- | --- |
@@ -114,7 +114,7 @@ Follow [releasing](releasing.md) for the complete app/DMG signing, notarization,
 
 ## Local HTTP contracts
 
-The Chat Surface uses Browser Sessions and CSRF-protected Local Service commands. Treat these as version-coupled application interfaces when developing integrations.
+The Chat Surface keeps its Browser Session in per-tab, origin-scoped storage and uses a request header for Local Service APIs. Mutations also require the CSRF token and matching origin. Reopen Chat from the Launcher after an upgrade or service restart. Treat these as version-coupled application interfaces when developing integrations.
 
 - [Shared TypeScript contract](../packages/api-contract/src/index.ts): Provider Profiles, workspace settings, Generations, and conversations.
 - [Settings schema](../packages/api-contract/schemas/settings.schema.json) and [Provider Profile schema](../packages/api-contract/schemas/provider-profile.schema.json): machine-readable read models.

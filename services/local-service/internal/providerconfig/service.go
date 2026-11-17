@@ -3,10 +3,13 @@ package providerconfig
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
@@ -14,8 +17,9 @@ import (
 )
 
 var (
-	ErrValidationFailed = errors.New("provider connection validation failed")
-	ErrUnconfigured     = errors.New("provider is unconfigured")
+	ErrValidationFailed   = errors.New("provider connection validation failed")
+	ErrUnconfigured       = errors.New("provider is unconfigured")
+	ErrDestinationChanged = errors.New("enter a Provider Key for the changed connection")
 )
 
 type ProfileInput = provider.ProfileInput
@@ -27,6 +31,7 @@ type Service struct {
 	profiles persistence.ProviderStore
 	secrets  credentials.SecretStore
 	adapter  *provider.HTTPAdapter
+	writeMu  sync.Mutex
 }
 
 func NewService(profiles persistence.ProviderStore, secrets credentials.SecretStore, client *http.Client) *Service {
@@ -44,7 +49,7 @@ func (service *Service) List(ctx context.Context) ([]Profile, error) {
 		if err != nil {
 			return nil, err
 		}
-		profile.Configured = service.hasSecret(ctx, profile.ID)
+		profile.Configured = service.hasSecret(ctx, saved)
 		profiles = append(profiles, profile)
 	}
 	return profiles, nil
@@ -59,40 +64,39 @@ func (service *Service) Get(ctx context.Context, id string) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
-	profile.Configured = service.hasSecret(ctx, profile.ID)
+	profile.Configured = service.hasSecret(ctx, saved)
 	return profile, nil
 }
 
-// Resolve returns the normalized profile and its secret to the chat module.
-func (service *Service) Resolve(ctx context.Context, id string) (provider.Profile, credentials.Secret, error) {
-	profile, err := service.Get(ctx, id)
+// Resolve reads the destination and its credential reference from the same row.
+func (service *Service) Resolve(ctx context.Context, id string) (Profile, credentials.Secret, error) {
+	saved, err := service.profiles.GetProviderProfile(ctx, id)
 	if err != nil {
-		return provider.Profile{}, credentials.Secret{}, err
+		return Profile{}, credentials.Secret{}, err
 	}
-	secret, err := service.secrets.Get(ctx, profile.ID)
-	if errors.Is(err, credentials.ErrSecretNotFound) || errors.Is(err, credentials.ErrInvalidSecret) {
-		return provider.Profile{}, credentials.Secret{}, ErrUnconfigured
-	}
+	profile, err := fromStored(saved)
 	if err != nil {
-		return provider.Profile{}, credentials.Secret{}, err
+		return Profile{}, credentials.Secret{}, err
 	}
-	return profile, secret, nil
+	secret, err := service.readSecret(ctx, saved)
+	profile.Configured = err == nil
+	return profile, secret, err
+}
+
+// ResolveCatalog retrieves one current catalog for a resolved connection.
+func (service *Service) ResolveCatalog(ctx context.Context, id string) (Profile, credentials.Secret, []ModelMetadata, error) {
+	profile, secret, err := service.Resolve(ctx, id)
+	if err != nil {
+		return Profile{}, credentials.Secret{}, nil, err
+	}
+	metadata, err := service.adapter.ListModelMetadata(ctx, profile, secret)
+	return profile, secret, metadata, err
 }
 
 func (service *Service) Validate(ctx context.Context, input ProfileInput) (ValidationResult, error) {
-	profile, err := service.profileForValidation(ctx, input)
+	profile, secret, err := service.validationConnection(ctx, input)
 	if err != nil {
 		return ValidationResult{}, err
-	}
-	secret := credentials.Secret{Value: input.Secret}
-	if secret.Value == "" {
-		secret, err = service.secrets.Get(ctx, profile.ID)
-		if errors.Is(err, credentials.ErrSecretNotFound) || errors.Is(err, credentials.ErrInvalidSecret) {
-			return ValidationResult{}, ErrUnconfigured
-		}
-		if err != nil {
-			return ValidationResult{}, err
-		}
 	}
 	result, err := service.adapter.Validate(ctx, provider.ValidateInput{Profile: profile, Secret: secret})
 	if err != nil {
@@ -102,19 +106,9 @@ func (service *Service) Validate(ctx context.Context, input ProfileInput) (Valid
 }
 
 func (service *Service) Discover(ctx context.Context, input ProfileInput) (ValidationResult, error) {
-	profile, err := service.profileForValidation(ctx, input)
+	profile, secret, err := service.validationConnection(ctx, input)
 	if err != nil {
 		return ValidationResult{}, err
-	}
-	secret := credentials.Secret{Value: input.Secret}
-	if secret.Value == "" {
-		secret, err = service.secrets.Get(ctx, profile.ID)
-		if errors.Is(err, credentials.ErrSecretNotFound) || errors.Is(err, credentials.ErrInvalidSecret) {
-			return ValidationResult{}, ErrUnconfigured
-		}
-		if err != nil {
-			return ValidationResult{}, err
-		}
 	}
 	metadata, err := service.adapter.ListModelMetadata(ctx, profile, secret)
 	if err != nil {
@@ -132,11 +126,7 @@ func (service *Service) Discover(ctx context.Context, input ProfileInput) (Valid
 // safe to send plaintext to the ordinary transport or must wait for browser
 // attestation/E2EE.
 func (service *Service) ModelMetadata(ctx context.Context, providerID, modelID string) (ModelMetadata, error) {
-	profile, secret, err := service.Resolve(ctx, providerID)
-	if err != nil {
-		return ModelMetadata{}, err
-	}
-	metadata, err := service.adapter.ListModelMetadata(ctx, profile, secret)
+	_, _, metadata, err := service.ResolveCatalog(ctx, providerID)
 	if err != nil {
 		return ModelMetadata{}, fmt.Errorf("read provider model metadata: %w", err)
 	}
@@ -154,76 +144,14 @@ func (service *Service) ValidateSelection(ctx context.Context, providerID, model
 	if strings.TrimSpace(providerID) == "" || strings.TrimSpace(modelID) == "" {
 		return provider.ErrModelUnavailable
 	}
-	profile, secret, err := service.Resolve(ctx, providerID)
-	if err != nil {
-		return err
-	}
-	models, err := service.adapter.ListModels(ctx, profile, secret)
-	if err != nil {
-		return fmt.Errorf("validate provider selection: %w", err)
-	}
-	for _, model := range models {
-		if model == modelID {
-			return nil
-		}
-	}
-	return provider.ErrModelUnavailable
+	_, err := service.ModelMetadata(ctx, providerID, modelID)
+	return err
 }
+
+const noCredential = "-"
+const credentialPrefix = "cove-credential/"
 
 func (service *Service) Configure(ctx context.Context, input ProfileInput) (Profile, error) {
-	profile, err := service.profileForConfiguration(ctx, input)
-	if err != nil {
-		return Profile{}, err
-	}
-	if input.Secret != "" {
-		result, err := service.adapter.Validate(ctx, provider.ValidateInput{
-			Profile: profile,
-			Secret:  credentials.Secret{Value: input.Secret},
-		})
-		if err != nil {
-			return Profile{}, fmt.Errorf("%w: %w", ErrValidationFailed, err)
-		}
-		_ = result
-		old, err := service.secrets.Get(ctx, profile.ID)
-		if errors.Is(err, credentials.ErrSecretNotFound) {
-			old = credentials.Secret{}
-		} else if errors.Is(err, credentials.ErrInvalidSecret) {
-			old = credentials.Secret{}
-		} else if err != nil {
-			return Profile{}, err
-		}
-		if err := service.secrets.ReplaceAfterValidation(ctx, profile.ID, old.Version, credentials.Secret{Value: input.Secret}); err != nil {
-			return Profile{}, err
-		}
-	}
-	if err := service.profiles.UpsertProviderProfile(ctx, toStored(profile)); err != nil {
-		return Profile{}, err
-	}
-	saved, err := service.Get(ctx, profile.ID)
-	if err != nil {
-		return Profile{}, err
-	}
-	return saved, nil
-}
-
-func (service *Service) Delete(ctx context.Context, id string) error {
-	if _, err := service.profiles.GetProviderProfile(ctx, id); err != nil {
-		return err
-	}
-	if err := service.secrets.Delete(ctx, id); err != nil {
-		return err
-	}
-	return service.profiles.DeleteProviderProfile(ctx, id)
-}
-
-func (service *Service) DeleteKey(ctx context.Context, id string) error {
-	if _, err := service.profiles.GetProviderProfile(ctx, id); err != nil {
-		return err
-	}
-	return service.secrets.Delete(ctx, id)
-}
-
-func (service *Service) profileForConfiguration(ctx context.Context, input ProfileInput) (Profile, error) {
 	profile, err := provider.NewProfile(input)
 	if err != nil {
 		return Profile{}, err
@@ -233,45 +161,201 @@ func (service *Service) profileForConfiguration(ctx context.Context, input Profi
 		if err != nil {
 			return Profile{}, fmt.Errorf("create provider profile ID: %w", err)
 		}
+	} else if strings.HasPrefix(profile.ID, credentialPrefix) {
+		return Profile{}, provider.ErrInvalidProfile
 	}
-	if input.ID != "" {
-		if saved, getErr := service.profiles.GetProviderProfile(ctx, profile.ID); getErr == nil {
-			if saved.Kind != profile.Kind {
-				return Profile{}, provider.ErrInvalidProfile
-			}
-			profile.CreatedAt = saved.CreatedAt
-		}
-	}
-	return profile, nil
-}
 
-func (service *Service) profileForValidation(ctx context.Context, input ProfileInput) (Profile, error) {
-	if input.ID != "" {
-		stored, err := service.Get(ctx, input.ID)
-		if err != nil {
-			return Profile{}, err
-		}
-		if input.Kind == "" && input.Endpoint == "" && input.AuthMethod == "" && input.Model == "" {
-			return stored, nil
-		}
-		draft, err := provider.NewProfile(input)
-		if err != nil {
-			return Profile{}, err
-		}
-		draft.ID = stored.ID
-		draft.CreatedAt = stored.CreatedAt
-		return draft, nil
-	}
-	profile, err := provider.NewProfile(input)
-	if err != nil {
+	saved, err := service.profiles.GetProviderProfile(ctx, profile.ID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return Profile{}, err
 	}
-	return profile, nil
+	next := toStored(profile)
+	next.CredentialRef = noCredential
+	if err == nil {
+		prior, err := fromStored(saved)
+		if err != nil {
+			return Profile{}, err
+		}
+		if prior.Kind != profile.Kind {
+			return Profile{}, provider.ErrInvalidProfile
+		}
+		next.CreatedAt = saved.CreatedAt
+		if sameDestination(prior, profile) {
+			next.CredentialRef = saved.CredentialRef
+		} else if input.Secret == "" && saved.CredentialRef != noCredential {
+			exists, err := service.secrets.Exists(ctx, credentialRef(saved))
+			if err != nil {
+				return Profile{}, err
+			}
+			if exists {
+				return Profile{}, ErrDestinationChanged
+			}
+		}
+	}
+	if input.Secret != "" {
+		secret := credentials.Secret{Value: input.Secret}
+		if _, err := service.adapter.Validate(ctx, provider.ValidateInput{Profile: profile, Secret: secret}); err != nil {
+			return Profile{}, fmt.Errorf("%w: %w", ErrValidationFailed, err)
+		}
+		id, err := newID()
+		if err != nil {
+			return Profile{}, fmt.Errorf("create Provider Key reference: %w", err)
+		}
+		next.CredentialRef = credentialPrefix + id
+		if err := service.secrets.ReplaceAfterValidation(ctx, next.CredentialRef, 0, secret); err != nil {
+			return Profile{}, err
+		}
+	}
+	service.writeMu.Lock()
+	defer service.writeMu.Unlock()
+	if err := service.profiles.UpsertProviderProfile(ctx, next, saved.UpdatedAt); err != nil {
+		if input.Secret != "" {
+			service.discardUnpublishedCredential(ctx, next)
+		}
+		return Profile{}, err
+	}
+	if saved.ID != "" && next.CredentialRef != saved.CredentialRef {
+		service.discardCredential(ctx, saved)
+	}
+	return service.Get(ctx, profile.ID)
 }
 
-func (service *Service) hasSecret(ctx context.Context, id string) bool {
-	exists, err := service.secrets.Exists(ctx, id)
+func (service *Service) Delete(ctx context.Context, id string) error {
+	service.writeMu.Lock()
+	defer service.writeMu.Unlock()
+	saved, err := service.profiles.GetProviderProfile(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := service.deleteCredential(ctx, saved); err != nil {
+		return err
+	}
+	return service.profiles.DeleteProviderProfile(ctx, id, saved.UpdatedAt)
+}
+
+func (service *Service) DeleteKey(ctx context.Context, id string) error {
+	service.writeMu.Lock()
+	defer service.writeMu.Unlock()
+	saved, err := service.profiles.GetProviderProfile(ctx, id)
+	if err != nil {
+		return err
+	}
+	if saved.CredentialRef == noCredential {
+		return nil
+	}
+	if err := service.deleteCredential(ctx, saved); err != nil {
+		return err
+	}
+	next := saved
+	next.CredentialRef = noCredential
+	return service.profiles.UpsertProviderProfile(ctx, next, saved.UpdatedAt)
+}
+
+func (service *Service) deleteCredential(ctx context.Context, saved persistence.ProviderProfile) error {
+	if saved.CredentialRef == noCredential {
+		return nil
+	}
+	err := service.secrets.Delete(ctx, credentialRef(saved))
+	if errors.Is(err, credentials.ErrSecretNotFound) {
+		return nil
+	}
+	return err
+}
+
+func (service *Service) CheckResolvedProfile(ctx context.Context, profile Profile) error {
+	current, err := service.profiles.GetProviderProfile(ctx, profile.ID)
+	if err != nil {
+		return err
+	}
+	if !current.UpdatedAt.Equal(profile.UpdatedAt) {
+		return persistence.ErrProviderProfileChanged
+	}
+	return nil
+}
+
+func (service *Service) validationConnection(ctx context.Context, input ProfileInput) (Profile, credentials.Secret, error) {
+	var saved persistence.ProviderProfile
+	var prior Profile
+	if input.ID != "" {
+		var err error
+		saved, err = service.profiles.GetProviderProfile(ctx, input.ID)
+		if err != nil {
+			return Profile{}, credentials.Secret{}, err
+		}
+		prior, err = fromStored(saved)
+		if err != nil {
+			return Profile{}, credentials.Secret{}, err
+		}
+	}
+	profile := prior
+	if saved.ID == "" || input.Kind != "" || input.Endpoint != "" || input.AuthMethod != "" || input.Model != "" {
+		var err error
+		profile, err = provider.NewProfile(input)
+		if err != nil {
+			return Profile{}, credentials.Secret{}, err
+		}
+		if saved.ID != "" && prior.Kind != profile.Kind {
+			return Profile{}, credentials.Secret{}, provider.ErrInvalidProfile
+		}
+	}
+	if input.Secret != "" {
+		return profile, credentials.Secret{Value: input.Secret}, nil
+	}
+	if saved.ID == "" {
+		return Profile{}, credentials.Secret{}, ErrUnconfigured
+	}
+	if !sameDestination(prior, profile) {
+		return Profile{}, credentials.Secret{}, ErrDestinationChanged
+	}
+	secret, err := service.readSecret(ctx, saved)
+	return profile, secret, err
+}
+
+func sameDestination(left, right Profile) bool {
+	return left.Kind == right.Kind && left.Endpoint == right.Endpoint && left.AuthMethod == right.AuthMethod
+}
+
+func credentialRef(saved persistence.ProviderProfile) string {
+	if saved.CredentialRef == "" {
+		return saved.ID // Legacy Keychain accounts were keyed by Provider ID.
+	}
+	return saved.CredentialRef
+}
+
+func (service *Service) readSecret(ctx context.Context, saved persistence.ProviderProfile) (credentials.Secret, error) {
+	if saved.CredentialRef == noCredential {
+		return credentials.Secret{}, ErrUnconfigured
+	}
+	secret, err := service.secrets.Get(ctx, credentialRef(saved))
+	if errors.Is(err, credentials.ErrSecretNotFound) || errors.Is(err, credentials.ErrInvalidSecret) {
+		return credentials.Secret{}, ErrUnconfigured
+	}
+	return secret, err
+}
+
+func (service *Service) hasSecret(ctx context.Context, saved persistence.ProviderProfile) bool {
+	if saved.CredentialRef == noCredential {
+		return false
+	}
+	exists, err := service.secrets.Exists(ctx, credentialRef(saved))
 	return err == nil && exists
+}
+
+func (service *Service) discardUnpublishedCredential(ctx context.Context, next persistence.ProviderProfile) {
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	saved, err := service.profiles.GetProviderProfile(cleanup, next.ID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && saved.CredentialRef != next.CredentialRef) {
+		_ = service.secrets.Delete(cleanup, next.CredentialRef)
+	}
+}
+
+func (service *Service) discardCredential(ctx context.Context, saved persistence.ProviderProfile) {
+	if saved.CredentialRef != noCredential {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_ = service.secrets.Delete(cleanup, credentialRef(saved))
+	}
 }
 
 func fromStored(saved persistence.ProviderProfile) (Profile, error) {

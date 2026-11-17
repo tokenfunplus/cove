@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 )
@@ -54,8 +56,11 @@ var verifiedModelIDs = map[string]struct{}{
 	"z-ai/glm-5.3-flash": {},
 }
 
+const providerPreflightTimeout = 10 * time.Second
+
 type HTTPAdapter struct {
-	client *http.Client
+	client      *http.Client
+	localClient *http.Client
 }
 
 func NewHTTPAdapter(client *http.Client) *HTTPAdapter {
@@ -66,7 +71,47 @@ func NewHTTPAdapter(client *http.Client) *HTTPAdapter {
 	clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	return &HTTPAdapter{client: &clientCopy}
+	adapter := &HTTPAdapter{client: &clientCopy, localClient: &clientCopy}
+	transport := clientCopy.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	if base, ok := transport.(*http.Transport); ok {
+		direct := base.Clone()
+		direct.Proxy = nil
+		dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+		direct.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, err
+			}
+			host = strings.TrimSuffix(host, ".")
+			if strings.EqualFold(host, "localhost") {
+				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
+				if err == nil {
+					return conn, nil
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort("::1", port))
+			}
+			ip := net.ParseIP(host)
+			if ip == nil || !ip.IsLoopback() {
+				return nil, ErrInsecureEndpoint
+			}
+			address = net.JoinHostPort(ip.String(), port)
+			return dialer.DialContext(ctx, network, address)
+		}
+		localClient := clientCopy
+		localClient.Transport = direct
+		adapter.localClient = &localClient
+	}
+	return adapter
+}
+
+func (adapter *HTTPAdapter) do(request *http.Request) (*http.Response, error) {
+	if request.URL.Scheme == "http" && isLoopbackHost(request.URL.Hostname()) {
+		return adapter.localClient.Do(request)
+	}
+	return adapter.client.Do(request)
 }
 
 func (adapter *HTTPAdapter) Validate(ctx context.Context, input ValidateInput) (ValidationResult, error) {
@@ -115,7 +160,7 @@ func (adapter *HTTPAdapter) Stream(ctx context.Context, input CompletionInput) (
 	request.Header.Set("Content-Type", "application/json")
 	request.Body = io.NopCloser(strings.NewReader(string(body)))
 	request.ContentLength = int64(len(body))
-	response, err := adapter.client.Do(request)
+	response, err := adapter.do(request)
 	if err != nil {
 		return nil, fmt.Errorf("open provider completion: %w", ErrProviderUnavailable)
 	}
@@ -135,11 +180,13 @@ func (adapter *HTTPAdapter) ListModels(ctx context.Context, profile Profile, sec
 }
 
 func (adapter *HTTPAdapter) ListModelMetadata(ctx context.Context, profile Profile, secret credentials.Secret) ([]ModelMetadata, error) {
+	ctx, cancel := context.WithTimeout(ctx, providerPreflightTimeout)
+	defer cancel()
 	request, err := adapter.newRequest(ctx, http.MethodGet, profile, "/models", secret)
 	if err != nil {
 		return nil, err
 	}
-	response, err := adapter.client.Do(request)
+	response, err := adapter.do(request)
 	if err != nil {
 		return nil, fmt.Errorf("list provider models: %w", ErrProviderUnavailable)
 	}
@@ -207,6 +254,8 @@ func looksLikeChutesModel(id, ownedBy, description, providerName, providerType s
 }
 
 func (adapter *HTTPAdapter) ValidateChat(ctx context.Context, profile Profile, secret credentials.Secret) error {
+	ctx, cancel := context.WithTimeout(ctx, providerPreflightTimeout)
+	defer cancel()
 	payload := struct {
 		Model    string `json:"model"`
 		Messages []struct {
@@ -235,7 +284,7 @@ func (adapter *HTTPAdapter) ValidateChat(ctx context.Context, profile Profile, s
 	request.Header.Set("Content-Type", "application/json")
 	request.Body = io.NopCloser(strings.NewReader(string(body)))
 	request.ContentLength = int64(len(body))
-	response, err := adapter.client.Do(request)
+	response, err := adapter.do(request)
 	if err != nil {
 		return fmt.Errorf("validate provider chat: %w", ErrProviderUnavailable)
 	}

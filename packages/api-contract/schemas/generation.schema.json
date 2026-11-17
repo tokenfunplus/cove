@@ -8,6 +8,7 @@
       "required": ["provider_id", "provider_name", "model_id", "runtime_location", "destination", "transport_security", "privacy_notice"],
       "properties": {
         "provider_id": { "type": "string" },
+        "provider_kind": { "enum": ["nearai", "openai_compatible"] },
         "provider_name": { "type": "string" },
         "model_id": { "type": "string" },
         "runtime_location": { "type": "string" },

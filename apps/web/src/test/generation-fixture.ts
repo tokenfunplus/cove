@@ -10,9 +10,10 @@ export const fixtureGenerationConfiguration = {
 export function privacySnapshot(providerId: string, modelId: string) {
   return {
     provider_id: providerId,
+    provider_kind: providerId === "nearai" ? "nearai" as const : "openai_compatible" as const,
     provider_name: providerId === "nearai" ? "NearAI" : "Cloud Gateway",
     model_id: modelId,
-    runtime_location: "TEE",
+    runtime_location: providerId === "nearai" ? "NearAI cloud" : "User configured cloud provider",
     destination: providerId,
     transport_security: "tls" as const,
     privacy_notice: "fixture",

@@ -19,7 +19,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 14
+const schemaVersion = 15
 
 const defaultConversationTitle = "New conversation"
 
@@ -66,8 +66,8 @@ type ChatStore interface {
 type ProviderStore interface {
 	ListProviderProfiles(ctx context.Context) ([]ProviderProfile, error)
 	GetProviderProfile(ctx context.Context, id string) (ProviderProfile, error)
-	UpsertProviderProfile(ctx context.Context, profile ProviderProfile) error
-	DeleteProviderProfile(ctx context.Context, id string) error
+	UpsertProviderProfile(ctx context.Context, profile ProviderProfile, expected ...time.Time) error
+	DeleteProviderProfile(ctx context.Context, id string, expected ...time.Time) error
 }
 
 type SettingsStore interface {
@@ -141,6 +141,7 @@ type ConversationView struct {
 }
 
 type ProviderSnapshot struct {
+	ProviderKind      string `json:"provider_kind,omitempty"`
 	ProviderID        string `json:"provider_id"`
 	ProviderName      string `json:"provider_name"`
 	ModelID           string `json:"model_id"`
@@ -149,6 +150,14 @@ type ProviderSnapshot struct {
 	TransportSecurity string `json:"transport_security"`
 	PrivacyNotice     string `json:"privacy_notice"`
 	PrivacyMode       string `json:"privacy_mode,omitempty"`
+}
+
+func (snapshot ProviderSnapshot) IsNearAI() bool {
+	if snapshot.ProviderKind != "" {
+		return snapshot.ProviderKind == "nearai"
+	}
+	return snapshot.RuntimeLocation == "NearAI cloud" ||
+		(snapshot.ProviderID == "nearai" && snapshot.RuntimeLocation == "")
 }
 
 type GenerationState string
@@ -250,6 +259,7 @@ const (
 )
 
 type GenerationBatch struct {
+	ContextItems    []ContextItem        `json:"-"`
 	ID              string               `json:"id"`
 	ConversationID  string               `json:"conversation_id"`
 	ClientRequestID string               `json:"client_request_id"`
@@ -301,6 +311,12 @@ type BeginGenerationAttemptInput struct {
 	ClientRequestID       string
 	Snapshot              ProviderSnapshot
 	ConfigurationSnapshot GenerationConfigurationSnapshot
+	Failure               *GenerationAttemptFailure
+}
+
+type GenerationAttemptFailure struct {
+	Code    string
+	Message string
 }
 
 type ContextItem struct {
@@ -337,14 +353,15 @@ type TerminateGenerationInput struct {
 }
 
 type ProviderProfile struct {
-	ID         string    `json:"id"`
-	Kind       string    `json:"kind"`
-	Name       string    `json:"name"`
-	Endpoint   string    `json:"endpoint"`
-	ModelID    string    `json:"model_id"`
-	AuthMethod string    `json:"auth_method"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	Kind          string    `json:"kind"`
+	Name          string    `json:"name"`
+	Endpoint      string    `json:"endpoint"`
+	ModelID       string    `json:"model_id"`
+	AuthMethod    string    `json:"auth_method"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	CredentialRef string    `json:"-"`
 }
 
 func OpenSQLite(path string) (*SQLiteStore, error) {
@@ -616,6 +633,15 @@ ALTER TABLE generation_batches ADD COLUMN attachment_data TEXT NOT NULL DEFAULT 
 PRAGMA user_version = 14;
 `); err != nil {
 			return fmt.Errorf("apply SQLite migration 14: %w", err)
+		}
+		version = 14
+	}
+	if version == 14 {
+		if _, err := tx.Exec(`
+ALTER TABLE provider_profiles ADD COLUMN credential_ref TEXT NOT NULL DEFAULT '';
+PRAGMA user_version = 15;
+`); err != nil {
+			return fmt.Errorf("apply SQLite migration 15: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -1007,7 +1033,7 @@ func (store *SQLiteStore) MarkGenerationVerifyingEnvironment(ctx context.Context
 	if err != nil {
 		return err
 	}
-	if generation.Snapshot.ProviderID != "nearai" {
+	if !generation.Snapshot.IsNearAI() {
 		return errors.New("secure verification requires a NearAI generation")
 	}
 	if isTerminalGenerationState(generation.State) {
@@ -1024,7 +1050,7 @@ func (store *SQLiteStore) MarkGenerationVerifyingResponse(ctx context.Context, i
 	if err != nil {
 		return err
 	}
-	if generation.Snapshot.ProviderID != "nearai" {
+	if !generation.Snapshot.IsNearAI() {
 		return errors.New("secure verification requires a NearAI generation")
 	}
 	return store.updateGenerationState(ctx, id, GenerationVerifyingResponse, "", "")
@@ -1058,7 +1084,7 @@ func (store *SQLiteStore) SettleSecureGeneration(ctx context.Context, input Secu
 	if err != nil {
 		return fmt.Errorf("load generation for secure settlement: %w", err)
 	}
-	if generation.Snapshot.ProviderID != "nearai" {
+	if !generation.Snapshot.IsNearAI() {
 		return errors.New("secure settlement requires a NearAI generation")
 	}
 	if generation.State == GenerationCompleted || generation.State == GenerationStopped || generation.State == GenerationFailed {
@@ -1115,10 +1141,13 @@ func (store *SQLiteStore) SettleSecureGeneration(ctx context.Context, input Secu
 			return fmt.Errorf("update secure conversation timestamp: %w", err)
 		}
 	}
+	if err := refreshGenerationBatchTx(ctx, tx, generation.GenerationBatchID); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit secure generation settlement: %w", err)
 	}
-	return store.refreshGenerationBatch(ctx, generation.GenerationBatchID)
+	return nil
 }
 
 func validGenerationTransition(from, to GenerationState) bool {
@@ -1173,11 +1202,11 @@ func (store *SQLiteStore) CompleteGeneration(ctx context.Context, input Complete
 	if _, err := tx.ExecContext(ctx, `UPDATE conversations SET updated_at = ? WHERE id = ?`, now.UnixNano(), generation.ConversationID); err != nil {
 		return fmt.Errorf("update completed conversation timestamp: %w", err)
 	}
+	if err := refreshGenerationBatchTx(ctx, tx, generation.GenerationBatchID); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit completed generation: %w", err)
-	}
-	if err := store.refreshGenerationBatch(ctx, generation.GenerationBatchID); err != nil {
-		return err
 	}
 	return nil
 }
@@ -1190,11 +1219,16 @@ func (store *SQLiteStore) TerminateGeneration(ctx context.Context, input Termina
 }
 
 func (store *SQLiteStore) RecoverInterruptedGenerations(ctx context.Context) error {
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin interrupted generation recovery: %w", err)
+	}
+	defer tx.Rollback()
 	now := time.Now().UTC().UnixNano()
-	if _, err := store.db.ExecContext(ctx, `UPDATE generations SET state = ?, error_code = ?, error_message = ?, updated_at = ? WHERE state IN (?, ?, ?, ?)`, GenerationFailed, "interrupted", "The Local Service restarted before this Generation completed.", now, GenerationPending, GenerationVerifyingEnvironment, GenerationStreaming, GenerationVerifyingResponse); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE generations SET state = ?, error_code = ?, error_message = ?, updated_at = ? WHERE state IN (?, ?, ?, ?)`, GenerationFailed, "interrupted", "The Local Service restarted before this Generation completed.", now, GenerationPending, GenerationVerifyingEnvironment, GenerationStreaming, GenerationVerifyingResponse); err != nil {
 		return fmt.Errorf("recover interrupted generations: %w", err)
 	}
-	rows, err := store.db.QueryContext(ctx, `SELECT DISTINCT generation_batch_id FROM generations WHERE generation_batch_id IS NOT NULL AND generation_batch_id != '' AND error_code = 'interrupted'`)
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT generation_batch_id FROM generations WHERE generation_batch_id IS NOT NULL AND generation_batch_id != '' AND error_code = 'interrupted'`)
 	if err != nil {
 		return fmt.Errorf("list interrupted generation batches: %w", err)
 	}
@@ -1215,11 +1249,11 @@ func (store *SQLiteStore) RecoverInterruptedGenerations(ctx context.Context) err
 		return fmt.Errorf("close interrupted generation batches: %w", err)
 	}
 	for _, batchID := range batchIDs {
-		if err := store.refreshGenerationBatch(ctx, batchID); err != nil {
+		if err := refreshGenerationBatchTx(ctx, tx, batchID); err != nil {
 			return fmt.Errorf("refresh interrupted generation batch: %w", err)
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 const generationQuery = `SELECT id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, assistant_message_id, error_code, error_message, created_at, updated_at, generation_batch_id, generation_target_id FROM generations`
@@ -1260,7 +1294,7 @@ func scanGeneration(row rowScanner) (Generation, error) {
 		}
 	}
 	if generation.Verification.Status == "" {
-		if generation.Snapshot.ProviderID == "nearai" {
+		if generation.Snapshot.IsNearAI() {
 			generation.Verification.Status = VerificationPending
 		} else {
 			generation.Verification.Status = VerificationUnsupported
@@ -1304,11 +1338,11 @@ func (store *SQLiteStore) updateGenerationState(ctx context.Context, id string, 
 	if _, err := tx.ExecContext(ctx, `UPDATE generations SET state = ?, error_code = NULLIF(?, ''), error_message = NULLIF(?, ''), updated_at = ? WHERE id = ?`, state, errorCode, errorMessage, now.UnixNano(), id); err != nil {
 		return fmt.Errorf("update generation state: %w", err)
 	}
+	if err := refreshGenerationBatchTx(ctx, tx, generation.GenerationBatchID); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit generation state: %w", err)
-	}
-	if err := store.refreshGenerationBatch(ctx, generation.GenerationBatchID); err != nil {
-		return err
 	}
 	return nil
 }
@@ -1454,7 +1488,7 @@ func conversationTitleFromMessage(body string) string {
 }
 
 func (store *SQLiteStore) ListProviderProfiles(ctx context.Context) ([]ProviderProfile, error) {
-	rows, err := store.db.QueryContext(ctx, `SELECT id, kind, name, endpoint, model_id, auth_method, created_at, updated_at FROM provider_profiles ORDER BY updated_at DESC, id ASC`)
+	rows, err := store.db.QueryContext(ctx, `SELECT id, kind, name, endpoint, model_id, auth_method, created_at, updated_at, credential_ref FROM provider_profiles ORDER BY updated_at DESC, id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list provider profiles: %w", err)
 	}
@@ -1474,7 +1508,7 @@ func (store *SQLiteStore) ListProviderProfiles(ctx context.Context) ([]ProviderP
 }
 
 func (store *SQLiteStore) GetProviderProfile(ctx context.Context, id string) (ProviderProfile, error) {
-	row := store.db.QueryRowContext(ctx, `SELECT id, kind, name, endpoint, model_id, auth_method, created_at, updated_at FROM provider_profiles WHERE id = ?`, id)
+	row := store.db.QueryRowContext(ctx, `SELECT id, kind, name, endpoint, model_id, auth_method, created_at, updated_at, credential_ref FROM provider_profiles WHERE id = ?`, id)
 	profile, err := scanProviderProfile(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ProviderProfile{}, fmt.Errorf("provider profile %q: %w", id, sql.ErrNoRows)
@@ -1485,7 +1519,9 @@ func (store *SQLiteStore) GetProviderProfile(ctx context.Context, id string) (Pr
 	return profile, nil
 }
 
-func (store *SQLiteStore) UpsertProviderProfile(ctx context.Context, profile ProviderProfile) error {
+var ErrProviderProfileChanged = errors.New("provider profile changed")
+
+func (store *SQLiteStore) UpsertProviderProfile(ctx context.Context, profile ProviderProfile, expected ...time.Time) error {
 	if strings.TrimSpace(profile.ID) == "" || strings.TrimSpace(profile.Kind) == "" || strings.TrimSpace(profile.Endpoint) == "" || strings.TrimSpace(profile.AuthMethod) == "" {
 		return errors.New("provider profile identity and connection settings are required")
 	}
@@ -1497,26 +1533,50 @@ func (store *SQLiteStore) UpsertProviderProfile(ctx context.Context, profile Pro
 	if profile.CreatedAt.IsZero() {
 		profile.CreatedAt = now
 	}
-	profile.UpdatedAt = now
-	_, err := store.db.ExecContext(ctx, `
-INSERT INTO provider_profiles (id, kind, name, endpoint, model_id, auth_method, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, name=excluded.name, endpoint=excluded.endpoint, model_id=excluded.model_id, auth_method=excluded.auth_method, updated_at=excluded.updated_at`,
-		profile.ID, profile.Kind, profile.Name, profile.Endpoint, profile.ModelID, profile.AuthMethod, profile.CreatedAt.UTC().UnixNano(), profile.UpdatedAt.UTC().UnixNano())
+	if len(expected) != 0 && !now.After(expected[0]) {
+		now = expected[0].Add(time.Nanosecond)
+	}
+	var revision any
+	if len(expected) != 0 {
+		revision = int64(0)
+		if !expected[0].IsZero() {
+			revision = expected[0].UnixNano()
+		}
+	}
+	result, err := store.db.ExecContext(ctx, `
+INSERT INTO provider_profiles (id, kind, name, endpoint, model_id, auth_method, created_at, updated_at, credential_ref)
+SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+WHERE ? IS NULL OR ? = 0 OR EXISTS (SELECT 1 FROM provider_profiles WHERE id = ? AND updated_at = ?)
+ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, name=excluded.name, endpoint=excluded.endpoint, model_id=excluded.model_id, auth_method=excluded.auth_method, updated_at=excluded.updated_at, credential_ref=excluded.credential_ref
+WHERE ? IS NULL OR provider_profiles.updated_at = ?`,
+		profile.ID, profile.Kind, profile.Name, profile.Endpoint, profile.ModelID, profile.AuthMethod, profile.CreatedAt.UTC().UnixNano(), now.UnixNano(), profile.CredentialRef,
+		revision, revision, profile.ID, revision, revision, revision)
 	if err != nil {
 		return fmt.Errorf("save provider profile: %w", err)
+	}
+	if count, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("check saved provider profile: %w", err)
+	} else if count != 1 {
+		return ErrProviderProfileChanged
 	}
 	return nil
 }
 
-func (store *SQLiteStore) DeleteProviderProfile(ctx context.Context, id string) error {
-	result, err := store.db.ExecContext(ctx, `DELETE FROM provider_profiles WHERE id = ?`, id)
+func (store *SQLiteStore) DeleteProviderProfile(ctx context.Context, id string, expected ...time.Time) error {
+	var revision any
+	if len(expected) != 0 {
+		revision = expected[0].UnixNano()
+	}
+	result, err := store.db.ExecContext(ctx, `DELETE FROM provider_profiles WHERE id = ? AND (? IS NULL OR updated_at = ?)`, id, revision, revision)
 	if err != nil {
 		return fmt.Errorf("delete provider profile: %w", err)
 	}
 	if count, err := result.RowsAffected(); err != nil {
 		return fmt.Errorf("check deleted provider profile: %w", err)
 	} else if count == 0 {
+		if revision != nil {
+			return ErrProviderProfileChanged
+		}
 		return fmt.Errorf("provider profile %q: %w", id, sql.ErrNoRows)
 	}
 	return nil
@@ -1545,7 +1605,7 @@ func scanConversation(row rowScanner) (Conversation, error) {
 func scanProviderProfile(row rowScanner) (ProviderProfile, error) {
 	var profile ProviderProfile
 	var createdAt, updatedAt int64
-	if err := row.Scan(&profile.ID, &profile.Kind, &profile.Name, &profile.Endpoint, &profile.ModelID, &profile.AuthMethod, &createdAt, &updatedAt); err != nil {
+	if err := row.Scan(&profile.ID, &profile.Kind, &profile.Name, &profile.Endpoint, &profile.ModelID, &profile.AuthMethod, &createdAt, &updatedAt, &profile.CredentialRef); err != nil {
 		return ProviderProfile{}, err
 	}
 	profile.CreatedAt = time.Unix(0, createdAt).UTC()

@@ -163,6 +163,7 @@ export interface VerificationEvidence {
 
 export interface ProviderSnapshot {
   provider_id: string;
+  provider_kind?: ProviderKind;
   provider_name: string;
   model_id: string;
   runtime_location: string;
@@ -199,10 +200,17 @@ export interface Generation {
   updated_at: string;
 }
 
+export interface ExpectedGenerationTarget {
+  provider_id: string;
+  model_id: string;
+  require_private_tee?: boolean;
+}
+
 export interface GenerationInput {
   client_request_id: string;
   body: string;
   attachments?: AttachmentInput[];
+  expected_targets?: ExpectedGenerationTarget[];
 }
 
 export interface AttachmentInput {

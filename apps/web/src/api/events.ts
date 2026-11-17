@@ -1,4 +1,4 @@
-import { LocalServiceError } from "@/api/client";
+import { fetchLocalService, LocalServiceError } from "@/api/client";
 import { getGenerationBatch } from "@/api/generations";
 import {
   type ErrorEnvelope,
@@ -38,9 +38,9 @@ async function* openGenerationBatchEvents(
 ): AsyncGenerator<GenerationBatchEvent> {
   const headers = new Headers({ Accept: "text/event-stream" });
   if (afterEventId) headers.set("Last-Event-ID", afterEventId);
-  const response = await fetch(
+  const response = await fetchLocalService(
     `/api/generation-batches/${encodeURIComponent(id)}/events`,
-    { credentials: "same-origin", headers },
+    { headers },
   );
   if (!response.ok) {
     const payload = (await response.json()) as ErrorEnvelope;

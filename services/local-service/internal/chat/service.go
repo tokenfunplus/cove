@@ -29,7 +29,19 @@ type ModelMetadataSource interface {
 	ModelMetadata(ctx context.Context, providerID, modelID string) (provider.ModelMetadata, error)
 }
 
+type ProviderCatalogSource interface {
+	ResolveCatalog(ctx context.Context, id string) (provider.Profile, credentials.Secret, []provider.ModelMetadata, error)
+	CheckResolvedProfile(ctx context.Context, profile provider.Profile) error
+}
+
+type ExpectedGenerationTarget struct {
+	ProviderID        string `json:"provider_id"`
+	ModelID           string `json:"model_id"`
+	RequirePrivateTEE bool   `json:"require_private_tee,omitempty"`
+}
+
 type SendInput struct {
+	ExpectedTargets      []ExpectedGenerationTarget
 	ConversationID       string
 	ProviderID           string
 	ModelID              string
@@ -50,6 +62,8 @@ type GenerationBatchStart struct {
 
 var ErrGenerationInProgress = errors.New("a Generation is already in progress")
 var ErrGenerationBatchInProgress = errors.New("a Generation Batch is already in progress")
+var ErrGenerationSelectionChanged = errors.New("active model selection changed")
+var ErrPrivateTEEUnavailable = errors.New("the required Private TEE transport is unavailable")
 var ErrProviderSelectionRequired = errors.New("a configured Provider and model must be selected")
 
 func emptyProviderResponseFailure(finishReason string) (string, string) {
@@ -74,7 +88,6 @@ type Chat interface {
 	MarkSecureGenerationStreaming(ctx context.Context, generationID string) (persistence.Generation, error)
 	MarkSecureGenerationVerifyingResponse(ctx context.Context, generationID string) (persistence.Generation, error)
 	SettleSecureGeneration(ctx context.Context, input persistence.SecureGenerationSettlementInput) (persistence.Generation, error)
-	RetryGeneration(ctx context.Context, messageID, clientRequestID, systemPrompt string) (GenerationStart, error)
 	RenameConversation(ctx context.Context, conversationID, title string) error
 	SetConversationPinned(ctx context.Context, conversationID string, pinned bool) error
 	SetConversationArchived(ctx context.Context, conversationID string, archived bool) error
@@ -212,11 +225,7 @@ func (service *Service) StartGeneration(ctx context.Context, input SendInput) (G
 		return GenerationStart{}, err
 	}
 	profile.Model = modelID
-	snapshot := persistence.ProviderSnapshot{
-		ProviderID: profile.ID, ProviderName: profile.Name, ModelID: profile.Model,
-		RuntimeLocation: profile.RuntimeLocation, Destination: profile.Destination,
-		TransportSecurity: profile.TransportSecurity, PrivacyNotice: profile.PrivacyNotice,
-	}
+	snapshot := snapshotFor(profile, "")
 	generation, err := service.store.BeginGeneration(ctx, persistence.BeginGenerationInput{
 		ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID,
 		Body: input.Body, Snapshot: snapshot,
@@ -359,7 +368,12 @@ func (service *Service) ClearChatData(ctx context.Context) error {
 			return err
 		}
 	}
-	return service.store.ClearChatData(ctx)
+	if err := service.store.ClearChatData(ctx); err != nil {
+		return err
+	}
+	service.hub.forgetCompleted("")
+	service.batchHub.forgetCompleted("")
+	return nil
 }
 
 func (service *Service) CancelGeneration(ctx context.Context, generationID string) (persistence.Generation, error) {
@@ -451,36 +465,6 @@ func (service *Service) settleSecureGeneration(ctx context.Context, input persis
 	return generation, err
 }
 
-func (service *Service) RetryGeneration(ctx context.Context, messageID, clientRequestID, systemPrompt string) (GenerationStart, error) {
-	generation, err := service.store.GetGenerationByMessageID(ctx, messageID)
-	if err != nil {
-		return GenerationStart{}, err
-	}
-	if generation.State != persistence.GenerationFailed && generation.State != persistence.GenerationStopped {
-		return GenerationStart{}, errors.New("only failed or stopped generations can be retried")
-	}
-	view, err := service.store.LoadConversation(ctx, generation.ConversationID)
-	if err != nil {
-		return GenerationStart{}, err
-	}
-	for _, message := range view.Messages {
-		if message.ID == messageID {
-			if message.Role != "user" {
-				return GenerationStart{}, fmt.Errorf("message %q is not a user message", messageID)
-			}
-			return service.StartGeneration(ctx, SendInput{
-				ConversationID:  generation.ConversationID,
-				ProviderID:      generation.Snapshot.ProviderID,
-				ModelID:         generation.Snapshot.ModelID,
-				ClientRequestID: clientRequestID,
-				Body:            message.Body,
-				SystemPrompt:    systemPrompt,
-			})
-		}
-	}
-	return GenerationStart{}, fmt.Errorf("message %q: %w", messageID, sql.ErrNoRows)
-}
-
 func (service *Service) runGeneration(ctx context.Context, generation persistence.Generation, profile provider.Profile, secret credentials.Secret, configuration persistence.GenerationConfigurationSnapshot) {
 	defer service.finishGeneration(generation.ID)
 	view, err := service.store.LoadConversation(ctx, generation.ConversationID)
@@ -512,7 +496,8 @@ func (service *Service) runGeneration(ctx context.Context, generation persistenc
 		return
 	}
 	defer stream.Close()
-	var body, finishReason string
+	var body strings.Builder
+	var finishReason string
 	for {
 		event, err := stream.Recv(ctx)
 		if err != nil {
@@ -532,7 +517,11 @@ func (service *Service) runGeneration(ctx context.Context, generation persistenc
 			_ = service.store.MarkGenerationStreaming(context.Background(), generation.ID)
 			service.publish(GenerationEvent{GenerationID: generation.ID, Type: EventStarted, Snapshot: &generation.Snapshot})
 		case provider.EventDelta:
-			body += event.Delta
+			if len(event.Delta) > provider.MaxCompletionBytes-body.Len() {
+				service.terminate(generation.ID, persistence.GenerationFailed, "protocol_error", "The Provider response exceeded the size limit.")
+				return
+			}
+			body.WriteString(event.Delta)
 			if event.FinishReason != "" {
 				finishReason = event.FinishReason
 			}
@@ -541,7 +530,7 @@ func (service *Service) runGeneration(ctx context.Context, generation persistenc
 			if event.FinishReason != "" {
 				finishReason = event.FinishReason
 			}
-			if strings.TrimSpace(body) == "" {
+			if strings.TrimSpace(body.String()) == "" {
 				code, message := emptyProviderResponseFailure(finishReason)
 				service.terminate(generation.ID, persistence.GenerationFailed, code, message)
 				return
@@ -549,7 +538,7 @@ func (service *Service) runGeneration(ctx context.Context, generation persistenc
 			if !service.claimTerminal(generation.ID) {
 				return
 			}
-			if err := service.store.CompleteGeneration(context.Background(), persistence.CompleteGenerationInput{GenerationID: generation.ID, Body: body}); err != nil {
+			if err := service.store.CompleteGeneration(context.Background(), persistence.CompleteGenerationInput{GenerationID: generation.ID, Body: body.String()}); err != nil {
 				_ = service.store.TerminateGeneration(context.Background(), persistence.TerminateGenerationInput{GenerationID: generation.ID, State: persistence.GenerationFailed, ErrorCode: "internal_error", ErrorMessage: "The completed response could not be saved."})
 				service.publish(GenerationEvent{GenerationID: generation.ID, Type: EventFailed, ErrorCode: "internal_error", ErrorMessage: "The completed response could not be saved."})
 				return
@@ -633,7 +622,7 @@ type eventHub struct {
 }
 
 type generationEvents struct {
-	events      []GenerationEvent
+	replay
 	subscribers map[chan GenerationEvent]struct{}
 	terminal    bool
 }
@@ -643,10 +632,41 @@ func newEventHub() *eventHub {
 }
 
 func (hub *eventHub) ensure(id string) {
+	hub.forgetCompleted(id)
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
 	if hub.streams[id] == nil {
 		hub.streams[id] = &generationEvents{subscribers: make(map[chan GenerationEvent]struct{})}
+	}
+}
+
+func (hub *eventHub) forgetCompleted(keep string) {
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	for id, stream := range hub.streams {
+		if id != keep && stream.terminal && len(stream.subscribers) == 0 {
+			delete(hub.streams, id)
+		}
+	}
+}
+
+const (
+	maxReplayEvents = 256
+	maxReplayBytes  = 256 << 10
+)
+
+type replay struct {
+	events []GenerationEvent
+	bytes  int
+}
+
+func (buffer *replay) append(event GenerationEvent) {
+	buffer.events = append(buffer.events, event)
+	buffer.bytes += len(event.Delta)
+	for len(buffer.events) > maxReplayEvents || buffer.bytes > maxReplayBytes {
+		buffer.bytes -= len(buffer.events[0].Delta)
+		buffer.events[0] = GenerationEvent{}
+		buffer.events = buffer.events[1:]
 	}
 }
 
@@ -658,10 +678,7 @@ func (hub *eventHub) publish(event GenerationEvent) {
 		stream = &generationEvents{subscribers: make(map[chan GenerationEvent]struct{})}
 		hub.streams[event.GenerationID] = stream
 	}
-	stream.events = append(stream.events, event)
-	if len(stream.events) > 256 {
-		stream.events = stream.events[len(stream.events)-256:]
-	}
+	stream.replay.append(event)
 	terminal := event.Type == EventCompleted || event.Type == EventStopped || event.Type == EventFailed
 	for subscriber := range stream.subscribers {
 		select {
@@ -684,11 +701,16 @@ func (hub *eventHub) publish(event GenerationEvent) {
 }
 
 func (hub *eventHub) subscribe(ctx context.Context, id, afterID string, terminal bool) <-chan GenerationEvent {
-	channel := make(chan GenerationEvent, 256)
+	channel := make(chan GenerationEvent, maxReplayEvents)
 	hub.mu.Lock()
 	stream := hub.streams[id]
 	if stream == nil {
-		stream = &generationEvents{subscribers: make(map[chan GenerationEvent]struct{}), terminal: terminal}
+		if terminal {
+			hub.mu.Unlock()
+			close(channel)
+			return channel
+		}
+		stream = &generationEvents{subscribers: make(map[chan GenerationEvent]struct{})}
 		hub.streams[id] = stream
 	} else if terminal {
 		stream.terminal = true

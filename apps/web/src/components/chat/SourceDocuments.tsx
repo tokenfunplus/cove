@@ -12,6 +12,7 @@ import type {
   GenerationBatch,
   GenerationContextMessage,
 } from "@cove/api-contract";
+import { fetchLocalService } from "@/api/client";
 import { useGenerationCache } from "@/api/hooks/useGenerations";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogOverlay } from "@/components/ui/dialog";
@@ -83,6 +84,28 @@ export function DocumentPreview({
   onClose,
 }: SavedSource & { section?: string; onClose: () => void }) {
   const highlighted = useRef<HTMLDivElement>(null);
+  const [downloadState, setDownloadState] = useState<"idle" | "pending" | "failed">("idle");
+
+  async function downloadOriginal() {
+    if (!batchId) return;
+    setDownloadState("pending");
+    try {
+      const response = await fetchLocalService(
+        `/api/generation-batches/${encodeURIComponent(batchId)}/attachments/${encodeURIComponent(document.id)}`,
+      );
+      if (!response.ok) throw new Error("Source download failed");
+      const url = URL.createObjectURL(await response.blob());
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = document.name;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setDownloadState("idle");
+    } catch {
+      setDownloadState("failed");
+    }
+  }
+
   useEffect(() => {
     highlighted.current?.scrollIntoView?.({ block: "center" });
   }, [section]);
@@ -139,13 +162,17 @@ export function DocumentPreview({
           </p>
         </details>
         {batchId && (
-          <a
-            className="text-sm underline"
-            href={`/api/generation-batches/${encodeURIComponent(batchId)}/attachments/${document.id}`}
-            download={document.name}
-          >
-            {copy.downloadOriginal}
-          </a>
+          <div>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={downloadState === "pending"}
+              onClick={() => void downloadOriginal()}
+            >
+              {copy.downloadOriginal}
+            </Button>
+            {downloadState === "failed" && <p role="alert">{copy.sourceDownloadFailed}</p>}
+          </div>
         )}
       </DialogContent>
     </Dialog>

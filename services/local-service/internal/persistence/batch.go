@@ -132,14 +132,31 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 	if _, err := tx.ExecContext(ctx, `UPDATE conversations SET updated_at = ? WHERE id = ?`, now.UnixNano(), input.ConversationID); err != nil {
 		return GenerationBatch{}, fmt.Errorf("update generation batch conversation timestamp: %w", err)
 	}
+	batch, err := getGenerationBatch(ctx, tx, batchID)
+	if err != nil {
+		return GenerationBatch{}, err
+	}
+	batch.ContextItems, err = loadGenerationBatchContext(ctx, tx, batchID)
+	if err != nil {
+		return GenerationBatch{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return GenerationBatch{}, fmt.Errorf("commit generation batch: %w", err)
 	}
-	return store.GetGenerationBatch(ctx, batchID)
+	return batch, nil
 }
 
 func (store *SQLiteStore) GetGenerationBatch(ctx context.Context, id string) (GenerationBatch, error) {
-	row := store.db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments FROM generation_batches WHERE id = ?`, id)
+	return getGenerationBatch(ctx, store.db, id)
+}
+
+type batchReader interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func getGenerationBatch(ctx context.Context, db batchReader, id string) (GenerationBatch, error) {
+	row := db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments FROM generation_batches WHERE id = ?`, id)
 	batch, err := scanGenerationBatch(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return GenerationBatch{}, fmt.Errorf("generation batch %q: %w", id, sql.ErrNoRows)
@@ -147,7 +164,7 @@ func (store *SQLiteStore) GetGenerationBatch(ctx context.Context, id string) (Ge
 	if err != nil {
 		return GenerationBatch{}, fmt.Errorf("get generation batch: %w", err)
 	}
-	return store.populateGenerationBatchTargets(ctx, batch)
+	return populateGenerationBatchTargets(ctx, db, batch)
 }
 
 func (store *SQLiteStore) GetGenerationBatchByClientRequestID(ctx context.Context, clientRequestID string) (GenerationBatch, error) {
@@ -159,14 +176,15 @@ func (store *SQLiteStore) GetGenerationBatchByClientRequestID(ctx context.Contex
 	if err != nil {
 		return GenerationBatch{}, fmt.Errorf("get generation batch by client request ID: %w", err)
 	}
-	return store.populateGenerationBatchTargets(ctx, batch)
+	return populateGenerationBatchTargets(ctx, store.db, batch)
 }
 
-func (store *SQLiteStore) populateGenerationBatchTargets(ctx context.Context, batch GenerationBatch) (GenerationBatch, error) {
-	rows, err := store.db.QueryContext(ctx, `SELECT id, generation_batch_id, provider_id, model_id, position, latest_generation_id FROM generation_targets WHERE generation_batch_id = ? ORDER BY position ASC`, batch.ID)
+func populateGenerationBatchTargets(ctx context.Context, db batchReader, batch GenerationBatch) (GenerationBatch, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, generation_batch_id, provider_id, model_id, position, latest_generation_id FROM generation_targets WHERE generation_batch_id = ? ORDER BY position ASC`, batch.ID)
 	if err != nil {
 		return GenerationBatch{}, fmt.Errorf("list generation targets: %w", err)
 	}
+	defer rows.Close()
 	type pendingTarget struct {
 		target       GenerationTarget
 		generationID string
@@ -188,7 +206,7 @@ func (store *SQLiteStore) populateGenerationBatchTargets(ctx context.Context, ba
 	}
 	batch.Targets = make([]GenerationTarget, 0, len(pending))
 	for _, item := range pending {
-		generation, err := store.GetGeneration(ctx, item.generationID)
+		generation, err := scanGeneration(db.QueryRowContext(ctx, generationQuery+` WHERE id = ?`, item.generationID))
 		if err != nil {
 			return GenerationBatch{}, fmt.Errorf("load target generation: %w", err)
 		}
@@ -263,14 +281,19 @@ func (store *SQLiteStore) BeginGenerationAttempt(ctx context.Context, input Begi
 	}
 	now := time.Now().UTC()
 	generation := Generation{ID: generationID, GenerationBatchID: batchID, GenerationTargetID: targetID, ConversationID: latest.ConversationID, ClientRequestID: input.ClientRequestID, UserMessageID: userMessageID, State: GenerationPending, Snapshot: input.Snapshot, ConfigurationSnapshot: input.ConfigurationSnapshot, CreatedAt: now, UpdatedAt: now}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO generations (id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, created_at, updated_at, generation_batch_id, generation_target_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, generation.ID, generation.ConversationID, generation.ClientRequestID, generation.UserMessageID, generation.State, snapshot, generation.ConfigurationSnapshot.SystemPrompt, generation.ConfigurationSnapshot.Temperature, generation.ConfigurationSnapshot.TopP, generation.ConfigurationSnapshot.MaxTokens, now.UnixNano(), now.UnixNano(), batchID, targetID); err != nil {
+	if input.Failure != nil {
+		generation.State = GenerationFailed
+		generation.ErrorCode = input.Failure.Code
+		generation.ErrorMessage = input.Failure.Message
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO generations (id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, created_at, updated_at, generation_batch_id, generation_target_id, error_code, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, ''))`, generation.ID, generation.ConversationID, generation.ClientRequestID, generation.UserMessageID, generation.State, snapshot, generation.ConfigurationSnapshot.SystemPrompt, generation.ConfigurationSnapshot.Temperature, generation.ConfigurationSnapshot.TopP, generation.ConfigurationSnapshot.MaxTokens, now.UnixNano(), now.UnixNano(), batchID, targetID, generation.ErrorCode, generation.ErrorMessage); err != nil {
 		return Generation{}, fmt.Errorf("save retry generation: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE generation_targets SET latest_generation_id = ? WHERE id = ?`, generation.ID, targetID); err != nil {
 		return Generation{}, fmt.Errorf("update retry generation target: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE generation_batches SET state = ?, updated_at = ? WHERE id = ?`, GenerationBatchPending, now.UnixNano(), batchID); err != nil {
-		return Generation{}, fmt.Errorf("reactivate generation batch: %w", err)
+	if err := refreshGenerationBatchTx(ctx, tx, batchID); err != nil {
+		return Generation{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return Generation{}, fmt.Errorf("commit generation attempt: %w", err)
@@ -354,7 +377,11 @@ ORDER BY b.created_at ASC, b.id ASC`, conversationID)
 }
 
 func (store *SQLiteStore) LoadGenerationBatchContext(ctx context.Context, batchID string) ([]ContextItem, error) {
-	rows, err := store.db.QueryContext(ctx, `
+	return loadGenerationBatchContext(ctx, store.db, batchID)
+}
+
+func loadGenerationBatchContext(ctx context.Context, db batchReader, batchID string) ([]ContextItem, error) {
+	rows, err := db.QueryContext(ctx, `
 SELECT item.user_message_id, item.selected_generation_id, COALESCE(NULLIF(source_batch.input_content, ''), user_message.body), assistant_message.body
 FROM batch_context_items item
 JOIN messages user_message ON user_message.id = item.user_message_id
@@ -378,16 +405,24 @@ ORDER BY item.position ASC`, batchID)
 	return items, rows.Err()
 }
 
-func (store *SQLiteStore) refreshGenerationBatch(ctx context.Context, batchID string) error {
+func refreshGenerationBatchTx(ctx context.Context, tx *sql.Tx, batchID string) error {
 	if batchID == "" {
 		return nil
 	}
-	batch, err := store.GetGenerationBatch(ctx, batchID)
+	batch, err := getGenerationBatch(ctx, tx, batchID)
 	if err != nil {
 		return err
 	}
 	state := deriveGenerationBatchState(batch.Targets)
-	if _, err := store.db.ExecContext(ctx, `UPDATE generation_batches SET state = ?, selected_generation_id = CASE WHEN ? = 1 AND ? = '' AND context_frozen = 0 THEN ? ELSE selected_generation_id END, context_skipped = CASE WHEN ? = 1 AND ? = '' AND context_frozen = 0 THEN 0 ELSE context_skipped END, updated_at = ? WHERE id = ?`, state, boolToInt(len(batch.Targets) == 1 && generationSelectable(batch.Targets[0].Generation)), batch.SelectedGenerationID, batch.Targets[0].Generation.ID, boolToInt(len(batch.Targets) == 1 && generationSelectable(batch.Targets[0].Generation)), batch.SelectedGenerationID, time.Now().UTC().UnixNano(), batch.ID); err != nil {
+	selectedID := ""
+	if len(batch.Targets) == 1 && generationSelectable(batch.Targets[0].Generation) && batch.SelectedGenerationID == "" && !batch.ContextFrozen {
+		selectedID = batch.Targets[0].Generation.ID
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE generation_batches SET state = ?,
+  selected_generation_id = COALESCE(NULLIF(?, ''), selected_generation_id),
+  context_skipped = CASE WHEN ? != '' THEN 0 ELSE context_skipped END,
+  updated_at = ? WHERE id = ?`, state, selectedID, selectedID, time.Now().UTC().UnixNano(), batch.ID); err != nil {
 		return fmt.Errorf("refresh generation batch: %w", err)
 	}
 	return nil
@@ -397,7 +432,7 @@ func generationSelectable(generation Generation) bool {
 	if generation.State != GenerationCompleted {
 		return false
 	}
-	if generation.Snapshot.ProviderID == "nearai" {
+	if generation.Snapshot.IsNearAI() {
 		return generation.Verification.Status == VerificationModel && generation.AssistantMessageID != ""
 	}
 	return generation.AssistantMessageID != ""
