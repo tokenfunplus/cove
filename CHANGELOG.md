@@ -18,7 +18,7 @@
 
 ### Changed
 
-- Isolate Browser Sessions per tab and Local Service instance through an explicit session header rather than host-wide cookies.
+- Keep Browser Session credentials in per-tab, origin-scoped storage and explicit request headers rather than host-wide cookies.
 - Validate requested Provider/model targets against current catalogs and retain Private TEE requirements across retries.
 - Harden Provider connection updates, credential replacement, generation transitions, and stream handling.
 - Add detached publisher signatures for published downloads and require pull-request checks on the main branch.
