@@ -41,6 +41,7 @@ type Props = {
     | "handleExportChatData"
     | "isClearingChatData"
     | "confirmation"
+    | "isNavigating"
     | "setConfirmation"
     | "confirmRequestedAction"
     | "renameTarget"
@@ -80,6 +81,7 @@ export function WorkspaceOverlays({ workspace }: Props) {
     handleExportChatData,
     isClearingChatData,
     confirmation,
+    isNavigating,
     setConfirmation,
     confirmRequestedAction,
     renameTarget,
@@ -176,28 +178,32 @@ export function WorkspaceOverlays({ workspace }: Props) {
       </SettingsDialog>
       <ConfirmationDialog
         open={Boolean(confirmation)}
+        busy={isNavigating}
         title={
-          confirmation?.kind === "delete"
+          confirmation?.discardDraft ? copy.discardDraftTitle : confirmation?.kind === "navigate" ? copy.changeChatView : confirmation?.kind === "new" ? copy.newChat : confirmation?.kind === "delete"
             ? copy.deleteConversation
             : confirmation?.kind === "clear"
               ? copy.clearChatData
               : copy.switchConversation
         }
         description={
-          confirmation?.kind === "delete"
+          confirmation?.discardDraft
+            ? confirmation.stopGeneration ? copy.confirmDiscardDraftAndStop : copy.confirmDiscardDraft
+            : confirmation?.kind === "navigate" ? copy.confirmStopAndNavigate : confirmation?.kind === "new" ? copy.confirmStopAndCreate : confirmation?.kind === "delete"
             ? copy.confirmDeleteConversation
             : confirmation?.kind === "clear"
               ? copy.confirmClearChatData
               : copy.confirmSwitchConversation
         }
         confirmLabel={
-          confirmation?.kind === "delete"
+          confirmation?.discardDraft ? copy.discardAndContinue : confirmation?.kind === "navigate" ? copy.changeChatView : confirmation?.kind === "new" ? copy.newChat : confirmation?.kind === "delete"
             ? copy.deleteConversation
             : confirmation?.kind === "clear"
               ? copy.clearChatData
               : copy.switchConversation
         }
-        destructive={confirmation?.kind !== "switch"}
+        cancelLabel={confirmation?.discardDraft ? copy.stay : undefined}
+        destructive={Boolean(confirmation?.discardDraft) || confirmation?.kind === "delete" || confirmation?.kind === "clear"}
         onCancel={() => setConfirmation(undefined)}
         onConfirm={() => void confirmRequestedAction()}
         copy={copy}

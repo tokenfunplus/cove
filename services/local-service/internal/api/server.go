@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
@@ -95,6 +96,7 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("GET /api/session", browserSession(http.HandlerFunc(server.session)))
 	mux.HandleFunc("GET /api/health", server.health)
 	mux.Handle("GET /api/conversations", browserSession(http.HandlerFunc(server.listConversations)))
+	mux.Handle("GET /api/conversations/search", browserSession(http.HandlerFunc(server.searchConversations)))
 	mux.Handle("POST /api/conversations", browserSession(http.HandlerFunc(server.createConversation)))
 	mux.Handle("GET /api/settings", browserSession(http.HandlerFunc(server.getSettings)))
 	mux.Handle("PATCH /api/settings", browserSession(http.HandlerFunc(server.updateSettings)))
@@ -322,6 +324,29 @@ func (server *Server) createConversation(writer http.ResponseWriter, request *ht
 		return
 	}
 	writeJSON(writer, http.StatusCreated, conversation)
+}
+
+func (server *Server) searchConversations(writer http.ResponseWriter, request *http.Request) {
+	query := strings.TrimSpace(request.URL.Query().Get("q"))
+	archived := false
+	var err error
+	if value := request.URL.Query().Get("archived"); value != "" {
+		archived, err = strconv.ParseBool(value)
+	}
+	if err != nil || !utf8.ValidString(query) || utf8.RuneCountInString(query) > 256 {
+		writeError(writer, http.StatusBadRequest, "validation", "Search requires up to 256 characters and a valid archive filter.")
+		return
+	}
+	if server.chat == nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Local search is unavailable.")
+		return
+	}
+	results, err := server.chat.SearchConversations(request.Context(), query, archived)
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "internal_error", "Local search is unavailable. Try a more specific phrase.")
+		return
+	}
+	writeJSON(writer, http.StatusOK, results)
 }
 
 func (server *Server) getConversation(writer http.ResponseWriter, request *http.Request) {
@@ -764,6 +789,7 @@ type generationBatchEnvelope struct {
 	Targets              []generationTargetEnvelope       `json:"targets"`
 	EventsURL            string                           `json:"events_url"`
 	SelectedGenerationID string                           `json:"selected_generation_id,omitempty"`
+	SelectedAnswer       *persistence.SelectedAnswer      `json:"selected_answer,omitempty"`
 	ContextSkipped       bool                             `json:"context_skipped,omitempty"`
 	ContextFrozen        bool                             `json:"context_frozen,omitempty"`
 	CreatedAt            time.Time                        `json:"created_at"`
@@ -809,7 +835,7 @@ func generationBatchEnvelopeFor(batch persistence.GenerationBatch) generationBat
 		InputContent: batch.InputContent, Attachments: batch.Attachments,
 		ID: batch.ID, ConversationID: batch.ConversationID, ClientRequestID: batch.ClientRequestID, UserMessageID: batch.UserMessageID,
 		State: batch.State, Targets: targets, EventsURL: "/api/generation-batches/" + batch.ID + "/events",
-		SelectedGenerationID: batch.SelectedGenerationID, ContextSkipped: batch.ContextSkipped, ContextFrozen: batch.ContextFrozen, CreatedAt: batch.CreatedAt, UpdatedAt: batch.UpdatedAt,
+		SelectedGenerationID: batch.SelectedGenerationID, SelectedAnswer: batch.SelectedAnswer, ContextSkipped: batch.ContextSkipped, ContextFrozen: batch.ContextFrozen, CreatedAt: batch.CreatedAt, UpdatedAt: batch.UpdatedAt,
 	}
 }
 

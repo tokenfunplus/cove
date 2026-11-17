@@ -32,6 +32,8 @@ type LiveTarget = {
 };
 
 export type LiveTurn = {
+  /** Restoring saved activity preserves the user's current reading position. */
+  restored?: boolean;
   conversationId: string;
   clientRequestId: string;
   userBody: string;

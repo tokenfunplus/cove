@@ -20,6 +20,9 @@ type Props = {
     | "setMobileSidebarOpen"
     | "setSidebarCollapsed"
     | "conversations"
+    | "conversationSearch"
+    | "conversationSearchQuery"
+    | "setConversationSearchQuery"
     | "selectedId"
     | "showingArchived"
     | "handleSelectConversation"
@@ -46,6 +49,9 @@ export function WorkspaceSidebar({ workspace }: Props) {
     setMobileSidebarOpen,
     setSidebarCollapsed,
     conversations,
+    conversationSearch,
+    conversationSearchQuery,
+    setConversationSearchQuery,
     selectedId,
     showingArchived,
     handleSelectConversation,
@@ -93,9 +99,14 @@ export function WorkspaceSidebar({ workspace }: Props) {
             : undefined
         }
         conversations={conversations}
+        searchQuery={conversationSearchQuery}
+        onSearchQueryChange={setConversationSearchQuery}
+        searchResults={conversationSearch.results}
+        searchPending={conversationSearch.pending}
+        searchFailed={conversationSearch.failed}
         selectedId={selectedId}
         showingArchived={showingArchived}
-        onSelect={(id) => void handleSelectConversation(id)}
+        onSelect={(id, messageId) => void handleSelectConversation(id, messageId)}
         onCreate={() => void handleCreateConversation()}
         onRename={(conversation) => {
           setRenameTarget(conversation);

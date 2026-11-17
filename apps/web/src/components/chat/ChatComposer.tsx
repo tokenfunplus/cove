@@ -28,6 +28,7 @@ type Props = {
   onSend: () => void;
   onCancel?: () => void;
   isSending: boolean;
+  navigationBusy?: boolean;
   catalogLoading: boolean;
   privateMode: boolean;
   requiresContextChoice: boolean;
@@ -45,6 +46,7 @@ export function ChatComposer({
   onSend,
   onCancel,
   isSending,
+  navigationBusy = false,
   catalogLoading,
   privateMode,
   composerRef,
@@ -66,6 +68,7 @@ export function ChatComposer({
   }, [compact, draft, composerRef]);
 
   const canSend =
+    !navigationBusy &&
     !attachmentDraft?.invalid &&
     !isSending &&
     !catalogLoading &&
@@ -80,7 +83,7 @@ export function ChatComposer({
       onDrop={(event) => {
         if (!event.dataTransfer.types.includes("Files")) return;
         event.preventDefault();
-        if (!isSending && attachmentDraft)
+        if (!navigationBusy && !isSending && attachmentDraft)
           void attachmentDraft.addAttachments(
             Array.from(event.dataTransfer.files),
           );
@@ -120,13 +123,14 @@ export function ChatComposer({
       </div>
       <div className={cn(chatStyles.generationComposer_box, compact && chatStyles.focusComposerBox)}>
         {attachmentDraft && (
-          <AttachmentDraft state={attachmentDraft} disabled={isSending} compact={compact} />
+          <AttachmentDraft state={attachmentDraft} disabled={isSending || navigationBusy} compact={compact} />
         )}
         <label htmlFor="generation-input">{copy.sendMessage}</label>
         <Textarea
           className="focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-transparent"
           id="generation-input"
           value={draft}
+          disabled={navigationBusy}
           placeholder={compact ? copy.focusComposerPlaceholder : copy.composerPlaceholder}
           rows={compact ? 1 : undefined}
           onChange={(event) => onDraftChange(event.target.value)}
@@ -151,7 +155,7 @@ export function ChatComposer({
               conversationId={view.id}
               body={draft}
               attachments={attachmentDraft}
-              disabled={isSending}
+              disabled={isSending || navigationBusy}
             />
           ) : (
             <span className={cn(chatStyles.generationComposer_contextNote, compact && "sr-only")}>
@@ -178,7 +182,7 @@ export function ChatComposer({
               className={cn(chatStyles.generationComposer_send, compact && "size-8 rounded-lg")}
               type={isSending ? "button" : "submit"}
               onClick={isSending ? onCancel : undefined}
-              disabled={isSending ? !onCancel : !canSend}
+              disabled={navigationBusy || (isSending ? !onCancel : !canSend)}
             >
               {isSending ? (
                 <Square

@@ -42,6 +42,14 @@ The Launcher uses a native menu. Its version item reads `CoveReleaseVersion` and
 
 Launch at Login uses `SMAppService.mainApp` and reports pending system approval. The optional global shortcut uses Carbon hot-key registration for Control-Option-Space, stays off by default, and reports key conflicts without requesting Accessibility access. Troubleshooting diagnostics contain only version/build, macOS, architecture, and bounded service/option statuses; they exclude runtime URLs, tokens, keys, errors, and conversation data. The script tests exercise native icon rendering, authenticated destinations, release-tag mapping, and diagnostic privacy with Command Line Tools; the XCTest suite still requires full Xcode.
 
+## History search and update discovery
+
+Schema version 16 builds a local FTS5 trigram index for existing message bodies. See [ADR-0031](adr/0031-index-local-history-substring-search.md) for migration, short-query fallback, and storage compatibility. To measure synthetic phrase searches, run `cd services/local-service && ../../scripts/go test ./internal/persistence -run '^$' -bench BenchmarkConversationSearchIndexed -benchtime=5x -benchmem`.
+
+The stable update action reads the existing manifest; the explicit beta action inspects up to 100 recent official GitHub releases and chooses the newest eligible beta, release candidate, or stable version using SemVer precedence. Both compare against the full `CoveReleaseVersion`, ignore current/older candidates, and perform discovery only. Missing metadata and network failures offer an official Releases fallback. See [update channels](adr/0030-discover-prereleases-only-through-explicit-beta-checks.md).
+
+Local search uses `GET /api/conversations/search?q=...&archived=...` behind the Browser Session, Chat, and persistence boundaries. Queries contain at most 256 Unicode characters and return at most 50 conversations with bounded excerpts and message identifiers. Queries are debounced and cancelled on replacement. SQLite narrows longer body queries through the local index, then verifies literal Unicode substrings. Chat applies a three-second deadline. See [local navigation](adr/0029-keep-history-search-and-draft-navigation-local.md).
+
 ## Local code signing
 
 On macOS, `make build-service` signs and verifies the Local Service after compilation, so `make start-local` uses the same signing path. The signing identifier is always `io.github.tokenfunplus.cove.local-service`. With no explicit selection, the build uses a single valid Developer ID Application identity, or a single Apple Development identity if no Developer ID identity exists. Multiple identities of the preferred type require an explicit selection:

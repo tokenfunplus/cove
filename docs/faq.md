@@ -55,7 +55,7 @@ See the [file chat limits](user-guide.md#ask-about-files). Previews stay local u
 
 Download the current package from [GitHub Releases](https://github.com/tokenfunplus/cove/releases), quit the running Cove app, and replace it in Applications. Existing history and settings remain in the local data directory, and Provider Keys remain in Keychain.
 
-The app's **Check for Updates** action follows the stable channel. Use GitHub Releases for beta updates until a stable release is available. See [install and upgrade](user-guide.md#install-and-upgrade).
+**Check for Updates** follows the stable channel. In updated builds, choose **Check for Beta Updates…** to explicitly discover newer published beta, release-candidate, or stable versions and open their official release page. Stable users are never offered a prerelease through the stable action. If a channel has no metadata or a request fails, the dialog offers **Open Releases**. Older builds without the beta action can use [GitHub Releases](https://github.com/tokenfunplus/cove/releases) directly. See [install and upgrade](user-guide.md#install-and-upgrade).
 
 ## Can I change the interface language?
 

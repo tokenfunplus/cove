@@ -6,6 +6,20 @@ import { afterEach, expect, test, vi } from "vitest";
 
 afterEach(() => vi.useRealTimers());
 
+test("body search displays a bounded text excerpt without rendering its HTML", () => {
+  const result = {
+    id: "found", title: "Project planning", created_at: "2026-09-10T00:00:00Z", updated_at: "2026-09-10T00:00:00Z",
+    message_id: "answer", role: "assistant", excerpt: "SQLite <script>private text</script> checklist",
+  };
+  const markup = renderToStaticMarkup(<ConversationList
+    conversations={[]} selectedId={undefined} onSelect={() => {}}
+    searchQuery="checklist" searchResults={[result]}
+  />);
+  expect(markup).toContain("Project planning");
+  expect(markup).toContain("&lt;script&gt;");
+  expect(markup).not.toContain("<script>");
+});
+
 test("conversation workspace shows an empty local history state", () => {
   const markup = renderToStaticMarkup(
     <ConversationList

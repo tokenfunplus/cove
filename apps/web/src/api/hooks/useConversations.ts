@@ -107,13 +107,17 @@ export function useClearChatData() {
 export function useConversationCache() {
   const cache = useQueryClient();
   return {
-    loadConversation: (id: string) =>
-      cache.fetchQuery({
+    loadConversation: async (id: string) => {
+      const view = await cache.fetchQuery({
         queryKey: conversationKeys.detail(id),
         queryFn: () => api.getConversation(id),
         staleTime: 0,
         retry: false,
-      }),
+      });
+      // Refresh visible searches alongside authoritative detail reconciliation.
+      void cache.invalidateQueries({ queryKey: conversationKeys.searches });
+      return view;
+    },
     loadConversations: (options: { archived?: boolean } = {}) =>
       cache.fetchQuery({
         ...conversationListOptions(options.archived),

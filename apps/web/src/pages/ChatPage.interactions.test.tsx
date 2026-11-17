@@ -36,6 +36,9 @@ vi.mock("@/api", async (importOriginal) => {
     ...original,
     getSession: vi.fn(),
     getConversations: vi.fn(),
+    searchConversations: vi.fn(),
+    createConversation: vi.fn(),
+    updateConversation: vi.fn(),
     getConversation: vi.fn(),
     getProviderProfiles: vi.fn(),
     getProviderCatalog: vi.fn(),
@@ -116,6 +119,8 @@ function configureWorkspace(targetCount = 1) {
     fixture.conversation,
     fixture.secondConversation,
   ]);
+  vi.mocked(transport.searchConversations).mockResolvedValue([]);
+  vi.mocked(transport.createConversation).mockResolvedValue({ ...fixture.secondConversation, id: "created-conversation" });
   vi.mocked(transport.getConversation).mockImplementation(async (id) =>
     id === fixture.secondConversation.id
       ? fixture.secondConversation
@@ -248,6 +253,228 @@ async function sendPrompt() {
   );
   return workspace;
 }
+
+test("staying on a conversation preserves unsent text and attachments; discarding completes a switch", async () => {
+  vi.mocked(transport.previewAttachment).mockResolvedValue({
+    id: "f".repeat(64), name: "draft.md", media_type: "text/plain", size: 6, characters: 6,
+    extraction_version: "cove-text-v1", sections: [{ id: "L1", text: "Source" }],
+  });
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "An unsent prompt\nwith another line");
+  await user.upload(screen.getByLabelText("Attach files"), new File(["Source"], "draft.md", { type: "text/markdown" }));
+  await screen.findByRole("button", { name: /Preview extracted text/ });
+  const selectSecond = () => user.click(within(screen.getByRole("navigation", { name: "Chats" })).getByText("Second chat", { exact: true }));
+  await selectSecond();
+  let dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText("Discard unsent draft?")).toBeTruthy();
+  await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+  expect((composer as HTMLTextAreaElement).value).toContain("An unsent prompt");
+  expect(screen.getByRole("button", { name: "Remove attachment: draft.md" })).toBeTruthy();
+  expect(transport.getConversation).not.toHaveBeenCalledWith(fixture.secondConversation.id);
+  await selectSecond();
+  dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Discard and continue" }));
+  await waitFor(() => expect(transport.getConversation).toHaveBeenCalledWith(fixture.secondConversation.id));
+  await waitFor(() => expect(document.querySelector(".masthead__title")?.textContent).toBe("Second chat"));
+  expect((screen.getByRole("textbox", { name: "Send message" }) as HTMLTextAreaElement).value).toBe("");
+  expect(screen.queryByRole("button", { name: "Remove attachment: draft.md" })).toBeNull();
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+test.each(["surface", "launcher"])("New Chat from the %s protects an unsent draft", async (entry) => {
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Keep this draft");
+  if (entry === "surface") await user.click(screen.getByRole("button", { name: "New conversation" }));
+  else await act(async () => {
+    window.history.replaceState(null, "", "/#new-chat");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  let dialog = await screen.findByRole("dialog");
+  expect(transport.createConversation).not.toHaveBeenCalled();
+  await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft");
+  await user.click(screen.getByRole("button", { name: "New conversation" }));
+  dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Discard and continue" }));
+  await waitFor(() => expect(transport.createConversation).toHaveBeenCalledTimes(1));
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+test.each(["switch", "archive", "launcher"])("failed cancellation keeps the current conversation and draft during %s navigation", async (destination) => {
+  const { composer, user } = await sendPrompt();
+  await user.type(composer, "Keep this next draft");
+  vi.mocked(transport.cancelGenerationBatch).mockRejectedValue(new Error("Cancellation failed"));
+  if (destination === "launcher") {
+    await act(async () => { window.location.hash = "#new-chat"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+  } else if (destination === "archive") {
+    await user.click(screen.getByRole("button", { name: "Archived chats" }));
+  } else {
+    await user.click(within(screen.getByRole("navigation", { name: "Chats" })).getByText("Second chat", { exact: true }));
+  }
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Discard and continue" }));
+  await waitFor(() => expect(transport.cancelGenerationBatch).toHaveBeenCalled());
+  await waitFor(() => expect((within(dialog).getByRole("button", { name: "Stay" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(document.querySelector(".masthead__title")?.textContent).toBe("First chat");
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this next draft");
+  expect(transport.getConversation).not.toHaveBeenCalledWith(fixture.secondConversation.id);
+  expect(transport.getConversations).not.toHaveBeenCalledWith({ archived: true });
+  expect(transport.createConversation).not.toHaveBeenCalled();
+});
+
+test("a failed batch cancellation also blocks switching away from a private run", async () => {
+  configureNearAITarget(0, "private_tee");
+  privateInference.generate.mockImplementation(async function* (_input: unknown, signal: AbortSignal): AsyncGenerator<SecureInferenceEvent> {
+    yield { type: "verifying_environment" };
+    yield { type: "streaming" };
+    await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+  });
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Private prompt");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(privateInference.generate).toHaveBeenCalled());
+  await user.type(composer, "Keep private draft");
+  vi.mocked(transport.cancelGenerationBatch).mockRejectedValue(new Error("Cancel failed"));
+  await user.click(within(screen.getByRole("navigation", { name: "Chats" })).getByText("Second chat", { exact: true }));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Discard and continue" }));
+  await waitFor(() => expect(transport.cancelGenerationBatch).toHaveBeenCalled());
+  await waitFor(() => expect((within(dialog).getByRole("button", { name: "Stay" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(transport.getConversation).not.toHaveBeenCalledWith(fixture.secondConversation.id);
+  expect(document.querySelector(".masthead__title")?.textContent).toBe("First chat");
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep private draft");
+});
+
+test.each(["empty", "draft", "failed"])("New Chat protects editing while %s creation is pending", async (scenario) => {
+  const created = { ...fixture.secondConversation, id: "created-chat", title: "Created chat" };
+  let complete!: (conversation: typeof created) => void;
+  let fail!: (error: Error) => void;
+  vi.mocked(transport.createConversation).mockReturnValue(new Promise((resolve, reject) => { complete = resolve; fail = reject; }));
+  vi.mocked(transport.getConversation).mockImplementation(async (id) => id === created.id ? created : fixture.conversation);
+  const { composer, user } = await openWorkspace();
+  if (scenario !== "empty") await user.type(composer, "Approved draft");
+  await user.click(screen.getByRole("button", { name: "New conversation" }));
+  if (scenario !== "empty") {
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Discard and continue" }));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  }
+  await waitFor(() => expect(transport.createConversation).toHaveBeenCalledTimes(1));
+  expect((composer as HTMLTextAreaElement).disabled).toBe(true);
+  expect((screen.getByLabelText("Attach files") as HTMLInputElement).disabled).toBe(true);
+  await user.type(composer, "Unapproved edit");
+  expect((composer as HTMLTextAreaElement).value).toBe(scenario === "empty" ? "" : "Approved draft");
+  await act(async () => { if (scenario === "failed") fail(new Error("Create failed")); else complete(created); });
+  if (scenario === "failed") {
+    await waitFor(() => expect((composer as HTMLTextAreaElement).disabled).toBe(false));
+    expect((composer as HTMLTextAreaElement).value).toBe("Approved draft");
+    expect(document.querySelector(".masthead__title")?.textContent).toBe("First chat");
+  } else {
+    await waitFor(() => expect(document.querySelector(".masthead__title")?.textContent).toBe("Created chat"));
+    expect((screen.getByRole("textbox", { name: "Send message" }) as HTMLTextAreaElement).value).toBe("");
+  }
+});
+
+test.each(["filter", "selected-archive"])("empty-draft %s navigation blocks edits until the request finishes", async (operation) => {
+  const { composer, user } = await openWorkspace();
+  let finish!: () => void;
+  if (operation === "filter") {
+    vi.mocked(transport.getConversations).mockReturnValueOnce(new Promise((resolve) => { finish = () => resolve([fixture.secondConversation]); }));
+    await user.click(screen.getByRole("button", { name: "Archived chats" }));
+    await waitFor(() => expect(transport.getConversations).toHaveBeenCalledWith({ archived: true }));
+  } else {
+    vi.mocked(transport.updateConversation).mockReturnValueOnce(new Promise((resolve) => { finish = () => resolve(); }));
+    vi.mocked(transport.getConversations).mockResolvedValue([fixture.secondConversation]);
+    await user.click(screen.getByRole("button", { name: /Conversation actions: First chat/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "Archive" }));
+    await waitFor(() => expect(transport.updateConversation).toHaveBeenCalled());
+  }
+  expect((composer as HTMLTextAreaElement).disabled).toBe(true);
+  await user.type(composer, "Do not lose this edit");
+  expect((composer as HTMLTextAreaElement).value).toBe("");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await act(async () => finish());
+  await waitFor(() => expect(document.querySelector(".masthead__title")?.textContent).toBe("Second chat"));
+  expect((screen.getByRole("textbox", { name: "Send message" }) as HTMLTextAreaElement).disabled).toBe(false);
+});
+
+test("an empty draft switches immediately, and body search opens its matching conversation", async () => {
+  vi.mocked(transport.searchConversations).mockResolvedValue([
+    { ...fixture.secondConversation, message_id: "matching-message", role: "assistant", excerpt: "SQLite migration checklist" },
+  ]);
+  const { user } = await openWorkspace();
+  await user.type(screen.getByRole("textbox", { name: "Search conversations" }), "SQLite migration checklist");
+  const result = await screen.findByRole("button", { name: /Second chat.*SQLite migration checklist/ });
+  await user.click(result);
+  await waitFor(() => expect(transport.getConversation).toHaveBeenCalledWith(fixture.secondConversation.id));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(transport.searchConversations).toHaveBeenCalledWith("SQLite migration checklist", false, expect.any(AbortSignal));
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+test("an attachment-only draft is protected while its local preview is pending", async () => {
+  vi.mocked(transport.previewAttachment).mockReturnValue(new Promise(() => {}));
+  const { user } = await openWorkspace();
+  await user.upload(screen.getByLabelText("Attach files"), new File(["Source"], "pending.md", { type: "text/markdown" }));
+  const unload = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(unload);
+  expect(unload.defaultPrevented).toBe(true);
+  await user.click(screen.getByRole("button", { name: "New conversation" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+  expect(screen.getByRole("button", { name: "Remove attachment: pending.md" })).toBeTruthy();
+  expect(transport.createConversation).not.toHaveBeenCalled();
+});
+
+test("changing the archive filter also asks before discarding a draft", async () => {
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Unsent work");
+  await user.click(screen.getByRole("button", { name: "Archived chats" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+  expect((composer as HTMLTextAreaElement).value).toBe("Unsent work");
+  expect(transport.getConversations).not.toHaveBeenCalledWith({ archived: true });
+});
+
+test("archive navigation confirms and waits for an active response to stop", async () => {
+  const { user } = await sendPrompt();
+  const archived = { ...fixture.secondConversation, title: "Archived chat", archived: true };
+  vi.mocked(transport.getConversations).mockImplementation(async (options) => options?.archived ? [archived] : [fixture.conversation]);
+  vi.mocked(transport.getConversation).mockImplementation(async (id) => id === archived.id ? archived : fixture.conversation);
+  vi.mocked(transport.cancelGenerationBatch).mockImplementation(async () => {
+    expect(transport.getConversations).not.toHaveBeenCalledWith({ archived: true });
+    feed.close();
+    return { ...fixture.pendingBatch, state: "stopped" };
+  });
+  await user.click(screen.getByRole("button", { name: "Archived chats" }));
+  let dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(transport.cancelGenerationBatch).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Archived chats" }));
+  dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Change chat view" }));
+  await waitFor(() => expect(document.querySelector(".masthead__title")?.textContent).toBe("Archived chat"));
+  expect(transport.cancelGenerationBatch).toHaveBeenCalledWith(fixture.pendingBatch.id);
+});
+
+test("an unchanged search refreshes when a streamed answer is saved", async () => {
+  const { user } = await sendPrompt();
+  let saved = false;
+  vi.mocked(transport.searchConversations).mockImplementation(async () => saved ? [{
+    ...fixture.conversation, excerpt: "Answer from model-one", role: "assistant",
+    message_id: fixture.completedBatch.targets[0]!.generation.assistant_message_id,
+  }] : []);
+  const search = screen.getByRole("textbox", { name: "Search conversations" });
+  await user.type(search, "Answer from model-one");
+  await screen.findByText("No entries match.");
+  saved = true;
+  vi.mocked(transport.getConversation).mockResolvedValue(fixture.completedView);
+  await act(async () => { feed.emit(0, "completed"); feed.close(); });
+  await screen.findByRole("button", { name: /First chat.*Answer from model-one/ });
+  expect((search as HTMLInputElement).value).toBe("Answer from model-one");
+  expect(transport.createGenerationBatch).toHaveBeenCalledTimes(1);
+});
 
 test("Focus mode preserves the draft and restores the previous sidebar and keyboard focus", async () => {
   const { composer, user } = await openWorkspace();

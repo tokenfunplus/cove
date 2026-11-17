@@ -519,6 +519,13 @@ func (fake *fakeChat) ReadConversation(ctx context.Context, conversationID strin
 	return fake.readConversation(ctx, conversationID)
 }
 
+func (fake *fakeChat) SearchConversations(ctx context.Context, query string, archived bool) ([]persistence.ConversationSearchResult, error) {
+	if fake.attachmentStore != nil {
+		return fake.attachmentStore.SearchConversations(ctx, query, archived)
+	}
+	return []persistence.ConversationSearchResult{}, nil
+}
+
 func (fake *fakeChat) DeleteConversation(ctx context.Context, conversationID string) error {
 	fake.deletedConversationID = conversationID
 	if fake.deleteConversation == nil {

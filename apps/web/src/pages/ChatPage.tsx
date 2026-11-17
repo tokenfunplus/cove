@@ -17,6 +17,7 @@ export function ChatPage() {
     appearance,
     connection,
     conversationView,
+    conversationNavigation,
     isLoadingConversation,
     providerProfiles,
     activeModelSet,
@@ -38,6 +39,7 @@ export function ChatPage() {
     setDraft,
     liveTurn,
     isSending,
+    isNavigating,
     secureInferenceAbortRef,
     handleCreateConversation,
     handleVerifyPrivateConnection,
@@ -174,16 +176,18 @@ export function ChatPage() {
               onCreateConversation={() => void handleCreateConversation()}
               onOpenSettings={() => setSettingsEntry("provider")}
               generationBatch={generationBatch}
+              navigation={conversationNavigation}
               generationBatches={conversationView?.generation_batches ?? []}
               liveTurn={liveTurn}
               draft={draft}
-              onDraftChange={setDraft}
+              onDraftChange={(value) => { if (!isNavigating) setDraft(value); }}
               privateMode={secureInferenceTargetSelected(
                 activeModelSet,
                 providerProfiles,
                 catalogs,
               )}
               isSending={isSending}
+              navigationBusy={isNavigating}
               providerStatus={selectionStatus}
               activeModelSet={activeModelSet}
               profiles={providerProfiles}

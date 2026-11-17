@@ -1,4 +1,5 @@
 import { useCancelGeneration } from "@/api/hooks/useGenerations";
+import { useConversationSearch } from "@/api/hooks/useConversationSearch";
 import { useProviderCatalogs } from "@/hooks/providers/use-provider-catalogs";
 
 import { inferenceModeForSnapshot } from "@/components/providers/model-selection";
@@ -27,6 +28,9 @@ export function useChatWorkspace() {
 
   const workspaceUi = useWorkspaceUi();
   const workspaceState = useWorkspaceState(workspaceUi.showingArchived);
+  const conversationSearch = useConversationSearch(
+    workspaceUi.conversationSearchQuery, workspaceUi.showingArchived, workspaceState.connection === "ready",
+  );
   const {
     selectedId,
     conversationView,
@@ -101,7 +105,7 @@ export function useChatWorkspace() {
         (message) => message.id === resumeGenerationBatch.user_message_id,
       )?.body ?? "";
     setLiveTurn(
-      liveTurnFromBatch(conversationView.id, userBody, resumeGenerationBatch),
+      { ...liveTurnFromBatch(conversationView.id, userBody, resumeGenerationBatch), restored: true },
     );
     setGenerationBatch(resumeGenerationBatch);
     setIsSending(true);
@@ -139,11 +143,6 @@ export function useChatWorkspace() {
     copy,
   });
   const { refreshCurrentConversation } = conversationActions;
-  useLauncherNavigation({
-    connection: workspaceState.connection,
-    onNewChat: conversationActions.handleCreateConversation,
-    onOpenSettings: workspaceUi.setSettingsEntry,
-  });
   const batchEvents = useBatchEvents({
     ...workspaceState,
     ...workspaceUi,
@@ -193,7 +192,15 @@ export function useChatWorkspace() {
     ...workspaceUi,
     ...generationState,
     ...generationCommands,
+    ...conversationActions,
+    attachmentDraft,
     copy,
+  });
+
+  useLauncherNavigation({
+    connection: workspaceState.connection,
+    onNewChat: conversationLifecycle.handleCreateConversation,
+    onOpenSettings: workspaceUi.setSettingsEntry,
   });
 
   const providerActions = useProviderActions({
@@ -204,6 +211,7 @@ export function useChatWorkspace() {
   });
 
   return {
+    conversationSearch,
     attachmentDraft,
     ...providerActions,
     ...workspaceState,

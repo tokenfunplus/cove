@@ -205,13 +205,29 @@ func populateGenerationBatchTargets(ctx context.Context, db batchReader, batch G
 		return GenerationBatch{}, fmt.Errorf("close generation targets: %w", err)
 	}
 	batch.Targets = make([]GenerationTarget, 0, len(pending))
+	var selected Generation
 	for _, item := range pending {
 		generation, err := scanGeneration(db.QueryRowContext(ctx, generationQuery+` WHERE id = ?`, item.generationID))
 		if err != nil {
 			return GenerationBatch{}, fmt.Errorf("load target generation: %w", err)
 		}
 		item.target.Generation = generation
+		if generation.ID == batch.SelectedGenerationID {
+			selected = generation
+		}
 		batch.Targets = append(batch.Targets, item.target)
+	}
+	if batch.SelectedGenerationID != "" {
+		if selected.ID == "" {
+			selected, err = scanGeneration(db.QueryRowContext(ctx, generationQuery+` WHERE id = ?`, batch.SelectedGenerationID))
+			if err != nil {
+				return GenerationBatch{}, fmt.Errorf("load selected answer: %w", err)
+			}
+		}
+		batch.SelectedAnswer = &SelectedAnswer{
+			GenerationID: selected.ID, AssistantMessageID: selected.AssistantMessageID,
+			ProviderName: selected.Snapshot.ProviderName, ModelID: selected.Snapshot.ModelID,
+		}
 	}
 	return batch, nil
 }
@@ -302,7 +318,12 @@ func (store *SQLiteStore) BeginGenerationAttempt(ctx context.Context, input Begi
 }
 
 func (store *SQLiteStore) SelectGenerationAnswer(ctx context.Context, generationID string) error {
-	generation, err := store.GetGeneration(ctx, generationID)
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin answer selection: %w", err)
+	}
+	defer tx.Rollback()
+	generation, err := getGenerationByIDTx(ctx, tx, generationID)
 	if err != nil {
 		return err
 	}
@@ -310,27 +331,33 @@ func (store *SQLiteStore) SelectGenerationAnswer(ctx context.Context, generation
 		return errors.New("only a completed batch generation can be selected")
 	}
 	if generation.GenerationTargetID != "" {
-		target, err := store.GetGenerationTarget(ctx, generation.GenerationTargetID)
-		if err != nil {
+		var latestID string
+		if err := tx.QueryRowContext(ctx, `SELECT latest_generation_id FROM generation_targets WHERE id = ?`, generation.GenerationTargetID).Scan(&latestID); err != nil {
 			return err
 		}
-		if target.Generation.ID != generation.ID {
+		if latestID != generation.ID {
 			return errors.New("only the latest Generation attempt can be selected")
 		}
 	}
-	batch, err := store.GetGenerationBatch(ctx, generation.GenerationBatchID)
-	if err != nil {
+	var frozen bool
+	if err := tx.QueryRowContext(ctx, `SELECT context_frozen FROM generation_batches WHERE id = ?`, generation.GenerationBatchID).Scan(&frozen); err != nil {
 		return err
 	}
-	if batch.ContextFrozen {
+	if frozen {
 		return ErrContextDispositionFrozen
 	}
-	result, err := store.db.ExecContext(ctx, `UPDATE generation_batches SET selected_generation_id = ?, context_skipped = 0, updated_at = ? WHERE id = ?`, generation.ID, time.Now().UTC().UnixNano(), generation.GenerationBatchID)
+	result, err := tx.ExecContext(ctx, `UPDATE generation_batches SET selected_generation_id = ?, context_skipped = 0, updated_at = ?
+WHERE id = ? AND context_frozen = 0 AND (? = '' OR EXISTS (
+  SELECT 1 FROM generation_targets WHERE id = ? AND latest_generation_id = ?
+))`, generation.ID, time.Now().UTC().UnixNano(), generation.GenerationBatchID, generation.GenerationTargetID, generation.GenerationTargetID, generation.ID)
 	if err != nil {
 		return fmt.Errorf("select generation answer: %w", err)
 	}
 	if count, err := result.RowsAffected(); err != nil || count != 1 {
 		return fmt.Errorf("select generation answer: %w", sql.ErrNoRows)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit answer selection: %w", err)
 	}
 	return nil
 }

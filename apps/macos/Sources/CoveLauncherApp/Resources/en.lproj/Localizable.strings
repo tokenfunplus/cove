@@ -32,3 +32,8 @@
 "Control-Option-Space may already be used by another app." = "Control-Option-Space may already be used by another app.";
 "Local Service unavailable." = "Local Service unavailable.";
 "Try restarting Cove." = "Try restarting Cove.";
+"Check for Beta Updates…" = "Check for Beta Updates…";
+"No newer beta or stable release was found." = "No newer beta or stable release was found.";
+"No release metadata is available for this channel. You can browse official releases." = "No release metadata is available for this channel. You can browse official releases.";
+"Check your connection or browse official releases to find an update." = "Check your connection or browse official releases to find an update.";
+"Open Releases" = "Open Releases";

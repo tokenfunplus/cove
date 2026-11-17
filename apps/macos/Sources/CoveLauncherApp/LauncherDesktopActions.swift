@@ -21,7 +21,7 @@ final class LauncherDesktopActions: ObservableObject {
         self.browser = browser
         self.resources = resources
         updates = UpdateChecker(
-            currentVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0",
+            currentVersion: release.version,
             manifestURL: URL(string: Bundle.main.object(forInfoDictionaryKey: "CoveUpdateManifestURL") as? String
                 ?? "https://github.com/tokenfunplus/cove/releases/latest/download/update.json")!,
             requester: URLSessionUpdateRequester()
@@ -113,10 +113,10 @@ final class LauncherDesktopActions: ObservableObject {
         catch { showNotice("Local Service unavailable.", detail: "Try restarting Cove.") }
     }
 
-    func checkForUpdates() {
+    func checkForUpdates(channel: UpdateChannel = .stable) {
         guard !checkingForUpdates else { return }
         checkingForUpdates = true
-        updates.check { [weak self] result in
+        updates.check(channel: channel) { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 self.checkingForUpdates = false
@@ -130,9 +130,19 @@ final class LauncherDesktopActions: ObservableObject {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                     if alert.runModal() == .alertFirstButtonReturn { self.browser.open(update.downloadURL) }
                 case .success(nil):
-                    self.showNotice("Cove is up to date.")
-                case .failure:
-                    self.showNotice("Update check unavailable.")
+                    self.showNotice(channel == .beta ? "No newer beta or stable release was found." : "Cove is up to date.")
+                case let .failure(error):
+                    let alert = NSAlert()
+                    alert.messageText = self.text("Update check unavailable.")
+                    alert.informativeText = self.text(error as? UpdateError == .channelUnavailable
+                        ? "No release metadata is available for this channel. You can browse official releases."
+                        : "Check your connection or browse official releases to find an update.")
+                    alert.addButton(withTitle: self.text("Open Releases"))
+                    alert.addButton(withTitle: self.text("Later"))
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        self.browser.open(URL(string: "https://github.com/tokenfunplus/cove/releases")!)
+                    }
                 }
             }
         }

@@ -52,8 +52,18 @@ export interface ConversationUpdateInput {
   archived?: boolean;
 }
 
+/** A bounded excerpt from locally retained history; no Provider request is made. */
+export interface ConversationSearchResult extends Conversation {
+  message_id?: string;
+  turn_message_id?: string;
+  role?: string;
+  excerpt?: string;
+}
+
 export interface Message {
   id: string;
+  /** Read-only origin for every saved assistant attempt, including older retries. */
+  generation_batch_id?: string;
   conversation_id: string;
   role: string;
   body: string;
@@ -293,6 +303,13 @@ export interface GenerationBatch {
   targets: GenerationTarget[];
   events_url: string;
   selected_generation_id?: string;
+  /** The saved selection, including when its Target now has a newer retry. */
+  selected_answer?: {
+    generation_id: string;
+    assistant_message_id: string;
+    provider_name: string;
+    model_id: string;
+  };
   context_skipped?: boolean;
   context_frozen?: boolean;
   created_at: string;

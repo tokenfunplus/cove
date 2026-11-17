@@ -91,6 +91,10 @@ struct CoveLauncherApp: App {
                     desktop.checkForUpdates()
                 }
                 .disabled(desktop.checkingForUpdates)
+                Button(localized("Check for Beta Updates…")) {
+                    desktop.checkForUpdates(channel: .beta)
+                }
+                .disabled(desktop.checkingForUpdates)
                 Menu(localized("Help & Feedback")) {
                     Button(localized("User Guide")) { desktop.openUserGuide() }
                     Button(localized("Report an Issue…")) { desktop.openIssueTracker() }

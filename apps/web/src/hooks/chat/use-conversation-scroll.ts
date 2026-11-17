@@ -5,6 +5,7 @@ import type {
   GenerationBatch,
 } from "@cove/api-contract";
 import type { LiveTurn } from "@/lib/chat/live-turn";
+import type { ConversationNavigation } from "@/lib/workspace-types";
 
 export function useConversationScroll({
   view,
@@ -12,12 +13,14 @@ export function useConversationScroll({
   generationBatch,
   generation,
   isLoading,
+  navigation,
 }: {
   view?: ConversationView;
   liveTurn?: LiveTurn;
   generationBatch?: GenerationBatch;
   generation?: Generation;
   isLoading?: boolean;
+  navigation?: ConversationNavigation;
 }) {
   const hasContent = Boolean(view?.messages.length || liveTurn);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -25,6 +28,8 @@ export function useConversationScroll({
   const footerRef = useRef<HTMLDivElement>(null);
   const [footerHeight, setFooterHeight] = useState(0);
   const followLatestRef = useRef(true);
+  const explicitNavigationRef = useRef(false);
+  const navigatedRequestRef = useRef<string | undefined>(undefined);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const [showReturnToLatest, setShowReturnToLatest] = useState(false);
 
@@ -42,6 +47,7 @@ export function useConversationScroll({
     const node = messageListRef.current;
     if (!node || !view) return;
     const saved = scrollPositionsRef.current[view.id];
+    explicitNavigationRef.current = false;
     if (saved !== undefined) {
       node.scrollTop = saved;
       followLatestRef.current =
@@ -54,13 +60,14 @@ export function useConversationScroll({
   }, [view?.id, isLoading]);
 
   useEffect(() => {
-    if (!liveTurn) return;
+    if (!liveTurn || liveTurn.restored) return;
     const node = messageListRef.current;
     followLatestRef.current = true;
+    explicitNavigationRef.current = false;
     setShowReturnToLatest(false);
     if (node) node.scrollTop = node.scrollHeight;
     composerRef.current?.focus();
-  }, [liveTurn?.clientRequestId]);
+  }, [liveTurn?.clientRequestId, liveTurn?.restored]);
 
   useEffect(() => {
     const node = messageListRef.current;
@@ -83,6 +90,11 @@ export function useConversationScroll({
     if (!node || !view) return;
     const distance = node.scrollHeight - node.scrollTop - node.clientHeight;
     scrollPositionsRef.current[view.id] = node.scrollTop;
+    if (explicitNavigationRef.current) {
+      followLatestRef.current = false;
+      setShowReturnToLatest(true);
+      return;
+    }
     const nearLatest = distance <= 120;
     followLatestRef.current = nearLatest;
     setShowReturnToLatest(
@@ -94,6 +106,7 @@ export function useConversationScroll({
     const node = messageListRef.current;
     if (!node) return;
     followLatestRef.current = true;
+    explicitNavigationRef.current = false;
     setShowReturnToLatest(false);
     const reducedMotion =
       typeof window !== "undefined" &&
@@ -108,12 +121,23 @@ export function useConversationScroll({
     const node = messageListRef.current;
     const anchor = node && [...node.querySelectorAll<HTMLElement>("[data-timeline-anchor]")]
       .find((item) => item.dataset.timelineAnchor === id);
-    if (!node || !anchor || !view) return;
+    if (!node || !anchor || !view) return false;
     // Stop following a stream before navigating to an earlier turn.
+    explicitNavigationRef.current = true;
     followLatestRef.current = false;
     node.scrollTo({ top: node.scrollTop + anchor.getBoundingClientRect().top - node.getBoundingClientRect().top - 12, behavior: "instant" });
     handleMessageScroll();
+    return true;
   }
+
+  useEffect(() => {
+    const node = messageListRef.current;
+    if (!node) return;
+    const resumeUserScroll = () => { explicitNavigationRef.current = false; };
+    const events = ["wheel", "touchmove", "pointerdown", "keydown"] as const;
+    for (const event of events) node.addEventListener(event, resumeUserScroll, { passive: true });
+    return () => { for (const event of events) node.removeEventListener(event, resumeUserScroll); };
+  }, [view?.id, isLoading, hasContent]);
 
   useEffect(() => {
     const node = messageListRef.current;
@@ -130,6 +154,19 @@ export function useConversationScroll({
       observer.disconnect();
     };
   }, [view?.id, isLoading, hasContent]);
+  useEffect(() => {
+    if (!navigation || !view || isLoading || navigation.conversationId !== view.id || navigatedRequestRef.current === navigation.requestId) return;
+    // Wait for the measured composer space to be committed before positioning.
+    if (footerRef.current && footerRef.current.getBoundingClientRect().height !== footerHeight) return;
+    const index = view.messages.findIndex((message) => message.id === navigation.messageId);
+    if (index < 0) return;
+    const batch = view.generation_batches?.find((item) => item.selected_answer?.assistant_message_id === navigation.messageId || item.targets.some(
+      (target) => target.generation.assistant_message_id === navigation.messageId,
+    ));
+    const anchor = batch?.user_message_id ?? view.messages.slice(0, index + 1).reverse().find((message) => message.role === "user")?.id;
+    if (anchor && scrollToMessage(anchor)) navigatedRequestRef.current = navigation.requestId;
+  }, [navigation?.requestId, view?.id, view?.messages, view?.generation_batches, isLoading, footerHeight]);
+
   return {
     messageListRef,
     composerRef,
