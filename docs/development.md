@@ -44,9 +44,11 @@ Launch at Login uses `SMAppService.mainApp` and reports pending system approval.
 
 ## History search and update discovery
 
+Schema version 16 builds a local FTS5 trigram index for existing message bodies. See [ADR-0031](adr/0031-index-local-history-substring-search.md) for migration, short-query fallback, and storage compatibility. To measure synthetic phrase searches, run `cd services/local-service && ../../scripts/go test ./internal/persistence -run '^$' -bench BenchmarkConversationSearchIndexed -benchtime=5x -benchmem`.
+
 The stable update action reads the existing manifest; the explicit beta action inspects up to 100 recent official GitHub releases and chooses the newest eligible beta, release candidate, or stable version using SemVer precedence. Both compare against the full `CoveReleaseVersion`, ignore current/older candidates, and perform discovery only. Missing metadata and network failures offer an official Releases fallback. See [update channels](adr/0030-discover-prereleases-only-through-explicit-beta-checks.md).
 
-Local search uses `GET /api/conversations/search?q=...&archived=...` behind the Browser Session, Chat, and persistence boundaries. Queries contain at most 256 Unicode characters and return at most 50 conversations with bounded excerpts and message identifiers. Queries are debounced and cancelled on replacement. SQLite uses a Unicode-aware substring function without a schema migration or duplicate index. Chat applies a three-second deadline. See [local navigation](adr/0029-keep-history-search-and-draft-navigation-local.md).
+Local search uses `GET /api/conversations/search?q=...&archived=...` behind the Browser Session, Chat, and persistence boundaries. Queries contain at most 256 Unicode characters and return at most 50 conversations with bounded excerpts and message identifiers. Queries are debounced and cancelled on replacement. SQLite narrows longer body queries through the local index, then verifies literal Unicode substrings. Chat applies a three-second deadline. See [local navigation](adr/0029-keep-history-search-and-draft-navigation-local.md).
 
 ## Local code signing
 

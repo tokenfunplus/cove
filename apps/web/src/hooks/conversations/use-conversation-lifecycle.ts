@@ -46,6 +46,8 @@ type Dependencies = Pick<
     | "setShowingArchived"
     | "confirmation"
     | "setConversationNavigation"
+    | "isNavigating"
+    | "setIsNavigating"
   > &
   Pick<GenerationCommands, "handleCancel"> &
   Pick<ConversationActions, "handleCreateConversation" | "handleConversationListMode" | "handleUpdateConversation"> &
@@ -75,6 +77,8 @@ export function useConversationLifecycle({
   selectedIdRef,
   confirmation,
   setConversationNavigation,
+  isNavigating,
+  setIsNavigating,
   draft,
   attachmentDraft,
   handleCreateConversation: createConversation,
@@ -102,24 +106,29 @@ export function useConversationLifecycle({
   }, [hasDraft]);
 
   async function handleCreateConversation() {
+    if (isNavigating) return;
     if (hasDraft || activeGeneration) {
       setConfirmation({ kind: "new", discardDraft: hasDraft, stopGeneration: activeGeneration });
       return;
     }
-    await createConversation();
+    setIsNavigating(true);
+    try { await createConversation(); }
+    finally { setIsNavigating(false); }
   }
 
   async function handleConversationListMode(archived: boolean) {
-    if (archived === showingArchived || activeGeneration) return;
-    if (hasDraft) {
-      setConfirmation({ kind: "navigate", discardDraft: true, navigationAction: () => changeListMode(archived) });
+    if (isNavigating) return;
+    if (archived === showingArchived) return;
+    if (hasDraft || activeGeneration) {
+      setConfirmation({ kind: "navigate", discardDraft: hasDraft, stopGeneration: activeGeneration, navigationAction: () => changeListMode(archived) });
     } else await changeListMode(archived);
   }
 
   async function handleUpdateConversation(id: string, input: { pinned?: boolean; archived?: boolean }) {
-    if (id === selectedId && input.archived !== undefined && input.archived !== showingArchived && hasDraft) {
-      setConfirmation({ kind: "navigate", discardDraft: true, navigationAction: () => updateConversation(id, input) });
-    } else await updateConversation(id, input);
+    if (isNavigating) return;
+    if (id === selectedId && input.archived !== undefined && input.archived !== showingArchived && (hasDraft || activeGeneration)) {
+      setConfirmation({ kind: "navigate", discardDraft: hasDraft, stopGeneration: activeGeneration, navigationAction: () => updateConversation(id, input) });
+    } else if (!isSending) await updateConversation(id, input);
   }
 
   function navigateToConversation(id: string, messageId?: string) {
@@ -129,6 +138,7 @@ export function useConversationLifecycle({
   }
 
   async function handleSelectConversation(id: string, messageId?: string) {
+    if (isNavigating) return;
     if (id === selectedId) {
       if (messageId) navigateToConversation(id, messageId);
       return;
@@ -174,7 +184,7 @@ export function useConversationLifecycle({
         secureInferenceAbortRef.current ||
         secureGenerationRunsRef.current.size > 0
       ) {
-        await handleCancel();
+        if (!(await handleCancel())) throw new Error("Generation cancellation failed");
         if (generationBatch) {
           const stopped = await loadBatch(generationBatch.id);
           if (stopped.state === "pending" || stopped.state === "streaming")
@@ -203,28 +213,31 @@ export function useConversationLifecycle({
 
   async function confirmRequestedAction() {
     const request = confirmation;
-    if (!request) return;
+    if (!request || isNavigating) return;
+    if (request.kind === "switch" || request.kind === "new" || request.kind === "navigate") {
+      setIsNavigating(true);
+      try {
+        const needsStop = Boolean(
+          secureInferenceAbortRef.current ||
+          secureGenerationRunsRef.current.size > 0 ||
+          generationBatch?.state === "pending" ||
+          generationBatch?.state === "streaming" || isSending
+        );
+        if (needsStop && !(await handleCancel())) return;
+        if (request.kind === "navigate") await request.navigationAction?.();
+        else if (request.kind === "new") {
+          if (!(await createConversation())) return;
+        } else if (request.conversationId) {
+          navigateToConversation(request.conversationId, request.messageId);
+        }
+        setConfirmation(undefined);
+        setMobileSidebarOpen(false);
+      } finally {
+        setIsNavigating(false);
+      }
+      return;
+    }
     setConfirmation(undefined);
-    if (request.kind === "navigate") {
-      await request.navigationAction?.();
-      return;
-    }
-    if (request.kind === "switch" || request.kind === "new") {
-      const activeGeneration =
-        generationBatch &&
-        (generationBatch.state === "pending" ||
-          generationBatch.state === "streaming");
-      if (
-        secureInferenceAbortRef.current ||
-        secureGenerationRunsRef.current.size > 0 ||
-        activeGeneration || isSending
-      )
-        await handleCancel();
-      if (request.kind === "new") await createConversation();
-      else if (request.conversationId) navigateToConversation(request.conversationId, request.messageId);
-      setMobileSidebarOpen(false);
-      return;
-    }
     if (request.kind === "delete" && request.conversationId) {
       await deleteConfirmedConversation(request.conversationId);
       return;

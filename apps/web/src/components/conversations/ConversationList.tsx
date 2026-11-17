@@ -229,7 +229,6 @@ export function ConversationList({
             title={showingArchived ? copy.allChats : copy.archivedChats}
             aria-pressed={showingArchived}
             className={workspaceStyles.conversationList_archiveToggle}
-            disabled={deleteDisabled}
             onClick={() => onShowArchived(!showingArchived)}
             type="button"
           >

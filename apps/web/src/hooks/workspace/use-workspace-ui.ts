@@ -84,6 +84,7 @@ export function useWorkspaceUi() {
   }, [focusMode, exitFocusMode]);
 
   const [confirmation, setConfirmation] = useState<ConfirmationRequest>();
+  const [isNavigating, setIsNavigating] = useState(false);
 
   const [showingArchived, setShowingArchived] = useState(false);
 
@@ -119,6 +120,8 @@ export function useWorkspaceUi() {
     exitFocusMode,
     confirmation,
     setConfirmation,
+    isNavigating,
+    setIsNavigating,
     showingArchived,
     setShowingArchived,
     renameTarget,

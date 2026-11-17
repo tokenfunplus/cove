@@ -62,6 +62,8 @@ export interface ConversationSearchResult extends Conversation {
 
 export interface Message {
   id: string;
+  /** Read-only origin for every saved assistant attempt, including older retries. */
+  generation_batch_id?: string;
   conversation_id: string;
   role: string;
   body: string;

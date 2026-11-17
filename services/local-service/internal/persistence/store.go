@@ -19,7 +19,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 15
+const schemaVersion = 16
 
 const defaultConversationTitle = "New conversation"
 
@@ -120,12 +120,13 @@ type Conversation struct {
 }
 
 type Message struct {
-	ID               string            `json:"id"`
-	ConversationID   string            `json:"conversation_id"`
-	Role             string            `json:"role"`
-	Body             string            `json:"body"`
-	ProviderSnapshot *ProviderSnapshot `json:"provider_snapshot,omitempty"`
-	CreatedAt        time.Time         `json:"created_at"`
+	ID                string            `json:"id"`
+	GenerationBatchID string            `json:"generation_batch_id,omitempty"`
+	ConversationID    string            `json:"conversation_id"`
+	Role              string            `json:"role"`
+	Body              string            `json:"body"`
+	ProviderSnapshot  *ProviderSnapshot `json:"provider_snapshot,omitempty"`
+	CreatedAt         time.Time         `json:"created_at"`
 }
 
 type MessageInput struct {
@@ -653,6 +654,12 @@ PRAGMA user_version = 15;
 `); err != nil {
 			return fmt.Errorf("apply SQLite migration 15: %w", err)
 		}
+		version = 15
+	}
+	if version == 15 {
+		if _, err := tx.Exec(conversationSearchMigration); err != nil {
+			return fmt.Errorf("apply SQLite migration 16: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit SQLite migration: %w", err)
@@ -718,7 +725,9 @@ func (store *SQLiteStore) LoadConversation(ctx context.Context, id string) (Conv
 	if err != nil {
 		return ConversationView{}, fmt.Errorf("load conversation: %w", err)
 	}
-	rows, err := store.db.QueryContext(ctx, `SELECT id, conversation_id, role, body, provider_snapshot, created_at FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, id ASC`, id)
+	rows, err := store.db.QueryContext(ctx, `SELECT m.id, m.conversation_id, m.role, m.body, m.provider_snapshot, m.created_at, COALESCE(g.generation_batch_id, '')
+FROM messages m LEFT JOIN generations g ON g.assistant_message_id = m.id
+WHERE m.conversation_id = ? ORDER BY m.created_at ASC, m.id ASC`, id)
 	if err != nil {
 		return ConversationView{}, fmt.Errorf("load conversation messages: %w", err)
 	}
@@ -728,7 +737,7 @@ func (store *SQLiteStore) LoadConversation(ctx context.Context, id string) (Conv
 		var message Message
 		var snapshot sql.NullString
 		var createdAt int64
-		if err := rows.Scan(&message.ID, &message.ConversationID, &message.Role, &message.Body, &snapshot, &createdAt); err != nil {
+		if err := rows.Scan(&message.ID, &message.ConversationID, &message.Role, &message.Body, &snapshot, &createdAt, &message.GenerationBatchID); err != nil {
 			return ConversationView{}, fmt.Errorf("scan message: %w", err)
 		}
 		if snapshot.Valid {

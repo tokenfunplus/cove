@@ -120,7 +120,7 @@ function markdownExport(view: ConversationView): string {
   ]));
   const answersByBatch = new Map<string, Message[]>();
   for (const message of view.messages) {
-    const batchId = answerBatches.get(message.id);
+    const batchId = message.generation_batch_id ?? answerBatches.get(message.id);
     if (batchId) answersByBatch.set(batchId, [...(answersByBatch.get(batchId) ?? []), message]);
   }
   function appendMessage(message: Message, batch?: GenerationBatch) {

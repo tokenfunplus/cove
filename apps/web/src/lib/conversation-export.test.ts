@@ -91,6 +91,26 @@ test("exports the original Selected Answer even when its Target has a newer retr
   expect(markdown).toContain(fixture.completedView.messages[1]!.body);
 });
 
+test("an older unselected attempt remains grouped with its original turn after retry", () => {
+  const fixture = createWorkspaceFixture(2);
+  const batch = structuredClone(fixture.completedBatch);
+  batch.selected_generation_id = batch.targets[1]!.generation.id;
+  const old = { ...fixture.completedView.messages[1]!, generation_batch_id: batch.id };
+  const retry = { ...old, id: "retry-answer", body: "A newer retry answer" };
+  batch.targets[0]!.generation = { ...batch.targets[0]!.generation, id: "retry-generation", assistant_message_id: retry.id };
+  const followup = { ...fixture.completedView.messages[0]!, id: "followup", body: "A later user prompt" };
+  const view = { ...fixture.completedView, generation_batches: [batch], messages: [fixture.completedView.messages[0]!, old, fixture.completedView.messages[2]!, followup, retry] };
+  const original = JSON.stringify(view);
+  const markdown = buildConversationExport(view, "markdown").content;
+  for (const answer of [old, retry]) {
+    expect(markdown.indexOf(answer.body)).toBeGreaterThan(markdown.indexOf("## Turn 1"));
+    expect(markdown.indexOf(answer.body)).toBeLessThan(markdown.indexOf(followup.body));
+    expect(markdown.split(answer.body)).toHaveLength(2);
+  }
+  expect(markdown).not.toContain("\n## Assistant\n");
+  expect(JSON.stringify(view)).toBe(original);
+});
+
 test("builds a portable local Markdown export with message and snapshot context", () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-09-17T03:00:00Z"));

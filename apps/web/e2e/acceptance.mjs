@@ -1129,15 +1129,25 @@ try {
   // Body search uses persisted local text, and navigation protects unsent work.
   const searchPhrase = "SQLite migration checklist \u4f60\u597d";
   const searchFixture = await api("/api/conversations", "POST", { title: "Local search fixture" });
-  await api("/api/conversations/" + searchFixture.id + "/messages", "POST", {
-    body: searchPhrase, client_request_id: randomBytes(16).toString("hex"),
-  });
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const view = await api("/api/conversations/" + searchFixture.id);
-    if (view.generation_batches[0]?.targets.every((target) => target.generation.state === "completed")) break;
-    await pause(100);
-    if (attempt === 99) throw new Error("Search fixture did not finish");
+  let matchingTurn;
+  const earlierPrompt = "An earlier unrelated prompt\n" + "Earlier local history line.\n".repeat(30);
+  for (const [index, body] of [earlierPrompt, searchPhrase].entries()) {
+    await api("/api/conversations/" + searchFixture.id + "/messages", "POST", {
+      body, client_request_id: randomBytes(16).toString("hex"),
+    });
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const view = await api("/api/conversations/" + searchFixture.id);
+      const batch = view.generation_batches[index];
+      if (batch?.targets.every((target) => target.generation.state === "completed")) {
+        if (index === 0) await api("/api/generation-batches/" + batch.id + "/skip-context", "POST");
+        else matchingTurn = batch.user_message_id;
+        break;
+      }
+      await pause(100);
+      if (attempt === 99) throw new Error("Search fixture did not finish");
+    }
   }
+  assert(matchingTurn, "The later search turn was not saved");
   const beforeSearchRequests = requests.length;
   await fill("#generation-input", "Preserve this unsent draft");
   await click('button[aria-label="New conversation"]');
@@ -1155,6 +1165,15 @@ try {
   await until(`!!document.querySelector('.confirmation-dialog__panel')`);
   await clickText("Discard and continue", ".confirmation-dialog__panel");
   await until(`document.querySelector('.masthead__title').textContent==='Local search fixture' && !!document.querySelector('[data-timeline-anchor]')`);
+  await until(`(() => {
+    const anchors = [...document.querySelectorAll('[data-timeline-anchor]')];
+    const target = anchors.find(node => node.dataset.timelineAnchor === ${JSON.stringify(matchingTurn)});
+    if (anchors.length !== 2 || !target) return false;
+    const list = document.querySelector('.message-list');
+    const requested = list.scrollTop + target.getBoundingClientRect().top - list.getBoundingClientRect().top - 12;
+    const expected = Math.min(list.scrollHeight - list.clientHeight, requested);
+    return expected > 0 && Math.abs(list.scrollTop - expected) < 3;
+  })()`);
   assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "");
   assert.equal(requests.length, beforeSearchRequests, "Search or draft navigation contacted a Provider");
   await snapshot("body-search-and-draft-protection");

@@ -256,12 +256,12 @@ export function useGenerationCommands({
     }
   }
 
-  async function handleCancel() {
+  async function handleCancel(): Promise<boolean> {
     // File parsing may still be settling the creation command. Stop that new
     // Batch as soon as its identity arrives, rather than cancelling an older turn.
     if (pendingSubmissionRef.current) {
       pendingSubmissionRef.current.cancelRequested = true;
-      return;
+      return true;
     }
     const activeBatchID = generationBatch?.id;
     const runs = [...secureGenerationRunsRef.current.values()].filter(
@@ -270,27 +270,37 @@ export function useGenerationCommands({
     if (runs.length > 0) {
       for (const run of runs) run.controller.abort();
       const batchCancellation = generationBatch
-        ? cancelGenerationBatch(generationBatch.id).catch(() => undefined)
-        : Promise.resolve();
+        ? cancelGenerationBatch(generationBatch.id).then(() => true).catch((error) => {
+            setFeedback(generationErrorMessage(error, copy));
+            return false;
+          })
+        : Promise.resolve(true);
       await Promise.allSettled([
         ...runs.map((run) => run.finished),
         batchCancellation,
       ]);
-      return;
+      return batchCancellation;
     }
     if (secureInferenceAbortRef.current) {
       secureInferenceAbortRef.current.abort();
-      await secureInferenceFinishedRef.current;
-      return;
+      try {
+        await secureInferenceFinishedRef.current;
+        return true;
+      } catch (error) {
+        setFeedback(generationErrorMessage(error, copy));
+        return false;
+      }
     }
     if (!generationBatch) {
-      return;
+      return true;
     }
     try {
       const stopped = await cancelGenerationBatch(generationBatch.id);
       setGenerationBatch(stopped);
+      return true;
     } catch (error) {
       setFeedback(generationErrorMessage(error, copy));
+      return false;
     }
   }
 

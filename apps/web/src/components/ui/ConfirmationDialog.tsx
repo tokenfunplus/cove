@@ -17,6 +17,7 @@ export function ConfirmationDialog({
   confirmLabel,
   cancelLabel,
   destructive = false,
+  busy = false,
   onCancel,
   onConfirm,
   copy = englishConversationCopy,
@@ -27,6 +28,7 @@ export function ConfirmationDialog({
   confirmLabel: string;
   cancelLabel?: string;
   destructive?: boolean;
+  busy?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   copy?: ApplicationCopy;
@@ -34,7 +36,7 @@ export function ConfirmationDialog({
   return (
     <Dialog
       className={cn(settingsStyles.conversationDialog, "confirmation-dialog")}
-      onClose={onCancel}
+      onClose={() => { if (!busy) onCancel(); }}
       open={open}
     >
       <DialogOverlay className={settingsStyles.conversationDialog_backdrop} />
@@ -57,6 +59,7 @@ export function ConfirmationDialog({
             <Button
               variant="outline"
               autoFocus={destructive}
+              disabled={busy}
               onClick={onCancel}
               type="button"
             >
@@ -65,6 +68,8 @@ export function ConfirmationDialog({
             <Button
               variant="outline"
               autoFocus={!destructive}
+              disabled={busy}
+              aria-busy={busy}
               className={cn(
                 settingsStyles.confirmationDialog_confirm,
                 destructive

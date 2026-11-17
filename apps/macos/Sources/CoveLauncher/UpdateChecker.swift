@@ -180,6 +180,7 @@ private struct Version: Comparable, Sendable {
     let prerelease: [String]
 
     init?(_ value: String) {
+        guard !value.isEmpty else { return nil }
         let build = value.split(separator: "+", omittingEmptySubsequences: false)
         guard build.count <= 2, build.count == 1 || validIdentifiers(String(build[1]), numericLeadingZeros: true) else { return nil }
         let version = build[0].split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)

@@ -62,6 +62,8 @@ Search, pin, archive, rename, or export conversations from the workspace. Histor
 
 Search matches titles and saved user/assistant text, including Unicode content, within the current active or archived list. Message matches show a short excerpt; selecting one opens its originating turn. Up to 50 conversations are returned per search, so refine broad queries. Search stays on your Mac and does not send content to a Provider.
 
+Updated builds index saved message text locally; the first launch after upgrading builds that index for existing history. For larger histories, use at least three characters to benefit from indexed phrase matching. Shorter queries remain supported through a local scan.
+
 ![Local history search showing a matching message excerpt and its conversation, using synthetic content](images/history-search.png)
 
 Switching conversations, changing the archive filter, or starting a new chat asks before discarding unsent text or attachments, including files whose preview is still loading. Stay keeps the current draft; Discard and continue completes navigation. Browser navigation also requests confirmation for an unsent draft where supported. Drafts are held in memory rather than saved to browser storage.

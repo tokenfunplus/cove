@@ -52,6 +52,9 @@ func TestLocalSearchRequiresSessionAndReturnsOnlyMatchingExcerpt(t *testing.T) {
 			if len(results) != 1 || results[0].MessageID != message.ID {
 				t.Fatal("message match was not returned")
 			}
+			if !strings.Contains(results[0].Excerpt, "SQLite migration checklist") {
+				t.Fatalf("matching excerpt was not returned: %q", results[0].Excerpt)
+			}
 		}
 	}
 }

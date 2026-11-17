@@ -5,7 +5,6 @@ import {
   useUpdateConversation,
 } from "@/api/hooks/useConversations";
 
-import { type GenerationState } from "@/hooks/chat/use-generation-state";
 import { type WorkspaceState } from "@/hooks/workspace/use-workspace-state";
 import { type WorkspaceUi } from "@/hooks/workspace/use-workspace-ui";
 import { type ApplicationCopy } from "@/messages";
@@ -24,7 +23,7 @@ type Dependencies = Pick<
     WorkspaceState,
     "setSelectedId" | "setConnection" | "selectedIdRef" | "setConversationView"
   > &
-  Pick<GenerationState, "isSending"> & { copy: ApplicationCopy };
+  { copy: ApplicationCopy };
 
 export function useConversationActions({
   setFeedback,
@@ -39,7 +38,6 @@ export function useConversationActions({
   setConversationView,
   setRenameTarget,
   setDownloadTarget,
-  isSending,
 }: Dependencies) {
   const createConversation = useCreateConversation().mutateAsync;
   const renameConversation = useRenameConversation().mutateAsync;
@@ -58,8 +56,10 @@ export function useConversationActions({
       setSelectedId(conversation.id);
       setConnection("ready");
       setMobileSidebarOpen(false);
+      return true;
     } catch {
       setFeedback(copy.createFailed);
+      return false;
     }
   }
 
@@ -97,9 +97,6 @@ export function useConversationActions({
     conversationID: string,
     input: { pinned?: boolean; archived?: boolean },
   ) {
-    if (isSending) {
-      return;
-    }
     setFeedback(undefined);
     try {
       await updateConversation({ id: conversationID, input: input });
@@ -122,7 +119,7 @@ export function useConversationActions({
   }
 
   async function handleConversationListMode(nextShowingArchived: boolean) {
-    if (isSending || nextShowingArchived === showingArchived) {
+    if (nextShowingArchived === showingArchived) {
       return;
     }
     setFeedback(undefined);

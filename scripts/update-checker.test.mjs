@@ -15,19 +15,28 @@ test("update discovery orders prereleases, keeps stable opt-in, and handles unav
 final class Requester: UpdateRequesting {
     let data: Data
     let status: Int
-    init(_ json: String, _ status: Int) { data = Data(json.utf8); self.status = status }
-    func get(url: URL, completion: @escaping @Sendable (Data?, Int?) -> Void) { completion(data, status) }
+    let expectedURL: String
+    init(_ json: String, _ status: Int, _ expectedURL: String) { data = Data(json.utf8); self.status = status; self.expectedURL = expectedURL }
+    func get(url: URL, completion: @escaping @Sendable (Data?, Int?) -> Void) {
+        precondition(url.absoluteString == expectedURL, "Wrong update channel URL")
+        completion(data, status)
+    }
 }
 final class ResultBox: @unchecked Sendable { var value: Result<AppUpdate?, Error>? }
 func check(_ current: String, _ remote: String, _ channel: UpdateChannel = .beta, status: Int = 200, payload: String? = nil) -> Result<AppUpdate?, Error> {
     let json = payload ?? (channel == .beta
         ? "[{\\"tag_name\\":\\"v" + remote + "\\",\\"draft\\":false,\\"html_url\\":\\"https://untrusted.example/\\"}]"
         : "{\\"version\\":\\"" + remote + "\\",\\"download_url\\":\\"https://github.com/tokenfunplus/cove/releases\\"}")
-    let requester = Requester(json, status)
+    let requester = Requester(json, status, channel == .beta
+        ? "https://api.github.com/repos/tokenfunplus/cove/releases?per_page=100"
+        : "https://updates.example.test/stable.json")
     let box = ResultBox()
     UpdateChecker(currentVersion: current, manifestURL: URL(string: "https://updates.example.test/stable.json")!, requester: requester)
         .check(channel: channel) { box.value = $0 }
     return box.value!
+}
+for channel in [UpdateChannel.stable, .beta] {
+    guard case .failure(UpdateError.invalidCurrentVersion) = check("", "0.1.0", channel) else { fatalError("An empty installed version was accepted") }
 }
 for (older, newer) in [("0.1.0-beta.2", "0.1.0-beta.3"), ("0.1.0-beta.3", "0.1.0-beta.10"), ("0.1.0-beta.10", "0.1.0"), ("0.1.0-rc.2", "0.1.0-rc.10")] {
     guard case let .success(update?) = check(older, newer) else { fatalError("Newer prerelease was not offered") }

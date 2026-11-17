@@ -74,6 +74,7 @@ export function ConversationPanel({
   onDraftChange,
   privateMode = true,
   isSending = false,
+  navigationBusy = false,
   providerStatus = "ready",
   onCancelTarget,
   onSelectAnswer,
@@ -101,6 +102,7 @@ export function ConversationPanel({
   onDraftChange?: (value: string) => void;
   privateMode?: boolean;
   isSending?: boolean;
+  navigationBusy?: boolean;
   providerStatus?: ProviderSelectionStatus;
   onCancelTarget?: (batchID: string, generationID: string) => void;
   onSelectAnswer?: (batchID: string, generationID: string) => void;
@@ -853,6 +855,7 @@ export function ConversationPanel({
               onSend={onSend}
               onCancel={onCancel}
               isSending={isSending}
+              navigationBusy={navigationBusy}
               catalogLoading={catalogLoading}
               privateMode={privateMode}
               composerRef={composerRef}

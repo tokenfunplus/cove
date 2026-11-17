@@ -302,6 +302,8 @@ const messages = {
   confirmDiscardDraft: "Your unsent text and attachments will be discarded if you continue.",
   confirmDiscardDraftAndStop: "Continuing will stop the current response and discard your unsent text and attachments.",
   confirmStopAndCreate: "Stop the current response and start a new conversation?",
+  changeChatView: "Change chat view",
+  confirmStopAndNavigate: "Stop the current response and change the chat view?",
   discardAndContinue: "Discard and continue",
   stay: "Stay",
   searchPlaceholder: "Search conversations",
