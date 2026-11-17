@@ -169,11 +169,18 @@ case "$cove_launch_url" in
   "http://$cove_listener"/launch?token=*) ;;
   *) cat "$cove_package_dir/launcher.log" >&2; exit 1 ;;
 esac
-cove_cookie_jar="$cove_package_dir/browser-cookies.txt"
-curl --fail --silent --show-error --location \
-  --connect-timeout 1 --max-time 2 \
-  --cookie-jar "$cove_cookie_jar" --cookie "$cove_cookie_jar" \
-  "$cove_launch_url" >"$cove_package_dir/chat-surface.html"
+cove_session_location="$(curl --fail --silent --show-error --connect-timeout 1 --max-time 2 \
+  --output /dev/null --write-out '%{redirect_url}' "$cove_launch_url")"
+case "$cove_session_location" in
+  "http://$cove_listener"/#cove-session=*) ;;
+  *) printf '%s\n' 'Launcher did not issue a browser session fragment' >&2; exit 1 ;;
+esac
+cove_session_token="${cove_session_location##*#cove-session=}"
+printf 'header = "X-Cove-Session-Token: %s"\n' "$cove_session_token" |
+  curl --config - --fail --silent --show-error --connect-timeout 1 --max-time 2 \
+    "http://$cove_listener/api/session" > /dev/null
+curl --fail --silent --show-error --connect-timeout 1 --max-time 2 \
+  "http://$cove_listener/" >"$cove_package_dir/chat-surface.html"
 grep -q 'id="root"' "$cove_package_dir/chat-surface.html"
 test "$(sqlite3 "$cove_data_dir/cove.sqlite" 'SELECT value FROM package_acceptance_marker;')" = "preserve-this-database"
 

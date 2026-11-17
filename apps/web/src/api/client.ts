@@ -1,10 +1,74 @@
 import { type ErrorEnvelope, type SessionResponse } from "@cove/api-contract";
 
+const sessionStorageKey = "cove.browser-session";
+const sessionFragment = "#cove-session=";
+
+function loadBrowserSession(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  if (window.location.hash.startsWith(sessionFragment)) {
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const token = fragment.get("cove-session");
+    const intent = fragment.get("intent");
+    const action =
+      intent === "settings" || intent === "new-chat" ? "#" + intent : "";
+    window.history.replaceState(
+      window.history.state,
+      "",
+      window.location.pathname + window.location.search + action,
+    );
+    try {
+      if (token) window.sessionStorage.setItem(sessionStorageKey, token);
+      else window.sessionStorage.removeItem(sessionStorageKey);
+    } catch {
+      // A tab without storage can still use the current launch.
+    }
+    return token || undefined;
+  }
+  try {
+    return window.sessionStorage.getItem(sessionStorageKey) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const sessionToken = loadBrowserSession();
 let csrfToken: string | undefined;
 
 export function browserSessionHeaders(): Record<string, string> {
-  return csrfToken ? { "X-Cove-CSRF-Token": csrfToken } : {};
+  const headers: Record<string, string> = {};
+  if (sessionToken) headers["X-Cove-Session-Token"] = sessionToken;
+  if (csrfToken) headers["X-Cove-CSRF-Token"] = csrfToken;
+  return headers;
 }
+
+export function fetchLocalService(
+  path: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  // A redirect or an absolute URL must not carry local credentials elsewhere.
+  if (!path.startsWith("/") || path.startsWith("//") || /[\\\u0000-\u0020]/.test(path)) {
+    return Promise.reject(new Error("Invalid Local Service path"));
+  }
+  const headers = new Headers(init.headers);
+  for (const [name, value] of Object.entries(browserSessionHeaders())) {
+    headers.set(name, value);
+  }
+  return fetchSameOrigin(path, { ...init, headers });
+}
+
+/** Protect the local session even when a caller uses an SDK-built Request. */
+export const fetchSameOrigin: typeof fetch = (input, init) => {
+  if (typeof window !== "undefined") {
+    const url = new URL(
+      input instanceof Request ? input.url : input,
+      window.location.origin,
+    );
+    if (url.origin !== window.location.origin) {
+      return Promise.reject(new Error("Invalid Local Service origin"));
+    }
+  }
+  return fetch(input, { ...init, credentials: "omit", redirect: "error" });
+};
 
 export class LocalServiceError extends Error {
   constructor(readonly envelope: ErrorEnvelope) {
@@ -28,7 +92,6 @@ function localServiceUnavailable(
 
 export async function getSession(): Promise<SessionResponse> {
   const session = await fetchJSON<SessionResponse>("/api/session", {
-    credentials: "same-origin",
     headers: { Accept: "application/json" },
   });
   csrfToken = session.csrf_token;
@@ -46,16 +109,13 @@ export async function request<T>(
 
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  if (!isSafeMethod(method) && csrfToken) {
-    headers.set("X-Cove-CSRF-Token", csrfToken);
-  }
-  return fetchJSON<T>(path, { ...init, credentials: "same-origin", headers });
+  return fetchJSON<T>(path, { ...init, headers });
 }
 
 async function fetchJSON<T>(path: string, init: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, init);
+    response = await fetchLocalService(path, init);
   } catch {
     throw localServiceUnavailable();
   }

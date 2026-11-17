@@ -1,4 +1,4 @@
-import { browserSessionHeaders } from "@/api";
+import { browserSessionHeaders, fetchSameOrigin } from "@/api";
 
 const NVIDIA_ISSUER = "https://nras.attestation.nvidia.com";
 const NVIDIA_JWKS_URL = `${NVIDIA_ISSUER}/.well-known/jwks.json`;
@@ -33,7 +33,7 @@ export async function verifyNvidiaEvidenceViaSameOriginProxy(
       : window.location.origin);
   const headers = new Headers(options.headers ?? browserSessionHeaders());
   headers.set("Content-Type", "application/json");
-  const response = await fetch(new URL("/api/verification/nvidia", origin), {
+  const response = await fetchSameOrigin(new URL("/api/verification/nvidia", origin), {
     method: "POST",
     headers,
     body: payload,

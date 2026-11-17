@@ -33,8 +33,11 @@ func TestNearAIProxyForwardsEncryptedCompletionBytesAndProtocolHeaders(t *testin
 	request.Header.Set("X-Model-Pub-Key", "model-public-key")
 	request.Header.Set("X-Client-Pub-Key", "browser-public-key")
 	request.Header.Set("X-Encryption-Version", "2")
+	request.Header.Set("X-Encrypt-All-Fields", "true")
+	request.Header.Set("X-No-Aliasing", "true")
 	request.Header.Set("Cookie", "cove_session=local-session")
 	request.Header.Set("X-Cove-CSRF-Token", "csrf-token")
+	request.Header.Set("X-Cove-Session-Token", "session-token")
 	recorder := httptest.NewRecorder()
 
 	if err := proxy.Forward(recorder, request, "nearai", "/v1/chat/completions"); err != nil {
@@ -64,6 +67,17 @@ func TestNearAIProxyForwardsEncryptedCompletionBytesAndProtocolHeaders(t *testin
 	}
 	if got := upstream.Header.Get("X-Cove-CSRF-Token"); got != "" {
 		t.Fatalf("proxy leaked local CSRF token upstream: %q", got)
+	}
+	if upstream.Header.Get("X-Encrypt-All-Fields") != "true" || upstream.Header.Get("X-No-Aliasing") != "true" {
+		t.Fatal("proxy dropped a pinned SDK encryption option")
+	}
+	if upstream.Header.Get("X-Cove-Session-Token") != "" {
+		t.Fatal("proxy forwarded a local Browser Session token")
+	}
+	if recorder.Header().Get("X-Content-Type-Options") != "nosniff" ||
+		recorder.Header().Get("Cache-Control") != "no-store" ||
+		recorder.Header().Get("Content-Security-Policy") == "" {
+		t.Fatal("proxy response is missing local content isolation headers")
 	}
 	if got, err := io.ReadAll(upstream.Body); err != nil || string(got) != `{"messages":[{"content":"ciphertext"}]}` {
 		t.Fatal("proxy did not preserve the protected request body")
@@ -181,4 +195,19 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return function(request)
+}
+
+func TestProtocolProxyRejectsUnsupportedMedia(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/html"}},
+		Body:       io.NopCloser(bytes.NewBufferString("document")),
+	}
+	if err := writeProtocolResponse(recorder, response, false); !errors.Is(err, ErrProxyProtocol) {
+		t.Fatalf("unsupported response returned %v", err)
+	}
+	if recorder.Body.Len() != 0 {
+		t.Fatal("the proxy exposed an unsupported response body")
+	}
 }

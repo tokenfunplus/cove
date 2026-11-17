@@ -8,12 +8,7 @@ import {
   useSettleSecureGeneration,
 } from "@/api/hooks/useGenerations";
 
-import {
-  inferenceModeForMetadata,
-  inferenceModeForSnapshot,
-  modelMetadataForTarget,
-  type ModelCatalogs,
-} from "@/components/providers/model-selection";
+import { inferenceModeForSnapshot } from "@/components/providers/model-selection";
 import { type GenerationState } from "@/hooks/chat/use-generation-state";
 import { type ConversationActions } from "@/hooks/conversations/use-conversation-actions";
 import { type WorkspaceState } from "@/hooks/workspace/use-workspace-state";
@@ -41,10 +36,9 @@ type Dependencies = Pick<
     "selectedIdRef" | "setConversationView" | "providerProfiles"
   > &
   Pick<ConversationActions, "refreshCurrentConversation"> &
-  Pick<WorkspaceUi, "showingArchived"> & { catalogs: ModelCatalogs };
+  Pick<WorkspaceUi, "showingArchived">;
 
 export function usePrivateGeneration({
-  catalogs,
   setLiveTurn,
   setGenerationBatch,
   refreshCurrentConversation,
@@ -104,14 +98,7 @@ export function usePrivateGeneration({
     run = (async () => {
       let assistantBody = "";
       let settled = false;
-      const mode =
-        inferenceModeForSnapshot(target.generation.snapshot) ??
-        inferenceModeForMetadata(
-          modelMetadataForTarget(catalogs, {
-            providerId: target.provider_id,
-            modelId: target.model_id,
-          }),
-        );
+      const mode = inferenceModeForSnapshot(target.generation.snapshot);
       const updatePhase = (phase: LiveTurnPhase) => {
         setLiveTurn((current) =>
           current

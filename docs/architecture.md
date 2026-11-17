@@ -57,7 +57,7 @@ File chat saves original bytes, extracted source sections, and the augmented use
 
 Chat expires abandoned browser Generations after the inference timeout plus settlement grace. Slow SSE subscribers are disconnected without blocking Provider workers and can reconnect to reconcile persisted results. See [bounded lifetimes and event delivery](adr/0022-bound-browser-generation-lifetimes.md).
 
-Single-model turns select their completed answers automatically. Comparisons require the user to select one answer or skip the turn for later context. Later batches capture immutable Context Snapshots. Unselected answers remain local. Retries preserve original context and model targets.
+Single-model turns select their completed answers automatically. Comparisons require the user to select one answer or skip the turn for later context. Later batches capture immutable Context Snapshots. Unselected answers remain local. Retries preserve original context, model targets, and any Private TEE requirement. The Chat Surface sends the selected target identities and its Private TEE requirements with a new turn. Chat checks them against one current catalog per Provider before saving the turn.
 
 ## Private inference boundary
 

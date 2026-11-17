@@ -153,6 +153,7 @@ function configureNearAITarget(
     target.provider_id = nearAI.id;
     Object.assign(target.generation.snapshot, {
       provider_id: nearAI.id,
+      provider_kind: nearAI.kind,
       privacy_mode: mode,
     });
   }
@@ -337,6 +338,7 @@ test("a streamed answer reconciles with saved history without appearing twice", 
     {
       body: "A test prompt",
       clientRequestId: expect.any(String),
+      expectedTargets: [{ provider_id: "provider-one", model_id: "model-one", require_private_tee: false }],
     },
   );
   expect((composer as HTMLTextAreaElement).value).toBe("");

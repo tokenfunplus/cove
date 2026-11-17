@@ -167,12 +167,15 @@ try {
     origin + "/launch?token=" + encodeURIComponent(ready.launch_token),
     { redirect: "manual" },
   );
-  const cookie = launch.headers.getSetCookie()[0].split(";")[0];
+  const launchLocation = new URL(launch.headers.get("Location"), origin);
+  const browserSession = new URLSearchParams(launchLocation.hash.slice(1)).get("cove-session");
+  assert(browserSession, "Launch did not issue a browser session");
+  assert.equal(launch.headers.getSetCookie().length, 0);
   const session = await fetch(origin + "/api/session", {
-    headers: { Cookie: cookie },
+    headers: { "X-Cove-Session-Token": browserSession },
   }).then((r) => r.json());
   const headers = {
-    Cookie: cookie,
+    "X-Cove-Session-Token": browserSession,
     Origin: origin,
     "Content-Type": "application/json",
     "X-Cove-CSRF-Token": session.csrf_token,
@@ -426,6 +429,8 @@ try {
     url: origin + "/launch?token=" + encodeURIComponent(token.launch_token),
   });
   await until('!!document.querySelector(".conversation-welcome")');
+  assert.equal(await evaluate("window.location.hash"), "", "Launch proof must be removed from the address bar");
+  assert.equal(await evaluate("document.cookie"), "", "Cove credentials must stay out of cookies");
   await until(
     `document.querySelector('.model-selector')?.dataset.catalogStatus === 'loading' && !!document.querySelector('#generation-input')`,
   );
@@ -888,6 +893,8 @@ try {
   await escapeKey();
   await until(`!document.querySelector('[role="dialog"]')`);
   assert.equal(await evaluate(`document.querySelector('main').dataset.focusMode`), "true", "Escape must dismiss a dialog before Focus");
+  // Radix restores the dialog trigger after unmount. Wait before another keypress.
+  await until(`document.activeElement?.matches('.workspace__header button[aria-label="Privacy Status"]')`);
   await escapeKey();
   await until(`!document.querySelector('main').dataset.focusMode`);
   assert.equal(await evaluate(`document.querySelector('.conversation-sidebar').className`), normalReadingLayout.sidebar);
@@ -1299,6 +1306,13 @@ try {
   await until(
     `document.querySelector('[role=dialog]')?.textContent.includes('Synthetic PDF source')`,
   );
+  await clickText("Download original file", "[role=dialog]");
+  let downloadedSource;
+  for (let attempt = 0; attempt < 50 && !downloadedSource; attempt++) {
+    downloadedSource = await readFile(path.join(downloads, "source.pdf")).catch(() => undefined);
+    if (!downloadedSource) await pause(100);
+  }
+  assert(downloadedSource?.subarray(0, 5).toString() === "%PDF-", "The source dialog did not download the original PDF");
   await snapshot("source-citation-reloaded");
   await cdp("Emulation.setDeviceMetricsOverride", {
     width: 390,

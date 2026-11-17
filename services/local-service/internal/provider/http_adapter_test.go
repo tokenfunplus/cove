@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -265,5 +266,27 @@ func writeJSONForTest(t *testing.T, writer http.ResponseWriter, value any) {
 	writer.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(writer).Encode(value); err != nil {
 		t.Fatalf("write test JSON: %v", err)
+	}
+}
+
+func TestLoopbackHTTPProviderBypassesConfiguredProxy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(`{"data":[{"id":"local-model"}]}`))
+	}))
+	defer upstream.Close()
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = func(*http.Request) (*url.URL, error) {
+		return nil, errors.New("the configured proxy must not handle loopback HTTP")
+	}
+	adapter := NewHTTPAdapter(&http.Client{Transport: transport})
+	for _, host := range []string{"localhost.", "127.0.0.1."} {
+		profile := Profile{
+			Kind: KindOpenAICompatible, AuthMethod: AuthBearer,
+			Endpoint: strings.Replace(upstream.URL, "127.0.0.1", host, 1),
+		}
+		models, err := adapter.ListModels(context.Background(), profile, credentials.Secret{Value: "fixture-key"})
+		if err != nil || len(models) != 1 || models[0] != "local-model" {
+			t.Fatalf("list models from loopback host %s: %v", host, err)
+		}
 	}
 }

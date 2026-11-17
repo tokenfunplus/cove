@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -37,11 +38,11 @@ func TestNearAIProxyAPIUsesTheBrowserSessionAndDoesNotExposeTheProviderKey(t *te
 		}, nil
 	})})
 	server := NewServer(Config{LaunchToken: "launch-token", NearAIProxy: proxy})
-	cookie, _ := launchBrowserSession(t, server)
+	token, _ := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/nearai/nearai/v1/attestation/report?nonce=fixture", nil)
 	request.Host = "127.0.0.1:47123"
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK || response.Body.String() != `{"gateway_attestation":{}}` {
@@ -73,12 +74,12 @@ func TestNearAIModelMetadataPreservesEncodedModelIDsAndRequiresABrowserSession(t
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"metadata":{"providerType":"vllm","attestationSupported":true}}`))}, nil
 	})})
 	server := NewServer(Config{LaunchToken: "launch-token", NearAIProxy: proxy})
-	cookie, _ := launchBrowserSession(t, server)
+	token, _ := launchBrowserSession(t, server)
 	for _, authorized := range []bool{false, true} {
 		request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/nearai/nearai/v1/model/org%2Fprivate-model", nil)
 		request.Host = "127.0.0.1:47123"
 		if authorized {
-			request.AddCookie(cookie)
+			request.Header.Set("X-Cove-Session-Token", token)
 		}
 		response := httptest.NewRecorder()
 		server.Handler().ServeHTTP(response, request)
@@ -109,27 +110,27 @@ func TestNearAIProxyAPIForwardsAnEncryptedCompletionOnlyWithBrowserSessionCSRF(t
 		}, nil
 	})})
 	server := NewServer(Config{LaunchToken: "launch-token", NearAIProxy: proxy})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/nearai/nearai/v1/chat/completions", strings.NewReader(`{"messages":[{"content":"ciphertext"}]}`))
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
 	request.Header.Set("X-Encryption-Version", "2")
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK || forwarded != 1 {
 		t.Fatal("authorized browser completion did not reach the NearAI proxy")
 	}
 
-	for _, token := range []string{"", "wrong-csrf-token"} {
+	for _, proof := range []string{"", "wrong-csrf-token"} {
 		blocked := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/nearai/nearai/v1/chat/completions", strings.NewReader(`{"messages":[{"content":"ciphertext"}]}`))
 		blocked.Host = "127.0.0.1:47123"
 		blocked.Header.Set("Origin", "http://127.0.0.1:47123")
-		blocked.Header.Set("X-Cove-CSRF-Token", token)
+		blocked.Header.Set("X-Cove-CSRF-Token", proof)
 		blocked.Header.Set("X-Encryption-Version", "2")
-		blocked.AddCookie(cookie)
+		blocked.Header.Set("X-Cove-Session-Token", token)
 		blockedResponse := httptest.NewRecorder()
 		server.Handler().ServeHTTP(blockedResponse, blocked)
 		if blockedResponse.Code != http.StatusForbidden {
@@ -160,13 +161,13 @@ func TestNearAIProxyAPIForwardsGatewayResponsesWithBrowserSessionCSRF(t *testing
 		}, nil
 	})})
 	server := NewServer(Config{LaunchToken: "launch-token", NearAIProxy: proxy})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/nearai/nearai/v1/responses", strings.NewReader(`{"model":"openai/gpt-4.1-mini","input":[{"role":"user","content":"ping"}],"stream":true}`))
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK || forwarded != 1 {
@@ -179,7 +180,7 @@ func TestNearAIProxyAPIForwardsGatewayResponsesWithBrowserSessionCSRF(t *testing
 	missing := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/nearai/nearai/v1/responses", strings.NewReader(`{"model":"openai/gpt-4.1-mini"}`))
 	missing.Host = "127.0.0.1:47123"
 	missing.Header.Set("Origin", "http://127.0.0.1:47123")
-	missing.AddCookie(cookie)
+	missing.Header.Set("X-Cove-Session-Token", token)
 	missingResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(missingResponse, missing)
 	if missingResponse.Code != http.StatusForbidden || forwarded != 1 {
@@ -218,14 +219,14 @@ func TestNvidiaNRASProxyUsesFixedUpstreamAndPreservesTheResponse(t *testing.T) {
 		}, nil
 	})})
 	server := NewServer(Config{LaunchToken: "launch-token", NvidiaNRASProxy: proxy})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/verification/nvidia", strings.NewReader(evidence))
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -260,13 +261,13 @@ func TestNvidiaNRASProxyRejectsUnauthorizedAndOversizedEvidenceBeforeForwarding(
 		t.Fatalf("unauthorized NVIDIA proxy status = %d, want %d", unauthorizedResponse.Code, http.StatusUnauthorized)
 	}
 
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 	oversized := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/verification/nvidia", bytes.NewReader(bytes.Repeat([]byte("x"), 3<<20)))
 	oversized.Host = "127.0.0.1:47123"
 	oversized.Header.Set("Origin", "http://127.0.0.1:47123")
 	oversized.Header.Set("Content-Type", "application/json")
 	oversized.Header.Set("X-Cove-CSRF-Token", csrf)
-	oversized.AddCookie(cookie)
+	oversized.Header.Set("X-Cove-Session-Token", token)
 	oversizedResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(oversizedResponse, oversized)
 	if oversizedResponse.Code != http.StatusRequestEntityTooLarge {
@@ -305,13 +306,13 @@ func TestGenerationAPICreatesABatchAndStreamsUnifiedEvents(t *testing.T) {
 	close(events)
 	chatService := &fakeChat{generation: generation, events: events}
 	server := NewServer(Config{LaunchToken: "launch-token", Chat: chatService})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/conversations/conversation-1/messages", bytes.NewBufferString(`{"provider_id":"provider-1","model_id":"model-a","client_request_id":"request-1","body":"Hello"}`))
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusCreated {
@@ -333,7 +334,7 @@ func TestGenerationAPICreatesABatchAndStreamsUnifiedEvents(t *testing.T) {
 
 	sse := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/generation-batches/batch-1/events", nil)
 	sse.Host = "127.0.0.1:47123"
-	sse.AddCookie(cookie)
+	sse.Header.Set("X-Cove-Session-Token", token)
 	sseResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(sseResponse, sse)
 	if sseResponse.Code != http.StatusOK || sseResponse.Header().Get("Content-Type") != "text/event-stream" {
@@ -349,13 +350,13 @@ func TestGenerationAPIReturnsConflictWhenAnotherGenerationIsActive(t *testing.T)
 		LaunchToken: "launch-token",
 		Chat:        &fakeChat{startErr: chat.ErrGenerationInProgress},
 	})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/conversations/conversation-1/messages", bytes.NewBufferString(`{"provider_id":"provider-1","model_id":"model-a","client_request_id":"request-1","body":"Hello"}`))
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -369,12 +370,12 @@ func TestGenerationAPIReturnsConflictWhenAnotherGenerationIsActive(t *testing.T)
 
 func TestGenerationBatchAPIRequiresAComparisonContextDisposition(t *testing.T) {
 	server := NewServer(Config{LaunchToken: "launch-token", Chat: &fakeChat{startErr: persistence.ErrContextDispositionRequired}})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/conversations/conversation-1/messages", bytes.NewBufferString(`{"client_request_id":"request-2","body":"Follow-up"}`))
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -393,12 +394,12 @@ func TestSettingsAPIRejectsActiveModelSetChangesWhileABatchIsRunning(t *testing.
 		t.Fatalf("save settings: %v", err)
 	}
 	server := NewServer(Config{LaunchToken: "launch-token", Settings: store, Chat: &fakeChat{activeBatch: true}})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 	request := httptest.NewRequest(http.MethodPatch, "http://127.0.0.1:47123/api/settings", bytes.NewBufferString(`{"theme":"system","locale":"system","system_prompt":"","active_model_set":[{"provider_id":"provider-b","model_id":"model-b"}]}`))
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -420,13 +421,13 @@ func TestGenerationBatchAPICreatesAComparisonAndStreamsTargetIdentifiedEvents(t 
 	close(events)
 	chatService := &fakeChat{batch: batch, batchEvents: events}
 	server := NewServer(Config{LaunchToken: "launch-token", Chat: chatService})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	create := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/conversations/conversation-1/messages", bytes.NewBufferString(`{"client_request_id":"request-1","body":"Compare this"}`))
 	create.Host = "127.0.0.1:47123"
 	create.Header.Set("Origin", "http://127.0.0.1:47123")
 	create.Header.Set("X-Cove-CSRF-Token", csrf)
-	create.AddCookie(cookie)
+	create.Header.Set("X-Cove-Session-Token", token)
 	createResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(createResponse, create)
 	if createResponse.Code != http.StatusCreated {
@@ -445,7 +446,7 @@ func TestGenerationBatchAPICreatesAComparisonAndStreamsTargetIdentifiedEvents(t 
 
 	sse := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/generation-batches/batch-1/events", nil)
 	sse.Host = "127.0.0.1:47123"
-	sse.AddCookie(cookie)
+	sse.Header.Set("X-Cove-Session-Token", token)
 	sseResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(sseResponse, sse)
 	if sseResponse.Code != http.StatusOK || !strings.Contains(sseResponse.Body.String(), `"batch_id":"batch-1"`) || !strings.Contains(sseResponse.Body.String(), `"target_id":"target-b"`) {
@@ -596,10 +597,6 @@ func (fake *fakeChat) SettleSecureGeneration(context.Context, persistence.Secure
 	return fake.generation, nil
 }
 
-func (fake *fakeChat) RetryGeneration(context.Context, string, string, string) (chat.GenerationStart, error) {
-	return chat.GenerationStart{Generation: fake.generation}, nil
-}
-
 func (fake *fakeChat) StartGenerationBatch(ctx context.Context, input chat.SendInput) (chat.GenerationBatchStart, error) {
 	fake.batchStartInput = input
 	if fake.startErr != nil {
@@ -664,21 +661,16 @@ func TestLaunchTokenCreatesOneBrowserSession(t *testing.T) {
 	if launchResponse.Code != http.StatusSeeOther {
 		t.Fatalf("launch status = %d, want %d", launchResponse.Code, http.StatusSeeOther)
 	}
-	if location := launchResponse.Header().Get("Location"); location != "/" {
-		t.Fatalf("launch redirect = %q, want /", location)
-	}
-
-	cookies := launchResponse.Result().Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("launch cookies = %d, want 1", len(cookies))
-	}
-	if !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
-		t.Fatalf("browser session cookie must be HttpOnly and SameSite=Strict: %#v", cookies[0])
-	}
-
+	token := browserSessionFromLaunch(t, launchResponse)
 	session := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/session", nil)
 	session.Host = "127.0.0.1:47123"
-	session.AddCookie(cookies[0])
+	session.AddCookie(&http.Cookie{Name: "cove_session", Value: token})
+	cookieOnly := httptest.NewRecorder()
+	server.Handler().ServeHTTP(cookieOnly, session)
+	if cookieOnly.Code != http.StatusUnauthorized {
+		t.Fatalf("ambient cookie was accepted: %d", cookieOnly.Code)
+	}
+	session.Header.Set("X-Cove-Session-Token", token)
 	sessionResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(sessionResponse, session)
 
@@ -707,7 +699,7 @@ func TestBrowserMutationsRequireLoopbackOriginAndCSRF(t *testing.T) {
 		LaunchToken:  "launch-token",
 		ControlToken: "control-token",
 	})
-	cookie, csrfToken := launchBrowserSession(t, server)
+	token, csrfToken := launchBrowserSession(t, server)
 
 	foreignHost := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/health", nil)
 	foreignHost.Host = "chat.example.test"
@@ -723,7 +715,7 @@ func TestBrowserMutationsRequireLoopbackOriginAndCSRF(t *testing.T) {
 	wrongOrigin := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/session", nil)
 	wrongOrigin.Host = "127.0.0.1:47123"
 	wrongOrigin.Header.Set("Origin", "http://attacker.example.test")
-	wrongOrigin.AddCookie(cookie)
+	wrongOrigin.Header.Set("X-Cove-Session-Token", token)
 	wrongOriginResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(wrongOriginResponse, wrongOrigin)
 	if wrongOriginResponse.Code != http.StatusForbidden {
@@ -736,7 +728,7 @@ func TestBrowserMutationsRequireLoopbackOriginAndCSRF(t *testing.T) {
 	missingCSRF := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/session", nil)
 	missingCSRF.Host = "127.0.0.1:47123"
 	missingCSRF.Header.Set("Origin", "http://127.0.0.1:47123")
-	missingCSRF.AddCookie(cookie)
+	missingCSRF.Header.Set("X-Cove-Session-Token", token)
 	missingCSRFResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(missingCSRFResponse, missingCSRF)
 	if missingCSRFResponse.Code != http.StatusForbidden {
@@ -750,7 +742,7 @@ func TestBrowserMutationsRequireLoopbackOriginAndCSRF(t *testing.T) {
 	withCSRF.Host = "127.0.0.1:47123"
 	withCSRF.Header.Set("Origin", "http://127.0.0.1:47123")
 	withCSRF.Header.Set("X-Cove-CSRF-Token", csrfToken)
-	withCSRF.AddCookie(cookie)
+	withCSRF.Header.Set("X-Cove-Session-Token", token)
 	withCSRFResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(withCSRFResponse, withCSRF)
 	if withCSRFResponse.Code != http.StatusNotFound {
@@ -766,11 +758,11 @@ func TestAuthorizedBrowserLoadsEmbeddedReactShell(t *testing.T) {
 		LaunchToken:  "launch-token",
 		ControlToken: "control-token",
 	})
-	cookie, _ := launchBrowserSession(t, server)
+	token, _ := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/", nil)
 	request.Host = "127.0.0.1:47123"
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -799,11 +791,11 @@ func TestLauncherControlRequiresItsOwnToken(t *testing.T) {
 			shutdowns++
 		},
 	})
-	cookie, _ := launchBrowserSession(t, server)
+	token, _ := launchBrowserSession(t, server)
 
 	browserRequest := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/internal/control/shutdown", nil)
 	browserRequest.Host = "127.0.0.1:47123"
-	browserRequest.AddCookie(cookie)
+	browserRequest.Header.Set("X-Cove-Session-Token", token)
 	browserResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(browserResponse, browserRequest)
 	if browserResponse.Code != http.StatusUnauthorized {
@@ -849,11 +841,11 @@ func TestAuthorizedBrowserLoadsEmbeddedReactJavaScript(t *testing.T) {
 		LaunchToken:  "launch-token",
 		ControlToken: "control-token",
 	})
-	cookie, _ := launchBrowserSession(t, server)
+	token, _ := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/assets/app.js", nil)
 	request.Host = "127.0.0.1:47123"
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -870,11 +862,11 @@ func TestUnknownAPIRequestsUseTheErrorEnvelope(t *testing.T) {
 		LaunchToken:  "launch-token",
 		ControlToken: "control-token",
 	})
-	cookie, _ := launchBrowserSession(t, server)
+	token, _ := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/unknown", nil)
 	request.Host = "127.0.0.1:47123"
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -936,13 +928,13 @@ func TestConversationAPIProvidesOfflineHistoryCRUD(t *testing.T) {
 	defer store.Close()
 	chatService := historyFakeChat(store)
 	server := NewServer(Config{LaunchToken: "launch-token", Store: store, Chat: chatService})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	create := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/conversations", bytes.NewBufferString(`{"title":"Offline chat"}`))
 	create.Host = "127.0.0.1:47123"
 	create.Header.Set("Origin", "http://127.0.0.1:47123")
 	create.Header.Set("X-Cove-CSRF-Token", csrf)
-	create.AddCookie(cookie)
+	create.Header.Set("X-Cove-Session-Token", token)
 	createResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(createResponse, create)
 	if createResponse.Code != http.StatusCreated {
@@ -964,7 +956,7 @@ func TestConversationAPIProvidesOfflineHistoryCRUD(t *testing.T) {
 	rename.Host = "127.0.0.1:47123"
 	rename.Header.Set("Origin", "http://127.0.0.1:47123")
 	rename.Header.Set("X-Cove-CSRF-Token", csrf)
-	rename.AddCookie(cookie)
+	rename.Header.Set("X-Cove-Session-Token", token)
 	renameResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(renameResponse, rename)
 	if renameResponse.Code != http.StatusNoContent {
@@ -973,7 +965,7 @@ func TestConversationAPIProvidesOfflineHistoryCRUD(t *testing.T) {
 
 	list := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/conversations", nil)
 	list.Host = "127.0.0.1:47123"
-	list.AddCookie(cookie)
+	list.Header.Set("X-Cove-Session-Token", token)
 	listResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(listResponse, list)
 	if listResponse.Code != http.StatusOK {
@@ -989,7 +981,7 @@ func TestConversationAPIProvidesOfflineHistoryCRUD(t *testing.T) {
 
 	conversationRequest := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/conversations/"+created.ID, nil)
 	conversationRequest.Host = "127.0.0.1:47123"
-	conversationRequest.AddCookie(cookie)
+	conversationRequest.Header.Set("X-Cove-Session-Token", token)
 	conversationResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(conversationResponse, conversationRequest)
 	if conversationResponse.Code != http.StatusOK {
@@ -1005,7 +997,7 @@ func TestConversationAPIProvidesOfflineHistoryCRUD(t *testing.T) {
 
 	messages := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/conversations/"+created.ID+"/messages", nil)
 	messages.Host = "127.0.0.1:47123"
-	messages.AddCookie(cookie)
+	messages.Header.Set("X-Cove-Session-Token", token)
 	messagesResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(messagesResponse, messages)
 	if messagesResponse.Code != http.StatusOK {
@@ -1028,7 +1020,7 @@ func TestConversationAPIDeletesAConversation(t *testing.T) {
 	defer store.Close()
 	chatService := &fakeChat{deleteConversation: store.DeleteConversation}
 	server := NewServer(Config{LaunchToken: "launch-token", Store: store, Chat: chatService})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 	conversation, err := store.CreateConversation(context.Background(), "Delete locally")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -1038,7 +1030,7 @@ func TestConversationAPIDeletesAConversation(t *testing.T) {
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -1061,7 +1053,7 @@ func TestConversationAPIUpdatesPinnedAndArchivedConversationState(t *testing.T) 
 	defer store.Close()
 	chatService := historyFakeChat(store)
 	server := NewServer(Config{LaunchToken: "launch-token", Store: store, Chat: chatService})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 	conversation, err := store.CreateConversation(context.Background(), "Organize locally")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -1072,7 +1064,7 @@ func TestConversationAPIUpdatesPinnedAndArchivedConversationState(t *testing.T) 
 		request.Host = "127.0.0.1:47123"
 		request.Header.Set("Origin", "http://127.0.0.1:47123")
 		request.Header.Set("X-Cove-CSRF-Token", csrf)
-		request.AddCookie(cookie)
+		request.Header.Set("X-Cove-Session-Token", token)
 		response := httptest.NewRecorder()
 		server.Handler().ServeHTTP(response, request)
 		return response
@@ -1083,7 +1075,7 @@ func TestConversationAPIUpdatesPinnedAndArchivedConversationState(t *testing.T) 
 
 	activeRequest := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/conversations", nil)
 	activeRequest.Host = "127.0.0.1:47123"
-	activeRequest.AddCookie(cookie)
+	activeRequest.Header.Set("X-Cove-Session-Token", token)
 	activeResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(activeResponse, activeRequest)
 	var active []persistence.Conversation
@@ -1099,7 +1091,7 @@ func TestConversationAPIUpdatesPinnedAndArchivedConversationState(t *testing.T) 
 	}
 	archivedRequest := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/conversations?archived=true", nil)
 	archivedRequest.Host = "127.0.0.1:47123"
-	archivedRequest.AddCookie(cookie)
+	archivedRequest.Header.Set("X-Cove-Session-Token", token)
 	archivedResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(archivedResponse, archivedRequest)
 	var archived []persistence.Conversation
@@ -1127,12 +1119,12 @@ func TestChatDataAPIClearsConversationHistoryWithoutLeakingSensitiveErrors(t *te
 		t.Run(scenario.name, func(t *testing.T) {
 			chatService := &fakeChat{clearChatData: func(context.Context) error { return scenario.clearErr }}
 			server := NewServer(Config{LaunchToken: "launch-token", Chat: chatService})
-			cookie, csrf := launchBrowserSession(t, server)
+			token, csrf := launchBrowserSession(t, server)
 			request := httptest.NewRequest(http.MethodDelete, "http://127.0.0.1:47123/api/data", nil)
 			request.Host = "127.0.0.1:47123"
 			request.Header.Set("Origin", "http://127.0.0.1:47123")
 			request.Header.Set("X-Cove-CSRF-Token", csrf)
-			request.AddCookie(cookie)
+			request.Header.Set("X-Cove-Session-Token", token)
 			response := httptest.NewRecorder()
 			server.Handler().ServeHTTP(response, request)
 
@@ -1166,11 +1158,11 @@ func TestSettingsAPIReadsAndUpdatesWorkspaceSettings(t *testing.T) {
 	}
 	defer store.Close()
 	server := NewServer(Config{LaunchToken: "launch-token", Settings: store})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	get := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/settings", nil)
 	get.Host = "127.0.0.1:47123"
-	get.AddCookie(cookie)
+	get.Header.Set("X-Cove-Session-Token", token)
 	getResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(getResponse, get)
 	if getResponse.Code != http.StatusOK {
@@ -1188,7 +1180,7 @@ func TestSettingsAPIReadsAndUpdatesWorkspaceSettings(t *testing.T) {
 	patch.Host = "127.0.0.1:47123"
 	patch.Header.Set("Origin", "http://127.0.0.1:47123")
 	patch.Header.Set("X-Cove-CSRF-Token", csrf)
-	patch.AddCookie(cookie)
+	patch.Header.Set("X-Cove-Session-Token", token)
 	patchResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(patchResponse, patch)
 	if patchResponse.Code != http.StatusOK {
@@ -1209,13 +1201,13 @@ func TestGenerationAPILeavesModelSelectionToChat(t *testing.T) {
 	generation := persistence.Generation{ID: "generation-1", ConversationID: "conversation-1", Snapshot: persistence.ProviderSnapshot{ProviderID: "provider-1", ModelID: "model-a"}}
 	chatService := &fakeChat{generation: generation, events: closedGenerationEvents()}
 	server := NewServer(Config{LaunchToken: "launch-token", Chat: chatService})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/conversations/conversation-1/messages", bytes.NewBufferString(`{"provider_id":"provider-1","model_id":"model-a","client_request_id":"request-1","body":"Hello"}`))
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -1235,13 +1227,13 @@ func TestGenerationAPIRequiresACompleteActiveProviderAndModelSelection(t *testin
 	defer store.Close()
 	chatService := &fakeChat{startErr: chat.ErrProviderSelectionRequired}
 	server := NewServer(Config{LaunchToken: "launch-token", Chat: chatService, Settings: store})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/conversations/conversation-1/messages", bytes.NewBufferString(`{"provider_id":"provider-1","model_id":"model-a","client_request_id":"request-1","body":"Hello"}`))
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -1273,13 +1265,13 @@ func TestGenerationAPILeavesTheGlobalSystemPromptToChat(t *testing.T) {
 	close(events)
 	chatService := &fakeChat{generation: generation, events: events}
 	server := NewServer(Config{LaunchToken: "launch-token", Chat: chatService, Settings: store})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/conversations/conversation-1/messages", bytes.NewBufferString(`{"provider_id":"provider-1","model_id":"model-a","client_request_id":"request-1","body":"Hello","system_prompt":"Use this untrusted prompt instead."}`))
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -1298,7 +1290,7 @@ func TestConversationAPIReportsMissingConversationWhenAddingAMessage(t *testing.
 	}
 	defer store.Close()
 	server := NewServer(Config{LaunchToken: "launch-token", Store: store, Chat: &fakeChat{startErr: sql.ErrNoRows}})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 	if err := store.UpdateSettings(context.Background(), persistence.Settings{Theme: "system", Locale: "system", ActiveProviderID: "provider-1", ActiveModelID: "model-a"}); err != nil {
 		t.Fatalf("save active selection: %v", err)
 	}
@@ -1307,7 +1299,7 @@ func TestConversationAPIReportsMissingConversationWhenAddingAMessage(t *testing.
 	request.Host = "127.0.0.1:47123"
 	request.Header.Set("Origin", "http://127.0.0.1:47123")
 	request.Header.Set("X-Cove-CSRF-Token", csrf)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -1326,7 +1318,7 @@ func TestConversationAPIRejectsNonUserOrBlankMessages(t *testing.T) {
 	}
 	defer store.Close()
 	server := NewServer(Config{LaunchToken: "launch-token", Store: store, Chat: &fakeChat{}})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 	conversation, err := store.CreateConversation(context.Background(), "Offline chat")
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
@@ -1337,7 +1329,7 @@ func TestConversationAPIRejectsNonUserOrBlankMessages(t *testing.T) {
 		request.Host = "127.0.0.1:47123"
 		request.Header.Set("Origin", "http://127.0.0.1:47123")
 		request.Header.Set("X-Cove-CSRF-Token", csrf)
-		request.AddCookie(cookie)
+		request.Header.Set("X-Cove-Session-Token", token)
 		response := httptest.NewRecorder()
 		server.Handler().ServeHTTP(response, request)
 		if response.Code != http.StatusBadRequest {
@@ -1356,11 +1348,11 @@ func TestConversationAPIReturnsAnEmptyArrayForEmptyHistory(t *testing.T) {
 	}
 	defer store.Close()
 	server := NewServer(Config{LaunchToken: "launch-token", Store: store})
-	cookie, _ := launchBrowserSession(t, server)
+	token, _ := launchBrowserSession(t, server)
 
 	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/conversations", nil)
 	request.Host = "127.0.0.1:47123"
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 
@@ -1422,13 +1414,13 @@ func TestProviderAPIConfiguresAndTestsAProviderWithoutReturningItsSecret(t *test
 		LaunchToken:   "launch-token",
 		ProviderSetup: providerconfig.NewService(store, credentials.NewMemoryStore(), upstream.Client()),
 	})
-	cookie, csrf := launchBrowserSession(t, server)
+	token, csrf := launchBrowserSession(t, server)
 
 	create := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/models", bytes.NewBufferString(`{"kind":"openai_compatible","name":"Fixture","endpoint":"`+upstream.URL+`","model_id":"model-a","auth_method":"bearer","secret":"super-secret-key"}`))
 	create.Host = "127.0.0.1:47123"
 	create.Header.Set("Origin", "http://127.0.0.1:47123")
 	create.Header.Set("X-Cove-CSRF-Token", csrf)
-	create.AddCookie(cookie)
+	create.Header.Set("X-Cove-Session-Token", token)
 	createResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(createResponse, create)
 	if createResponse.Code != http.StatusCreated {
@@ -1441,7 +1433,7 @@ func TestProviderAPIConfiguresAndTestsAProviderWithoutReturningItsSecret(t *test
 
 	list := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/models", nil)
 	list.Host = "127.0.0.1:47123"
-	list.AddCookie(cookie)
+	list.Header.Set("X-Cove-Session-Token", token)
 	listResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(listResponse, list)
 	if listResponse.Code != http.StatusOK || strings.Contains(listResponse.Body.String(), "super-secret-key") {
@@ -1476,22 +1468,20 @@ func TestProviderAPIPersistsAConfiguredSecretThroughTheKeychain(t *testing.T) {
 	serviceName := fmt.Sprintf("io.github.tokenfunplus.cove.test.%d", time.Now().UnixNano())
 	keychain := credentials.NewKeychainStore(serviceName)
 	var saved providerconfig.Profile
-	t.Cleanup(func() {
+	setup := providerconfig.NewService(store, keychain, upstream.Client())
+	defer func() {
 		if saved.ID != "" {
-			_ = keychain.Delete(context.Background(), saved.ID)
+			_ = setup.Delete(context.Background(), saved.ID)
 		}
-	})
-	server := NewServer(Config{
-		LaunchToken:   "launch-token",
-		ProviderSetup: providerconfig.NewService(store, keychain, upstream.Client()),
-	})
-	cookie, csrf := launchBrowserSession(t, server)
+	}()
+	server := NewServer(Config{LaunchToken: "launch-token", ProviderSetup: setup})
+	token, csrf := launchBrowserSession(t, server)
 
 	create := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:47123/api/models", bytes.NewBufferString(`{"kind":"openai_compatible","name":"Fixture","endpoint":"`+upstream.URL+`","model_id":"fixture-model","auth_method":"bearer","secret":"fixture-key"}`))
 	create.Host = "127.0.0.1:47123"
 	create.Header.Set("Origin", "http://127.0.0.1:47123")
 	create.Header.Set("X-Cove-CSRF-Token", csrf)
-	create.AddCookie(cookie)
+	create.Header.Set("X-Cove-Session-Token", token)
 	createResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(createResponse, create)
 	if createResponse.Code != http.StatusCreated {
@@ -1504,7 +1494,7 @@ func TestProviderAPIPersistsAConfiguredSecretThroughTheKeychain(t *testing.T) {
 	if !saved.Configured || saved.ID == "" {
 		t.Fatalf("saved provider configured = %t, id present = %t", saved.Configured, saved.ID != "")
 	}
-	secret, err := keychain.Get(context.Background(), saved.ID)
+	_, secret, err := setup.Resolve(context.Background(), saved.ID)
 	if err != nil {
 		t.Fatalf("read saved provider secret: %v", err)
 	}
@@ -1533,21 +1523,33 @@ func mintBrowserToken(t *testing.T, server *Server) string {
 	return body["launch_token"]
 }
 
-func launchBrowserSession(t *testing.T, server *Server) (*http.Cookie, string) {
+func browserSessionFromLaunch(t *testing.T, response *httptest.ResponseRecorder) string {
+	t.Helper()
+	if response.Code != http.StatusSeeOther || len(response.Result().Cookies()) != 0 {
+		t.Fatal("launch must return a redirect without a cookie")
+	}
+	location, err := url.Parse(response.Header().Get("Location"))
+	if err != nil || location.Path != "/" || location.RawQuery != "" || location.Host != "" {
+		t.Fatal("invalid browser session redirect")
+	}
+	fragment, err := url.ParseQuery(location.Fragment)
+	token := fragment.Get("cove-session")
+	if err != nil || token == "" {
+		t.Fatal("launch redirect is missing its session fragment")
+	}
+	return token
+}
+
+func launchBrowserSession(t *testing.T, server *Server) (string, string) {
 	t.Helper()
 
 	launch := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/launch?token=launch-token", nil)
-	launch.Host = "127.0.0.1:47123"
 	launchResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(launchResponse, launch)
-	cookies := launchResponse.Result().Cookies()
-	if len(cookies) != 1 {
-		t.Fatalf("launch cookies = %d, want 1", len(cookies))
-	}
+	token := browserSessionFromLaunch(t, launchResponse)
 
 	session := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/session", nil)
-	session.Host = "127.0.0.1:47123"
-	session.AddCookie(cookies[0])
+	session.Header.Set("X-Cove-Session-Token", token)
 	sessionResponse := httptest.NewRecorder()
 	server.Handler().ServeHTTP(sessionResponse, session)
 	if sessionResponse.Code != http.StatusOK {
@@ -1557,7 +1559,7 @@ func launchBrowserSession(t *testing.T, server *Server) (*http.Cookie, string) {
 	if err := json.NewDecoder(sessionResponse.Body).Decode(&body); err != nil {
 		t.Fatalf("decode session response: %v", err)
 	}
-	return cookies[0], body["csrf_token"]
+	return token, body["csrf_token"]
 }
 
 func responseErrorCode(t *testing.T, response *httptest.ResponseRecorder) string {
@@ -1590,9 +1592,9 @@ func TestFrozenBatchContextRequiresABrowserSession(t *testing.T) {
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated context status = %d", response.Code)
 	}
-	cookie, _ := launchBrowserSession(t, server)
+	token, _ := launchBrowserSession(t, server)
 	request = httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/api/generation-batches/batch-1/context", nil)
-	request.AddCookie(cookie)
+	request.Header.Set("X-Cove-Session-Token", token)
 	response = httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {

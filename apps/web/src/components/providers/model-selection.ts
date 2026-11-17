@@ -117,15 +117,26 @@ export function inferenceModeForMetadata(
   return undefined;
 }
 
+export function isNearAISnapshot(
+  snapshot: Pick<ProviderSnapshot, "provider_id" | "provider_kind"> &
+    Partial<Pick<ProviderSnapshot, "runtime_location">>,
+): boolean {
+  if (snapshot.provider_kind) return snapshot.provider_kind === "nearai";
+  return (
+    snapshot.runtime_location === "NearAI cloud" ||
+    (snapshot.provider_id === "nearai" && !snapshot.runtime_location)
+  );
+}
+
 export function inferenceModeForSnapshot(
-  snapshot?: Pick<ProviderSnapshot, "privacy_mode" | "provider_id">,
+  snapshot?: Parameters<typeof isNearAISnapshot>[0] &
+    Pick<ProviderSnapshot, "privacy_mode">,
 ): SecureInferenceMode | undefined {
-  // Ordinary providers can also carry an incognito catalog classification.
-  if (snapshot?.provider_id !== "nearai") return undefined;
+  if (!snapshot || !isNearAISnapshot(snapshot)) return undefined;
   if (
     snapshot.privacy_mode === "private_tee" ||
-    snapshot?.privacy_mode === "incognito" ||
-    snapshot?.privacy_mode === "chutes"
+    snapshot.privacy_mode === "incognito" ||
+    snapshot.privacy_mode === "chutes"
   ) {
     return snapshot.privacy_mode;
   }

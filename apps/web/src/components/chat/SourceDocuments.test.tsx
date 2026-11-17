@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { SourceDocuments } from "@/components/chat/SourceDocuments";
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
 import { createWorkspaceFixture } from "@/test/workspace-fixture";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 test("only citations with an existing document and section open saved source text", async () => {
   const batch = createWorkspaceFixture().completedBatch;
@@ -39,11 +42,13 @@ test("only citations with an existing document and section open saved source tex
   await user.click(screen.getByRole("button", { name: "Notes, line 2" }));
   const dialog = screen.getByRole("dialog", { name: "notes.md" });
   expect(within(dialog).getByText("Quoted line")).toBeTruthy();
-  expect(
-    within(dialog)
-      .getByRole("link", { name: "Download original file" })
-      .getAttribute("href"),
-  ).toContain(batch.id + "/attachments/" + id);
+  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
+  vi.stubGlobal("fetch", fetchMock);
+  await user.click(within(dialog).getByRole("button", { name: "Download original file" }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+    `/api/generation-batches/${batch.id}/attachments/${id}`,
+    expect.objectContaining({ redirect: "error" }),
+  ));
   await user.keyboard("{Escape}");
   expect(screen.queryByRole("dialog")).toBeNull();
 });

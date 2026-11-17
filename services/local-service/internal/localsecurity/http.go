@@ -16,6 +16,8 @@ var (
 	ErrInvalidControlToken = errors.New("invalid control token")
 )
 
+const SessionHeader = "X-Cove-Session-Token"
+
 type RejectionWriter func(http.ResponseWriter, *http.Request, error)
 
 type sessionContextKey struct{}
@@ -31,16 +33,12 @@ func ValidateLoopbackHost(hostHeader string) error {
 	return nil
 }
 
-func (manager *Manager) BrowserSession(request *http.Request, cookieName string) (Session, error) {
-	cookie, err := request.Cookie(cookieName)
-	if err != nil {
-		return Session{}, ErrInvalidSession
-	}
-	return manager.Session(cookie.Value)
+func (manager *Manager) BrowserSession(request *http.Request) (Session, error) {
+	return manager.Session(request.Header.Get(SessionHeader))
 }
 
-func (manager *Manager) ValidateBrowserMutation(request *http.Request, cookieName string) (Session, error) {
-	session, err := manager.BrowserSession(request, cookieName)
+func (manager *Manager) ValidateBrowserMutation(request *http.Request) (Session, error) {
+	session, err := manager.BrowserSession(request)
 	if err != nil {
 		return Session{}, err
 	}
@@ -65,10 +63,15 @@ func RequireLoopbackHost(reject RejectionWriter) func(http.Handler) http.Handler
 	}
 }
 
-func (manager *Manager) RequireBrowserSession(cookieName string, reject RejectionWriter) func(http.Handler) http.Handler {
+func (manager *Manager) RequireBrowserSession(reject RejectionWriter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-			session, err := manager.BrowserSession(request, cookieName)
+			_, ok := SessionFromRequest(request)
+			if ok {
+				next.ServeHTTP(writer, request)
+				return
+			}
+			session, err := manager.BrowserSession(request)
 			if err != nil {
 				reject(writer, request, err)
 				return
@@ -78,14 +81,14 @@ func (manager *Manager) RequireBrowserSession(cookieName string, reject Rejectio
 	}
 }
 
-func (manager *Manager) RequireBrowserMutations(cookieName string, reject RejectionWriter) func(http.Handler) http.Handler {
+func (manager *Manager) RequireBrowserMutations(reject RejectionWriter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			if !strings.HasPrefix(request.URL.Path, "/api/") || IsSafeMethod(request.Method) {
 				next.ServeHTTP(writer, request)
 				return
 			}
-			session, err := manager.ValidateBrowserMutation(request, cookieName)
+			session, err := manager.ValidateBrowserMutation(request)
 			if err != nil {
 				reject(writer, request, err)
 				return

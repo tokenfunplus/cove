@@ -575,41 +575,6 @@ func TestServiceStopsAnActiveGenerationBeforeClearingConversationHistory(t *test
 	}
 }
 
-func TestServiceRetryCreatesNewGenerationForTheOriginalUserMessage(t *testing.T) {
-	store, err := persistence.OpenSQLite(filepath.Join(t.TempDir(), "chat.sqlite"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	defer store.Close()
-	conversation, err := store.CreateConversation(context.Background(), "Chat")
-	if err != nil {
-		t.Fatalf("create conversation: %v", err)
-	}
-	upstream := &fakeProvider{stream: &fakeStream{events: []provider.Event{
-		{Type: provider.EventStarted}, {Type: provider.EventFailed, ErrorCode: "rejected", ErrorMessage: "no"},
-	}}}
-	service := NewService(store, fakeProviderSource{profile: testProfile(), secret: credentials.Secret{Value: "test-key"}}, upstream)
-	first, err := service.StartGeneration(context.Background(), SendInput{ConversationID: conversation.ID, ProviderID: "provider-1", ClientRequestID: "request-first", Body: "Original question"})
-	if err != nil {
-		t.Fatalf("start generation: %v", err)
-	}
-	waitForGeneration(t, store, first.Generation.ID, persistence.GenerationFailed)
-	retried, err := service.RetryGeneration(context.Background(), first.Generation.UserMessageID, "request-retry", "")
-	if err != nil {
-		t.Fatalf("retry generation: %v", err)
-	}
-	if retried.Generation.ID == first.Generation.ID || retried.Generation.ClientRequestID != "request-retry" {
-		t.Fatalf("retried generation = %#v, want new generation", retried.Generation)
-	}
-	view, err := store.LoadConversation(context.Background(), conversation.ID)
-	if err != nil {
-		t.Fatalf("load conversation: %v", err)
-	}
-	if len(view.Messages) != 2 || view.Messages[0].Body != "Original question" || view.Messages[1].Body != "Original question" {
-		t.Fatalf("retry messages = %#v, want preserved original user messages", view.Messages)
-	}
-}
-
 func TestServiceClosesAResubscribedStreamForARecoveredTerminalGeneration(t *testing.T) {
 	store, err := persistence.OpenSQLite(filepath.Join(t.TempDir(), "chat.sqlite"))
 	if err != nil {
@@ -1340,4 +1305,55 @@ func (stream *fakeStream) Close() error {
 	defer stream.mu.Unlock()
 	stream.closed = true
 	return nil
+}
+
+func TestBatchAndRetryPreservePrivateTEERequirement(t *testing.T) {
+	ctx := context.Background()
+	store, err := persistence.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	conversation, err := store.CreateConversation(ctx, "Private selection")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := testProfile()
+	profile.ID, profile.Kind = "nearai", provider.KindNearAIPreset
+	source := &classifiedProviderSource{
+		profileProviderSource: profileProviderSource{profiles: map[string]provider.Profile{profile.ID: profile}},
+		metadata:              provider.ModelMetadata{ID: profile.Model, PrivacyMode: provider.PrivacyModeIncognito},
+	}
+	service := NewService(store, source, &fakeProvider{})
+	input := SendInput{
+		ConversationID: conversation.ID, ClientRequestID: "require-private", Body: "Question",
+		ProviderID: profile.ID, ModelID: profile.Model,
+		ExpectedTargets: []ExpectedGenerationTarget{{ProviderID: profile.ID, ModelID: profile.Model, RequirePrivateTEE: true}},
+	}
+	if _, err := service.StartGenerationBatch(ctx, input); !errors.Is(err, ErrPrivateTEEUnavailable) {
+		t.Fatalf("starting a required Private TEE batch returned %v", err)
+	}
+	if _, err := store.GetGenerationBatchByClientRequestID(ctx, input.ClientRequestID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("declined submission changed conversation state: %v", err)
+	}
+	source.metadata.PrivacyMode, source.metadata.Verifiable = provider.PrivacyModePrivateTEE, true
+	started, err := service.StartGenerationBatch(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CancelGeneration(ctx, started.Batch.Targets[0].Generation.ID); err != nil {
+		t.Fatal(err)
+	}
+	source.metadata.PrivacyMode, source.metadata.Verifiable = provider.PrivacyModeIncognito, false
+	for _, requestID := range []string{"retry-private", "retry-private-again"} {
+		retry, err := service.RetryGenerationTarget(ctx, started.Batch.Targets[0].ID, requestID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if retry.Generation.State != persistence.GenerationFailed ||
+			retry.Generation.ErrorCode != "private_tee_unavailable" ||
+			retry.Generation.Snapshot.PrivacyMode != provider.PrivacyModePrivateTEE {
+			t.Fatal("retry did not preserve its original Private TEE requirement")
+		}
+	}
 }

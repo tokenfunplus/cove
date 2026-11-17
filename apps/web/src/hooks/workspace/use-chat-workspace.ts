@@ -1,7 +1,7 @@
 import { useCancelGeneration } from "@/api/hooks/useGenerations";
 import { useProviderCatalogs } from "@/hooks/providers/use-provider-catalogs";
 
-import { secureTargetForCatalog } from "@/components/providers/model-selection";
+import { inferenceModeForSnapshot } from "@/components/providers/model-selection";
 import { useBatchEvents } from "@/hooks/chat/use-batch-events";
 import { useGenerationCommands } from "@/hooks/chat/use-generation-commands";
 import { useGenerationState } from "@/hooks/chat/use-generation-state";
@@ -96,19 +96,6 @@ export function useChatWorkspace() {
     ) {
       return;
     }
-    const catalogStillLoading = resumeGenerationBatch.targets.some((target) => {
-      const profile = providerProfiles.find(
-        (candidate) => candidate.id === target.provider_id,
-      );
-      const catalogState = catalogs[target.provider_id];
-      return (
-        profile?.kind === "nearai" &&
-        (!catalogState ||
-          catalogState.status === "idle" ||
-          catalogState.status === "loading")
-      );
-    });
-    if (catalogStillLoading) return;
     const userBody =
       conversationView.messages.find(
         (message) => message.id === resumeGenerationBatch.user_message_id,
@@ -120,11 +107,7 @@ export function useChatWorkspace() {
     setIsSending(true);
     setResumeGenerationBatch(undefined);
     const secureTargets = resumeGenerationBatch.targets.filter((target) =>
-      secureTargetForCatalog(
-        { providerId: target.provider_id, modelId: target.model_id },
-        providerProfiles,
-        catalogs,
-      ),
+      inferenceModeForSnapshot(target.generation.snapshot),
     );
     if (secureTargets.length > 0) {
       void Promise.all(
@@ -147,7 +130,7 @@ export function useChatWorkspace() {
     } else {
       void streamGenerationBatch(resumeGenerationBatch);
     }
-  }, [catalogs, conversationView, providerProfiles, resumeGenerationBatch]);
+  }, [conversationView, resumeGenerationBatch]);
 
   const conversationActions = useConversationActions({
     ...workspaceState,
@@ -182,7 +165,6 @@ export function useChatWorkspace() {
     ...workspaceUi,
     ...generationState,
     ...conversationActions,
-    catalogs,
   });
 
   const generationCommands = useGenerationCommands({

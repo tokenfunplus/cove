@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -66,5 +67,23 @@ func TestSlowSubscriberDoesNotBlockGenerationOrHealthySubscribers(t *testing.T) 
 				t.Fatalf("replay recovered %d events, want 300", count)
 			}
 		})
+	}
+}
+
+func TestBatchReplayRetainsOnlyBoundedRecentEvents(t *testing.T) {
+	hub := newBatchEventHub()
+	hub.activate("old", 1)
+	delta := strings.Repeat("x", maxReplayBytes/2)
+	for index := 0; index < 4; index++ {
+		hub.publish(GenerationEvent{BatchID: "old", TargetID: "target", Type: EventDelta, Delta: delta}, false)
+	}
+	stream := hub.streams["old"]
+	if len(stream.events) != 2 || stream.bytes != maxReplayBytes {
+		t.Fatal("a large completion exceeded the replay budget")
+	}
+	hub.publish(GenerationEvent{BatchID: "old", TargetID: "target", Type: EventCompleted}, true)
+	hub.activate("current", 1)
+	if _, open := <-hub.subscribe(context.Background(), "old", "", true); open || len(hub.streams) != 1 {
+		t.Fatal("an older terminal batch retained replay after the next start")
 	}
 }

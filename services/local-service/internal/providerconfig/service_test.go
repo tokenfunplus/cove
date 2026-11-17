@@ -54,12 +54,12 @@ func TestServiceValidatesBeforeReplacingAProviderSecret(t *testing.T) {
 	if _, err := service.Configure(context.Background(), input); err != nil {
 		t.Fatalf("configure valid replacement: %v", err)
 	}
-	secret, err := secrets.Get(context.Background(), input.ID)
+	_, secret, err := service.Resolve(context.Background(), input.ID)
 	if err != nil {
 		t.Fatalf("read replaced secret: %v", err)
 	}
 	if secret.Value != "new-key" {
-		t.Fatalf("stored secret = %q, want new key", secret.Value)
+		t.Fatal("configured connection did not resolve the replacement key")
 	}
 }
 
@@ -202,4 +202,47 @@ type secretReadTrackingStore struct {
 func (store *secretReadTrackingStore) Get(ctx context.Context, providerID string) (credentials.Secret, error) {
 	store.getCalls++
 	return store.MemoryStore.Get(ctx, providerID)
+}
+
+func TestSavedKeyStaysBoundToItsNormalizedDestination(t *testing.T) {
+	ctx := context.Background()
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/v1/models" {
+			_, _ = writer.Write([]byte(`{"data":[{"id":"model-a"}]}`))
+		}
+	}))
+	defer upstream.Close()
+	store, err := persistence.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := NewService(store, credentials.NewMemoryStore(), upstream.Client())
+	input := ProfileInput{Kind: provider.KindOpenAICompatible, Name: "Fixture", Endpoint: upstream.URL, Model: "model-a", AuthMethod: provider.AuthBearer, Secret: "fixture-key"}
+	profile, err := service.Configure(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ID = profile.ID
+	input.Secret = ""
+	input.Endpoint += "/"
+	if _, err := service.Discover(ctx, input); err != nil {
+		t.Fatalf("discover at the normalized saved destination: %v", err)
+	}
+	input.Endpoint = upstream.URL + "/second"
+	if _, err := service.Validate(ctx, input); !errors.Is(err, ErrDestinationChanged) {
+		t.Fatalf("changed validation destination returned %v", err)
+	}
+	if _, err := service.Discover(ctx, input); !errors.Is(err, ErrDestinationChanged) {
+		t.Fatalf("changed catalog destination returned %v", err)
+	}
+	if _, err := service.Configure(ctx, input); !errors.Is(err, ErrDestinationChanged) {
+		t.Fatalf("changed saved destination returned %v", err)
+	}
+	if err := service.DeleteKey(ctx, profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.Resolve(ctx, profile.ID); !errors.Is(err, ErrUnconfigured) {
+		t.Fatalf("deleted key resolved with error %v", err)
+	}
 }

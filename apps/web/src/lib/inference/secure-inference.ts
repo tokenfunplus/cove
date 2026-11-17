@@ -1,4 +1,4 @@
-import { browserSessionHeaders } from "@/api";
+import { browserSessionHeaders, fetchSameOrigin } from "@/api";
 import { verifyNvidiaEvidenceViaSameOriginProxy } from "@/lib/inference/nvidia-verifier";
 import { secureInferenceFailureReason } from "@/lib/inference/secure-inference-errors";
 import type {
@@ -18,6 +18,10 @@ import {
   type VerifiedCompletionResult,
   type VerifiedGatewayAttestation,
 } from "@nearai/inference-sdk";
+
+const maxCompletionBytes = 4 * 1024 * 1024;
+const maxProxyStreamBytes = 16 * 1024 * 1024;
+const maxProxyEventCharacters = 1024 * 1024;
 
 // Keep collateral requests within the verifier origin allowed by our CSP.
 const verifyTdxQuote = createTdxQuoteVerifier({
@@ -211,6 +215,8 @@ export function createSecureInferenceTransport(
 
       let completionId = "";
       let startedStreaming = false;
+      let responseBytes = 0;
+      const encoder = new TextEncoder();
       let client: SecureInferenceSdkClient;
       try {
         client = factory.create(sdkInputFor(input), inferenceMode(input));
@@ -221,6 +227,10 @@ export function createSecureInferenceTransport(
             yield { type: "streaming" };
           }
           if (!chunk.delta) continue;
+          responseBytes += encoder.encode(chunk.delta).byteLength;
+          if (responseBytes > maxCompletionBytes) {
+            throw new Error("The Provider response exceeded the size limit.");
+          }
           yield { type: "delta", delta: chunk.delta };
         }
       } catch (error) {
@@ -487,10 +497,14 @@ async function verifyEnvironmentWithBrowserSdk(
 
 /** Preserve the provider's actionable error body; the SDK otherwise keeps only HTTP status. */
 class BrowserAttestationClient extends AttestationClient {
+  protected override async requestGatewayAttestation(request: Request) {
+    return { response: await fetchSameOrigin(request) };
+  }
+
   protected override async requestCloudApi(
     request: Request,
   ): Promise<Response> {
-    const response = await fetch(request);
+    const response = await fetchSameOrigin(request);
     if (!response.ok && request.url.includes("model=")) {
       const body = (await response
         .clone()
@@ -506,6 +520,26 @@ class BrowserAttestationClient extends AttestationClient {
       }
     }
     return response;
+  }
+}
+
+class LocalProxyInferenceClient extends InferenceClient {
+  private readonly localAttestation: BrowserAttestationClient;
+
+  constructor(options: ConstructorParameters<typeof InferenceClient>[0]) {
+    super(options);
+    this.localAttestation = new BrowserAttestationClient(options);
+  }
+
+  protected override fetchGatewayAttestation() {
+    return this.localAttestation.fetchGatewayAttestation({
+      signingAlgo: this.signingAlgo,
+      includeSpkiFingerprint: false,
+    });
+  }
+
+  protected override createGatewayFetch(): typeof fetch {
+    return fetchSameOrigin;
   }
 }
 
@@ -527,7 +561,7 @@ export class BrowserNearAISdkClient implements SecureInferenceSdkClient {
     this.input = input;
     this.client =
       dependencies.client ??
-      new InferenceClient({
+      new LocalProxyInferenceClient({
         baseUrl: input.baseUrl,
         // The Local Service injects its Keychain-held Provider Key upstream.
         // Supplying headers rather than an apiKey prevents the key entering JS.
@@ -669,12 +703,13 @@ export class BrowserGatewayResponseClient implements SecureInferenceSdkClient {
     const headers = new Headers(browserSessionHeaders());
     headers.set("Accept", "text/event-stream");
     headers.set("Content-Type", "application/json");
-    const fetchImpl = this.dependencies.fetchImpl ?? fetch;
+    const fetchImpl = this.dependencies.fetchImpl ?? fetchSameOrigin;
     const response = await fetchImpl(new URL("responses", this.input.baseUrl), {
       method: "POST",
       headers,
       body: encoded,
       signal,
+      redirect: "error",
     });
     if (!response.ok) {
       throw new Error(
@@ -685,12 +720,17 @@ export class BrowserGatewayResponseClient implements SecureInferenceSdkClient {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let responseBytes = 0;
     let completionId = "";
     let consumed = false;
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (value) {
+          responseBytes += value.byteLength;
+          if (responseBytes > maxProxyStreamBytes) {
+            throw new Error("The Provider stream exceeded the size limit.");
+          }
           this.responseChunks.push(value);
           buffer += decoder.decode(value, { stream: !done });
         }
@@ -716,7 +756,10 @@ export class BrowserGatewayResponseClient implements SecureInferenceSdkClient {
         }
       }
     } finally {
-      if (!consumed) await reader.cancel().catch(() => undefined);
+      if (!consumed) {
+        this.responseChunks = [];
+        await reader.cancel().catch(() => undefined);
+      }
       reader.releaseLock();
     }
   }
@@ -759,7 +802,13 @@ function consumeSse(buffer: string): { events: unknown[]; rest: string } {
   const events: unknown[] = [];
   const parts = buffer.split(/\r?\n\r?\n/);
   const rest = parts.pop() ?? "";
+  if (rest.length > maxProxyEventCharacters) {
+    throw new Error("The Provider event exceeded the size limit.");
+  }
   for (const part of parts) {
+    if (part.length > maxProxyEventCharacters) {
+      throw new Error("The Provider event exceeded the size limit.");
+    }
     const data = part
       .split(/\r?\n/)
       .filter((line) => line.startsWith("data:"))

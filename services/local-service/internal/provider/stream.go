@@ -11,7 +11,12 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 )
 
-const maxSSELineSize = 64 << 10
+const (
+	maxSSELineSize     = 64 << 10
+	maxSSEEventSize    = 1 << 20
+	maxSSEStreamSize   = 16 << 20
+	MaxCompletionBytes = 4 << 20
+)
 
 type Provider interface {
 	Validate(ctx context.Context, input ValidateInput) (ValidationResult, error)
@@ -67,11 +72,13 @@ type sseCompletionStream struct {
 	started      bool
 	finished     bool
 	data         []string
+	eventBytes   int
+	streamBytes  int
 	finishReason string
 }
 
 func newSSECompletionStream(body io.ReadCloser) *sseCompletionStream {
-	return &sseCompletionStream{reader: bufio.NewReader(body), body: body}
+	return &sseCompletionStream{reader: bufio.NewReaderSize(body, maxSSELineSize), body: body}
 }
 
 func (stream *sseCompletionStream) Recv(ctx context.Context) (Event, error) {
@@ -86,8 +93,10 @@ func (stream *sseCompletionStream) Recv(ctx context.Context) (Event, error) {
 		if err := ctx.Err(); err != nil {
 			return Event{}, err
 		}
-		line, err := stream.reader.ReadString('\n')
-		if len(line) > maxSSELineSize {
+		rawLine, err := stream.reader.ReadSlice('\n')
+		stream.eventBytes += len(rawLine)
+		stream.streamBytes += len(rawLine)
+		if errors.Is(err, bufio.ErrBufferFull) || stream.eventBytes > maxSSEEventSize || stream.streamBytes > maxSSEStreamSize {
 			stream.finished = true
 			return Event{}, ErrProtocol
 		}
@@ -99,8 +108,9 @@ func (stream *sseCompletionStream) Recv(ctx context.Context) (Event, error) {
 			stream.finished = true
 			return Event{}, ErrProtocol
 		}
-		line = strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
+		line := strings.TrimSuffix(strings.TrimSuffix(string(rawLine), "\n"), "\r")
 		if line == "" {
+			stream.eventBytes = 0
 			if len(stream.data) == 0 {
 				continue
 			}

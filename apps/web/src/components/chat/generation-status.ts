@@ -26,6 +26,7 @@ export function generationFailureMessage(
     reason?.startsWith("Verification error:")
   )
     return reason;
+  if (errorCode === "private_tee_unavailable") return copy.privateTEEUnavailable;
   if (errorCode === "stream_failed") return copy.generationStreamFailed;
   if (errorCode === "response_verification_failed")
     return copy.generationResponseVerificationFailed;

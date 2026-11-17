@@ -23,8 +23,6 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/providerconfig"
 )
 
-const sessionCookieName = "cove_session"
-
 const maxNvidiaEvidenceBytes = 2 << 20
 
 type Config struct {
@@ -92,7 +90,7 @@ func NewServer(config Config) *Server {
 
 func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	browserSession := server.security.RequireBrowserSession(sessionCookieName, server.writeSecurityError)
+	browserSession := server.security.RequireBrowserSession(server.writeSecurityError)
 	mux.HandleFunc("GET /launch", server.launch)
 	mux.Handle("GET /api/session", browserSession(http.HandlerFunc(server.session)))
 	mux.HandleFunc("GET /api/health", server.health)
@@ -123,7 +121,6 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("POST /api/generations/{id}/secure/settle", browserSession(http.HandlerFunc(server.secureGenerationSettle)))
 	mux.Handle("POST /api/generations/{id}/select", browserSession(http.HandlerFunc(server.selectGenerationAnswer)))
 	mux.Handle("POST /api/generation-targets/{id}/retry", browserSession(http.HandlerFunc(server.retryGenerationTarget)))
-	mux.Handle("POST /api/messages/{id}/retry", browserSession(http.HandlerFunc(server.retryGeneration)))
 	mux.Handle("GET /api/models", browserSession(http.HandlerFunc(server.listProviderProfiles)))
 	mux.Handle("POST /api/models", browserSession(http.HandlerFunc(server.createProviderProfile)))
 	mux.Handle("GET /api/models/{id}", browserSession(http.HandlerFunc(server.getProviderProfile)))
@@ -142,9 +139,9 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("POST /internal/control/shutdown", control(http.HandlerFunc(server.controlShutdown)))
 	mux.Handle("POST /internal/control/launch-token", control(http.HandlerFunc(server.controlLaunchToken)))
 	mux.HandleFunc("/api/", server.apiNotFound)
-	mux.Handle("GET /assets/{path...}", browserSession(http.HandlerFunc(server.assets)))
-	mux.Handle("/", browserSession(http.HandlerFunc(server.shell)))
-	return localsecurity.RequireLoopbackHost(server.writeSecurityError)(server.security.RequireBrowserMutations(sessionCookieName, server.writeSecurityError)(mux))
+	mux.HandleFunc("GET /assets/{path...}", server.assets)
+	mux.HandleFunc("GET /{$}", server.shell)
+	return localsecurity.RequireLoopbackHost(server.writeSecurityError)(server.security.RequireBrowserMutations(server.writeSecurityError)(mux))
 }
 
 func (server *Server) forwardNvidiaEvidence(writer http.ResponseWriter, request *http.Request) {
@@ -216,14 +213,16 @@ func (server *Server) launch(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 
-	http.SetCookie(writer, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    session.ID,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-	})
-	http.Redirect(writer, request, "/", http.StatusSeeOther)
+	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Set("Referrer-Policy", "no-referrer")
+	// The browser consumes the fragment locally. Other loopback ports never
+	// receive an ambient credential from loading this page.
+	fragment := url.Values{"cove-session": {session.ID}}
+	if intent := request.URL.Query().Get("intent"); intent == "settings" || intent == "new-chat" {
+		fragment.Set("intent", intent)
+	}
+	writer.Header().Set("Location", "/#"+fragment.Encode())
+	writer.WriteHeader(http.StatusSeeOther)
 }
 
 func (server *Server) session(writer http.ResponseWriter, request *http.Request) {
@@ -422,16 +421,17 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		return
 	}
 	var input struct {
-		ClientRequestID string            `json:"client_request_id"`
-		Body            string            `json:"body"`
-		Attachments     []documents.Input `json:"attachments"`
+		ClientRequestID string                          `json:"client_request_id"`
+		Body            string                          `json:"body"`
+		Attachments     []documents.Input               `json:"attachments"`
+		ExpectedTargets []chat.ExpectedGenerationTarget `json:"expected_targets"`
 	}
 	request.Body = http.MaxBytesReader(writer, request.Body, documents.MaxRequestBytes)
 	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" || strings.TrimSpace(input.Body) == "" {
 		writeError(writer, http.StatusBadRequest, "validation", "The generation request is invalid.")
 		return
 	}
-	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments})
+	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, ExpectedTargets: input.ExpectedTargets})
 	if err != nil {
 		writeGenerationError(writer, err)
 		return
@@ -663,36 +663,8 @@ func (server *Server) secureGenerationSettle(writer http.ResponseWriter, request
 	writeJSON(writer, http.StatusOK, generationEnvelopeFor(generation))
 }
 
-func (server *Server) retryGeneration(writer http.ResponseWriter, request *http.Request) {
-	if server.chat == nil {
-		writeError(writer, http.StatusNotFound, "not_found", "The requested API route does not exist.")
-		return
-	}
-	var input struct {
-		ClientRequestID string `json:"client_request_id"`
-	}
-	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" {
-		writeError(writer, http.StatusBadRequest, "validation", "The retry request is invalid.")
-		return
-	}
-	systemPrompt := ""
-	if server.settings != nil {
-		settings, err := server.settings.GetSettings(request.Context())
-		if err != nil {
-			writeError(writer, http.StatusInternalServerError, "internal_error", "Workspace settings are unavailable.")
-			return
-		}
-		systemPrompt = settings.SystemPrompt
-	}
-	started, err := server.chat.RetryGeneration(request.Context(), request.PathValue("id"), input.ClientRequestID, systemPrompt)
-	if err != nil {
-		writeGenerationError(writer, err)
-		return
-	}
-	writeJSON(writer, http.StatusCreated, generationEnvelopeFor(started.Generation))
-}
-
 type providerSnapshotEnvelope struct {
+	ProviderKind      string `json:"provider_kind,omitempty"`
 	ProviderID        string `json:"provider_id"`
 	ProviderName      string `json:"provider_name"`
 	ModelID           string `json:"model_id"`
@@ -862,7 +834,7 @@ func generationEventEnvelopeFor(event chat.GenerationEvent) generationEventEnvel
 
 func providerSnapshotEnvelopeFor(snapshot persistence.ProviderSnapshot) providerSnapshotEnvelope {
 	return providerSnapshotEnvelope{
-		ProviderID: snapshot.ProviderID, ProviderName: snapshot.ProviderName, ModelID: snapshot.ModelID,
+		ProviderKind: snapshot.ProviderKind, ProviderID: snapshot.ProviderID, ProviderName: snapshot.ProviderName, ModelID: snapshot.ModelID,
 		RuntimeLocation: snapshot.RuntimeLocation, Destination: snapshot.Destination,
 		TransportSecurity: snapshot.TransportSecurity, PrivacyNotice: snapshot.PrivacyNotice,
 		PrivacyMode: snapshot.PrivacyMode,
@@ -1022,6 +994,10 @@ func writeGenerationError(writer http.ResponseWriter, err error) {
 		writeError(writer, http.StatusConflict, "context_disposition_required", "Select an answer or continue without an answer before starting the next Generation Batch.")
 	case errors.Is(err, persistence.ErrContextDispositionFrozen):
 		writeError(writer, http.StatusConflict, "context_disposition_frozen", "A later Generation Batch already captured this answer choice.")
+	case errors.Is(err, chat.ErrGenerationSelectionChanged), errors.Is(err, persistence.ErrProviderProfileChanged):
+		writeError(writer, http.StatusConflict, "generation_selection_changed", "The selected connection changed. Reload it and send again.")
+	case errors.Is(err, chat.ErrPrivateTEEUnavailable):
+		writeError(writer, http.StatusConflict, "private_tee_unavailable", "Private TEE is no longer available for this model.")
 	case errors.Is(err, chat.ErrProviderSelectionRequired):
 		writeError(writer, http.StatusUnprocessableEntity, "provider_selection_required", "Select a configured Provider and model before starting a Generation.")
 	case errors.Is(err, provider.ErrModelUnavailable):
@@ -1045,6 +1021,10 @@ func writeProviderError(writer http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		writeError(writer, http.StatusNotFound, "not_found", "The requested Provider Profile does not exist.")
+	case errors.Is(err, persistence.ErrProviderProfileChanged):
+		writeError(writer, http.StatusConflict, "provider_profile_changed", "The Provider Profile changed. Reload it and try again.")
+	case errors.Is(err, providerconfig.ErrDestinationChanged):
+		writeError(writer, http.StatusBadRequest, "provider_destination_changed", "Enter a Provider Key for the changed connection.")
 	case errors.Is(err, providerconfig.ErrUnconfigured):
 		writeError(writer, http.StatusUnprocessableEntity, "provider_unconfigured", "This Provider Profile has no configured Key.")
 	case errors.Is(err, provider.ErrAuthenticationFailed):

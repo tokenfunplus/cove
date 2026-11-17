@@ -3,7 +3,6 @@ package provider
 import (
 	"bytes"
 	"errors"
-	"io"
 	"net/http"
 	"time"
 )
@@ -50,9 +49,5 @@ func (proxy *NvidiaNRASProxy) Forward(writer http.ResponseWriter, request *http.
 		return ErrNvidiaNRASRedirect
 	}
 
-	copyNearAIProxyResponseHeaders(writer.Header(), response.Header)
-	writer.Header().Set("Cache-Control", "no-store")
-	writer.WriteHeader(response.StatusCode)
-	_, _ = io.Copy(writer, response.Body)
-	return nil
+	return writeProtocolResponse(writer, response, false)
 }

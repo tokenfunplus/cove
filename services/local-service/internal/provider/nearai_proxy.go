@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,6 +17,7 @@ var (
 	ErrNearAIProxyProvider     = errors.New("NearAI proxy provider is not eligible")
 	ErrNearAIProxyUnconfigured = errors.New("NearAI proxy provider is unconfigured")
 	ErrNearAIProxyRedirect     = errors.New("NearAI proxy upstream redirected the request")
+	ErrProxyProtocol           = errors.New("invalid upstream protocol response")
 	ErrNearAIProxyUnavailable  = errors.New("NearAI proxy upstream is unavailable")
 )
 
@@ -50,7 +52,7 @@ func (proxy *NearAIProxy) Forward(writer http.ResponseWriter, request *http.Requ
 	if proxy == nil || proxy.resolver == nil || proxy.client == nil {
 		return ErrNearAIProxyUnavailable
 	}
-	if !isAllowedNearAIProxyRoute(request.Method, upstreamPath) {
+	if request.Header.Get("Sec-Fetch-Mode") == "navigate" || !isAllowedNearAIProxyRoute(request.Method, upstreamPath) {
 		return ErrNearAIProxyRoute
 	}
 	profile, secret, err := proxy.resolver.Resolve(request.Context(), providerID)
@@ -85,15 +87,7 @@ func (proxy *NearAIProxy) Forward(writer http.ResponseWriter, request *http.Requ
 	if response.StatusCode >= http.StatusMultipleChoices && response.StatusCode < http.StatusBadRequest {
 		return ErrNearAIProxyRedirect
 	}
-	copyNearAIProxyResponseHeaders(writer.Header(), response.Header)
-	writer.WriteHeader(response.StatusCode)
-	if err := copyNearAIProxyStream(writer, response.Body); err != nil {
-		// The HTTP response is already committed. Ending a damaged SSE response
-		// lets the browser SDK report a stream failure without appending a JSON
-		// error envelope to cryptographic protocol bytes.
-		return nil
-	}
-	return nil
+	return writeProtocolResponse(writer, response, request.Method == http.MethodPost)
 }
 
 func isAllowedNearAIProxyRoute(method, path string) bool {
@@ -139,45 +133,65 @@ func nearAIProxyTarget(endpoint, upstreamPath, rawQuery string) (*url.URL, error
 	return target, nil
 }
 
-var hopByHopHeaders = map[string]struct{}{
-	"connection":          {},
-	"keep-alive":          {},
-	"proxy-authenticate":  {},
-	"proxy-authorization": {},
-	"te":                  {},
-	"trailer":             {},
-	"transfer-encoding":   {},
-	"upgrade":             {},
-}
-
+// Only SDK protocol headers cross the local authentication boundary.
 func copyNearAIProxyRequestHeaders(destination, source http.Header) {
-	for name, values := range source {
-		lower := strings.ToLower(name)
-		if _, blocked := hopByHopHeaders[lower]; blocked || lower == "authorization" || lower == "cookie" || lower == "origin" || lower == "referer" || lower == "x-cove-csrf-token" {
-			continue
-		}
-		for _, value := range values {
+	for _, name := range []string{"Accept", "Content-Type", "X-Client-Pub-Key", "X-Model-Pub-Key", "X-Encryption-Version", "X-Signing-Algo", "X-Encrypt-All-Fields", "X-No-Aliasing"} {
+		for _, value := range source.Values(name) {
 			destination.Add(name, value)
 		}
 	}
 }
 
-func copyNearAIProxyResponseHeaders(destination, source http.Header) {
-	for name, values := range source {
-		lower := strings.ToLower(name)
-		if _, blocked := hopByHopHeaders[lower]; blocked || lower == "set-cookie" {
-			continue
-		}
-		for _, value := range values {
-			destination.Add(name, value)
+const maxProtocolResponseBytes = 16 << 20
+
+func writeProtocolResponse(writer http.ResponseWriter, response *http.Response, allowStream bool) error {
+	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	streaming := mediaType == "text/event-stream" && allowStream && response.StatusCode == http.StatusOK
+	encoding := response.Header.Values("Content-Encoding")
+	if err != nil || len(response.Header.Values("Content-Type")) != 1 ||
+		(mediaType != "application/json" && !streaming) ||
+		(len(encoding) > 0 && (len(encoding) != 1 || !strings.EqualFold(encoding[0], "identity"))) ||
+		response.ContentLength > maxProtocolResponseBytes {
+		return ErrProxyProtocol
+	}
+	headers := writer.Header()
+	headers.Set("Content-Type", mediaType)
+	headers.Set("Content-Security-Policy", "sandbox; default-src 'none'; frame-ancestors 'none'")
+	headers.Set("X-Content-Type-Options", "nosniff")
+	headers.Set("Cache-Control", "no-store")
+	for _, name := range []string{"X-Encryption-Version", "X-Generation-Id", "Retry-After"} {
+		for _, value := range response.Header.Values(name) {
+			headers.Add(name, value)
 		}
 	}
+
+	if !streaming {
+		raw, err := io.ReadAll(io.LimitReader(response.Body, maxProtocolResponseBytes+1))
+		if err != nil || len(raw) > maxProtocolResponseBytes {
+			return ErrProxyProtocol
+		}
+		writer.WriteHeader(response.StatusCode)
+		_, _ = writer.Write(raw)
+		return nil
+	}
+	writer.WriteHeader(response.StatusCode)
+	if err := copyNearAIProxyStream(writer, response.Body); err != nil {
+		// An interrupted stream must fail rather than look like a completed,
+		// shorter byte sequence to the receipt verifier.
+		panic(http.ErrAbortHandler)
+	}
+	return nil
 }
 
 func copyNearAIProxyStream(writer http.ResponseWriter, body io.Reader) error {
 	buffer := make([]byte, 32*1024)
+	remaining := maxProtocolResponseBytes
 	for {
 		read, readErr := body.Read(buffer)
+		if read > remaining {
+			return ErrProxyProtocol
+		}
+		remaining -= read
 		if read > 0 {
 			if _, err := writer.Write(buffer[:read]); err != nil {
 				return err

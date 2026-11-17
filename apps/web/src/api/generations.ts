@@ -14,6 +14,7 @@ export type GenerationSelection = {
   clientRequestId: string;
   body: string;
   attachments?: AttachmentInput[];
+  expectedTargets?: GenerationInput["expected_targets"];
 };
 
 export function createGenerationBatch(
@@ -24,6 +25,7 @@ export function createGenerationBatch(
     client_request_id: selection.clientRequestId,
     body: selection.body,
     attachments: selection.attachments,
+    expected_targets: selection.expectedTargets,
   };
   return request<GenerationBatch>(
     `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
