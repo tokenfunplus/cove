@@ -41,6 +41,7 @@ type ExpectedGenerationTarget struct {
 }
 
 type SendInput struct {
+	EditOfBatchID        string
 	ExpectedTargets      []ExpectedGenerationTarget
 	ConversationID       string
 	ProviderID           string
@@ -122,15 +123,16 @@ const (
 )
 
 type GenerationEvent struct {
-	EventID      string                        `json:"event_id"`
-	BatchID      string                        `json:"batch_id,omitempty"`
-	TargetID     string                        `json:"target_id,omitempty"`
-	GenerationID string                        `json:"generation_id"`
-	Type         EventType                     `json:"type"`
-	Delta        string                        `json:"delta,omitempty"`
-	ErrorCode    string                        `json:"error_code,omitempty"`
-	ErrorMessage string                        `json:"error_message,omitempty"`
-	Snapshot     *persistence.ProviderSnapshot `json:"snapshot,omitempty"`
+	EventID        string                        `json:"event_id"`
+	BatchID        string                        `json:"batch_id,omitempty"`
+	TargetID       string                        `json:"target_id,omitempty"`
+	GenerationID   string                        `json:"generation_id"`
+	Type           EventType                     `json:"type"`
+	Delta          string                        `json:"delta,omitempty"`
+	ReasoningDelta string                        `json:"reasoning_delta,omitempty"`
+	ErrorCode      string                        `json:"error_code,omitempty"`
+	ErrorMessage   string                        `json:"error_message,omitempty"`
+	Snapshot       *persistence.ProviderSnapshot `json:"snapshot,omitempty"`
 }
 
 type Service struct {
@@ -474,6 +476,7 @@ func (service *Service) settleSecureGeneration(ctx context.Context, input persis
 
 func (service *Service) runGeneration(ctx context.Context, generation persistence.Generation, profile provider.Profile, secret credentials.Secret, configuration persistence.GenerationConfigurationSnapshot) {
 	defer service.finishGeneration(generation.ID)
+	measurement := generationMeasurement{started: time.Now()}
 	view, err := service.store.LoadConversation(ctx, generation.ConversationID)
 	if err != nil {
 		service.terminate(generation.ID, persistence.GenerationFailed, "internal_error", "The conversation could not be loaded.")
@@ -503,7 +506,7 @@ func (service *Service) runGeneration(ctx context.Context, generation persistenc
 		return
 	}
 	defer stream.Close()
-	var body strings.Builder
+	var body, reasoning strings.Builder
 	var finishReason string
 	for {
 		event, err := stream.Recv(ctx)
@@ -519,20 +522,22 @@ func (service *Service) runGeneration(ctx context.Context, generation persistenc
 			service.terminateForContext(generation.ID, ctx)
 			return
 		}
+		measurement.observe(event)
 		switch event.Type {
 		case provider.EventStarted:
 			_ = service.store.MarkGenerationStreaming(context.Background(), generation.ID)
 			service.publish(GenerationEvent{GenerationID: generation.ID, Type: EventStarted, Snapshot: &generation.Snapshot})
 		case provider.EventDelta:
-			if len(event.Delta) > provider.MaxCompletionBytes-body.Len() {
+			if len(event.Delta)+len(event.ReasoningDelta) > provider.MaxCompletionBytes-body.Len()-reasoning.Len() {
 				service.terminate(generation.ID, persistence.GenerationFailed, "protocol_error", "The Provider response exceeded the size limit.")
 				return
 			}
 			body.WriteString(event.Delta)
+			reasoning.WriteString(event.ReasoningDelta)
 			if event.FinishReason != "" {
 				finishReason = event.FinishReason
 			}
-			service.publish(GenerationEvent{GenerationID: generation.ID, Type: EventDelta, Delta: event.Delta})
+			service.publish(GenerationEvent{GenerationID: generation.ID, Type: EventDelta, Delta: event.Delta, ReasoningDelta: event.ReasoningDelta})
 		case provider.EventCompleted:
 			if event.FinishReason != "" {
 				finishReason = event.FinishReason
@@ -545,7 +550,7 @@ func (service *Service) runGeneration(ctx context.Context, generation persistenc
 			if !service.claimTerminal(generation.ID) {
 				return
 			}
-			if err := service.store.CompleteGeneration(context.Background(), persistence.CompleteGenerationInput{GenerationID: generation.ID, Body: body.String()}); err != nil {
+			if err := service.store.CompleteGeneration(context.Background(), persistence.CompleteGenerationInput{GenerationID: generation.ID, Body: body.String(), Reasoning: reasoning.String(), Metrics: measurement.snapshot()}); err != nil {
 				_ = service.store.TerminateGeneration(context.Background(), persistence.TerminateGenerationInput{GenerationID: generation.ID, State: persistence.GenerationFailed, ErrorCode: "internal_error", ErrorMessage: "The completed response could not be saved."})
 				service.publish(GenerationEvent{GenerationID: generation.ID, Type: EventFailed, ErrorCode: "internal_error", ErrorMessage: "The completed response could not be saved."})
 				return

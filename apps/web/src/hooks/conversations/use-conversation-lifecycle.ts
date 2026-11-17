@@ -51,9 +51,10 @@ type Dependencies = Pick<
   > &
   Pick<GenerationCommands, "handleCancel"> &
   Pick<ConversationActions, "handleCreateConversation" | "handleConversationListMode" | "handleUpdateConversation"> &
-  { copy: ApplicationCopy; attachmentDraft: AttachmentDraft };
+  { copy: ApplicationCopy; attachmentDraft: AttachmentDraft; onChatDataCleared?: () => void };
 
 export function useConversationLifecycle({
+  onChatDataCleared,
   selectedId,
   generationBatch,
   isSending,
@@ -201,6 +202,7 @@ export function useConversationLifecycle({
       }
       selectedIdRef.current = undefined;
       await clearChatData();
+      onChatDataCleared?.();
 
       setShowingArchived(false);
       setSelectedId(undefined);

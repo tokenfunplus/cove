@@ -5,6 +5,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 )
 
@@ -58,12 +59,42 @@ func (service *Service) PreviewGenerationContext(ctx context.Context, input Send
 }
 
 func (service *Service) prepareAttachments(ctx context.Context, input SendInput, systemPrompt string) ([]documents.Prepared, string, error) {
+	if input.EditOfBatchID != "" {
+		return service.prepareEditedAttachments(ctx, input, systemPrompt)
+	}
 	prepared, err := documents.PrepareWith(ctx, input.Attachments, service.parseAttachment)
 	if err != nil {
 		return nil, "", err
 	}
 	content := documents.Prompt(input.Body, prepared)
 	items, err := service.store.LoadBatchContext(ctx, input.ConversationID)
+	if err != nil {
+		return nil, "", err
+	}
+	characters := utf8.RuneCountInString(content) + utf8.RuneCountInString(systemPrompt)
+	for _, item := range items {
+		characters += utf8.RuneCountInString(item.UserBody) + utf8.RuneCountInString(item.AssistantBody)
+	}
+	if characters > documents.MaxContextCharacters {
+		return nil, "", documents.ErrContextLimit
+	}
+	return prepared, content, nil
+}
+
+func (service *Service) prepareEditedAttachments(ctx context.Context, input SendInput, systemPrompt string) ([]documents.Prepared, string, error) {
+	source, err := service.store.GetGenerationBatch(ctx, input.EditOfBatchID)
+	if err != nil {
+		return nil, "", err
+	}
+	if source.ConversationID != input.ConversationID || source.State == "pending" || source.State == "streaming" || len(input.Attachments) > 0 {
+		return nil, "", persistence.ErrInvalidBranch
+	}
+	prepared, err := service.store.LoadBatchAttachments(ctx, source.ID)
+	if err != nil {
+		return nil, "", err
+	}
+	content := documents.Prompt(input.Body, prepared)
+	items, err := service.store.LoadGenerationBatchContext(ctx, source.ID)
 	if err != nil {
 		return nil, "", err
 	}

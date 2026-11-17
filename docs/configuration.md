@@ -47,21 +47,28 @@ See the [settings schema](../packages/api-contract/schemas/settings.schema.json)
 | Workspace skin | Settings → General → Workspace skin | Browser local storage for the Local Service address. Continuum is the default; Blueprint, Studio, and Grove are also available. |
 | Focus | Four-corner button beside Model comparison | In-memory page state. Exit Focus or Escape restores the prior sidebar layout. |
 | Timeline bookmarks | Bookmark button in a turn preview | Conversation/message identifiers in this browser profile and Local Service origin. Message bodies and excerpts are not copied into bookmark storage. |
+| Favorite and recent models | Star beside Model; choosing a model records recent use | Browser-local Provider/model identifiers, bounded to 100 favorites and 12 recent selections. |
+| Saved model combinations | Model comparison → Combination name → Save combination | Up to 12 browser-local named sets, each containing one to four Provider/model identifiers. Restoring a set updates the persisted Active Model Set after availability validation. |
+| Catalog filters | Filter models beside Model | In-memory selection by capability, minimum context, and maximum input/output USD price per million tokens. Clear filters restores the full catalog. |
+| Estimated-cost rates | Response details → Model pricing | Optional browser-local USD input/output rates per million tokens, keyed by Provider/model. Advertised catalog prices do not overwrite them. |
+| Working Draft and undo history | Edit in workbench | Window memory only; up to 120,000 UTF-16 code units and 20 undo steps. Copy or download before reloading. |
 | Launch at Login | Native Launcher menu | Managed through macOS login-item registration; enabling it may require system approval. |
 | Control-Option-Space | Native Launcher menu | Optional global shortcut, off until enabled. Conflicts are reported by the Launcher. |
 
-Browser preferences and bookmarks are not part of a database backup or conversation export. Clearing browser data removes them; using another browser profile or port uses separate storage. If browser storage is unavailable, skin and bookmark changes are session-only, and the bookmark preview reports that status. See the [user guide](user-guide.md#focus-and-timeline-bookmarks) for reading and navigation behavior.
+Browser preferences, manual rates, combinations, and bookmarks are not part of a database backup or conversation export. Clearing browser data removes them; using another browser profile or port uses separate storage. If storage is unavailable, changes use session memory, and the bookmark preview reports that status. Provider Keys and message content are excluded from these preferences. See the [user guide](user-guide.md#focus-and-timeline-bookmarks) for reading and navigation behavior.
 
 ## Local storage
 
 | Data | Default location |
 | --- | --- |
-| History, settings, original attachments, and extracted source snapshots | `~/Library/Application Support/cove/cove.sqlite` |
+| History, structured reasoning, Generation Metrics, conversation branches, settings, original attachments, and extracted source snapshots | `~/Library/Application Support/cove/cove.sqlite` |
 | Provider Keys | macOS Keychain, service `io.github.tokenfunplus.cove.provider` |
 | Source-build process state and logs | `.artifacts/` in the checkout; treat these files as sensitive. |
-| Skin and timeline bookmark preferences | Browser storage for the Local Service address. |
+| Skins, timeline bookmarks, favorite/recent models, saved model combinations, and manual cost rates | Browser storage for the Local Service address. |
 
 Quit Cove before backing up its data directory. The database and exported conversations are not encrypted by Cove, and a database backup does not include Keychain credentials or browser bookmarks.
+
+Current source builds migrate schema 16 through 19 on startup. Existing history is retained; missing historical metrics stay unavailable, and unmarked historical reasoning is not inferred. An older build rejects a newer schema. To return to an older build, restore a compatible backup rather than modifying the database schema number. See [storage compatibility](development.md#chat-storage-and-rendering-compatibility).
 
 ## Development environment variables
 

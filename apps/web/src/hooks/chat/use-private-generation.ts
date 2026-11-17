@@ -21,7 +21,11 @@ import {
   keepUnverifiedGatewayAnswer,
   secureVerificationForContract,
 } from "@/lib/inference/verification-record";
-import { type GenerationBatch, type ProviderProfile } from "@cove/api-contract";
+import {
+  type GenerationBatch,
+  type GenerationMetrics,
+  type ProviderProfile,
+} from "@cove/api-contract";
 const PRIVATE_GENERATION_TIMEOUT_MS = 2 * 60 * 1000;
 
 type Dependencies = Pick<
@@ -70,6 +74,38 @@ export function usePrivateGeneration({
     body: string,
   ): Promise<void> {
     if (!target) return;
+    const measuredAt = performance.now();
+    let reasoningBody = "";
+    let firstDeltaAt: number | undefined;
+    let lastDeltaAt: number | undefined;
+    let inputTokens: number | undefined, outputTokens: number | undefined;
+    const settleMeasured = (
+      input: Parameters<typeof settleSecureGeneration>[0],
+    ) => {
+      const duration = Math.floor(performance.now() - measuredAt);
+      const metrics: GenerationMetrics = {
+        source: "browser",
+        duration_ms: duration,
+        ...(firstDeltaAt === undefined
+          ? {}
+          : {
+              time_to_first_token_ms: Math.min(
+                duration,
+                Math.floor(firstDeltaAt - measuredAt),
+              ),
+              output_duration_ms: Math.floor(
+                (lastDeltaAt ?? firstDeltaAt) - firstDeltaAt,
+              ),
+            }),
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+      };
+      return settleSecureGeneration({
+        ...input,
+        metrics,
+        reasoning: input.body ? reasoningBody || undefined : undefined,
+      });
+    };
     const generationID = target.generation.id;
     const controller = new AbortController();
     let timedOut = false;
@@ -117,7 +153,7 @@ export function usePrivateGeneration({
         if (!controller.signal.aborted || settled) return;
         if (timedOut) {
           const keepAnswer = keepUnverifiedGatewayAnswer(mode, assistantBody);
-          const failedGeneration = await settleSecureGeneration({
+          const failedGeneration = await settleMeasured({
             id: generationID,
             body: keepAnswer ? assistantBody : "",
             verification: failedVerificationForContract(
@@ -144,7 +180,7 @@ export function usePrivateGeneration({
       };
       try {
         if (!mode) {
-          const failedGeneration = await settleSecureGeneration({
+          const failedGeneration = await settleMeasured({
             id: generationID,
             body: "",
             verification: failedVerificationForContract(
@@ -195,7 +231,7 @@ export function usePrivateGeneration({
                 mode,
               );
               if (controller.signal.aborted) return;
-              const settledGeneration = await settleSecureGeneration({
+              const settledGeneration = await settleMeasured({
                 id: generationID,
                 body: assistantBody,
                 verification: verification,
@@ -225,7 +261,7 @@ export function usePrivateGeneration({
                 mode,
                 assistantBody,
               );
-              const settledGeneration = await settleSecureGeneration({
+              const settledGeneration = await settleMeasured({
                 id: generationID,
                 body: keepAnswer ? assistantBody : "",
                 verification: failedVerificationForContract(
@@ -257,7 +293,7 @@ export function usePrivateGeneration({
               );
             }
           } catch {
-            const failedGeneration = await settleSecureGeneration({
+            const failedGeneration = await settleMeasured({
               id: generationID,
               body: "",
               verification: failedVerificationForContract(
@@ -317,7 +353,37 @@ export function usePrivateGeneration({
           } else if (event.type === "streaming") {
             await markSecureGenerationStreaming(generationID);
             updatePhase("streaming");
+          } else if (event.type === "usage") {
+            inputTokens = event.inputTokens;
+            outputTokens = event.outputTokens;
+          } else if (event.type === "reasoning") {
+            if (event.delta) {
+              lastDeltaAt = performance.now();
+              firstDeltaAt ??= lastDeltaAt;
+            }
+            reasoningBody += event.delta;
+            setLiveTurn((current) =>
+              current
+                ? {
+                    ...current,
+                    targets: (current.targets ?? []).map((candidate) =>
+                      candidate.targetId === target.id
+                        ? {
+                            ...candidate,
+                            phase: "streaming",
+                            reasoningBody:
+                              (candidate.reasoningBody ?? "") + event.delta,
+                          }
+                        : candidate,
+                    ),
+                  }
+                : current,
+            );
           } else if (event.type === "delta") {
+            if (event.delta) {
+              lastDeltaAt = performance.now();
+              firstDeltaAt ??= lastDeltaAt;
+            }
             assistantBody += event.delta;
             setLiveTurn((current) =>
               current
@@ -347,7 +413,7 @@ export function usePrivateGeneration({
               event.verification,
               mode,
             );
-            const settledGeneration = await settleSecureGeneration({
+            const settledGeneration = await settleMeasured({
               id: generationID,
               body: assistantBody,
               verification: verification,
@@ -364,7 +430,7 @@ export function usePrivateGeneration({
             );
           } else if (event.type === "failed") {
             const keepAnswer = keepUnverifiedGatewayAnswer(mode, assistantBody);
-            const failedGeneration = await settleSecureGeneration({
+            const failedGeneration = await settleMeasured({
               id: generationID,
               body: keepAnswer ? assistantBody : "",
               verification: failedVerificationForContract(
@@ -398,7 +464,7 @@ export function usePrivateGeneration({
       } catch (error) {
         await settleAborted();
         if (!controller.signal.aborted) {
-          const failedGeneration = await settleSecureGeneration({
+          const failedGeneration = await settleMeasured({
             id: generationID,
             body: keepUnverifiedGatewayAnswer(mode, assistantBody)
               ? assistantBody

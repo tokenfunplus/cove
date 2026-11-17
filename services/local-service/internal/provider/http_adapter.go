@@ -33,13 +33,21 @@ type ValidationResult struct {
 	ModelMetadata []ModelMetadata `json:"model_metadata,omitempty"`
 }
 
-// ModelMetadata is the provider's advertised privacy classification. NearAI
-// exposes Private TEE, Incognito, and Chutes models from the same catalog, so
-// Provider kind alone is not enough to choose a transport.
+// ModelMetadata combines normalized catalog details with Cove's transport
+// classification. Advertised capabilities and brand identity are presentation
+// data and do not authorize a different inference or verification path.
 type ModelMetadata struct {
-	ID          string `json:"id"`
-	PrivacyMode string `json:"privacy_mode"`
-	Verifiable  bool   `json:"verifiable"`
+	Name                  string   `json:"name,omitempty"`
+	Owner                 string   `json:"owner,omitempty"`
+	Description           string   `json:"description,omitempty"`
+	ContextLength         *int64   `json:"context_length,omitempty"`
+	MaxOutputTokens       *int64   `json:"max_output_tokens,omitempty"`
+	InputPricePerMillion  *float64 `json:"input_price_per_million,omitempty"`
+	OutputPricePerMillion *float64 `json:"output_price_per_million,omitempty"`
+	Capabilities          []string `json:"capabilities,omitempty"`
+	ID                    string   `json:"id"`
+	PrivacyMode           string   `json:"privacy_mode"`
+	Verifiable            bool     `json:"verifiable"`
 }
 
 const (
@@ -137,18 +145,30 @@ func (adapter *HTTPAdapter) Validate(ctx context.Context, input ValidateInput) (
 }
 
 func (adapter *HTTPAdapter) Stream(ctx context.Context, input CompletionInput) (CompletionStream, error) {
+	return adapter.stream(ctx, input, true)
+}
+
+func (adapter *HTTPAdapter) stream(ctx context.Context, input CompletionInput, includeUsage bool) (CompletionStream, error) {
 	profile, err := NormalizeProfile(input.Profile)
 	if err != nil {
 		return nil, err
 	}
 	payload := struct {
-		Model       string            `json:"model"`
-		Messages    []ProviderMessage `json:"messages"`
-		Temperature *float64          `json:"temperature,omitempty"`
-		TopP        *float64          `json:"top_p,omitempty"`
-		MaxTokens   *int              `json:"max_tokens,omitempty"`
-		Stream      bool              `json:"stream"`
+		Model         string            `json:"model"`
+		Messages      []ProviderMessage `json:"messages"`
+		Temperature   *float64          `json:"temperature,omitempty"`
+		TopP          *float64          `json:"top_p,omitempty"`
+		MaxTokens     *int              `json:"max_tokens,omitempty"`
+		Stream        bool              `json:"stream"`
+		StreamOptions *struct {
+			IncludeUsage bool `json:"include_usage"`
+		} `json:"stream_options,omitempty"`
 	}{Model: profile.Model, Messages: input.Messages, Temperature: input.GenerationParameters.Temperature, TopP: input.GenerationParameters.TopP, MaxTokens: input.GenerationParameters.MaxTokens, Stream: true}
+	if includeUsage {
+		payload.StreamOptions = &struct {
+			IncludeUsage bool `json:"include_usage"`
+		}{true}
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("encode provider completion: %w", ErrProtocol)
@@ -165,10 +185,45 @@ func (adapter *HTTPAdapter) Stream(ctx context.Context, input CompletionInput) (
 		return nil, fmt.Errorf("open provider completion: %w", ErrProviderUnavailable)
 	}
 	if err := classifyStatus(response.StatusCode); err != nil {
+		// Some compatible endpoints explicitly reject this optional field. Retry
+		// only that pre-stream rejection, never an accepted or interrupted request.
+		if includeUsage && (response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusUnprocessableEntity) {
+			data, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
+			_ = response.Body.Close()
+			if rejectsUsageOption(data) {
+				return adapter.stream(ctx, input, false)
+			}
+		}
 		_ = response.Body.Close()
 		return nil, err
 	}
 	return newSSECompletionStream(response.Body), nil
+}
+
+func rejectsUsageOption(data []byte) bool {
+	var rejection struct {
+		Error struct {
+			Message string `json:"message"`
+			Param   string `json:"param"`
+			Code    string `json:"code"`
+		} `json:"error"`
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(data, &rejection) != nil {
+		return false
+	}
+	message := strings.ToLower(rejection.Error.Message + " " + rejection.Message)
+	field := message + " " + strings.ToLower(rejection.Error.Param)
+	if !strings.Contains(field, "stream_options") && !strings.Contains(field, "include_usage") {
+		return false
+	}
+	reason := message + " " + strings.ToLower(rejection.Error.Code)
+	for _, term := range []string{"unknown", "unsupported", "not supported", "unrecognized", "not permitted", "not allowed", "extra input", "extra_forbidden"} {
+		if strings.Contains(reason, term) {
+			return true
+		}
+	}
+	return false
 }
 
 func (adapter *HTTPAdapter) ListModels(ctx context.Context, profile Profile, secret credentials.Secret) ([]string, error) {
@@ -195,16 +250,7 @@ func (adapter *HTTPAdapter) ListModelMetadata(ctx context.Context, profile Profi
 		return nil, err
 	}
 	var payload struct {
-		Data []struct {
-			ID           string `json:"id"`
-			OwnedBy      string `json:"owned_by"`
-			Description  string `json:"description"`
-			IsReady      *bool  `json:"is_ready"`
-			PrivacyMode  string `json:"privacy_mode"`
-			Verifiable   *bool  `json:"verifiable"`
-			Provider     string `json:"provider"`
-			ProviderType string `json:"provider_type"`
-		} `json:"data"`
+		Data []catalogModel `json:"data"`
 	}
 	if err := decodeBoundedJSON(response.Body, &payload); err != nil {
 		return nil, fmt.Errorf("decode provider models: %w", ErrProtocol)
@@ -215,7 +261,8 @@ func (adapter *HTTPAdapter) ListModelMetadata(ctx context.Context, profile Profi
 			continue
 		}
 		if strings.TrimSpace(model.ID) != "" {
-			models = append(models, classifyModelMetadata(model.ID, model.OwnedBy, model.Description, model.Provider, model.ProviderType, model.PrivacyMode, model.Verifiable))
+			metadata := classifyModelMetadata(model.ID, model.OwnedBy, model.Description, model.Provider, model.ProviderType, model.PrivacyMode, model.Verifiable)
+			models = append(models, enrichModelMetadata(metadata, model, profile.Kind == KindNearAIPreset))
 		}
 	}
 	return models, nil

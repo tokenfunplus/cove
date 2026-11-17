@@ -25,6 +25,7 @@ type LiveTarget = {
   modelId: string;
   snapshot?: ProviderSnapshot;
   assistantBody: string;
+  reasoningBody?: string;
   phase: LiveTurnPhase;
   errorCode?: string;
   errorMessage?: string;
@@ -88,6 +89,10 @@ export function hydrateLiveTurnBatch(
           existing?.generationId === target.generation.id
             ? existing.assistantBody
             : "",
+        reasoningBody:
+          existing?.generationId === target.generation.id
+            ? existing.reasoningBody
+            : undefined,
         lastEventId:
           existing?.generationId === target.generation.id
             ? existing.lastEventId
@@ -137,6 +142,9 @@ export function applyLiveTurnEvent(
       if (event.type === "delta") {
         next.phase = "streaming";
         next.assistantBody += event.delta ?? "";
+        if (event.reasoning_delta)
+          next.reasoningBody =
+            (next.reasoningBody ?? "") + event.reasoning_delta;
       }
       if (event.type === "completed") next.phase = "completed";
       if (event.type === "stopped") next.phase = "stopped";
@@ -161,6 +169,7 @@ export function replaceLiveTargetAttempt(
             assistantMessageId: generation.assistant_message_id,
             snapshot: generation.snapshot,
             assistantBody: "",
+            reasoningBody: undefined,
             phase: generation.state,
             errorCode: generation.error_code,
             errorMessage: generation.error_message,

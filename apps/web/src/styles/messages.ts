@@ -2,6 +2,14 @@ import { cn } from "@/lib/utils";
 
 // Tailwind recipes for messages presentation. Semantic colors come from theme/tokens.css.
 export const messagesStyles = {
+  mathInline: "[overflow-wrap:normal] [&_.katex]:text-[1.1em] [&_.katex-html]:whitespace-normal",
+  mathDisplay: "max-w-full min-w-0 overflow-x-auto overflow-y-hidden py-2 [overflow-wrap:normal] focus-visible:outline-ring [&_.katex-display]:m-0 [&_.katex-display]:w-max [&_.katex-display]:min-w-full [&_.katex]:text-[1.1em] [&[data-math-source]]:whitespace-pre-wrap [&[data-math-source]]:break-words",
+  assistantContent: "space-y-3",
+  reasoning: "group/reasoning overflow-hidden rounded-xl border border-border bg-muted/30",
+  reasoningSummary: "flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-ring [&::-webkit-details-marker]:hidden",
+  reasoningChevron: "shrink-0 transition-transform group-open/reasoning:rotate-90 motion-reduce:transition-none",
+  reasoningStatus: "ml-auto text-[10px] font-normal",
+  reasoningBody: "px-3 pb-3",
   codeBlock_pre: "!m-0 !rounded-none !border-0",
   codeBlock_error: "px-3 text-xs text-destructive",
   codeBlock_language: "truncate font-mono",

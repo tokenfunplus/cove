@@ -39,6 +39,16 @@ const view: ConversationView = {
   ],
 };
 
+test("exports structured reasoning separately from the saved answer", () => {
+  const saved = structuredClone(view);
+  saved.messages[1]!.reasoning = "A separate reasoning channel.";
+  const markdown = buildConversationExport(saved, "markdown").content;
+  expect(markdown).toContain("<summary>Reasoning</summary>\n\nA separate reasoning channel.\n\n</details>");
+  expect(markdown).toContain("It stays in your Conversation History.");
+  const json = JSON.parse(buildConversationExport(saved, "json").content);
+  expect(json.messages[1].reasoning).toBe(saved.messages[1]!.reasoning);
+});
+
 test.each(["selected", "skipped", "unresolved"] as const)("Markdown preserves %s comparison disposition without mutating history", (state) => {
   const fixture = createWorkspaceFixture(2);
   const batch = structuredClone(fixture.completedBatch);

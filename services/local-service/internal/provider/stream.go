@@ -54,11 +54,19 @@ const (
 )
 
 type Event struct {
-	Type         EventType
-	Delta        string
-	FinishReason string
-	ErrorCode    string
-	ErrorMessage string
+	Type           EventType
+	Delta          string
+	ReasoningDelta string
+	FinishReason   string
+	ErrorCode      string
+	ErrorMessage   string
+	Usage          *TokenUsage
+}
+
+// TokenUsage is supplied by the Provider, never inferred from text length.
+type TokenUsage struct {
+	InputTokens  *int64 `json:"prompt_tokens"`
+	OutputTokens *int64 `json:"completion_tokens"`
 }
 
 type CompletionStream interface {
@@ -75,6 +83,7 @@ type sseCompletionStream struct {
 	eventBytes   int
 	streamBytes  int
 	finishReason string
+	usage        *TokenUsage
 }
 
 func newSSECompletionStream(body io.ReadCloser) *sseCompletionStream {
@@ -122,7 +131,10 @@ func (stream *sseCompletionStream) Recv(ctx context.Context) (Event, error) {
 			}
 			if done {
 				stream.finished = true
-				return Event{Type: EventCompleted, FinishReason: stream.finishReason}, nil
+				return Event{Type: EventCompleted, FinishReason: stream.finishReason, Usage: stream.usage}, nil
+			}
+			if event.Usage != nil {
+				stream.usage = event.Usage
 			}
 			if event.FinishReason != "" {
 				stream.finishReason = event.FinishReason
@@ -148,9 +160,12 @@ func parseSSEData(data string) (Event, bool, error) {
 		return Event{}, true, nil
 	}
 	var payload struct {
+		Usage   *TokenUsage `json:"usage"`
 		Choices []struct {
 			Delta struct {
-				Content string `json:"content"`
+				Content          string `json:"content"`
+				ReasoningContent string `json:"reasoning_content"`
+				Reasoning        string `json:"reasoning"`
 			} `json:"delta"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -165,10 +180,24 @@ func parseSSEData(data string) (Event, bool, error) {
 	if payload.Error != nil {
 		return Event{Type: EventFailed, ErrorCode: "provider_error", ErrorMessage: "The Provider rejected the generation request."}, false, nil
 	}
+	if payload.Usage != nil && (invalidUsageCount(payload.Usage.InputTokens) || invalidUsageCount(payload.Usage.OutputTokens)) {
+		return Event{}, false, ErrProtocol
+	}
+	if len(payload.Choices) == 0 && payload.Usage != nil {
+		return Event{Type: EventDelta, Usage: payload.Usage}, false, nil
+	}
 	if len(payload.Choices) == 0 {
 		return Event{}, false, ErrProtocol
 	}
-	return Event{Type: EventDelta, Delta: payload.Choices[0].Delta.Content, FinishReason: payload.Choices[0].FinishReason}, false, nil
+	reasoning := payload.Choices[0].Delta.ReasoningContent
+	if reasoning == "" {
+		reasoning = payload.Choices[0].Delta.Reasoning
+	}
+	return Event{Type: EventDelta, Delta: payload.Choices[0].Delta.Content, ReasoningDelta: reasoning, FinishReason: payload.Choices[0].FinishReason, Usage: payload.Usage}, false, nil
 }
 
 var _ Provider = (*HTTPAdapter)(nil)
+
+func invalidUsageCount(value *int64) bool {
+	return value != nil && (*value < 0 || *value > 1_000_000_000)
+}

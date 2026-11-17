@@ -6,13 +6,28 @@ import { ChevronDown, LockKeyhole, ShieldCheck } from "lucide-react";
 export function ProviderSnapshotView({
   snapshot,
   copy,
+  embedded = false,
 }: {
   snapshot: ProviderSnapshot;
   copy: ApplicationCopy;
+  embedded?: boolean;
 }) {
+  const Container = embedded ? "section" : "details";
+  const Heading = embedded ? "h3" : "summary";
   return (
-    <details className={messagesStyles.message_snapshot}>
-      <summary
+    <Container
+      className={
+        embedded
+          ? "grid gap-3 border-t border-border pt-3 text-xs"
+          : messagesStyles.message_snapshot
+      }
+    >
+      <Heading
+        className={
+          embedded
+            ? "flex flex-wrap items-center justify-between gap-2 font-semibold"
+            : undefined
+        }
         aria-label={`${copy.providerSnapshot}: ${snapshot.provider_name}, ${snapshot.model_id}`}
       >
         <span className={messagesStyles.message_snapshotSummary}>
@@ -29,14 +44,16 @@ export function ProviderSnapshotView({
         <span className={messagesStyles.message_snapshotSecurity}>
           <LockKeyhole aria-hidden="true" size={14} strokeWidth={1.8} />
           {snapshot.transport_security.toUpperCase()}
-          <ChevronDown
-            aria-hidden="true"
-            className="message__snapshot-chevron"
-            size={15}
-            strokeWidth={1.8}
-          />
+          {!embedded && (
+            <ChevronDown
+              aria-hidden="true"
+              className="message__snapshot-chevron"
+              size={15}
+              strokeWidth={1.8}
+            />
+          )}
         </span>
-      </summary>
+      </Heading>
       <div className={messagesStyles.message_snapshotDetails}>
         <dl>
           <div>
@@ -65,6 +82,6 @@ export function ProviderSnapshotView({
           <small>{snapshot.privacy_notice}</small>
         </div>
       </div>
-    </details>
+    </Container>
   );
 }

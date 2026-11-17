@@ -105,6 +105,8 @@ export type SecureInferenceEvent =
   | { type: "verifying_environment" }
   | { type: "streaming" }
   | { type: "delta"; delta: string }
+  | { type: "reasoning"; delta: string }
+  | { type: "usage"; inputTokens?: number; outputTokens?: number }
   | { type: "response_ready"; completionId: string }
   | { type: "verifying_response" }
   | { type: "completed"; verification: SecureInferenceVerification }
@@ -132,6 +134,8 @@ type SecureInferenceSdkInput = {
 };
 
 type SecureInferenceStreamChunk = {
+  reasoningDelta?: string;
+  usage?: { inputTokens?: number; outputTokens?: number };
   completionId: string;
   delta: string;
 };
@@ -221,17 +225,22 @@ export function createSecureInferenceTransport(
       try {
         client = factory.create(sdkInputFor(input), inferenceMode(input));
         for await (const chunk of client.stream(signal)) {
-          completionId = chunk.completionId;
+          if (chunk.usage) yield { type: "usage", ...chunk.usage };
+          completionId = chunk.completionId || completionId;
           if (!startedStreaming) {
             startedStreaming = true;
             yield { type: "streaming" };
           }
-          if (!chunk.delta) continue;
-          responseBytes += encoder.encode(chunk.delta).byteLength;
+          if (!chunk.delta && !chunk.reasoningDelta) continue;
+          responseBytes +=
+            encoder.encode(chunk.delta).byteLength +
+            encoder.encode(chunk.reasoningDelta ?? "").byteLength;
           if (responseBytes > maxCompletionBytes) {
             throw new Error("The Provider response exceeded the size limit.");
           }
-          yield { type: "delta", delta: chunk.delta };
+          if (chunk.reasoningDelta)
+            yield { type: "reasoning", delta: chunk.reasoningDelta };
+          if (chunk.delta) yield { type: "delta", delta: chunk.delta };
         }
       } catch (error) {
         yield {
@@ -748,6 +757,8 @@ export class BrowserGatewayResponseClient implements SecureInferenceSdkClient {
           yield {
             completionId: completionId || chunk.completionId,
             delta: chunk.delta,
+            reasoningDelta: chunk.reasoningDelta,
+            usage: chunk.usage,
           };
         }
         if (done) {
@@ -866,7 +877,13 @@ function responseChunkFor(
     response?: { id?: unknown };
     type?: unknown;
     delta?: unknown;
-    choices?: Array<{ delta?: { content?: unknown } }>;
+    choices?: Array<{
+      delta?: {
+        content?: unknown;
+        reasoning_content?: unknown;
+        reasoning?: unknown;
+      };
+    }>;
   };
   const completionId =
     typeof event.id === "string" && event.id !== ""
@@ -874,17 +891,36 @@ function responseChunkFor(
       : typeof event.response?.id === "string"
         ? event.response.id
         : "";
-  if (typeof event.delta === "string")
-    return { completionId, delta: event.delta };
-  const content = event.choices?.[0]?.delta?.content;
-  if (typeof content === "string") return { completionId, delta: content };
   if (
-    event.type === "response.output_text.delta" &&
-    typeof (event as { delta?: unknown }).delta === "string"
-  ) {
-    return { completionId, delta: (event as { delta: string }).delta };
-  }
-  return completionId ? { completionId, delta: "" } : undefined;
+    (event.type === "response.reasoning_text.delta" ||
+      event.type === "response.reasoning_summary_text.delta") &&
+    typeof event.delta === "string"
+  )
+    return {
+      completionId,
+      delta: "",
+      reasoningDelta: event.delta,
+      usage: tokenUsageFor(value),
+    };
+  if (
+    (event.type === undefined ||
+      event.type === "delta" ||
+      event.type === "response.output_text.delta" ||
+      event.type === "response.refusal.delta") &&
+    typeof event.delta === "string"
+  )
+    return { completionId, delta: event.delta, usage: tokenUsageFor(value) };
+  const chatDelta = event.choices?.[0]?.delta;
+  if (chatDelta)
+    return {
+      completionId,
+      delta: typeof chatDelta.content === "string" ? chatDelta.content : "",
+      reasoningDelta: chatReasoningFor(chatDelta),
+      usage: tokenUsageFor(value),
+    };
+  return completionId || tokenUsageFor(value)
+    ? { completionId, delta: "", usage: tokenUsageFor(value) }
+    : undefined;
 }
 
 function concatBytes(chunks: Uint8Array[]): Uint8Array {
@@ -904,14 +940,30 @@ function streamChunkFor(
   if (!value || typeof value !== "object") return undefined;
   const chunk = value as {
     id?: unknown;
-    choices?: Array<{ delta?: { content?: unknown } }>;
+    choices?: Array<{
+      delta?: {
+        content?: unknown;
+        reasoning_content?: unknown;
+        reasoning?: unknown;
+      };
+    }>;
   };
   if (typeof chunk.id !== "string" || chunk.id === "") return undefined;
   const delta = chunk.choices?.[0]?.delta?.content;
   return {
     completionId: chunk.id,
     delta: typeof delta === "string" ? delta : "",
+    reasoningDelta: chatReasoningFor(chunk.choices?.[0]?.delta),
+    usage: tokenUsageFor(value),
   };
+}
+
+function chatReasoningFor(
+  delta: { reasoning_content?: unknown; reasoning?: unknown } | undefined,
+): string | undefined {
+  if (typeof delta?.reasoning_content === "string" && delta.reasoning_content)
+    return delta.reasoning_content;
+  return typeof delta?.reasoning === "string" ? delta.reasoning : undefined;
 }
 
 function receiptFor(
@@ -1050,4 +1102,25 @@ function rawEvidenceFor(evidence: {
     ...(evidence.gpuEvidence ? { gpu_evidence: evidence.gpuEvidence } : {}),
     ...(evidence.tlsBinding ? { tls_binding: evidence.tlsBinding } : {}),
   };
+}
+
+function tokenUsageFor(value: unknown): SecureInferenceStreamChunk["usage"] {
+  const usage = (
+    value as {
+      usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
+    }
+  )?.usage;
+  if (!usage) return undefined;
+  const count = (value: unknown) =>
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= 1_000_000_000
+      ? value
+      : undefined;
+  const inputTokens = count(usage.prompt_tokens),
+    outputTokens = count(usage.completion_tokens);
+  return inputTokens !== undefined || outputTokens !== undefined
+    ? { inputTokens, outputTokens }
+    : undefined;
 }

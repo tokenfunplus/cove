@@ -32,7 +32,7 @@ test("only citations with an existing document and section open saved source tex
   render(
     <SourceDocuments batches={[batch]}>
       <MarkdownMessage
-        content={`[Notes, line 2](cove:${id}:L2) and [Missing page](cove:${id}:P9). Code: \`[Code](cove:${id}:L1)\`.`}
+        content={`$x_i$ [Notes, line 2](cove:${id}:L2) and [Missing page](cove:${id}:P9). Code: \`[Code](cove:${id}:L1)\`.`}
       />
     </SourceDocuments>,
   );

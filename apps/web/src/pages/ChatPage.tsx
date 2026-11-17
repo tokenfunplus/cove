@@ -1,3 +1,10 @@
+import { answerToolsCopy as toolCopy } from "@/messages/answer-tools";
+import { useNarrowLayout } from "@/hooks/use-media-query";
+import { AnswerToolsContext } from "@/components/chat/AnswerActions";
+import { AnswerToolsPanel } from "@/components/chat/AnswerToolsPanel";
+import { answerToolsStyles } from "@/styles/answer-tools";
+import { Button } from "@/components/ui/button";
+import { PanelRightOpen } from "lucide-react";
 import { workspaceStyles } from "@/styles/workspace";
 import { cn } from "@/lib/utils";
 import { ConversationPanel } from "@/components/chat/ConversationPanel";
@@ -13,6 +20,7 @@ import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 
 export function ChatPage() {
   const workspace = useChatWorkspace();
+  const narrowAnswerTools = useNarrowLayout("(width <= 900px)");
   const {
     appearance,
     connection,
@@ -82,14 +90,18 @@ export function ChatPage() {
     >
       <section
         className={cn(
-          focusMode ? workspaceStyles.focusWorkspace : workspaceStyles.workspace,
+          focusMode
+            ? workspaceStyles.focusWorkspace
+            : workspaceStyles.workspace,
           "workspace workspace--focused workspace--nearai",
         )}
         aria-label={copy.chatSurface}
       >
         <div
           className={cn(
-            focusMode ? workspaceStyles.focusBody : workspaceStyles.workspace_body,
+            focusMode
+              ? workspaceStyles.focusBody
+              : workspaceStyles.workspace_body,
             `workspace__body workspace__body--nearai${sidebarCollapsed ? " workspace__body--sidebar-collapsed" : ""}`,
           )}
         >
@@ -132,6 +144,7 @@ export function ChatPage() {
                 void handleAddModel(profile, modelId)
               }
               onRemoveModel={(target) => void handleRemoveModel(target)}
+              onApplyModelSet={targets=>void workspace.handleApplyModelSet(targets)}
               onVerifyPrivateConnection={
                 secureInferenceTargetSelected(
                   activeModelSet,
@@ -159,50 +172,86 @@ export function ChatPage() {
               copy={copy}
             />
             <div className="relative shrink-0">
-              {feedback ? <WorkspaceToast feedback={feedback} onDismiss={setFeedback} /> : null}
+              {feedback ? (
+                <WorkspaceToast feedback={feedback} onDismiss={setFeedback} />
+              ) : null}
             </div>
-            <ConversationPanel
-              focusMode={focusMode}
-              attachmentDraft={workspace.attachmentDraft}
-              view={isLoadingConversation ? undefined : conversationView}
-
-              copy={copy}
-              isLoading={isLoadingConversation}
-              onSend={() => void handleSend()}
-              onCancel={() => void handleCancel()}
-              onRetry={(batchID, targetID) =>
-                void handleRetry(batchID, targetID)
-              }
-              onCreateConversation={() => void handleCreateConversation()}
-              onOpenSettings={() => setSettingsEntry("provider")}
-              generationBatch={generationBatch}
-              navigation={conversationNavigation}
-              generationBatches={conversationView?.generation_batches ?? []}
-              liveTurn={liveTurn}
-              draft={draft}
-              onDraftChange={(value) => { if (!isNavigating) setDraft(value); }}
-              privateMode={secureInferenceTargetSelected(
-                activeModelSet,
-                providerProfiles,
-                catalogs,
+            <div className="flex shrink-0 justify-end border-b border-border/40 px-4 py-1">
+              <Button
+                size="xs"
+                variant="ghost"
+                aria-expanded={workspace.answerTools.open}
+                onClick={() => workspace.answerTools.setOpen((value) => !value)}
+              >
+                <PanelRightOpen aria-hidden="true" />
+                {toolCopy.title}
+                {workspace.answerTools.busy ? " · Working…" : ""}
+              </Button>
+            </div>
+            <div className={`${answerToolsStyles.layout} relative`}>
+              <AnswerToolsContext.Provider
+                value={{
+                  busy: isSending || isNavigating,
+                  ask: workspace.answerTools.openAsk,
+                  edit: workspace.answerTools.openEditor,
+                }}
+              >
+                <div
+                  className={answerToolsStyles.main}
+                  inert={workspace.answerTools.open && narrowAnswerTools}
+                >
+                  <ConversationPanel
+                    focusMode={focusMode}
+                    attachmentDraft={workspace.attachmentDraft}
+                    view={isLoadingConversation ? undefined : conversationView}
+                    copy={copy}
+                    isLoading={isLoadingConversation}
+                    onSend={() => void handleSend()}
+                    onCancel={() => void handleCancel()}
+                    onChooseModel={()=>{exitFocusMode();requestAnimationFrame(()=>document.querySelector<HTMLInputElement>('.model-selector [aria-label="Model"]')?.focus());}}
+                    onEditPrompt={(batchId,body,targets,callbacks)=>void handleSend({editOfBatchId:batchId,body,targets,...callbacks})}
+                    onRetry={(batchID, targetID) =>
+                      void handleRetry(batchID, targetID)
+                    }
+                    onCreateConversation={() => void handleCreateConversation()}
+                    onOpenSettings={() => setSettingsEntry("provider")}
+                    generationBatch={generationBatch}
+                    navigation={conversationNavigation}
+                    generationBatches={
+                      conversationView?.generation_batches ?? []
+                    }
+                    liveTurn={liveTurn}
+                    draft={draft}
+                    onDraftChange={(value) => {
+                      if (!isNavigating) setDraft(value);
+                    }}
+                    privateMode={secureInferenceTargetSelected(
+                      activeModelSet,
+                      providerProfiles,
+                      catalogs,
+                    )}
+                    isSending={isSending}
+                    navigationBusy={isNavigating}
+                    providerStatus={selectionStatus}
+                    activeModelSet={activeModelSet}
+                    profiles={providerProfiles}
+                    onCancelTarget={(batchID, generationID) =>
+                      void handleCancelTarget(batchID, generationID)
+                    }
+                    onSelectAnswer={(batchID, generationID) =>
+                      void handleSelectAnswer(batchID, generationID)
+                    }
+                    onSkipContext={(batchID) => void handleSkipContext(batchID)}
+                    onVerifyAgain={(targetID, kind) =>
+                      handleVerifyAgain(targetID, kind)
+                    }
+                  />
+                </div>
+              </AnswerToolsContext.Provider>
+              {workspace.answerTools.open && (
+                <AnswerToolsPanel tools={workspace.answerTools} />
               )}
-              isSending={isSending}
-              navigationBusy={isNavigating}
-              providerStatus={selectionStatus}
-              activeModelSet={activeModelSet}
-              profiles={providerProfiles}
-
-              onCancelTarget={(batchID, generationID) =>
-                void handleCancelTarget(batchID, generationID)
-              }
-              onSelectAnswer={(batchID, generationID) =>
-                void handleSelectAnswer(batchID, generationID)
-              }
-              onSkipContext={(batchID) => void handleSkipContext(batchID)}
-              onVerifyAgain={(targetID, kind) =>
-                handleVerifyAgain(targetID, kind)
-              }
-            />
+            </div>
             {privateConnectionProgress ? (
               <PrivateConnectionProgress
                 providerName={privateConnectionProgress.providerName}

@@ -446,6 +446,7 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		return
 	}
 	var input struct {
+		EditOfBatchID   string                          `json:"edit_of_batch_id,omitempty"`
 		ClientRequestID string                          `json:"client_request_id"`
 		Body            string                          `json:"body"`
 		Attachments     []documents.Input               `json:"attachments"`
@@ -456,7 +457,7 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		writeError(writer, http.StatusBadRequest, "validation", "The generation request is invalid.")
 		return
 	}
-	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, ExpectedTargets: input.ExpectedTargets})
+	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, ExpectedTargets: input.ExpectedTargets})
 	if err != nil {
 		writeGenerationError(writer, err)
 		return
@@ -659,7 +660,9 @@ func (server *Server) secureGenerationSettle(writer http.ResponseWriter, request
 		return
 	}
 	var input struct {
-		Body         string `json:"body"`
+		Body         string                         `json:"body"`
+		Reasoning    string                         `json:"reasoning,omitempty"`
+		Metrics      *persistence.GenerationMetrics `json:"metrics,omitempty"`
 		Verification struct {
 			Status           persistence.VerificationStatus    `json:"status"`
 			CompletionID     string                            `json:"completion_id"`
@@ -680,7 +683,7 @@ func (server *Server) secureGenerationSettle(writer http.ResponseWriter, request
 		writeError(writer, http.StatusBadRequest, "validation", "The secure generation settlement is invalid.")
 		return
 	}
-	generation, err := server.chat.SettleSecureGeneration(request.Context(), persistence.SecureGenerationSettlementInput{GenerationID: request.PathValue("id"), Body: input.Body, Verification: persistence.GenerationVerification{Status: input.Verification.Status, CompletionID: input.Verification.CompletionID, VerifiedAt: input.Verification.VerifiedAt, SignatureKind: input.Verification.SignatureKind, SigningAddress: input.Verification.SigningAddress, SigningAlgorithm: input.Verification.SigningAlgorithm, SignedMessage: input.Verification.SignedMessage, Signature: input.Verification.Signature, SignatureDigest: input.Verification.SignatureDigest, EvidenceSummary: input.Verification.EvidenceSummary, FailureCode: input.Verification.FailureCode, Evidence: input.Verification.Evidence, Lanes: input.Verification.Lanes}})
+	generation, err := server.chat.SettleSecureGeneration(request.Context(), persistence.SecureGenerationSettlementInput{GenerationID: request.PathValue("id"), Body: input.Body, Reasoning: input.Reasoning, Metrics: input.Metrics, Verification: persistence.GenerationVerification{Status: input.Verification.Status, CompletionID: input.Verification.CompletionID, VerifiedAt: input.Verification.VerifiedAt, SignatureKind: input.Verification.SignatureKind, SigningAddress: input.Verification.SigningAddress, SigningAlgorithm: input.Verification.SigningAlgorithm, SignedMessage: input.Verification.SignedMessage, Signature: input.Verification.Signature, SignatureDigest: input.Verification.SignatureDigest, EvidenceSummary: input.Verification.EvidenceSummary, FailureCode: input.Verification.FailureCode, Evidence: input.Verification.Evidence, Lanes: input.Verification.Lanes}})
 	if err != nil {
 		writeGenerationError(writer, err)
 		return
@@ -724,6 +727,7 @@ type generationVerificationEnvelope struct {
 }
 
 type generationEnvelope struct {
+	Metrics               *persistence.GenerationMetrics          `json:"metrics,omitempty"`
 	ID                    string                                  `json:"id"`
 	ConversationID        string                                  `json:"conversation_id"`
 	ClientRequestID       string                                  `json:"client_request_id"`
@@ -741,18 +745,22 @@ type generationEnvelope struct {
 }
 
 type generationEventEnvelope struct {
-	EventID      string                    `json:"event_id"`
-	BatchID      string                    `json:"batch_id,omitempty"`
-	TargetID     string                    `json:"target_id,omitempty"`
-	GenerationID string                    `json:"generation_id"`
-	Type         chat.EventType            `json:"type"`
-	Delta        string                    `json:"delta,omitempty"`
-	ErrorCode    string                    `json:"error_code,omitempty"`
-	ErrorMessage string                    `json:"error_message,omitempty"`
-	Snapshot     *providerSnapshotEnvelope `json:"snapshot,omitempty"`
+	EventID        string                    `json:"event_id"`
+	BatchID        string                    `json:"batch_id,omitempty"`
+	TargetID       string                    `json:"target_id,omitempty"`
+	GenerationID   string                    `json:"generation_id"`
+	Type           chat.EventType            `json:"type"`
+	Delta          string                    `json:"delta,omitempty"`
+	ReasoningDelta string                    `json:"reasoning_delta,omitempty"`
+	ErrorCode      string                    `json:"error_code,omitempty"`
+	ErrorMessage   string                    `json:"error_message,omitempty"`
+	Snapshot       *providerSnapshotEnvelope `json:"snapshot,omitempty"`
 }
 
 type generationTargetAttemptEnvelope struct {
+	Metrics               *persistence.GenerationMetrics          `json:"metrics,omitempty"`
+	CreatedAt             time.Time                               `json:"created_at"`
+	UpdatedAt             time.Time                               `json:"updated_at"`
 	ID                    string                                  `json:"id"`
 	State                 persistence.GenerationState             `json:"state"`
 	Snapshot              providerSnapshotEnvelope                `json:"snapshot"`
@@ -764,6 +772,7 @@ type generationTargetAttemptEnvelope struct {
 }
 
 type conversationViewEnvelope struct {
+	Branch *persistence.ConversationBranch `json:"branch,omitempty"`
 	persistence.Conversation
 	Messages              []persistence.Message     `json:"messages"`
 	ActiveGenerationBatch *generationBatchEnvelope  `json:"active_generation_batch,omitempty"`
@@ -800,14 +809,14 @@ func generationEnvelopeFor(generation persistence.Generation) generationEnvelope
 	return generationEnvelope{
 		ID: generation.ID, ConversationID: generation.ConversationID, ClientRequestID: generation.ClientRequestID,
 		UserMessageID: generation.UserMessageID, State: generation.State, Snapshot: providerSnapshotEnvelopeFor(generation.Snapshot), ConfigurationSnapshot: generationConfigurationSnapshotEnvelopeFor(generation.ConfigurationSnapshot),
-		Verification:       generationVerificationEnvelopeFor(generation.Verification),
+		Metrics: generation.Metrics, Verification: generationVerificationEnvelopeFor(generation.Verification),
 		AssistantMessageID: generation.AssistantMessageID, ErrorCode: generation.ErrorCode, ErrorMessage: generation.ErrorMessage,
 		EventsURL: "/api/generations/" + generation.ID + "/events", CreatedAt: generation.CreatedAt, UpdatedAt: generation.UpdatedAt,
 	}
 }
 
 func conversationViewEnvelopeFor(view persistence.ConversationView) conversationViewEnvelope {
-	result := conversationViewEnvelope{Conversation: view.Conversation, Messages: view.Messages, GenerationBatches: make([]generationBatchEnvelope, 0, len(view.GenerationBatches))}
+	result := conversationViewEnvelope{Branch: view.Branch, Conversation: view.Conversation, Messages: view.Messages, GenerationBatches: make([]generationBatchEnvelope, 0, len(view.GenerationBatches))}
 	if view.ActiveGenerationBatch != nil {
 		batch := generationBatchEnvelopeFor(*view.ActiveGenerationBatch)
 		result.ActiveGenerationBatch = &batch
@@ -825,8 +834,9 @@ func generationBatchEnvelopeFor(batch persistence.GenerationBatch) generationBat
 		targets = append(targets, generationTargetEnvelope{
 			ID: target.ID, ProviderID: target.ProviderID, ModelID: target.ModelID, Position: target.Position,
 			Generation: generationTargetAttemptEnvelope{
+				CreatedAt: generation.CreatedAt, UpdatedAt: generation.UpdatedAt,
 				ID: generation.ID, State: generation.State, Snapshot: providerSnapshotEnvelopeFor(generation.Snapshot), ConfigurationSnapshot: generationConfigurationSnapshotEnvelopeFor(generation.ConfigurationSnapshot),
-				Verification:       generationVerificationEnvelopeFor(generation.Verification),
+				Metrics: generation.Metrics, Verification: generationVerificationEnvelopeFor(generation.Verification),
 				AssistantMessageID: generation.AssistantMessageID, ErrorCode: generation.ErrorCode, ErrorMessage: generation.ErrorMessage,
 			},
 		})
@@ -849,7 +859,7 @@ func generationVerificationEnvelopeFor(verification persistence.GenerationVerifi
 func generationEventEnvelopeFor(event chat.GenerationEvent) generationEventEnvelope {
 	result := generationEventEnvelope{
 		EventID: event.EventID, BatchID: event.BatchID, TargetID: event.TargetID, GenerationID: event.GenerationID, Type: event.Type,
-		Delta: event.Delta, ErrorCode: event.ErrorCode, ErrorMessage: event.ErrorMessage,
+		Delta: event.Delta, ReasoningDelta: event.ReasoningDelta, ErrorCode: event.ErrorCode, ErrorMessage: event.ErrorMessage,
 	}
 	if event.Snapshot != nil {
 		snapshot := providerSnapshotEnvelopeFor(*event.Snapshot)
@@ -1016,6 +1026,8 @@ func writeGenerationError(writer http.ResponseWriter, err error) {
 		writeError(writer, http.StatusConflict, "generation_in_progress", "Another Generation is already in progress.")
 	case errors.Is(err, chat.ErrGenerationBatchInProgress):
 		writeError(writer, http.StatusConflict, "generation_batch_in_progress", "Another Generation Batch is already in progress.")
+	case errors.Is(err, persistence.ErrInvalidBranch):
+		writeError(writer, http.StatusConflict, "invalid_branch", "The source turn is unavailable for editing. Refresh the conversation and try again.")
 	case errors.Is(err, persistence.ErrContextDispositionRequired):
 		writeError(writer, http.StatusConflict, "context_disposition_required", "Select an answer or continue without an answer before starting the next Generation Batch.")
 	case errors.Is(err, persistence.ErrContextDispositionFrozen):

@@ -126,8 +126,11 @@ export function ModelComparisonResultGrid({
                 key={target.id}
               >
                 <ModelAnswerCard
+                  answer={message ? { messageId: message.id, conversationId: message.conversation_id, body: message.body, snapshot: message.provider_snapshot } : undefined}
+                  metrics={target.generation.metrics}
                   actions={actions}
                   body={message?.body ?? liveTarget?.assistantBody ?? ""}
+                  reasoning={message?.reasoning ?? liveTarget?.reasoningBody}
                   copy={copy}
                   createdAt={message?.created_at ?? batch.updated_at}
                   errorCode={
@@ -148,6 +151,7 @@ export function ModelComparisonResultGrid({
                       ? (kind) => onVerifyAgain(target.id, kind)
                       : undefined
                   }
+                  onStop={onCancelTarget ? ()=>onCancelTarget(batch.id,target.generation.id) : undefined}
                   targetId={target.id}
                 />
               </div>
@@ -278,8 +282,10 @@ export function LiveModelComparisonGrid({
               key={target.key}
             >
               <ModelAnswerCard
+                metrics={batch?.targets.find(item => item.id === target.targetId)?.generation.metrics}
                 actions={actions}
                 body={target.assistantBody}
+                reasoning={target.reasoningBody}
                 copy={copy}
                 errorCode={target.errorCode}
                 modelId={target.modelId}
@@ -299,6 +305,7 @@ export function LiveModelComparisonGrid({
                         onVerifyAgain(target.targetId ?? target.key, kind)
                     : undefined
                 }
+                onStop={onCancelTarget && batch && target.generationId ? ()=>onCancelTarget(batch.id,target.generationId!) : undefined}
                 targetId={target.targetId ?? target.key}
               />
             </div>

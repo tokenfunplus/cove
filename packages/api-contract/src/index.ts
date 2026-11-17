@@ -61,6 +61,8 @@ export interface ConversationSearchResult extends Conversation {
 }
 
 export interface Message {
+  /** Provider-labelled reasoning, separate from the answer used for future context. */
+  reasoning?: string;
   id: string;
   /** Read-only origin for every saved assistant attempt, including older retries. */
   generation_batch_id?: string;
@@ -72,6 +74,7 @@ export interface Message {
 }
 
 export interface ConversationView extends Conversation {
+  branch?: { source_conversation_id: string; source_batch_id: string; source_title: string };
   messages: Message[];
   active_generation_batch?: GenerationBatch;
   /** New submissions only; legacy Conversation History is intentionally not backfilled. */
@@ -109,13 +112,23 @@ export interface ProviderProfileInput {
 
 export interface ProviderValidationResponse {
   models: string[];
-  /** Provider-advertised transport classification for each catalog model. */
+  /** Normalized catalog details and Cove transport classification for each model. */
   model_metadata?: ProviderModelMetadata[];
 }
 
 export type ProviderModelPrivacyMode = "private_tee" | "incognito" | "chutes";
 
+export type ModelCapability = "text_input" | "image_input" | "audio_input" | "video_input" | "image_output" | "audio_output" | "video_output" | "tools" | "json_mode" | "structured_outputs" | "reasoning";
+
 export interface ProviderModelMetadata {
+  name?: string;
+  owner?: string;
+  description?: string;
+  context_length?: number;
+  max_output_tokens?: number;
+  input_price_per_million?: number;
+  output_price_per_million?: number;
+  capabilities?: ModelCapability[];
   id: string;
   privacy_mode: ProviderModelPrivacyMode;
   /** True only when the current SDK can verify this model's attestation format. */
@@ -193,7 +206,17 @@ export interface GenerationConfigurationSnapshot {
   max_tokens: number | null;
 }
 
+export interface GenerationMetrics {
+  source: "service" | "browser";
+  duration_ms: number;
+  time_to_first_token_ms?: number;
+  output_duration_ms?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+}
+
 export interface Generation {
+  metrics?: GenerationMetrics;
   id: string;
   conversation_id: string;
   client_request_id: string;
@@ -217,6 +240,7 @@ export interface ExpectedGenerationTarget {
 }
 
 export interface GenerationInput {
+  edit_of_batch_id?: string;
   client_request_id: string;
   body: string;
   attachments?: AttachmentInput[];
@@ -253,6 +277,7 @@ export interface GenerationEvent {
   generation_id: string;
   type: GenerationEventType;
   delta?: string;
+  reasoning_delta?: string;
   error_code?: string;
   error_message?: string;
   snapshot?: ProviderSnapshot;
@@ -261,6 +286,9 @@ export interface GenerationEvent {
 export type GenerationBatchState = "pending" | "streaming" | "completed" | "completed_with_errors" | "stopped" | "failed";
 
 export interface GenerationTargetAttempt {
+  metrics?: GenerationMetrics;
+  created_at?: string;
+  updated_at?: string;
   id: string;
   state: GenerationState;
   snapshot: ProviderSnapshot;

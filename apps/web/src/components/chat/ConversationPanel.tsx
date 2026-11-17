@@ -1,3 +1,8 @@
+import { useState } from "react";
+import { EditPromptDialog } from "./EditPromptDialog";
+import { ChatExperienceContext, GenerationActivity, FailureActions } from "./ChatExperience";
+import { AnswerActions } from "@/components/chat/AnswerActions";
+import { ResponseDetails } from "./ResponseDetails";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ConversationTimeline } from "@/components/chat/ConversationTimeline";
 import {
@@ -10,31 +15,26 @@ import { welcomeStyles } from "@/styles/welcome";
 import { baseStyles } from "@/styles/base";
 import { primitivesStyles } from "@/styles/primitives";
 import { messagesStyles } from "@/styles/messages";
-import { motionStyles } from "@/styles/motion";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CoveMark } from "@/components/ui/CoveMark";
 import { ConversationWelcome } from "@/components/chat/ConversationWelcome";
 import { generationFailureMessage } from "@/components/chat/generation-status";
 import {
-  PrivateGenerationProgress,
   StopGenerationButton,
 } from "@/components/chat/GenerationProgress";
-import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
-import { MessageFootnote, MessageMeta } from "@/components/chat/MessageMeta";
-import { type ModelAnswerPhase } from "@/components/chat/ModelAnswerCard";
+import { AssistantMessage } from "@/components/chat/AssistantMessage";
+import { MessageMeta } from "@/components/chat/MessageMeta";
 import {
   LiveModelComparisonGrid,
   ModelComparisonResultGrid,
 } from "@/components/chat/ModelComparison";
-import { ProviderSnapshotView } from "@/components/chat/ProviderSnapshotView";
 import {
   type ActiveModelSet,
   inferenceModeForSnapshot,
   type ProviderSelectionStatus,
 } from "@/components/providers/model-selection";
 import { ProviderStatusNotice } from "@/components/providers/ProviderStatusNotice";
-import { VerificationDetailsButton } from "@/components/verification/VerificationDetailsButton";
 import { type LiveTurn } from "@/lib/chat/live-turn";
 import { conversationTimeline } from "@/lib/chat/timeline";
 import { timelineStyles } from "@/styles/timeline";
@@ -53,6 +53,7 @@ import type { ConversationNavigation } from "@/lib/workspace-types";
 
 export function ConversationPanel({
   focusMode = false,
+  composerId,
   attachmentDraft,
   view,
   copy = englishConversationCopy,
@@ -62,6 +63,8 @@ export function ConversationPanel({
   onRetry,
   onCreateConversation,
   onOpenSettings,
+  onChooseModel,
+  onEditPrompt,
   generationBatch,
   navigation,
   generationBatches = [],
@@ -85,12 +88,15 @@ export function ConversationPanel({
   attachmentDraft?: AttachmentDraft;
   view: ConversationView | undefined;
   copy?: ApplicationCopy;
+  composerId?: string;
   isLoading?: boolean;
   onSend?: () => void;
   onCancel?: () => void;
   onRetry?: (batchID: string, targetID: string) => void;
   onCreateConversation?: () => void;
   onOpenSettings?: () => void;
+  onChooseModel?: () => void;
+  onEditPrompt?: (batchId:string,body:string,targets:ActiveModelSet,callbacks:{onAccepted:()=>void;onFailure:(message:string)=>void})=>void;
   generationBatch?: GenerationBatch;
   navigation?: ConversationNavigation;
   generationBatches?: GenerationBatch[];
@@ -114,8 +120,12 @@ export function ConversationPanel({
   activeModelSet?: ActiveModelSet;
   profiles?: ProviderProfile[];
 }) {
+  const [editing,setEditing]=useState<{batch:GenerationBatch;body:string}>();
+  const [editError,setEditError]=useState<string>();
   const {
     messageListRef,
+    contentRef,
+    updatedReplies,
     composerRef,
     footerRef,
     footerHeight,
@@ -335,6 +345,7 @@ export function ConversationPanel({
 
   return (
     <SourceDocuments batches={allGenerationBatches}>
+    <ChatExperienceContext.Provider value={{chooseModel:onChooseModel,openSettings:onOpenSettings,busy:isSending || navigationBusy,editTarget:onEditPrompt && !draft.trim() && !attachmentDraft?.attachments.length && !view.archived ? targetId=>{const batch=allGenerationBatches.find(item=>item.targets.some(target=>target.id===targetId));const message=view.messages.find(item=>item.id===batch?.user_message_id);if(batch && message)setEditing({batch,body:message.body});}:undefined}}>
       <section
         className={cn(
           chatStyles.conversationPanel,
@@ -345,6 +356,8 @@ export function ConversationPanel({
         data-workspace-region="conversation"
         data-workspace-empty={hasMessages ? undefined : "true"}
       >
+        {view.branch && <p className="mx-5 my-2 text-xs text-muted-foreground" role="status">Branch of {view.branch.source_title}. Earlier messages are copied context from the edited turn.</p>}
+        {editing && onEditPrompt && <EditPromptDialog key={editing.batch.id} batch={editing.batch} body={editing.body} targets={activeModelSet} profiles={profiles} busy={isSending || navigationBusy} error={editError} onCancelSubmission={onCancel} onClose={()=>{setEditing(undefined);setEditError(undefined);}} onSubmit={(body,targets)=>{setEditError(undefined);onEditPrompt(editing.batch.id,body,targets,{onAccepted:()=>setEditing(undefined),onFailure:setEditError});}}/>}
         {view.archived ? (
           <p className={chatStyles.conversationPanel_archived} role="status">
             {copy.archivedConversationNotice}
@@ -370,6 +383,7 @@ export function ConversationPanel({
           aria-label={copy.conversationMessages}
           data-workspace-region="messages"
         >
+          <div ref={contentRef} className="flow-root min-w-0" data-message-content>
           {view.messages.length === 0 &&
           liveTargets.length === 0 &&
           !liveTurn ? (
@@ -457,7 +471,9 @@ export function ConversationPanel({
                     />
                   )}
                   {message.role === "assistant" ? (
-                    <MarkdownMessage content={message.body} />
+                    <AnswerActions source={{ messageId: message.id, conversationId: message.conversation_id, body: message.body, snapshot }}>
+                      <AssistantMessage content={message.body} reasoning={message.reasoning} />
+                    </AnswerActions>
                   ) : (
                     <p
                       className={cn(
@@ -468,6 +484,10 @@ export function ConversationPanel({
                       {message.body}
                     </p>
                   )}
+                  {message.role === "user" && onEditPrompt && (()=>{
+                    const batch=allGenerationBatches.find(item=>item.user_message_id===message.id);
+                    return batch && isTerminalBatch(batch) ? <Button variant="ghost" size="xs" type="button" disabled={isSending || navigationBusy || !!draft.trim() || !!attachmentDraft?.attachments.length || view.archived} title={draft.trim() || attachmentDraft?.attachments.length ? "Send or clear your current draft before editing a saved prompt." : "Edit prompt and branch"} onClick={()=>{setEditError(undefined);setEditing({batch,body:message.body});}}>Edit and resend</Button> : null;
+                  })()}
                   {message.role === "user" && message.created_at ? (
                     <time
                       className={messagesStyles.message_timestamp}
@@ -485,33 +505,8 @@ export function ConversationPanel({
                         <BatchSources batch={batch} userBody={message.body} />
                       ) : null;
                     })()}
-                  {message.role === "assistant" && snapshot ? (
-                    <MessageFootnote
-                      copy={copy}
-                      notice={snapshot.privacy_notice}
-                      providerName={snapshot.provider_name}
-                    />
-                  ) : null}
-                  {snapshot ? (
-                    <ProviderSnapshotView copy={copy} snapshot={snapshot} />
-                  ) : null}
-                  {message.role === "assistant" ? (
-                    <VerificationDetailsButton
-                      verification={historyVerification}
-                      providerName={snapshot?.provider_name}
-                      modelId={snapshot?.model_id}
-                      copy={copy}
-                      onVerifyAgain={
-                        generationTarget && onVerifyAgain
-                          ? (kind) =>
-                              onVerifyAgain?.(
-                                generationTarget.target.id,
-                                kind,
-                              ) ?? Promise.resolve(undefined)
-                          : undefined
-                      }
-                    />
-                  ) : null}
+                  {message.role === "assistant" && <ResponseDetails metrics={generationTarget?.target.generation.metrics} snapshot={snapshot} verification={historyVerification} mode={inferenceModeForSnapshot(snapshot)} copy={copy} onVerifyAgain={generationTarget && onVerifyAgain ? kind=>onVerifyAgain(generationTarget.target.id,kind) : undefined}/>}
+
                 </article>
               );
             })
@@ -557,13 +552,6 @@ export function ConversationPanel({
                 target.phase === "verifying_environment" ||
                 target.phase === "streaming" ||
                 target.phase === "verifying_response";
-              const privateProgress =
-                liveWaiting &&
-                (liveVerification?.status === "pending" ||
-                  target.phase === "verifying_environment" ||
-                  target.phase === "verifying_response");
-              const showInlineGenerationStatus =
-                liveWaiting && !target.assistantBody;
               return (
                 <article
                   className={cn(
@@ -586,60 +574,9 @@ export function ConversationPanel({
                     }
                     mode={inferenceModeForSnapshot(target.snapshot)}
                   />
-                  {showInlineGenerationStatus ? (
-                    <div className={messagesStyles.message_generationProgress}>
-                      {privateProgress ? (
-                        <PrivateGenerationProgress
-                          compact
-                          phase={
-                            target.phase as Extract<
-                              ModelAnswerPhase,
-                              | "pending"
-                              | "verifying_environment"
-                              | "streaming"
-                              | "verifying_response"
-                            >
-                          }
-                          copy={copy}
-                        />
-                      ) : (
-                        <p
-                          className={cn(
-                            messagesStyles.message_body,
-                            "message__body--pending",
-                          )}
-                        >
-                          <span
-                            aria-hidden="true"
-                            className={motionStyles.pendingDots}
-                          >
-                            ...
-                          </span>
-                          {copy.generationPending}
-                        </p>
-                      )}
-                      {!canStopFromComposer &&
-                      liveBatch &&
-                      target.generationId &&
-                      onCancelTarget ? (
-                        <StopGenerationButton
-                          copy={copy}
-                          onClick={() =>
-                            onCancelTarget(liveBatch.id, target.generationId!)
-                          }
-                        />
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {target.assistantBody ? (
-                    <MarkdownMessage content={target.assistantBody} />
-                  ) : null}
-                  {target.snapshot && Boolean(target.assistantBody) ? (
-                    <MessageFootnote
-                      copy={copy}
-                      notice={target.snapshot.privacy_notice}
-                      providerName={target.snapshot.provider_name}
-                    />
+                  {liveWaiting && <GenerationActivity stopWhenStalledOnly={Boolean(canStopFromComposer)} phase={target.phase} body={target.assistantBody} reasoning={target.reasoningBody} onStop={target.generationId && liveBatch && onCancelTarget ? ()=>onCancelTarget(liveBatch.id,target.generationId!) : onCancel}/>}
+                  {target.assistantBody || target.reasoningBody ? (
+                    <AssistantMessage content={target.assistantBody} reasoning={target.reasoningBody} streaming={target.phase === "streaming"} />
                   ) : null}
                   {target.phase === "stopped" ? (
                     <p className={messagesStyles.message_state}>
@@ -661,26 +598,7 @@ export function ConversationPanel({
                       {copy.generationDeliveryUnknown}
                     </p>
                   ) : null}
-                  {target.snapshot &&
-                  (Boolean(target.assistantBody) || !liveWaiting) ? (
-                    <ProviderSnapshotView
-                      copy={copy}
-                      snapshot={target.snapshot}
-                    />
-                  ) : null}
-                  <VerificationDetailsButton
-                    verification={liveVerification}
-                    providerName={target.snapshot?.provider_name}
-                    modelId={target.snapshot?.model_id ?? target.modelId}
-                    copy={copy}
-                    onVerifyAgain={
-                      target.targetId && onVerifyAgain
-                        ? (kind) =>
-                            onVerifyAgain?.(target.targetId!, kind) ??
-                            Promise.resolve(undefined)
-                        : undefined
-                    }
-                  />
+                  {(target.assistantBody || !liveWaiting) && <ResponseDetails snapshot={target.snapshot} verification={liveVerification} copy={copy} mode={inferenceModeForSnapshot(target.snapshot)} onVerifyAgain={target.targetId && onVerifyAgain ? kind=>onVerifyAgain(target.targetId!,kind):undefined}/>}
                   {!canStopFromComposer &&
                   liveWaiting &&
                   target.assistantBody &&
@@ -710,6 +628,7 @@ export function ConversationPanel({
                       {copy.retryGeneration}
                     </Button>
                   ) : null}
+                  {(target.phase==="failed" || target.phase==="stopped") && <FailureActions targetId={target.targetId} code={target.errorCode} busy={isSending}/>}
                   {liveBatch &&
                   liveBatch.targets.length > 1 &&
                   !liveBatch.context_frozen &&
@@ -758,10 +677,8 @@ export function ConversationPanel({
                       target.generation.error_message,
                     )}
               </p>
-              <ProviderSnapshotView
-                copy={copy}
-                snapshot={target.generation.snapshot}
-              />
+              <ResponseDetails snapshot={target.generation.snapshot} metrics={target.generation.metrics} verification={target.generation.verification} copy={copy}/>
+              <FailureActions targetId={target.id} code={target.generation.error_code} busy={isSending}/>
               {onRetry ? (
                 <Button
                   variant="outline"
@@ -787,6 +704,7 @@ export function ConversationPanel({
             />
           ))}
           </div>
+          </div>
           <ConversationTimeline
             key={view.id}
             conversationId={view.id}
@@ -804,7 +722,7 @@ export function ConversationPanel({
             onClick={returnToLatest}
             type="button"
           >
-            ↓ {copy.returnToLatest}
+            ↓ {copy.returnToLatest}{updatedReplies>0 ? ` · ${updatedReplies} updated ${updatedReplies===1?"answer":"answers"}` : ""}
           </Button>
         ) : null}
         <p
@@ -844,6 +762,7 @@ export function ConversationPanel({
           ) : null}
           {showComposer ? (
             <ChatComposer
+              composerId={composerId}
               compact={focusMode}
               attachmentDraft={attachmentDraft}
               view={view}
@@ -864,6 +783,7 @@ export function ConversationPanel({
           ) : null}
         </div>
       </section>
+    </ChatExperienceContext.Provider>
     </SourceDocuments>
   );
 }

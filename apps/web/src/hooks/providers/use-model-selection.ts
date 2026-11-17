@@ -5,6 +5,7 @@ import {
   availableModelsForAddedTarget,
   isDuplicateModelTarget,
   type ActiveSelection,
+  type ActiveModelSet,
   type ModelCatalogs,
 } from "@/components/providers/model-selection";
 import { providerErrorMessage } from "@/components/providers/provider-feedback";
@@ -50,6 +51,40 @@ export function useModelSelection({
     }
     setActiveModelSet(providerId ? [{ providerId, modelId: "" }] : []);
     setFeedback(undefined);
+  }
+
+  async function handleApplyModelSet(targets: ActiveModelSet) {
+    if (
+      isSending ||
+      !targets.length ||
+      targets.length > 4 ||
+      targets.some(
+        (target, index) =>
+          !providerProfiles.some(
+            (profile) => profile.id === target.providerId && profile.configured,
+          ) ||
+          catalogs[target.providerId]?.status !== "ready" ||
+          !catalogs[target.providerId]?.models.includes(target.modelId) ||
+          isDuplicateModelTarget(targets, target, index),
+      )
+    )
+      return;
+    try {
+      const updated = await updateSettings({
+        ...settings,
+        active_model_set: targets.map((target) => ({
+          provider_id: target.providerId,
+          model_id: target.modelId,
+        })),
+      });
+      setSettings(updated);
+      setActiveModelSet(
+        activeModelSetFromWorkspaceSettings(updated, providerProfiles),
+      );
+      setFeedback(undefined);
+    } catch (error) {
+      setFeedback(providerErrorMessage(error, copy));
+    }
   }
 
   async function handleModelChange(modelId: string) {
@@ -204,6 +239,7 @@ export function useModelSelection({
 
   return {
     handleProviderChange,
+    handleApplyModelSet,
     handleModelChange,
     handleTargetModelChange,
     handleAddModel,

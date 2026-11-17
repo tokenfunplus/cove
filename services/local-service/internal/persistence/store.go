@@ -19,7 +19,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 16
+const schemaVersion = 19
 
 const defaultConversationTitle = "New conversation"
 
@@ -60,6 +60,7 @@ type ChatStore interface {
 	SkipGenerationBatchContext(ctx context.Context, batchID string) error
 	LoadBatchContext(ctx context.Context, conversationID string) ([]ContextItem, error)
 	LoadGenerationBatchContext(ctx context.Context, batchID string) ([]ContextItem, error)
+	LoadBatchAttachments(ctx context.Context, batchID string) ([]documents.Prepared, error)
 	LoadAttachmentData(ctx context.Context, batchID, documentID string) (documents.Input, error)
 }
 
@@ -120,6 +121,7 @@ type Conversation struct {
 }
 
 type Message struct {
+	Reasoning         string            `json:"reasoning,omitempty"`
 	ID                string            `json:"id"`
 	GenerationBatchID string            `json:"generation_batch_id,omitempty"`
 	ConversationID    string            `json:"conversation_id"`
@@ -134,7 +136,14 @@ type MessageInput struct {
 	Body string `json:"body"`
 }
 
+type ConversationBranch struct {
+	SourceConversationID string `json:"source_conversation_id"`
+	SourceBatchID        string `json:"source_batch_id"`
+	SourceTitle          string `json:"source_title"`
+}
+
 type ConversationView struct {
+	Branch *ConversationBranch `json:"branch,omitempty"`
 	Conversation
 	Messages              []Message         `json:"messages"`
 	ActiveGeneration      *Generation       `json:"active_generation,omitempty"`
@@ -232,6 +241,7 @@ type VerificationEvidence struct {
 }
 
 type Generation struct {
+	Metrics               *GenerationMetrics              `json:"metrics,omitempty"`
 	ID                    string                          `json:"id"`
 	GenerationBatchID     string                          `json:"generation_batch_id,omitempty"`
 	GenerationTargetID    string                          `json:"generation_target_id,omitempty"`
@@ -307,6 +317,7 @@ type GenerationTargetInput struct {
 }
 
 type BeginGenerationBatchInput struct {
+	EditOfBatchID        string
 	ConversationID       string
 	ClientRequestID      string
 	Body                 string
@@ -348,12 +359,16 @@ type BeginGenerationInput struct {
 type CompleteGenerationInput struct {
 	GenerationID string
 	Body         string
+	Reasoning    string
+	Metrics      *GenerationMetrics
 }
 
 type SecureGenerationSettlementInput struct {
 	GenerationID string
 	Body         string
+	Reasoning    string
 	Verification GenerationVerification
+	Metrics      *GenerationMetrics
 }
 
 type TerminateGenerationInput struct {
@@ -660,6 +675,24 @@ PRAGMA user_version = 15;
 		if _, err := tx.Exec(conversationSearchMigration); err != nil {
 			return fmt.Errorf("apply SQLite migration 16: %w", err)
 		}
+		version = 16
+	}
+	if version == 16 {
+		if _, err := tx.Exec(`ALTER TABLE generations ADD COLUMN metrics TEXT NOT NULL DEFAULT '{}'; PRAGMA user_version = 17;`); err != nil {
+			return fmt.Errorf("apply SQLite migration 17: %w", err)
+		}
+		version = 17
+	}
+	if version == 17 {
+		if _, err := tx.Exec(`ALTER TABLE messages ADD COLUMN reasoning TEXT NOT NULL DEFAULT ''; PRAGMA user_version = 18;`); err != nil {
+			return fmt.Errorf("apply SQLite migration 18: %w", err)
+		}
+		version = 18
+	}
+	if version == 18 {
+		if _, err := tx.Exec(`CREATE TABLE conversation_branches (conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE, source_conversation_id TEXT NOT NULL, source_batch_id TEXT NOT NULL, source_title TEXT NOT NULL); PRAGMA user_version = 19;`); err != nil {
+			return fmt.Errorf("apply SQLite migration 19: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit SQLite migration: %w", err)
@@ -725,7 +758,7 @@ func (store *SQLiteStore) LoadConversation(ctx context.Context, id string) (Conv
 	if err != nil {
 		return ConversationView{}, fmt.Errorf("load conversation: %w", err)
 	}
-	rows, err := store.db.QueryContext(ctx, `SELECT m.id, m.conversation_id, m.role, m.body, m.provider_snapshot, m.created_at, COALESCE(g.generation_batch_id, '')
+	rows, err := store.db.QueryContext(ctx, `SELECT m.id, m.conversation_id, m.role, m.body, m.provider_snapshot, m.created_at, COALESCE(g.generation_batch_id, ''), m.reasoning
 FROM messages m LEFT JOIN generations g ON g.assistant_message_id = m.id
 WHERE m.conversation_id = ? ORDER BY m.created_at ASC, m.id ASC`, id)
 	if err != nil {
@@ -737,7 +770,7 @@ WHERE m.conversation_id = ? ORDER BY m.created_at ASC, m.id ASC`, id)
 		var message Message
 		var snapshot sql.NullString
 		var createdAt int64
-		if err := rows.Scan(&message.ID, &message.ConversationID, &message.Role, &message.Body, &snapshot, &createdAt, &message.GenerationBatchID); err != nil {
+		if err := rows.Scan(&message.ID, &message.ConversationID, &message.Role, &message.Body, &snapshot, &createdAt, &message.GenerationBatchID, &message.Reasoning); err != nil {
 			return ConversationView{}, fmt.Errorf("scan message: %w", err)
 		}
 		if snapshot.Valid {
@@ -775,6 +808,10 @@ WHERE m.conversation_id = ? ORDER BY m.created_at ASC, m.id ASC`, id)
 		return ConversationView{}, err
 	}
 	view.GenerationBatches = batches
+	view.Branch, err = store.loadConversationBranch(ctx, id)
+	if err != nil {
+		return ConversationView{}, err
+	}
 	return view, nil
 }
 
@@ -1076,6 +1113,12 @@ func (store *SQLiteStore) MarkGenerationVerifyingResponse(ctx context.Context, i
 }
 
 func (store *SQLiteStore) SettleSecureGeneration(ctx context.Context, input SecureGenerationSettlementInput) error {
+	if input.Metrics != nil && input.Metrics.Source != "browser" {
+		return errors.New("secure generation metrics must describe browser measurements")
+	}
+	if err := validateGenerationMetrics(input.Metrics); err != nil {
+		return err
+	}
 	if strings.TrimSpace(input.GenerationID) == "" {
 		return errors.New("generation ID is required")
 	}
@@ -1148,11 +1191,12 @@ func (store *SQLiteStore) SettleSecureGeneration(ctx context.Context, input Secu
 		if marshalErr != nil {
 			return fmt.Errorf("encode secure assistant provider snapshot: %w", marshalErr)
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, body, provider_snapshot, created_at) VALUES (?, ?, 'assistant', ?, ?, ?)`, assistantID, generation.ConversationID, input.Body, snapshot, now.UnixNano()); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, body, provider_snapshot, created_at, reasoning) VALUES (?, ?, 'assistant', ?, ?, ?, ?)`, assistantID, generation.ConversationID, input.Body, snapshot, now.UnixNano(), input.Reasoning); err != nil {
 			return fmt.Errorf("save secure assistant message: %w", err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE generations SET state = ?, verification_snapshot = ?, assistant_message_id = NULLIF(?, ''), error_code = NULLIF(?, ''), error_message = NULLIF(?, ''), updated_at = ? WHERE id = ?`, state, string(verification), assistantID, errorCode, errorMessage, now.UnixNano(), input.GenerationID); err != nil {
+	metrics, _ := json.Marshal(input.Metrics)
+	if _, err := tx.ExecContext(ctx, `UPDATE generations SET state = ?, verification_snapshot = ?, assistant_message_id = NULLIF(?, ''), error_code = NULLIF(?, ''), error_message = NULLIF(?, ''), updated_at = ?, metrics = ? WHERE id = ?`, state, string(verification), assistantID, errorCode, errorMessage, now.UnixNano(), string(metrics), input.GenerationID); err != nil {
 		return fmt.Errorf("settle secure generation: %w", err)
 	}
 	if assistantID != "" {
@@ -1188,6 +1232,12 @@ func validGenerationTransition(from, to GenerationState) bool {
 }
 
 func (store *SQLiteStore) CompleteGeneration(ctx context.Context, input CompleteGenerationInput) error {
+	if input.Metrics != nil && input.Metrics.Source != "service" {
+		return errors.New("ordinary generation metrics must describe Local Service measurements")
+	}
+	if err := validateGenerationMetrics(input.Metrics); err != nil {
+		return err
+	}
 	if strings.TrimSpace(input.Body) == "" {
 		return errors.New("completed generation body is required")
 	}
@@ -1212,10 +1262,11 @@ func (store *SQLiteStore) CompleteGeneration(ctx context.Context, input Complete
 		return fmt.Errorf("encode assistant provider snapshot: %w", err)
 	}
 	now := time.Now().UTC()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, body, provider_snapshot, created_at) VALUES (?, ?, 'assistant', ?, ?, ?)`, messageID, generation.ConversationID, input.Body, snapshot, now.UnixNano()); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, body, provider_snapshot, created_at, reasoning) VALUES (?, ?, 'assistant', ?, ?, ?, ?)`, messageID, generation.ConversationID, input.Body, snapshot, now.UnixNano(), input.Reasoning); err != nil {
 		return fmt.Errorf("save assistant message: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE generations SET state = ?, assistant_message_id = ?, updated_at = ? WHERE id = ?`, GenerationCompleted, messageID, now.UnixNano(), input.GenerationID); err != nil {
+	metrics, _ := json.Marshal(input.Metrics)
+	if _, err := tx.ExecContext(ctx, `UPDATE generations SET state = ?, assistant_message_id = ?, updated_at = ?, metrics = ? WHERE id = ?`, GenerationCompleted, messageID, now.UnixNano(), string(metrics), input.GenerationID); err != nil {
 		return fmt.Errorf("complete generation state: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE conversations SET updated_at = ? WHERE id = ?`, now.UnixNano(), generation.ConversationID); err != nil {
@@ -1275,7 +1326,7 @@ func (store *SQLiteStore) RecoverInterruptedGenerations(ctx context.Context) err
 	return tx.Commit()
 }
 
-const generationQuery = `SELECT id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, assistant_message_id, error_code, error_message, created_at, updated_at, generation_batch_id, generation_target_id FROM generations`
+const generationQuery = `SELECT id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, assistant_message_id, error_code, error_message, created_at, updated_at, generation_batch_id, generation_target_id, metrics FROM generations`
 
 func getGenerationTx(ctx context.Context, tx *sql.Tx, clientRequestID string) (Generation, error) {
 	return scanGeneration(tx.QueryRowContext(ctx, generationQuery+` WHERE client_request_id = ?`, clientRequestID))
@@ -1286,13 +1337,19 @@ func scanGeneration(row rowScanner) (Generation, error) {
 	var snapshot string
 	var userMessageID string
 	var verificationSnapshot string
+	var metrics string
 	var assistantID, errorCode, errorMessage, batchID, targetID sql.NullString
 	var temperature, topP sql.NullFloat64
 	var maxTokens sql.NullInt64
 	var state string
 	var createdAt, updatedAt int64
-	if err := row.Scan(&generation.ID, &generation.ConversationID, &generation.ClientRequestID, &userMessageID, &state, &snapshot, &generation.ConfigurationSnapshot.SystemPrompt, &temperature, &topP, &maxTokens, &verificationSnapshot, &assistantID, &errorCode, &errorMessage, &createdAt, &updatedAt, &batchID, &targetID); err != nil {
+	if err := row.Scan(&generation.ID, &generation.ConversationID, &generation.ClientRequestID, &userMessageID, &state, &snapshot, &generation.ConfigurationSnapshot.SystemPrompt, &temperature, &topP, &maxTokens, &verificationSnapshot, &assistantID, &errorCode, &errorMessage, &createdAt, &updatedAt, &batchID, &targetID, &metrics); err != nil {
 		return Generation{}, err
+	}
+	if metrics != "{}" && metrics != "null" {
+		if err := json.Unmarshal([]byte(metrics), &generation.Metrics); err != nil {
+			return Generation{}, fmt.Errorf("decode generation metrics: %w", err)
+		}
 	}
 	if err := json.Unmarshal([]byte(snapshot), &generation.Snapshot); err != nil {
 		return Generation{}, fmt.Errorf("decode generation provider snapshot: %w", err)

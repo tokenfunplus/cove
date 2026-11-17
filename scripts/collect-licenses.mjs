@@ -22,6 +22,7 @@ async function notices(directory) {
 }
 
 const sections = ["Cove third-party dependency notices", "This file includes installed production dependency license texts. Each component retains its own license."];
+sections.push(`LobeHub Icons (selected SVG assets, @lobehub/icons-static-svg@1.103.0)\nhttps://github.com/lobehub/lobe-icons\n\n${await readFile(path.join(root, "apps/web/public/assets/model-icons/LICENSE.txt"), "utf8")}`);
 const packages = Object.values(JSON.parse(command("pnpm", ["licenses", "list", "--prod", "--json"]))).flat();
 for (const pkg of packages.sort((a, b) => a.name.localeCompare(b.name))) {
   for (const directory of pkg.paths) {

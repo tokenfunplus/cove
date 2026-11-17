@@ -17,6 +17,7 @@ import { DraftContext } from "@/components/chat/DraftContext";
 import { type AttachmentDraft as AttachmentDraftState } from "@/hooks/chat/use-attachment-draft";
 
 type Props = {
+  composerId?: string;
   compact?: boolean;
   attachmentDraft?: AttachmentDraftState;
   view: ConversationView;
@@ -35,6 +36,7 @@ type Props = {
   composerRef: RefObject<HTMLTextAreaElement | null>;
 };
 export function ChatComposer({
+  composerId = "generation-input",
   compact = false,
   attachmentDraft,
   view,
@@ -125,10 +127,10 @@ export function ChatComposer({
         {attachmentDraft && (
           <AttachmentDraft state={attachmentDraft} disabled={isSending || navigationBusy} compact={compact} />
         )}
-        <label htmlFor="generation-input">{copy.sendMessage}</label>
+        <label htmlFor={composerId}>{copy.sendMessage}</label>
         <Textarea
           className="focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-transparent"
-          id="generation-input"
+          id={composerId}
           value={draft}
           disabled={navigationBusy}
           placeholder={compact ? copy.focusComposerPlaceholder : copy.composerPlaceholder}

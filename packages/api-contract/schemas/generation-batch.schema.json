@@ -44,6 +44,9 @@
             "type": "object",
             "required": ["id", "state", "snapshot", "configuration_snapshot", "verification"],
             "properties": {
+              "metrics": { "$ref": "generation.schema.json#/$defs/generationMetrics" },
+              "created_at": { "type": "string", "format": "date-time" },
+              "updated_at": { "type": "string", "format": "date-time" },
               "id": { "type": "string" },
               "state": { "enum": ["pending", "verifying_environment", "streaming", "verifying_response", "completed", "stopped", "failed"] },
               "snapshot": { "$ref": "generation.schema.json#/$defs/providerSnapshot" },

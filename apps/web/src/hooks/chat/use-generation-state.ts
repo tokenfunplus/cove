@@ -6,6 +6,7 @@ import {
 import { useRef, useState } from "react";
 
 export function useGenerationState() {
+  const ownedBatchRef = useRef<string | undefined>(undefined);
   const [generationBatch, setGenerationBatch] = useState<GenerationBatch>();
 
   const [draft, setDraft] = useState("");
@@ -40,6 +41,7 @@ export function useGenerationState() {
   const streamingFrameRef = useRef<number | undefined>(undefined);
 
   return {
+    ownedBatchRef,
     generationBatch,
     setGenerationBatch,
     draft,

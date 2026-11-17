@@ -94,3 +94,33 @@ test("restoring active work preserves a search jump and a new send resumes follo
   rerender(<Surface activity="new" />);
   expect(list.scrollTop).toBe(1000);
 });
+
+test("reading pauses streaming, counts updated answers, and compensates a collapsed block above the anchor",()=>{
+ const resized:(()=>void)[]=[];
+ vi.stubGlobal("ResizeObserver",class{constructor(callback:()=>void){resized.push(callback);}observe(){}disconnect(){}});
+ let offset=480;
+ vi.spyOn(HTMLElement.prototype,"getBoundingClientRect").mockImplementation(function(this:HTMLElement){
+  const top=this.dataset.reading!==undefined?offset-(this.parentElement?.scrollTop??0):0;
+  return {top,bottom:top+30,height:30} as DOMRect;
+ });
+ HTMLElement.prototype.scrollTo=function(options?:ScrollToOptions|number,y?:number){this.scrollTop=typeof options==="number"?y??0:options?.top??0;};
+ const fixture=createWorkspaceFixture();
+ function Surface({body}:{body:string}) {
+  const liveTurn={...liveTurnFromBatch(fixture.conversation.id,"Prompt",fixture.pendingBatch),restored:true};
+  liveTurn.targets![0]!.assistantBody=body;
+  const scroll=useConversationScroll({view:fixture.completedView,liveTurn});
+  return <><div ref={scroll.messageListRef} onScroll={scroll.handleMessageScroll}><p data-reading>Reading</p></div><output>{scroll.updatedReplies}</output><button onClick={scroll.returnToLatest}>Latest</button></>;
+ }
+ const {container,rerender}=render(<Surface body="First"/>);
+ const list=container.querySelector("div")!;
+ Object.defineProperties(list,{scrollHeight:{value:1000},clientHeight:{value:200}});
+ list.scrollTop=400;
+ fireEvent.wheel(list,{deltaY:-200});fireEvent.scroll(list);
+ rerender(<Surface body="First and more streamed content"/>);
+ expect(list.scrollTop).toBe(400);expect(container.querySelector("output")!.textContent).toBe("1");
+ offset=400;
+ for(const callback of resized) callback();
+ expect(list.scrollTop).toBe(320);
+ fireEvent.click(container.querySelector("button")!);
+ expect(container.querySelector("output")!.textContent).toBe("0");
+});

@@ -2,6 +2,18 @@ import { cn } from "@/lib/utils";
 
 // Tailwind recipes for models presentation. Semantic colors come from theme/tokens.css.
 export const modelsStyles = {
+  modelCatalogPanel:
+    "w-[min(520px,calc(100vw_-_28px))] [--anchor-max-height:min(520px,65dvh)] max-h-[min(520px,65dvh)]",
+  modelCatalogRow:
+    "model-catalog-row flex min-w-0 flex-1 items-start gap-3 py-1 text-left",
+  modelCatalogContent: "grid min-w-0 flex-1 gap-1",
+  modelCatalogHeading:
+    "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 [&_strong]:break-words [&_strong]:text-[13px] [&_strong]:font-semibold",
+  modelCatalogId: "break-all text-[11px] leading-relaxed text-muted-foreground",
+  modelCatalogStats:
+    "flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] leading-relaxed text-muted-foreground",
+  modelCatalogCapabilities:
+    "flex flex-wrap gap-1 pt-0.5 [&_span]:rounded [&_span]:bg-muted [&_span]:px-1.5 [&_span]:py-0.5 [&_span]:text-[10px] [&_span]:font-medium [&_span]:text-muted-foreground",
   modelSelector: cn(String.raw`
     model-selector relative min-w-0
   `),
@@ -75,7 +87,7 @@ export const modelsStyles = {
     model-option flex items-center justify-between gap-2 min-w-0 w-full
   `),
   modelOption_id: cn(String.raw`
-    model-option__id overflow-hidden text-ellipsis whitespace-nowrap
+    model-option__id flex-1 overflow-hidden text-ellipsis whitespace-nowrap
   `),
   modelOption_badge: cn(String.raw`
     model-option__badge shrink-0 text-[10px] py-[3px] px-1.5 rounded-[calc(var(--radius)*0.375)] bg-peach

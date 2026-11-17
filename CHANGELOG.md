@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Added
+
+- Selection-based side conversations and an answer workbench with local editing, bounded undo/redo, reviewed model revisions, and Markdown download.
+- Observed Generation timings, Provider-reported token usage, and optional estimates from browser-local model rates.
+- Model brand icons and advertised catalog details, with favorites, recent models, capability/context/price filters, and saved model combinations.
+- Edit-and-resend branches that preserve the source turn's exact selected context and saved attachments without changing the original conversation.
+- Local LaTeX rendering for inline/display formulas, matrices, and aligned equations, including contained scrolling in Model Comparison. Fixes [#25](https://github.com/tokenfunplus/cove/issues/25).
+
+### Fixed
+
+- Separate structured Provider reasoning from answer text and collapse it after streaming, including the NearAI Gateway Responses path.
+- Preserve the reading position while reasoning folds or streamed content changes, and show how many answers changed while following was paused.
+- Use themed filter menus with correct nested Escape, focus, and narrow-screen behavior instead of operating-system dropdowns.
+
+### Changed
+
+- Combine performance, immutable Provider/Privacy details, and verification reports in one Response details dialog, while keeping verification failures visible.
+- Show elapsed generation stages, a stop action for prolonged waits, and applicable recovery controls after failures.
+- Migrate SQLite from schema 16 through 19 for optional metrics, separate reasoning, and branch provenance. Older services reject the newer schema; preserve a compatible backup for downgrade.
+- Bundle KaTeX 0.19.1, its fonts, and selected LobeHub model icons locally with license notices; retain the existing CSP and original message source.
+
 ## 0.1.0-beta.4 - 2026-11-17
 
 ### Added

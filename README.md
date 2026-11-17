@@ -55,11 +55,24 @@ Building the native Launcher requires Swift 5.10+; its XCTest suite requires ful
 
 The actual Cove interface with synthetic conversation content and simulated Atlas/Lumen replies. [View Focus and timeline bookmarks](docs/images/focus-mode.webp), explore [more workspace previews](https://tokenfunplus.github.io/cove/#preview), or read the [capture notes](docs/images/README.md).
 
+Current development captures: [answer workbench](docs/images/answer-workbench.png), [response details](docs/images/response-details.png), [local math](docs/images/chat-math.png), and [themed model filters](docs/images/model-filters.png). These use synthetic content and a loopback Provider; see the [capture notes](docs/images/README.md).
+
+Current development captures: [Local math rendering](docs/images/chat-math.png) · [Reviewed workbench revisions](docs/images/answer-workbench.png) · [Model filters](docs/images/model-filters.png) · [Response details](docs/images/response-details.png). These use the same isolated synthetic browser fixtures; they are newer than the published Beta 4 package.
+
 ## Features
+
+This section describes the current source tree, including unreleased changes. Published downloads follow their [release notes](docs/releases/0.1.0-beta.4.md); see the [unreleased changelog](CHANGELOG.md#unreleased) for newer work.
 
 - Stream responses from OpenAI-compatible providers or the built-in NearAI preset.
 - Compare up to four models in one turn; select the answer used in later context.
+- Browse model brand icons, advertised prices, context limits, and capabilities; use favorites, recent models, filters, and saved model combinations.
+- Read Provider-declared reasoning separately; it folds when streaming ends and stays out of later selected-answer context.
+- Render inline and multiline LaTeX, matrices, and aligned equations locally, with horizontal scrolling for long comparison formulas.
+- Select a passage for a separate side conversation, or edit an answer in a workbench with local undo, change review, and Markdown download.
+- Edit a saved prompt and resend it in an independent branch using its exact saved context and attachments.
+- Open Response details for timings, Provider-reported token usage, the Provider Snapshot, and verification reports; estimate cost using your own model rates.
 - Expand the reading area with Focus mode and jump between turns using timeline previews and browser-local bookmarks.
+- Pause following by scrolling upward, retain the reading position through layout changes, and return with an updated-answer count.
 - Attach text, Markdown, code, and text-based PDF files; preview extracted text, inspect Provider context, and open cited source lines or pages. File chat supports four files per turn, up to 4 MiB each; scanned PDFs need OCR first.
 - Inspect the provider, destination, configuration snapshot, and available verification evidence for each response.
 - Use NearAI's browser-side encryption and attestation flow for supported private models.

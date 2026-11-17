@@ -56,6 +56,13 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return GenerationBatch{}, err
 	}
+	if input.EditOfBatchID != "" {
+		branchID, err := forkConversationTx(ctx, tx, input.ConversationID, input.EditOfBatchID)
+		if err != nil {
+			return GenerationBatch{}, err
+		}
+		input.ConversationID = branchID
+	}
 	if err := ensureContextDispositionTx(ctx, tx, input.ConversationID); err != nil {
 		return GenerationBatch{}, err
 	}

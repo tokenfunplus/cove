@@ -75,7 +75,7 @@ export function useProviderActions({
   }
 
   async function handleTestProvider(input: ProviderProfileInput) {
-    return (await testProviderConnection(input)).models;
+    return testProviderConnection(input);
   }
 
   async function handleDeleteProvider(id: string) {

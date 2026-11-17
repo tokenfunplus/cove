@@ -5,6 +5,7 @@
 | Information | Location or destination |
 | --- | --- |
 | History, settings, snapshots, completed verification records | Local SQLite database under `~/Library/Application Support/cove/` |
+| Structured reasoning, Generation Metrics, and edited-prompt branches | The same local SQLite database; completed assistant reasoning remains separate from the answer body |
 | Submitted original files and extracted source text | The same local SQLite database; original bytes are excluded from conversation exports |
 | Provider Keys | macOS Keychain by default |
 | Prompt, System Prompt, selected context, generation parameters | Configured model provider |
@@ -15,6 +16,16 @@
 | Selected verification metadata when opening verification details | `https://cloud-stg.near.ai/verify`, in an embedded viewer |
 | Manual update check | Cove's GitHub release manifest |
 | Markdown or JSON exports | Files downloaded to your device |
+| Favorite/recent model IDs, named model combinations, and manual cost rates | Browser-local preferences for the Local Service address; no Provider Keys or conversation text |
+| Formula typesetting, fonts, and model brand icons | Bundled application assets; rendering makes no remote request |
+
+Side Conversations send only the selected passage and their own selected history, together with the workspace System Prompt, to the active Providers. Workbench revision requests send the current working draft, editing request, and optional selected passage. Both requests and their completed answers are saved as separate local conversations. Merely opening a tool or editing a draft makes no Provider request.
+
+Working Drafts and undo history stay in window memory; they are lost on reload unless downloaded or copied. User-supplied model pricing is browser-local metadata. Generation Metrics contain timing observations and optional Provider-reported token counts; they are not billing receipts or independently verified performance evidence.
+
+Structured Provider reasoning is retained locally and in exports, but is excluded from later selected-answer context. Older text containing explicit reasoning tags retains its original saved body and context behavior. Collapsing a Reasoning section changes presentation only.
+
+Editing and resending a saved prompt creates an independent conversation with copied selected context and original source snapshots. Current model, System Prompt, and generation settings determine the new request. Deleting the source conversation does not delete the branch's retained copies; remove each conversation when clearing that content. Copied verification records describe the original responses and do not represent new verification of the branch.
 
 Cove has no account, cloud conversation store, or synchronization service. Remote providers still receive information. Custom local providers use loopback HTTP; other custom endpoints require HTTPS.
 

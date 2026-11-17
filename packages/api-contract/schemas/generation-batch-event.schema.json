@@ -10,6 +10,7 @@
     "generation_id": { "type": "string" },
     "type": { "enum": ["started", "delta", "completed", "stopped", "failed"] },
     "delta": { "type": "string" },
+    "reasoning_delta": { "type": "string" },
     "error_code": { "type": "string" },
     "error_message": { "type": "string" },
     "snapshot": { "$ref": "generation.schema.json#/$defs/providerSnapshot" }

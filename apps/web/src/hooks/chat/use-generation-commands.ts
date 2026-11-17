@@ -1,3 +1,5 @@
+import { flushSync } from "react-dom";
+import type { ActiveModelSet } from "@/components/providers/model-selection";
 import { LocalServiceError } from "@/api";
 import { useConversationCache } from "@/api/hooks/useConversations";
 import {
@@ -43,6 +45,7 @@ type Dependencies = Pick<
 > &
   Pick<
     GenerationState,
+    | "ownedBatchRef"
     | "isSending"
     | "pendingSubmissionRef"
     | "draft"
@@ -63,11 +66,14 @@ type Dependencies = Pick<
     catalogs: ModelCatalogs;
     copy: ApplicationCopy;
     attachmentDraft: AttachmentDraft;
+    setSelectedId?: WorkspaceState["setSelectedId"];
   };
 
 export function useGenerationCommands({
   attachmentDraft,
+  setSelectedId,
   pendingSubmissionRef,
+  ownedBatchRef,
   activeModelSet,
   providerProfiles,
   isSending,
@@ -106,44 +112,76 @@ export function useGenerationCommands({
   } = useConversationCache();
   const { loadBatch: getGenerationBatch } = useGenerationCache();
 
-  async function handleSend() {
-    const selectedTargets = activeModelSet.filter((target) =>
+  async function handleSend(override?: {
+    body: string;
+    editOfBatchId?: string;
+    onAccepted?: () => void;
+    onFailure?: (message: string) => void;
+    targets?: ActiveModelSet;
+    conversationId?: string;
+    preserveDraft?: boolean;
+    draftOnFailure?: string;
+  }) {
+    let conversationId = override?.conversationId ?? selectedId;
+    const submittedBody = (override?.body ?? draft).trim();
+    const requestedTargets = override?.targets ?? activeModelSet;
+    const selectedTargets = requestedTargets.filter((target) =>
       providerProfiles.some(
-        (profile) => profile.id === target.providerId && profile.configured,
+        (profile) =>
+          profile.id === target.providerId &&
+          profile.configured &&
+          activeModelSet.some(
+            (current) =>
+              current.providerId === target.providerId &&
+              current.modelId === target.modelId,
+          ),
       ),
     );
     if (
       isSending ||
       attachmentDraft.invalid ||
-      !selectedId ||
-      !draft.trim() ||
+      !conversationId ||
+      !submittedBody ||
       selectionStatus !== "ready" ||
-      selectedTargets.length !== activeModelSet.length ||
+      selectedTargets.length !== requestedTargets.length ||
       selectedTargets.length === 0
     ) {
+      override?.onFailure?.(
+        isSending ? copy.generationPending : copy.selectModel,
+      );
       return;
     }
-    const body = draft.trim();
-    const originalAttachments = attachmentDraft.attachments;
+    const body = submittedBody;
+    const originalAttachments = override?.editOfBatchId
+      ? []
+      : attachmentDraft.attachments;
     const clientRequestId = crypto.randomUUID();
     const submission = { cancelRequested: false };
     pendingSubmissionRef.current = submission;
-    setDraft("");
+    if (!override?.preserveDraft) setDraft("");
     setFeedback(undefined);
     setIsSending(true);
     setLiveTurn(
-      createLiveTurn(selectedId, body, clientRequestId, selectedTargets),
+      createLiveTurn(conversationId, body, clientRequestId, selectedTargets),
     );
+    let accepted = false;
     try {
       const selection = {
+        ...(override?.editOfBatchId
+          ? { editOfBatchId: override.editOfBatchId }
+          : {}),
         clientRequestId,
         body,
         expectedTargets: selectedTargets.map((target) => ({
           provider_id: target.providerId,
           model_id: target.modelId,
           require_private_tee:
-            providerProfiles.some((profile) => profile.id === target.providerId && profile.kind === "nearai") &&
-            modelMetadataForTarget(catalogs, target)?.privacy_mode === "private_tee",
+            providerProfiles.some(
+              (profile) =>
+                profile.id === target.providerId && profile.kind === "nearai",
+            ) &&
+            modelMetadataForTarget(catalogs, target)?.privacy_mode ===
+              "private_tee",
         })),
         ...(originalAttachments.length
           ? {
@@ -156,23 +194,26 @@ export function useGenerationCommands({
       let next: GenerationBatch;
       try {
         next = await createGenerationBatch({
-          conversationId: selectedId,
+          conversationId: conversationId,
           selection: selection,
         });
       } catch (error) {
         if (error instanceof LocalServiceError) throw error;
         next = await createGenerationBatch({
-          conversationId: selectedId,
+          conversationId: conversationId,
           selection: selection,
         });
       }
-      const privacyMismatch = selection.expectedTargets.some((target) =>
-        target.require_private_tee &&
-        !next.targets.some((accepted) =>
-          accepted.provider_id === target.provider_id &&
-          accepted.model_id === target.model_id &&
-          inferenceModeForSnapshot(accepted.generation.snapshot) === "private_tee",
-        ),
+      const privacyMismatch = selection.expectedTargets.some(
+        (target) =>
+          target.require_private_tee &&
+          !next.targets.some(
+            (accepted) =>
+              accepted.provider_id === target.provider_id &&
+              accepted.model_id === target.model_id &&
+              inferenceModeForSnapshot(accepted.generation.snapshot) ===
+                "private_tee",
+          ),
       );
       if (privacyMismatch) {
         await cancelGenerationBatch(next.id).catch(() => undefined);
@@ -187,9 +228,36 @@ export function useGenerationCommands({
       }
       if (pendingSubmissionRef.current === submission)
         pendingSubmissionRef.current = undefined;
-      if (selectedIdRef.current !== selectedId) {
+      if (selectedIdRef.current !== conversationId) {
         await cancelGenerationBatch(next.id).catch(() => undefined);
         return;
+      }
+      ownedBatchRef.current = next.id;
+      accepted = true;
+      override?.onAccepted?.();
+      if (override?.editOfBatchId && next.conversation_id !== conversationId) {
+        if (!setSelectedId) {
+          await cancelGenerationBatch(next.id);
+          throw new Error("Branch navigation is unavailable.");
+        }
+        conversationId = next.conversation_id;
+        flushSync(() => setSelectedId(conversationId));
+        selectedIdRef.current = conversationId;
+        setIsSending(true);
+        setLiveTurn(
+          createLiveTurn(
+            conversationId,
+            body,
+            clientRequestId,
+            selectedTargets,
+          ),
+        );
+        const branchView = await getConversation(conversationId);
+        if (selectedIdRef.current !== conversationId) {
+          await cancelGenerationBatch(next.id);
+          return;
+        }
+        setConversationView(branchView);
       }
       setGenerationBatch(next);
       attachmentDraft.clearAttachments();
@@ -207,11 +275,11 @@ export function useGenerationCommands({
         return;
       }
       void Promise.all([
-        getConversation(selectedId),
+        getConversation(conversationId),
         getConversations({ archived: showingArchived }),
       ])
         .then(([view]) => {
-          if (selectedIdRef.current === selectedId) {
+          if (selectedIdRef.current === conversationId) {
             setConversationView(view);
           }
         })
@@ -233,8 +301,10 @@ export function useGenerationCommands({
         ...secureRuns,
       ]);
     } catch (error) {
-      if (selectedIdRef.current !== selectedId) return;
-      setDraft(body);
+      if (selectedIdRef.current !== conversationId) return;
+      if (!override?.preserveDraft && !override?.editOfBatchId)
+        setDraft(override?.draftOnFailure ?? body);
+      if (!accepted) override?.onFailure?.(generationErrorMessage(error, copy));
       attachmentDraft.restoreAttachments(originalAttachments);
       setIsSending(false);
       setLiveTurn((current) =>
@@ -270,10 +340,12 @@ export function useGenerationCommands({
     if (runs.length > 0) {
       for (const run of runs) run.controller.abort();
       const batchCancellation = generationBatch
-        ? cancelGenerationBatch(generationBatch.id).then(() => true).catch((error) => {
-            setFeedback(generationErrorMessage(error, copy));
-            return false;
-          })
+        ? cancelGenerationBatch(generationBatch.id)
+            .then(() => true)
+            .catch((error) => {
+              setFeedback(generationErrorMessage(error, copy));
+              return false;
+            })
         : Promise.resolve(true);
       await Promise.allSettled([
         ...runs.map((run) => run.finished),
@@ -350,7 +422,9 @@ export function useGenerationCommands({
               next,
             ),
       );
-      const retryTarget = batch.targets.find((target) => target.id === targetID);
+      const retryTarget = batch.targets.find(
+        (target) => target.id === targetID,
+      );
       const retryProfile = providerProfiles.find(
         (profile) => profile.id === retryTarget?.provider_id,
       );
@@ -362,12 +436,7 @@ export function useGenerationCommands({
       ) {
         await Promise.all([
           streamGenerationBatch(batch),
-          streamSecureGeneration(
-            batch,
-            retryTarget,
-            retryProfile,
-            userBody,
-          ),
+          streamSecureGeneration(batch, retryTarget, retryProfile, userBody),
         ]);
       } else {
         await streamGenerationBatch(batch);

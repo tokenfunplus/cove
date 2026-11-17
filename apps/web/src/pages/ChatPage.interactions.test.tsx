@@ -810,6 +810,7 @@ test.each(["private_tee", "incognito", "chutes"] as const)(
         generation.id,
         "Synthetic private answer",
         expect.objectContaining({ status: generation.verification!.status }),
+        expect.objectContaining({ source: "browser", duration_ms: expect.any(Number) }),
       ),
     );
     expect(privateInference.generate).toHaveBeenCalledWith(
@@ -848,6 +849,7 @@ test("a mixed comparison keeps the batch stream and private inference on indepen
       privateGeneration.id,
       "Synthetic private answer",
       expect.objectContaining({ status: "verified_model" }),
+        expect.objectContaining({ source: "browser", duration_ms: expect.any(Number) }),
     ),
   );
   expect(privateInference.generate).toHaveBeenCalledTimes(1);
@@ -1483,6 +1485,7 @@ test.each(["context", "transport"])(
           generation.id,
           "",
           expect.objectContaining({ failure_code: "timeout" }),
+        expect.objectContaining({ source: "browser", duration_ms: expect.any(Number) }),
         ),
       );
       await waitFor(() =>
@@ -1696,6 +1699,36 @@ test("stopping during file submission cancels the newly accepted batch before st
   );
 });
 
+test("Gateway reasoning remains separate through streaming, settlement, and saved rendering", async () => {
+  const generation = configureNearAITarget(0, "incognito");
+  const saved = fixture.completedView.messages.find(message => message.role === "assistant")!;
+  saved.body = "Synthetic private answer";
+  saved.reasoning = "Plan the response without tags.";
+  let finish!: () => void;
+  const pending = new Promise<void>(resolve => { finish = resolve; });
+  privateInference.generate.mockImplementation(async function* (): AsyncGenerator<SecureInferenceEvent> {
+    yield { type: "verifying_environment" };
+    yield { type: "streaming" };
+    yield { type: "reasoning", delta: saved.reasoning! };
+    await pending;
+    yield { type: "delta", delta: saved.body };
+    yield { type: "response_ready", completionId: "synthetic-completion" };
+    yield { type: "completed", verification: { status: "verified_gateway", signingKind: "gateway", completionId: "synthetic-completion" } };
+  });
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "A reasoning fixture");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await screen.findByText("Plan the response without tags.");
+  expect(screen.getByText("Reasoning", {exact:true}).closest("details")?.open).toBe(true);
+  await act(async () => { finish(); });
+  await waitFor(() => expect(transport.settleSecureGeneration).toHaveBeenCalledWith(
+    generation.id, saved.body, expect.objectContaining({status:"verified_gateway"}),
+    expect.objectContaining({source:"browser"}), saved.reasoning,
+  ));
+  await waitFor(() => expect(screen.getByText("Reasoning", {exact:true}).closest("details")?.open).toBe(false));
+  expect(screen.getByText(saved.body, {exact:true})).toBeTruthy();
+});
+
 test("private stream failure preserves the bounded Provider reason in settlement and the UI", async () => {
   configureNearAITarget(0, "incognito");
   const reason =
@@ -1716,6 +1749,81 @@ test("private stream failure preserves the bounded Provider reason in settlement
         failure_code: "stream_failed",
         evidence_summary: reason,
       }),
+        expect.objectContaining({ source: "browser", duration_ms: expect.any(Number) }),
     ),
   );
+});
+
+test("editing a saved prompt runs selected models in a new branch and adopts its generation",async()=>{
+ configureWorkspace(2);
+ const source=structuredClone(fixture.completedView);
+ const branchPending={...structuredClone(fixture.pendingBatch),id:"branch-batch",conversation_id:"branch-conversation",user_message_id:"branch-user",targets:[structuredClone(fixture.pendingBatch.targets[0]!)]};
+ const branchCompleted={...structuredClone(fixture.completedBatch),id:branchPending.id,conversation_id:branchPending.conversation_id,user_message_id:branchPending.user_message_id,targets:[structuredClone(fixture.completedBatch.targets[0]!)]};
+ const branchView={...source,id:branchPending.conversation_id,title:"Branch: First chat",branch:{source_conversation_id:source.id,source_batch_id:fixture.completedBatch.id,source_title:source.title},messages:[{...source.messages[0]!,id:branchPending.user_message_id,conversation_id:branchPending.conversation_id,body:"Edited question"}],generation_batches:[branchPending]};
+ vi.mocked(transport.getConversation).mockImplementation(async id=>id===branchView.id?branchView:source);
+ vi.mocked(transport.getConversations).mockResolvedValue([source,branchView]);
+ vi.mocked(transport.createGenerationBatch).mockResolvedValue(branchPending);
+ vi.mocked(transport.getGenerationBatch).mockResolvedValue(branchCompleted);
+ feed.close();feed=createBatchEventFeed(branchPending);
+ const {user}=await openWorkspace();
+ await user.click(await screen.findByRole("button",{name:"Edit and resend"}));
+ const edited=screen.getByRole("textbox",{name:"Edited prompt"});await user.clear(edited);await user.type(edited,"Edited question");
+ await user.click(screen.getByRole("checkbox",{name:"Test Provider · model-two"}));
+ await user.click(screen.getByRole("button",{name:"Send in new branch"}));
+ await waitFor(()=>expect(transport.createGenerationBatch).toHaveBeenCalledWith(source.id,expect.objectContaining({body:"Edited question",editOfBatchId:fixture.completedBatch.id,expectedTargets:[{provider_id:fixture.profile.id,model_id:"model-one",require_private_tee:false}]})));
+ await screen.findByText(/Branch of First chat/);
+ expect(screen.getByRole("button",{name:"Stop generation"})).toBeTruthy();
+ expect(transport.cancelGenerationBatch).not.toHaveBeenCalled();
+ await act(async()=>{feed.emit(0,"delta","Branch answer");});
+ await screen.findByText("Branch answer",{exact:true});
+ expect(source.messages[0]!.body).not.toBe("Edited question");
+});
+
+test("a rejected edited submission keeps its editor and branch intent for another attempt",async()=>{
+ vi.mocked(transport.getConversation).mockResolvedValue(fixture.completedView);
+ vi.mocked(transport.createGenerationBatch).mockRejectedValue(new transport.LocalServiceError({error:{code:"generation_selection_changed",message:"Selection changed",details:null,request_id:"fixture"}}));
+ const {user}=await openWorkspace();await user.click(await screen.findByRole("button",{name:"Edit and resend"}));
+ const text=screen.getByRole("textbox",{name:"Edited prompt"});await user.clear(text);await user.type(text,"Keep this edited question");
+ await user.click(screen.getByRole("button",{name:"Send in new branch"}));
+ await waitFor(()=>expect(screen.getByRole("button",{name:"Send in new branch"}).hasAttribute("disabled")).toBe(false));
+ expect(screen.getByRole("dialog",{name:"Edit prompt and branch"})).toBeTruthy();
+ expect((screen.getByRole("textbox",{name:"Edited prompt"}) as HTMLTextAreaElement).value).toBe("Keep this edited question");
+ expect((document.querySelector('#generation-input') as HTMLTextAreaElement).value).toBe("");
+ const call=vi.mocked(transport.createGenerationBatch).mock.calls[0]!;
+ expect(call[1].editOfBatchId).toBe(fixture.completedBatch.id);
+});
+
+test("a newly created private branch is owned by this window and is not cancelled as restored work",async()=>{
+ configureNearAITarget(0,"incognito");
+ const source=fixture.completedView;
+ const branchBatch={...fixture.pendingBatch,id:"private-branch-batch",conversation_id:"private-branch"};
+ const completed={...fixture.completedBatch,id:branchBatch.id,conversation_id:branchBatch.conversation_id};
+ const branch={...source,id:branchBatch.conversation_id,title:"Private branch",messages:[{...source.messages[0]!,id:branchBatch.user_message_id!,conversation_id:branchBatch.conversation_id,body:"Edited private question"}],generation_batches:[branchBatch],active_generation_batch:branchBatch,branch:{source_conversation_id:source.id,source_batch_id:fixture.completedBatch.id,source_title:source.title}};
+ vi.mocked(transport.getConversation).mockImplementation(async id=>id===branch.id?branch:source);
+ vi.mocked(transport.getConversations).mockResolvedValue([source,branch]);
+ vi.mocked(transport.createGenerationBatch).mockResolvedValue(branchBatch);
+ vi.mocked(transport.getGenerationBatch).mockResolvedValue(completed);
+ const {user}=await openWorkspace();await user.click(await screen.findByRole("button",{name:"Edit and resend"}));
+ const text=screen.getByRole("textbox",{name:"Edited prompt"});await user.clear(text);await user.type(text,"Edited private question");
+ await user.click(screen.getByRole("button",{name:"Send in new branch"}));
+ await waitFor(()=>expect(transport.settleSecureGeneration).toHaveBeenCalled());
+ expect(privateInference.generate).toHaveBeenCalledWith(expect.objectContaining({message:"Edited private question"}),expect.any(AbortSignal),expect.any(Object));
+ expect(transport.cancelGeneration).not.toHaveBeenCalled();
+ expect(transport.cancelGenerationBatch).not.toHaveBeenCalled();
+ expect(transport.getGenerationBatchContext).toHaveBeenCalledWith(branchBatch.id);
+});
+
+test("saved model combinations restore the entire model set through the workspace controls",async()=>{
+ configureWorkspace(2);
+ vi.mocked(transport.updateSettings).mockImplementation(async settings=>settings);
+ const {user}=await openWorkspace();
+ await user.click(screen.getByRole("button",{name:"Model comparison, 2 / 4"}));
+ await user.type(screen.getByRole("textbox",{name:"Combination name"}),"Review pair");
+ await user.click(screen.getByRole("button",{name:"Save combination"}));
+ await screen.findByRole("button",{name:"Review pair · 2"});
+ await user.click(screen.getByRole("button",{name:"Remove model: Test Provider model-two"}));
+ await waitFor(()=>expect(screen.getByRole("button",{name:"Model comparison, 1 / 4"})).toBeTruthy());
+ await user.click(screen.getByRole("button",{name:"Review pair · 2"}));
+ await waitFor(()=>expect(screen.getByRole("button",{name:"Model comparison, 2 / 4"})).toBeTruthy());
+ expect(vi.mocked(transport.updateSettings).mock.calls.at(-1)![0].active_model_set).toHaveLength(2);
 });
