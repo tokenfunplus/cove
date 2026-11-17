@@ -105,15 +105,19 @@ export function useConversationLifecycle({
     return () => window.removeEventListener("beforeunload", protectDraft);
   }, [hasDraft]);
 
+  async function withNavigationBusy(action: () => Promise<unknown>) {
+    setIsNavigating(true);
+    try { await action(); }
+    finally { setIsNavigating(false); }
+  }
+
   async function handleCreateConversation() {
     if (isNavigating) return;
     if (hasDraft || activeGeneration) {
       setConfirmation({ kind: "new", discardDraft: hasDraft, stopGeneration: activeGeneration });
       return;
     }
-    setIsNavigating(true);
-    try { await createConversation(); }
-    finally { setIsNavigating(false); }
+    await withNavigationBusy(createConversation);
   }
 
   async function handleConversationListMode(archived: boolean) {
@@ -121,14 +125,18 @@ export function useConversationLifecycle({
     if (archived === showingArchived) return;
     if (hasDraft || activeGeneration) {
       setConfirmation({ kind: "navigate", discardDraft: hasDraft, stopGeneration: activeGeneration, navigationAction: () => changeListMode(archived) });
-    } else await changeListMode(archived);
+    } else await withNavigationBusy(() => changeListMode(archived));
   }
 
   async function handleUpdateConversation(id: string, input: { pinned?: boolean; archived?: boolean }) {
     if (isNavigating) return;
-    if (id === selectedId && input.archived !== undefined && input.archived !== showingArchived && (hasDraft || activeGeneration)) {
+    const changesSelection = id === selectedId && input.archived !== undefined && input.archived !== showingArchived;
+    if (changesSelection && (hasDraft || activeGeneration)) {
       setConfirmation({ kind: "navigate", discardDraft: hasDraft, stopGeneration: activeGeneration, navigationAction: () => updateConversation(id, input) });
-    } else if (!isSending) await updateConversation(id, input);
+    } else if (!isSending) {
+      if (changesSelection) await withNavigationBusy(() => updateConversation(id, input));
+      else await updateConversation(id, input);
+    }
   }
 
   function navigateToConversation(id: string, messageId?: string) {

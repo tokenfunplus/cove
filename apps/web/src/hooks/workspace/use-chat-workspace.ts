@@ -105,7 +105,7 @@ export function useChatWorkspace() {
         (message) => message.id === resumeGenerationBatch.user_message_id,
       )?.body ?? "";
     setLiveTurn(
-      liveTurnFromBatch(conversationView.id, userBody, resumeGenerationBatch),
+      { ...liveTurnFromBatch(conversationView.id, userBody, resumeGenerationBatch), restored: true },
     );
     setGenerationBatch(resumeGenerationBatch);
     setIsSending(true);

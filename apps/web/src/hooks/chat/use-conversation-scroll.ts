@@ -60,14 +60,14 @@ export function useConversationScroll({
   }, [view?.id, isLoading]);
 
   useEffect(() => {
-    if (!liveTurn) return;
+    if (!liveTurn || liveTurn.restored) return;
     const node = messageListRef.current;
     followLatestRef.current = true;
     explicitNavigationRef.current = false;
     setShowReturnToLatest(false);
     if (node) node.scrollTop = node.scrollHeight;
     composerRef.current?.focus();
-  }, [liveTurn?.clientRequestId]);
+  }, [liveTurn?.clientRequestId, liveTurn?.restored]);
 
   useEffect(() => {
     const node = messageListRef.current;
