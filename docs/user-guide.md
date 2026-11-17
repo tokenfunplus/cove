@@ -6,7 +6,7 @@ Cove is a local-first AI chat application for Apple Silicon Macs running macOS 1
 
 Download [0.1.0-beta.4](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.4), open the DMG, and drag Cove to Applications. Published beta packages are Developer ID signed and Apple notarized. A checksum file accompanies each download.
 
-For an upgrade, quit Cove from its menu-bar menu before replacing the app. Existing Cove history and settings remain in the local data directory. Provider Keys remain in macOS Keychain. Check for Updates follows the stable channel; updated builds also offer an explicit Check for Beta Updates action. Older builds can download beta updates from GitHub Releases.
+For an upgrade, quit Cove from its menu-bar menu before replacing the app. Existing Cove history and settings remain in the local data directory. Provider Keys remain in macOS Keychain. Check for Updates follows the stable channel; Check for Beta Updates explicitly checks for newer betas, release candidates, or final versions. Builds before beta.4 can download beta updates from GitHub Releases.
 
 The Launcher menu offers Open Chat, New Chat, and Settings. Launch at Login and the global Control-Option-Space shortcut are optional; macOS may require approval for a login item. Troubleshooting contains Restart Local Service, Open Data Folder, and Copy Diagnostics. The diagnostic summary excludes credentials, launch URLs, errors, and conversations. Click the full version number to read that exact version's GitHub Release notes, including beta releases. Help & Feedback opens the user guide or issue tracker without submitting a report.
 
