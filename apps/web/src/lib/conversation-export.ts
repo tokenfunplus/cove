@@ -1,4 +1,4 @@
-import type { Conversation, ConversationView } from "@cove/api-contract";
+import type { Conversation, ConversationView, GenerationBatch, Message } from "@cove/api-contract";
 
 export type ConversationExportFormat = "markdown" | "json";
 
@@ -105,13 +105,57 @@ function markdownExport(view: ConversationView): string {
     `- Exported locally from Cove: ${new Date().toISOString()}`,
     "",
   ];
-  for (const message of view.messages) {
+  const batches = view.generation_batches ?? [];
+  const byUser = new Map(batches.map((batch) => [batch.user_message_id, batch]));
+  if (batches.some((batch) => batch.targets.length > 1)) {
     lines.push(
-      `## ${message.role === "assistant" ? "Assistant" : "You"}`,
+      "Answer selections below describe saved state at export time. Later Generations retain their own immutable Context Snapshots; these labels do not rewrite their context.",
+      "",
+    );
+  }
+  const emitted = new Set<string>();
+  const answerBatches = new Map(batches.flatMap((batch) => [
+    ...batch.targets.map((target) => [target.generation.assistant_message_id, batch.id] as const),
+    [batch.selected_answer?.assistant_message_id, batch.id] as const,
+  ]));
+  const answersByBatch = new Map<string, Message[]>();
+  for (const message of view.messages) {
+    const batchId = answerBatches.get(message.id);
+    if (batchId) answersByBatch.set(batchId, [...(answersByBatch.get(batchId) ?? []), message]);
+  }
+  function appendMessage(message: Message, batch?: GenerationBatch) {
+    emitted.add(message.id);
+    const heading = batch ? "###" : "##";
+    lines.push(
+      `${heading} ${message.role === "assistant" ? "Assistant" : "You"}`,
       "",
       message.body,
       "",
     );
+    if (message.role === "user" && batch) {
+      const selected = batch.targets.find(
+        (target) => target.generation.id === batch.selected_generation_id,
+      );
+      const selectedName = batch.selected_answer
+        ? `${batch.selected_answer.provider_name} (${batch.selected_answer.model_id}), `
+        : selected ? `${selected.generation.snapshot.provider_name} (${selected.model_id}), ` : "";
+      const disposition = batch.context_skipped
+        ? "Skipped for later context"
+        : batch.selected_generation_id
+          ? `Selected Answer at export: ${selectedName}Generation ${batch.selected_generation_id}`
+          : batch.targets.length > 1
+            ? "Unresolved comparison: no Selected Answer; not skipped"
+            : "No completed answer selected";
+      lines.push(`> Context disposition: ${disposition}`, "");
+    }
+    if (message.role === "assistant" && batch?.targets.length) {
+      const target = batch.targets.find(
+        (item) => item.generation.assistant_message_id === message.id,
+      );
+      if ((target && target.generation.id === batch.selected_generation_id) || batch.selected_answer?.assistant_message_id === message.id) {
+        lines.push("> Selected Answer at export", "");
+      }
+    }
     if (message.provider_snapshot) {
       const snapshot = message.provider_snapshot;
       lines.push(
@@ -120,6 +164,21 @@ function markdownExport(view: ConversationView): string {
         `> Transport: ${snapshot.transport_security}`,
         "",
       );
+    }
+  }
+  let turn = 0;
+  for (const message of view.messages) {
+    if (emitted.has(message.id)) continue;
+    if (message.role === "user") turn++;
+    const batch = message.role === "user" ? byUser.get(message.id) : undefined;
+    if (!batch) {
+      appendMessage(message);
+      continue;
+    }
+    lines.push(`## Turn ${turn}`, "");
+    appendMessage(message, batch);
+    for (const answer of answersByBatch.get(batch.id) ?? []) {
+      if (!emitted.has(answer.id)) appendMessage(answer, batch);
     }
   }
   const sources = new Map(

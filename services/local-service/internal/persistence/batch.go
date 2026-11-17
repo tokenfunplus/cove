@@ -205,13 +205,29 @@ func populateGenerationBatchTargets(ctx context.Context, db batchReader, batch G
 		return GenerationBatch{}, fmt.Errorf("close generation targets: %w", err)
 	}
 	batch.Targets = make([]GenerationTarget, 0, len(pending))
+	var selected Generation
 	for _, item := range pending {
 		generation, err := scanGeneration(db.QueryRowContext(ctx, generationQuery+` WHERE id = ?`, item.generationID))
 		if err != nil {
 			return GenerationBatch{}, fmt.Errorf("load target generation: %w", err)
 		}
 		item.target.Generation = generation
+		if generation.ID == batch.SelectedGenerationID {
+			selected = generation
+		}
 		batch.Targets = append(batch.Targets, item.target)
+	}
+	if batch.SelectedGenerationID != "" {
+		if selected.ID == "" {
+			selected, err = scanGeneration(db.QueryRowContext(ctx, generationQuery+` WHERE id = ?`, batch.SelectedGenerationID))
+			if err != nil {
+				return GenerationBatch{}, fmt.Errorf("load selected answer: %w", err)
+			}
+		}
+		batch.SelectedAnswer = &SelectedAnswer{
+			GenerationID: selected.ID, AssistantMessageID: selected.AssistantMessageID,
+			ProviderName: selected.Snapshot.ProviderName, ModelID: selected.Snapshot.ModelID,
+		}
 	}
 	return batch, nil
 }

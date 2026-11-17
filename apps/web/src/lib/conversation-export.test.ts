@@ -4,6 +4,7 @@ import {
   loadWorkspaceExportViews,
 } from "@/lib/conversation-export";
 import type { ConversationView } from "@cove/api-contract";
+import { createWorkspaceFixture } from "@/test/workspace-fixture";
 import { expect, test, vi } from "vitest";
 
 const view: ConversationView = {
@@ -37,6 +38,58 @@ const view: ConversationView = {
     },
   ],
 };
+
+test.each(["selected", "skipped", "unresolved"] as const)("Markdown preserves %s comparison disposition without mutating history", (state) => {
+  const fixture = createWorkspaceFixture(2);
+  const batch = structuredClone(fixture.completedBatch);
+  batch.user_message_id = fixture.completedView.messages.find((message) => message.role === "user")!.id;
+  batch.selected_generation_id = state === "selected" ? batch.targets[1]!.generation.id : undefined;
+  batch.context_skipped = state === "skipped";
+  const conversation = { ...fixture.completedView, generation_batches: [batch] };
+  const original = JSON.stringify(conversation);
+  const markdown = buildConversationExport(conversation, "markdown").content;
+  expect(markdown).toContain("## Turn 1");
+  expect(markdown).toContain("immutable Context Snapshots");
+  if (state === "selected") {
+    expect(markdown).toContain(`Selected Answer at export: ${batch.targets[1]!.generation.snapshot.provider_name} (${batch.targets[1]!.model_id})`);
+    expect(markdown).toContain(`Generation ${batch.targets[1]!.generation.id}`);
+  } else if (state === "skipped") expect(markdown).toContain("Skipped for later context");
+  else expect(markdown).toContain("Unresolved comparison: no Selected Answer; not skipped");
+  for (const message of conversation.messages) expect(markdown).toContain(message.body);
+  expect(JSON.stringify(conversation)).toBe(original);
+});
+
+test("late comparison answers stay grouped with their originating prompt", () => {
+  const fixture = createWorkspaceFixture(2);
+  const batch = { ...fixture.completedBatch, selected_generation_id: fixture.completedBatch.targets[1]!.generation.id };
+  const followup = { ...fixture.completedView.messages[0]!, id: "followup", body: "A later user turn" };
+  const conversation = {
+    ...fixture.completedView,
+    generation_batches: [batch],
+    messages: [fixture.completedView.messages[0]!, followup, ...fixture.completedView.messages.slice(1)],
+  };
+  const markdown = buildConversationExport(conversation, "markdown").content;
+  const selectedBody = fixture.completedView.messages[2]!.body;
+  expect(markdown.indexOf(selectedBody)).toBeLessThan(markdown.indexOf(followup.body));
+  expect(markdown.split(selectedBody)).toHaveLength(2);
+});
+
+test("exports the original Selected Answer even when its Target has a newer retry", () => {
+  const fixture = createWorkspaceFixture(2);
+  const batch = structuredClone(fixture.completedBatch);
+  const original = batch.targets[0]!.generation;
+  batch.selected_generation_id = original.id;
+  batch.selected_answer = {
+    generation_id: original.id, assistant_message_id: original.assistant_message_id!,
+    provider_name: "Original Provider", model_id: "model-one",
+  };
+  batch.targets[0]!.generation = { ...original, id: "newer-retry", state: "pending", assistant_message_id: undefined };
+  const conversation = { ...fixture.completedView, generation_batches: [batch] };
+  const markdown = buildConversationExport(conversation, "markdown").content;
+  expect(markdown).toContain("Selected Answer at export: Original Provider (model-one)");
+  expect(markdown).toContain(`Generation ${original.id}`);
+  expect(markdown).toContain(fixture.completedView.messages[1]!.body);
+});
 
 test("builds a portable local Markdown export with message and snapshot context", () => {
   vi.useFakeTimers();

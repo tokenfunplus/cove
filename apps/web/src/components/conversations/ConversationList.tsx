@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { groupConversations } from "@/components/conversations/group-conversations";
 import { englishConversationCopy, type ApplicationCopy } from "@/messages";
-import { type Conversation } from "@cove/api-contract";
+import { type Conversation, type ConversationSearchResult } from "@cove/api-contract";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
   Archive,
@@ -20,6 +20,11 @@ import { useEffect, useRef, useState } from "react";
 
 export function ConversationList({
   conversations,
+  searchQuery,
+  onSearchQueryChange,
+  searchResults,
+  searchPending = false,
+  searchFailed = false,
   selectedId,
   showingArchived = false,
   onSelect,
@@ -37,9 +42,14 @@ export function ConversationList({
   copy = englishConversationCopy,
 }: {
   conversations: Conversation[];
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
+  searchResults?: ConversationSearchResult[];
+  searchPending?: boolean;
+  searchFailed?: boolean;
   selectedId: string | undefined;
   showingArchived?: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, messageId?: string) => void;
   onCreate?: () => void;
   onRename?: (conversation: Conversation) => void;
   onPin?: (conversation: Conversation) => void;
@@ -53,7 +63,8 @@ export function ConversationList({
   deleteDisabled?: boolean;
   copy?: ApplicationCopy;
 }) {
-  const [query, setQuery] = useState("");
+  const [localQuery, setQuery] = useState("");
+  const query = searchQuery ?? localQuery;
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     function handleKeyDown(event: globalThis.KeyboardEvent) {
@@ -80,11 +91,12 @@ export function ConversationList({
   }, [revealSearch]);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleConversations = normalizedQuery
-    ? conversations.filter((conversation) =>
+    ? searchResults ?? conversations.filter((conversation) =>
         conversation.title.toLowerCase().includes(normalizedQuery),
       )
     : conversations;
   const groups = groupConversations(visibleConversations, !showingArchived);
+  const matches = new Map((normalizedQuery ? searchResults ?? [] : []).map((result) => [result.id, result]));
 
   return (
     <div
@@ -109,15 +121,23 @@ export function ConversationList({
         <Search aria-hidden="true" size={12} strokeWidth={1.8} />
         <Input
           aria-label={copy.searchPlaceholder}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            onSearchQueryChange?.(event.target.value);
+          }}
           placeholder={copy.searchPlaceholder}
           ref={searchRef}
           type="text"
+          maxLength={256}
           value={query}
         />
         <kbd className="pointer-coarse:hidden">⌘K</kbd>
       </label>
-      {conversations.length === 0 ? (
+      {normalizedQuery && (searchPending || searchFailed) ? (
+        <p className={workspaceStyles.conversationList_empty} role="status">
+          {searchFailed ? copy.searchFailed : copy.searchingConversations}
+        </p>
+      ) : conversations.length === 0 && !normalizedQuery ? (
         <p className={workspaceStyles.conversationList_empty}>
           {copy.noConversations}
         </p>
@@ -155,11 +175,16 @@ export function ConversationList({
                     aria-current={
                       conversation.id === selectedId ? "page" : undefined
                     }
-                    onClick={() => onSelect(conversation.id)}
+                    onClick={() => onSelect(conversation.id, matches.get(conversation.id)?.turn_message_id ?? matches.get(conversation.id)?.message_id)}
                     type="button"
                   >
-                    <span className={workspaceStyles.conversation_title}>
-                      {conversation.title}
+                    <span className="flex min-w-0 flex-col items-start gap-1">
+                      <span className={cn(workspaceStyles.conversation_title, "max-w-full")}>{conversation.title}</span>
+                      {matches.get(conversation.id)?.excerpt ? (
+                        <span className="line-clamp-2 max-w-full whitespace-normal break-words text-left text-xs font-normal text-muted-foreground">
+                          {matches.get(conversation.id)?.role === "user" ? copy.you : copy.assistant}: {matches.get(conversation.id)?.excerpt}
+                        </span>
+                      ) : null}
                     </span>
                   </Button>
                   {onRename || onPin || onArchive || onDownload || onDelete ? (
@@ -180,6 +205,9 @@ export function ConversationList({
           ))}
         </nav>
       )}
+      {normalizedQuery && visibleConversations.length === 50 ? (
+        <p className={workspaceStyles.conversationList_empty}>{copy.searchResultLimit}</p>
+      ) : null}
       <div className={workspaceStyles.conversationList_footer}>
         {onOpenPrivacyStatus ? (
           <Button

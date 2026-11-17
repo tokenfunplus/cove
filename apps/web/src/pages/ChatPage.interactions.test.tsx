@@ -36,6 +36,8 @@ vi.mock("@/api", async (importOriginal) => {
     ...original,
     getSession: vi.fn(),
     getConversations: vi.fn(),
+    searchConversations: vi.fn(),
+    createConversation: vi.fn(),
     getConversation: vi.fn(),
     getProviderProfiles: vi.fn(),
     getProviderCatalog: vi.fn(),
@@ -116,6 +118,8 @@ function configureWorkspace(targetCount = 1) {
     fixture.conversation,
     fixture.secondConversation,
   ]);
+  vi.mocked(transport.searchConversations).mockResolvedValue([]);
+  vi.mocked(transport.createConversation).mockResolvedValue({ ...fixture.secondConversation, id: "created-conversation" });
   vi.mocked(transport.getConversation).mockImplementation(async (id) =>
     id === fixture.secondConversation.id
       ? fixture.secondConversation
@@ -248,6 +252,89 @@ async function sendPrompt() {
   );
   return workspace;
 }
+
+test("staying on a conversation preserves unsent text and attachments; discarding completes a switch", async () => {
+  vi.mocked(transport.previewAttachment).mockResolvedValue({
+    id: "f".repeat(64), name: "draft.md", media_type: "text/plain", size: 6, characters: 6,
+    extraction_version: "cove-text-v1", sections: [{ id: "L1", text: "Source" }],
+  });
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "An unsent prompt\nwith another line");
+  await user.upload(screen.getByLabelText("Attach files"), new File(["Source"], "draft.md", { type: "text/markdown" }));
+  await screen.findByRole("button", { name: /Preview extracted text/ });
+  const selectSecond = () => user.click(within(screen.getByRole("navigation", { name: "Chats" })).getByText("Second chat", { exact: true }));
+  await selectSecond();
+  let dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText("Discard unsent draft?")).toBeTruthy();
+  await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+  expect((composer as HTMLTextAreaElement).value).toContain("An unsent prompt");
+  expect(screen.getByRole("button", { name: "Remove attachment: draft.md" })).toBeTruthy();
+  expect(transport.getConversation).not.toHaveBeenCalledWith(fixture.secondConversation.id);
+  await selectSecond();
+  dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Discard and continue" }));
+  await waitFor(() => expect(transport.getConversation).toHaveBeenCalledWith(fixture.secondConversation.id));
+  expect((screen.getByRole("textbox", { name: "Send message" }) as HTMLTextAreaElement).value).toBe("");
+  expect(screen.queryByRole("button", { name: "Remove attachment: draft.md" })).toBeNull();
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+test.each(["surface", "launcher"])("New Chat from the %s protects an unsent draft", async (entry) => {
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Keep this draft");
+  if (entry === "surface") await user.click(screen.getByRole("button", { name: "New conversation" }));
+  else await act(async () => {
+    window.history.replaceState(null, "", "/#new-chat");
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  });
+  let dialog = await screen.findByRole("dialog");
+  expect(transport.createConversation).not.toHaveBeenCalled();
+  await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft");
+  await user.click(screen.getByRole("button", { name: "New conversation" }));
+  dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Discard and continue" }));
+  await waitFor(() => expect(transport.createConversation).toHaveBeenCalledTimes(1));
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+test("an empty draft switches immediately, and body search opens its matching conversation", async () => {
+  vi.mocked(transport.searchConversations).mockResolvedValue([
+    { ...fixture.secondConversation, message_id: "matching-message", role: "assistant", excerpt: "SQLite migration checklist" },
+  ]);
+  const { user } = await openWorkspace();
+  await user.type(screen.getByRole("textbox", { name: "Search conversations" }), "SQLite migration checklist");
+  const result = await screen.findByRole("button", { name: /Second chat.*SQLite migration checklist/ });
+  await user.click(result);
+  await waitFor(() => expect(transport.getConversation).toHaveBeenCalledWith(fixture.secondConversation.id));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(transport.searchConversations).toHaveBeenCalledWith("SQLite migration checklist", false, expect.any(AbortSignal));
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+test("an attachment-only draft is protected while its local preview is pending", async () => {
+  vi.mocked(transport.previewAttachment).mockReturnValue(new Promise(() => {}));
+  const { user } = await openWorkspace();
+  await user.upload(screen.getByLabelText("Attach files"), new File(["Source"], "pending.md", { type: "text/markdown" }));
+  const unload = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(unload);
+  expect(unload.defaultPrevented).toBe(true);
+  await user.click(screen.getByRole("button", { name: "New conversation" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+  expect(screen.getByRole("button", { name: "Remove attachment: pending.md" })).toBeTruthy();
+  expect(transport.createConversation).not.toHaveBeenCalled();
+});
+
+test("changing the archive filter also asks before discarding a draft", async () => {
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Unsent work");
+  await user.click(screen.getByRole("button", { name: "Archived chats" }));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+  expect((composer as HTMLTextAreaElement).value).toBe("Unsent work");
+  expect(transport.getConversations).not.toHaveBeenCalledWith({ archived: true });
+});
 
 test("Focus mode preserves the draft and restores the previous sidebar and keyboard focus", async () => {
   const { composer, user } = await openWorkspace();

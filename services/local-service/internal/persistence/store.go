@@ -32,6 +32,7 @@ type ChatStore interface {
 	CreateConversation(ctx context.Context, title string) (Conversation, error)
 	ListConversations(ctx context.Context) ([]Conversation, error)
 	ListArchivedConversations(ctx context.Context) ([]Conversation, error)
+	SearchConversations(ctx context.Context, query string, archived bool) ([]ConversationSearchResult, error)
 	LoadConversation(ctx context.Context, id string) (ConversationView, error)
 	DeleteConversation(ctx context.Context, id string) error
 	ClearChatData(ctx context.Context) error
@@ -274,10 +275,19 @@ type GenerationBatch struct {
 	State                GenerationBatchState `json:"state"`
 	Targets              []GenerationTarget   `json:"targets"`
 	SelectedGenerationID string               `json:"selected_generation_id,omitempty"`
+	SelectedAnswer       *SelectedAnswer      `json:"selected_answer,omitempty"`
 	ContextSkipped       bool                 `json:"context_skipped,omitempty"`
 	ContextFrozen        bool                 `json:"context_frozen,omitempty"`
 	CreatedAt            time.Time            `json:"created_at"`
 	UpdatedAt            time.Time            `json:"updated_at"`
+}
+
+// SelectedAnswer remains identifiable when a Target's latest retry differs.
+type SelectedAnswer struct {
+	GenerationID       string `json:"generation_id"`
+	AssistantMessageID string `json:"assistant_message_id"`
+	ProviderName       string `json:"provider_name"`
+	ModelID            string `json:"model_id"`
 }
 
 type GenerationTarget struct {

@@ -177,27 +177,30 @@ export function WorkspaceOverlays({ workspace }: Props) {
       <ConfirmationDialog
         open={Boolean(confirmation)}
         title={
-          confirmation?.kind === "delete"
+          confirmation?.discardDraft ? copy.discardDraftTitle : confirmation?.kind === "new" ? copy.newChat : confirmation?.kind === "delete"
             ? copy.deleteConversation
             : confirmation?.kind === "clear"
               ? copy.clearChatData
               : copy.switchConversation
         }
         description={
-          confirmation?.kind === "delete"
+          confirmation?.discardDraft
+            ? confirmation.stopGeneration ? copy.confirmDiscardDraftAndStop : copy.confirmDiscardDraft
+            : confirmation?.kind === "new" ? copy.confirmStopAndCreate : confirmation?.kind === "delete"
             ? copy.confirmDeleteConversation
             : confirmation?.kind === "clear"
               ? copy.confirmClearChatData
               : copy.confirmSwitchConversation
         }
         confirmLabel={
-          confirmation?.kind === "delete"
+          confirmation?.discardDraft ? copy.discardAndContinue : confirmation?.kind === "new" ? copy.newChat : confirmation?.kind === "delete"
             ? copy.deleteConversation
             : confirmation?.kind === "clear"
               ? copy.clearChatData
               : copy.switchConversation
         }
-        destructive={confirmation?.kind !== "switch"}
+        cancelLabel={confirmation?.discardDraft ? copy.stay : undefined}
+        destructive={Boolean(confirmation?.discardDraft) || (confirmation?.kind !== "switch" && confirmation?.kind !== "new")}
         onCancel={() => setConfirmation(undefined)}
         onConfirm={() => void confirmRequestedAction()}
         copy={copy}

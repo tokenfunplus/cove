@@ -1,5 +1,6 @@
 import { type PrivateConnectionProgressState } from "@/components/verification/PrivateConnectionProgress";
 import { type ConfirmationRequest } from "@/lib/workspace-types";
+import { type ConversationNavigation } from "@/lib/workspace-types";
 import {
   type Conversation,
   type ConversationView,
@@ -13,6 +14,8 @@ export type WorkspaceFeedback = {
 };
 
 export function useWorkspaceUi() {
+  const [conversationSearchQuery, setConversationSearchQuery] = useState("");
+  const [conversationNavigation, setConversationNavigation] = useState<ConversationNavigation>();
   const [isSavingTitle, setIsSavingTitle] = useState(false);
 
   const [feedback, updateFeedback] = useState<WorkspaceFeedback>();
@@ -89,6 +92,10 @@ export function useWorkspaceUi() {
   const [downloadTarget, setDownloadTarget] = useState<ConversationView>();
 
   return {
+    conversationSearchQuery,
+    setConversationSearchQuery,
+    conversationNavigation,
+    setConversationNavigation,
     isSavingTitle,
     setIsSavingTitle,
     feedback,

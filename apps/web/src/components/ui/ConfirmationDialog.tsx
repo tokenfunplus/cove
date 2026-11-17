@@ -15,6 +15,7 @@ export function ConfirmationDialog({
   title,
   description,
   confirmLabel,
+  cancelLabel,
   destructive = false,
   onCancel,
   onConfirm,
@@ -24,6 +25,7 @@ export function ConfirmationDialog({
   title: string;
   description: string;
   confirmLabel: string;
+  cancelLabel?: string;
   destructive?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -58,7 +60,7 @@ export function ConfirmationDialog({
               onClick={onCancel}
               type="button"
             >
-              {copy.cancel}
+              {cancelLabel ?? copy.cancel}
             </Button>
             <Button
               variant="outline"

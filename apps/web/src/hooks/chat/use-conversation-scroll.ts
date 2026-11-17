@@ -5,6 +5,7 @@ import type {
   GenerationBatch,
 } from "@cove/api-contract";
 import type { LiveTurn } from "@/lib/chat/live-turn";
+import type { ConversationNavigation } from "@/lib/workspace-types";
 
 export function useConversationScroll({
   view,
@@ -12,12 +13,14 @@ export function useConversationScroll({
   generationBatch,
   generation,
   isLoading,
+  navigation,
 }: {
   view?: ConversationView;
   liveTurn?: LiveTurn;
   generationBatch?: GenerationBatch;
   generation?: Generation;
   isLoading?: boolean;
+  navigation?: ConversationNavigation;
 }) {
   const hasContent = Boolean(view?.messages.length || liveTurn);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -25,6 +28,7 @@ export function useConversationScroll({
   const footerRef = useRef<HTMLDivElement>(null);
   const [footerHeight, setFooterHeight] = useState(0);
   const followLatestRef = useRef(true);
+  const navigatedRequestRef = useRef<string | undefined>(undefined);
   const scrollPositionsRef = useRef<Record<string, number>>({});
   const [showReturnToLatest, setShowReturnToLatest] = useState(false);
 
@@ -108,11 +112,12 @@ export function useConversationScroll({
     const node = messageListRef.current;
     const anchor = node && [...node.querySelectorAll<HTMLElement>("[data-timeline-anchor]")]
       .find((item) => item.dataset.timelineAnchor === id);
-    if (!node || !anchor || !view) return;
+    if (!node || !anchor || !view) return false;
     // Stop following a stream before navigating to an earlier turn.
     followLatestRef.current = false;
     node.scrollTo({ top: node.scrollTop + anchor.getBoundingClientRect().top - node.getBoundingClientRect().top - 12, behavior: "instant" });
     handleMessageScroll();
+    return true;
   }
 
   useEffect(() => {
@@ -130,6 +135,17 @@ export function useConversationScroll({
       observer.disconnect();
     };
   }, [view?.id, isLoading, hasContent]);
+  useEffect(() => {
+    if (!navigation || !view || isLoading || navigation.conversationId !== view.id || navigatedRequestRef.current === navigation.requestId) return;
+    const index = view.messages.findIndex((message) => message.id === navigation.messageId);
+    if (index < 0) return;
+    const batch = view.generation_batches?.find((item) => item.selected_answer?.assistant_message_id === navigation.messageId || item.targets.some(
+      (target) => target.generation.assistant_message_id === navigation.messageId,
+    ));
+    const anchor = batch?.user_message_id ?? view.messages.slice(0, index + 1).reverse().find((message) => message.role === "user")?.id;
+    if (anchor && scrollToMessage(anchor)) navigatedRequestRef.current = navigation.requestId;
+  }, [navigation?.requestId, view?.id, view?.messages.length, isLoading]);
+
   return {
     messageListRef,
     composerRef,

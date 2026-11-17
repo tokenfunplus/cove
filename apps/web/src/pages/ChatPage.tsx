@@ -17,6 +17,7 @@ export function ChatPage() {
     appearance,
     connection,
     conversationView,
+    conversationNavigation,
     isLoadingConversation,
     providerProfiles,
     activeModelSet,
@@ -174,6 +175,7 @@ export function ChatPage() {
               onCreateConversation={() => void handleCreateConversation()}
               onOpenSettings={() => setSettingsEntry("provider")}
               generationBatch={generationBatch}
+              navigation={conversationNavigation}
               generationBatches={conversationView?.generation_batches ?? []}
               liveTurn={liveTurn}
               draft={draft}

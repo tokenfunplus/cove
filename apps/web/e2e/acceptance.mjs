@@ -1120,11 +1120,47 @@ try {
     "Search shortcut did not focus",
   );
   await fill(".conversation-list__search input", "Review conversation");
+  await until(`document.querySelectorAll('.conversation-row').length===1`);
   assert.equal(
     await evaluate(`document.querySelectorAll('.conversation-row').length`),
     1,
   );
   await fill(".conversation-list__search input", "");
+  // Body search uses persisted local text, and navigation protects unsent work.
+  const searchPhrase = "SQLite migration checklist \u4f60\u597d";
+  const searchFixture = await api("/api/conversations", "POST", { title: "Local search fixture" });
+  await api("/api/conversations/" + searchFixture.id + "/messages", "POST", {
+    body: searchPhrase, client_request_id: randomBytes(16).toString("hex"),
+  });
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const view = await api("/api/conversations/" + searchFixture.id);
+    if (view.generation_batches[0]?.targets.every((target) => target.generation.state === "completed")) break;
+    await pause(100);
+    if (attempt === 99) throw new Error("Search fixture did not finish");
+  }
+  const beforeSearchRequests = requests.length;
+  await fill("#generation-input", "Preserve this unsent draft");
+  await click('button[aria-label="New conversation"]');
+  await until(`document.querySelector('.confirmation-dialog__panel')?.textContent.includes('Discard unsent draft?')`);
+  await clickText("Stay", ".confirmation-dialog__panel");
+  assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "Preserve this unsent draft");
+  await fill(".conversation-list__search input", searchPhrase);
+  await until(`document.querySelector('.conversation-list')?.textContent.includes(${JSON.stringify(searchPhrase)})`);
+  await click(".conversation-row .conversation");
+  await until(`!!document.querySelector('.confirmation-dialog__panel')`);
+  await clickText("Stay", ".confirmation-dialog__panel");
+  assert.equal(await evaluate(`document.querySelector('.masthead__title').textContent`), "Review conversation");
+  assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "Preserve this unsent draft");
+  await click(".conversation-row .conversation");
+  await until(`!!document.querySelector('.confirmation-dialog__panel')`);
+  await clickText("Discard and continue", ".confirmation-dialog__panel");
+  await until(`document.querySelector('.masthead__title').textContent==='Local search fixture' && !!document.querySelector('[data-timeline-anchor]')`);
+  assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "");
+  assert.equal(requests.length, beforeSearchRequests, "Search or draft navigation contacted a Provider");
+  await snapshot("body-search-and-draft-protection");
+  await api("/api/conversations/" + searchFixture.id, "DELETE");
+  await reloadPage();
+  await until(`document.querySelector('.masthead__title')?.textContent==='Review conversation' && !!document.querySelector('#generation-input')`);
   await rowAction("Archive");
   await clickText("Archived chats");
   await until(

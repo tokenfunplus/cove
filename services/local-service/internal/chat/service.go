@@ -79,6 +79,7 @@ type Chat interface {
 	PreviewGenerationContext(ctx context.Context, input SendInput) ([]provider.ProviderMessage, error)
 	CreateConversation(ctx context.Context, title string) (persistence.Conversation, error)
 	ListConversations(ctx context.Context, archived bool) ([]persistence.Conversation, error)
+	SearchConversations(ctx context.Context, query string, archived bool) ([]persistence.ConversationSearchResult, error)
 	ReadConversation(ctx context.Context, conversationID string) (persistence.ConversationView, error)
 	StartGeneration(ctx context.Context, input SendInput) (GenerationStart, error)
 	SubscribeGeneration(ctx context.Context, generationID, afterEventID string) (<-chan GenerationEvent, error)
@@ -307,6 +308,12 @@ func (service *Service) ListConversations(ctx context.Context, archived bool) ([
 
 func (service *Service) ReadConversation(ctx context.Context, conversationID string) (persistence.ConversationView, error) {
 	return service.store.LoadConversation(ctx, conversationID)
+}
+
+func (service *Service) SearchConversations(ctx context.Context, query string, archived bool) ([]persistence.ConversationSearchResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return service.store.SearchConversations(ctx, query, archived)
 }
 
 func (service *Service) RenameConversation(ctx context.Context, conversationID, title string) error {

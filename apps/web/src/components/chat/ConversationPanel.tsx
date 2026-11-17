@@ -49,6 +49,7 @@ import {
 } from "@cove/api-contract";
 import { ArrowRight } from "lucide-react";
 import { useConversationScroll } from "@/hooks/chat/use-conversation-scroll";
+import type { ConversationNavigation } from "@/lib/workspace-types";
 
 export function ConversationPanel({
   focusMode = false,
@@ -62,6 +63,7 @@ export function ConversationPanel({
   onCreateConversation,
   onOpenSettings,
   generationBatch,
+  navigation,
   generationBatches = [],
   activeModelSet = [],
   profiles = [],
@@ -89,6 +91,7 @@ export function ConversationPanel({
   onCreateConversation?: () => void;
   onOpenSettings?: () => void;
   generationBatch?: GenerationBatch;
+  navigation?: ConversationNavigation;
   generationBatches?: GenerationBatch[];
   /** @deprecated retained for one-target shell tests during the Batch migration. */
   generation?: Generation;
@@ -124,6 +127,7 @@ export function ConversationPanel({
     generationBatch,
     generation,
     isLoading,
+    navigation,
   });
 
   if (isLoading) {

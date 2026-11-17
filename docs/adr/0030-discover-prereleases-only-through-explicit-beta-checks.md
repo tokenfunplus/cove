@@ -1,0 +1,5 @@
+# Discover prereleases only through explicit beta checks
+
+Check for Updates continues to use the stable manifest and never offers a prerelease. A separate Check for Beta Updates action is an explicit opt-in for that request and reads up to 100 recent releases from the official GitHub repository. It ignores drafts and alpha releases and selects the highest eligible beta, release-candidate, or stable version above the full installed release version. SemVer precedence compares numeric prerelease identifiers numerically and places a final release above its prereleases; build metadata does not affect precedence.
+
+Discovery returns the candidate version and a release-tag page constructed under the official repository. It does not install software or change the stable channel. Missing metadata, malformed responses, and network failures explain the next step and offer the official Releases page. Existing published downloads, signatures, notarization requirements, and release-tag conventions are unchanged.

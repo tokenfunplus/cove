@@ -13,6 +13,17 @@
     "state": { "enum": ["pending", "streaming", "completed", "completed_with_errors", "stopped", "failed"] },
     "events_url": { "type": "string" },
     "selected_generation_id": { "type": "string" },
+    "selected_answer": {
+      "type": "object",
+      "required": ["generation_id", "assistant_message_id", "provider_name", "model_id"],
+      "properties": {
+        "generation_id": { "type": "string" },
+        "assistant_message_id": { "type": "string" },
+        "provider_name": { "type": "string" },
+        "model_id": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "context_skipped": { "type": "boolean" },
     "context_frozen": { "type": "boolean" },
     "created_at": { "type": "string", "format": "date-time" },

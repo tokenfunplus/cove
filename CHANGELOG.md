@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- Search local conversation titles and saved user/assistant text with Unicode-aware matching, bounded excerpts, archive filtering, and turn navigation (#17).
+- Discover newer published beta, release-candidate, and stable versions through an explicit Launcher beta-update action, with SemVer ordering and an official Releases fallback (#21).
+
+### Fixed
+
+- Confirm before discarding unsent text or attachments when switching conversations, starting a new chat, or changing archive views; preserve drafts when staying (#18).
+- Include Selected Answer, context-skip, and unresolved-comparison state in grouped Markdown exports without changing saved context (#19).
+
 ## 0.1.0-beta.3 - 2026-11-16
 
 ### Added

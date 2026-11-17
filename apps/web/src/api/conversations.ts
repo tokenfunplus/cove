@@ -3,7 +3,13 @@ import {
   type Conversation,
   type ConversationUpdateInput,
   type ConversationView,
+  type ConversationSearchResult,
 } from "@cove/api-contract";
+
+export function searchConversations(query: string, archived = false, signal?: AbortSignal): Promise<ConversationSearchResult[]> {
+  const parameters = new URLSearchParams({ q: query, archived: String(archived) });
+  return request(`/api/conversations/search?${parameters}`, { signal });
+}
 
 export function getConversations(
   options: { archived?: boolean } = {},

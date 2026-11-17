@@ -2,6 +2,7 @@ export const conversationKeys = {
   all: ["conversations"] as const,
   lists: ["conversations", "list"] as const,
   list: (archived: boolean) => [...conversationKeys.lists, archived] as const,
+  search: (query: string, archived: boolean) => [...conversationKeys.lists, "search", archived, query] as const,
   detail: (id: string | undefined) =>
     [...conversationKeys.all, "detail", id] as const,
 };
