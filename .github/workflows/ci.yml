@@ -37,7 +37,7 @@ jobs:
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" make test-web-browser
       - name: Upload browser acceptance evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cove-browser-acceptance
           path: .artifacts/frontend-acceptance/
@@ -74,7 +74,7 @@ jobs:
         run: test "$(plutil -extract CoveInsecureFileSecretStore raw -o - .artifacts/Cove.app/Contents/Info.plist)" = "true"
       - name: Run macOS package acceptance test
         run: make test-package-macos
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cove-macos-pr
           path: |
