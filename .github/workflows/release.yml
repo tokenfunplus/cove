@@ -90,7 +90,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Test repository
         run: make check test
-      - run: pnpm audit --audit-level moderate
+      - name: Audit dependencies and verify local parser patches
+        run: pnpm run audit:dependencies
       - name: Configure Developer ID signing and notarization
         if: env.COVE_REQUIRE_NOTARIZATION == '1'
         shell: bash

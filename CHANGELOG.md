@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-beta.5 - 2026-11-18
+
 ### Added
 
 - Selection-based side conversations and an answer workbench with local editing, bounded undo/redo, reviewed model revisions, and Markdown download.
