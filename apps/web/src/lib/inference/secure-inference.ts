@@ -1105,11 +1105,9 @@ function rawEvidenceFor(evidence: {
 }
 
 function tokenUsageFor(value: unknown): SecureInferenceStreamChunk["usage"] {
-  const usage = (
-    value as {
-      usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
-    }
-  )?.usage;
+  type Usage = { prompt_tokens?: unknown; completion_tokens?: unknown; input_tokens?: unknown; output_tokens?: unknown };
+  const event = value as { usage?: Usage; response?: { usage?: Usage } };
+  const usage = event?.response?.usage ?? event?.usage;
   if (!usage) return undefined;
   const count = (value: unknown) =>
     typeof value === "number" &&
@@ -1118,8 +1116,8 @@ function tokenUsageFor(value: unknown): SecureInferenceStreamChunk["usage"] {
     value <= 1_000_000_000
       ? value
       : undefined;
-  const inputTokens = count(usage.prompt_tokens),
-    outputTokens = count(usage.completion_tokens);
+  const inputTokens = count(usage.input_tokens ?? usage.prompt_tokens),
+    outputTokens = count(usage.output_tokens ?? usage.completion_tokens);
   return inputTokens !== undefined || outputTokens !== undefined
     ? { inputTokens, outputTokens }
     : undefined;

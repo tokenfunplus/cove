@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { useMemo } from "react";
 import { useConversationScroll } from "./use-conversation-scroll";
 import { createWorkspaceFixture } from "@/test/workspace-fixture";
 import { createLiveTurn, liveTurnFromBatch } from "@/lib/chat/live-turn";
@@ -106,8 +107,11 @@ test("reading pauses streaming, counts updated answers, and compensates a collap
  HTMLElement.prototype.scrollTo=function(options?:ScrollToOptions|number,y?:number){this.scrollTop=typeof options==="number"?y??0:options?.top??0;};
  const fixture=createWorkspaceFixture();
  function Surface({body}:{body:string}) {
-  const liveTurn={...liveTurnFromBatch(fixture.conversation.id,"Prompt",fixture.pendingBatch),restored:true};
-  liveTurn.targets![0]!.assistantBody=body;
+  const liveTurn=useMemo(() => {
+    const turn={...liveTurnFromBatch(fixture.conversation.id,"Prompt",fixture.pendingBatch),restored:true};
+    turn.targets![0]!.assistantBody=body;
+    return turn;
+  }, [body]);
   const scroll=useConversationScroll({view:fixture.completedView,liveTurn});
   return <><div ref={scroll.messageListRef} onScroll={scroll.handleMessageScroll}><p data-reading>Reading</p></div><output>{scroll.updatedReplies}</output><button onClick={scroll.returnToLatest}>Latest</button></>;
  }
@@ -123,4 +127,57 @@ test("reading pauses streaming, counts updated answers, and compensates a collap
  expect(list.scrollTop).toBe(320);
  fireEvent.click(container.querySelector("button")!);
  expect(container.querySelector("output")!.textContent).toBe("0");
+});
+
+
+test("Latest clears prior user intent before intermediate animation events and new chunks", () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  HTMLElement.prototype.scrollTo = vi.fn();
+  const fixture = createWorkspaceFixture();
+  function Surface({ body }: { body: string }) {
+    const liveTurn = useMemo(() => {
+      const turn = { ...liveTurnFromBatch(fixture.conversation.id, "Prompt", fixture.pendingBatch), restored: true };
+      turn.targets![0]!.assistantBody = body;
+      return turn;
+    }, [body]);
+    const scroll = useConversationScroll({ view: fixture.completedView, liveTurn });
+    return <><div ref={scroll.messageListRef} onScroll={scroll.handleMessageScroll}><p>Reply</p></div><button onClick={scroll.returnToLatest}>Latest</button></>;
+  }
+  const { container, rerender } = render(<Surface body="First" />);
+  const list = container.querySelector("div")!;
+  Object.defineProperties(list, { scrollHeight: { value: 1000 }, clientHeight: { value: 200 } });
+  list.scrollTop = 400;
+  fireEvent.wheel(list, { deltaY: -200 });
+  fireEvent.scroll(list);
+  fireEvent.click(container.querySelector("button")!);
+  list.scrollTop = 500;
+  fireEvent.scroll(list);
+  rerender(<Surface body="First plus a new chunk" />);
+  expect(list.scrollTop).toBe(1000);
+  fireEvent.wheel(list, { deltaY: -200 });
+  list.scrollTop = 350;
+  fireEvent.scroll(list);
+  rerender(<Surface body="First plus another chunk" />);
+  expect(list.scrollTop).toBe(350);
+});
+
+
+test("restoring a conversation keeps a reader more than 24 pixels above latest paused", () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  const fixture = createWorkspaceFixture();
+  const second = { ...fixture.completedView, id: "second-view" };
+  function Surface({ secondSelected }: { secondSelected: boolean }) {
+    const scroll = useConversationScroll({ view: secondSelected ? second : fixture.completedView });
+    return <><div ref={scroll.messageListRef} onScroll={scroll.handleMessageScroll}><p>Reply</p></div><output>{String(scroll.showReturnToLatest)}</output></>;
+  }
+  const { container, rerender } = render(<Surface secondSelected={false} />);
+  const list = container.querySelector("div")!;
+  Object.defineProperties(list, { scrollHeight: { value: 1000 }, clientHeight: { value: 200 } });
+  list.scrollTop = 740;
+  fireEvent.wheel(list, { deltaY: -60 });
+  fireEvent.scroll(list);
+  rerender(<Surface secondSelected />);
+  rerender(<Surface secondSelected={false} />);
+  expect(list.scrollTop).toBe(740);
+  expect(container.querySelector("output")?.textContent).toBe("true");
 });

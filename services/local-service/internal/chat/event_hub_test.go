@@ -87,3 +87,29 @@ func TestBatchReplayRetainsOnlyBoundedRecentEvents(t *testing.T) {
 		t.Fatal("an older terminal batch retained replay after the next start")
 	}
 }
+
+func TestReplayByteBudgetIncludesReasoning(t *testing.T) {
+	for _, mixed := range []bool{false, true} {
+		t.Run(fmt.Sprint("mixed=", mixed), func(t *testing.T) {
+			var buffer replay
+			delta, reasoning := "", strings.Repeat("r", maxReplayBytes/2)
+			if mixed {
+				delta, reasoning = strings.Repeat("a", maxReplayBytes/4), strings.Repeat("r", maxReplayBytes/4)
+			}
+			for index := 0; index < 4; index++ {
+				buffer.append(GenerationEvent{EventID: fmt.Sprint(index), Delta: delta, ReasoningDelta: reasoning})
+			}
+			if buffer.bytes != maxReplayBytes || len(buffer.events) != 2 || buffer.events[0].EventID != "2" {
+				t.Fatalf("incorrect mixed/reasoning eviction: bytes=%d, events=%d", buffer.bytes, len(buffer.events))
+			}
+			buffer.append(GenerationEvent{ReasoningDelta: strings.Repeat("r", maxReplayBytes+1)})
+			if buffer.bytes != 0 || len(buffer.events) != 0 {
+				t.Fatal("an oversized reasoning event exceeded the byte budget")
+			}
+			buffer.append(GenerationEvent{Delta: "ok", ReasoningDelta: "plan"})
+			if buffer.bytes != 6 || len(buffer.events) != 1 {
+				t.Fatal("eviction corrupted accounting for subsequent events")
+			}
+		})
+	}
+}

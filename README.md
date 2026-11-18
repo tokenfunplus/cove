@@ -11,7 +11,7 @@ A local-first Mac chat app with on-device history and verifiable AI inference.
 
 Cove keeps conversation history on your Mac and connects to the model providers you choose. A SwiftUI menu-bar Launcher starts a local Go service and opens the Chat Surface in your browser. There is no Cove account or cloud conversation store.
 
-[Quick start](#quick-start) · [Screenshots](#screenshots) · [Configuration](docs/configuration.md) · [FAQ](#faq) · [Development](docs/development.md)
+[Quick start](#quick-start) · [Screenshots](#screenshots) · [Configuration](docs/configuration.md) · [FAQ](#faq) · [Development](docs/development.md) · [Dependency patches](docs/dependency-patches.md)
 
 ## Quick start
 

@@ -77,6 +77,7 @@ export function useAnswerTools({
     start: number;
     end: number;
   }>();
+  useEffect(() => setRevisionRange(undefined), [history.content]);
   const [revisionTask, setRevisionTask] = useState<{
     base: string;
     range?: { start: number; end: number };
@@ -202,7 +203,7 @@ export function useAnswerTools({
     switchRuntime("revision");
     setTab("write");
     if (documentSource?.messageId === next.messageId) return;
-    if (!replace && documentSource && history.content !== documentSource.body) {
+    if (!replace && documentSource && (history.content !== documentSource.body || revisionInstruction.trim())) {
       setReplacement({ kind: "write", source: next });
       return;
     }

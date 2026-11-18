@@ -7,6 +7,8 @@ import type {
 import type { LiveTurn } from "@/lib/chat/live-turn";
 import type { ConversationNavigation } from "@/lib/workspace-types";
 
+const latestThreshold = 24;
+
 export function useConversationScroll({
   view,
   liveTurn,
@@ -117,7 +119,7 @@ export function useConversationScroll({
     return () => observer.disconnect();
   }, [view?.id, isLoading, hasContent]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const node = messageListRef.current;
     if (!node || !view) return;
     const saved = scrollPositionsRef.current[view.id];
@@ -128,7 +130,7 @@ export function useConversationScroll({
     if (saved !== undefined) {
       node.scrollTop = saved;
       followLatestRef.current =
-        saved >= node.scrollHeight - node.clientHeight - 120;
+        saved >= node.scrollHeight - node.clientHeight - latestThreshold;
       setShowReturnToLatest(!followLatestRef.current);
     } else {
       followLatestRef.current = true;
@@ -201,7 +203,7 @@ export function useConversationScroll({
       setShowReturnToLatest(true);
       return;
     }
-    const nearLatest = distance <= 24;
+    const nearLatest = distance <= latestThreshold;
     if (performance.now() < userIntentRef.current)
       followLatestRef.current = nearLatest;
     setShowReturnToLatest(
@@ -214,6 +216,7 @@ export function useConversationScroll({
   function returnToLatest() {
     const node = messageListRef.current;
     if (!node) return;
+    userIntentRef.current = 0;
     followLatestRef.current = true;
     explicitNavigationRef.current = false;
     setShowReturnToLatest(false);

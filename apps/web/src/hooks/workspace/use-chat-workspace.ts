@@ -183,7 +183,7 @@ export function useChatWorkspace() {
     catalogs,
     selectionStatus,
     copy,
-    externalBusy: generationState.isSending || workspaceUi.isNavigating,
+    externalBusy: generationState.isSending || workspaceUi.isNavigating || workspaceUi.isClearingChatData,
   });
 
   const generationCommands = useGenerationCommands({

@@ -42,8 +42,10 @@ export function protectMarkdownMath(content: string) {
     if (opener === "$" && (!text[start] || /\s/.test(text[start]))) continue;
     const closer = opener === "\\(" ? "\\)" : opener === "\\[" ? "\\]" : opener;
     const end = findClosingDelimiter(text, start, closer, display);
-    if (end === undefined && opener === "$" && /\d/.test(text[start] ?? "")) continue;
     const fallbackEnd = incompleteEnd(text, start, display);
+    // Incomplete TeX commands stay readable while streaming; a prose dollar
+    // must leave the rest of the line available to Markdown.
+    if (end === undefined && opener === "$" && !/\\[a-zA-Z]/.test(text.slice(start, fallbackEnd))) continue;
     const complete = end !== undefined;
     const expressionEnd = end ?? fallbackEnd;
     const sourceEnd = complete ? expressionEnd + closer.length : expressionEnd;

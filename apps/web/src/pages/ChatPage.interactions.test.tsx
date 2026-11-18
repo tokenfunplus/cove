@@ -2,6 +2,7 @@
 
 import * as transport from "@/api";
 import { conversationKeys } from "@/api/queryKeys";
+import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 import { App } from "@/App";
 import { WorkspaceToast } from "@/components/layout/WorkspaceToast";
 import type { SecureInferenceEvent } from "@/lib/inference/secure-inference";
@@ -15,6 +16,7 @@ import {
   act,
   cleanup,
   render,
+  renderHook,
   screen,
   waitFor,
   within,
@@ -1826,4 +1828,90 @@ test("saved model combinations restore the entire model set through the workspac
  await user.click(screen.getByRole("button",{name:"Review pair · 2"}));
  await waitFor(()=>expect(screen.getByRole("button",{name:"Model comparison, 2 / 4"})).toBeTruthy());
  expect(vi.mocked(transport.updateSettings).mock.calls.at(-1)![0].active_model_set).toHaveLength(2);
+});
+
+
+function mountWorkspaceController() {
+  return renderHook(() => useChatWorkspace(), {
+    wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
+  });
+}
+
+test.each(["stop", "load failure"] as const)("an accepted private branch remains owned through %s during adoption", async action => {
+  configureNearAITarget(0, "incognito");
+  const source = fixture.completedView;
+  const branchBatch = { ...fixture.pendingBatch, id: "adopting-branch-batch", conversation_id: "adopting-branch" };
+  const branch = { ...source, id: branchBatch.conversation_id, generation_batches: [branchBatch], active_generation_batch: branchBatch };
+  let resolveView!: (value: typeof branch) => void;
+  let rejectView!: (reason: Error) => void;
+  const loading = new Promise<typeof branch>((resolve, reject) => { resolveView = resolve; rejectView = reject; });
+  vi.mocked(transport.getConversation).mockImplementation(id => id === branch.id ? loading : Promise.resolve(source));
+  vi.mocked(transport.createGenerationBatch).mockResolvedValue(branchBatch);
+  vi.mocked(transport.cancelGenerationBatch).mockResolvedValue({ ...branchBatch, state: "stopped" });
+  const { result } = mountWorkspaceController();
+  await waitFor(() => expect(result.current.selectionStatus).toBe("ready"));
+  let sending!: Promise<void>;
+  act(() => { sending = result.current.handleSend({ body: "Edited private question", editOfBatchId: fixture.completedBatch.id }); });
+  await waitFor(() => expect(transport.getConversation).toHaveBeenCalledWith(branch.id));
+  expect(result.current.generationBatch?.id).toBe(branchBatch.id);
+  if (action === "stop") {
+    await act(async () => { expect(await result.current.handleCancel()).toBe(true); });
+    expect(transport.cancelGenerationBatch).toHaveBeenCalledWith(branchBatch.id);
+    await act(async () => { resolveView(branch); await sending; });
+  } else {
+    await act(async () => { rejectView(new Error("Synthetic branch read failure")); await sending; });
+  }
+  expect(transport.cancelGenerationBatch).toHaveBeenCalledWith(branchBatch.id);
+  expect(privateInference.generate).not.toHaveBeenCalled();
+  expect(result.current.isSending).toBe(false);
+});
+
+test("partial private usage events retain both token counts, including zero", async () => {
+  configureNearAITarget(0, "incognito");
+  privateInference.generate.mockImplementation(async function* (): AsyncGenerator<SecureInferenceEvent> {
+    yield { type: "streaming" };
+    yield { type: "usage", inputTokens: 128 };
+    yield { type: "usage", outputTokens: 32 };
+    yield { type: "usage", inputTokens: 0 };
+    yield { type: "delta", delta: "Usage fixture" };
+    yield { type: "completed", verification: { status: "verified_gateway", signingKind: "gateway" } };
+  });
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Count usage");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(transport.settleSecureGeneration).toHaveBeenCalledWith(
+    fixture.pendingBatch.targets[0]!.generation.id, "Usage fixture", expect.any(Object),
+    expect.objectContaining({ input_tokens: 0, output_tokens: 32 }),
+  ));
+});
+
+test("clearing chat data blocks new answer tools requests while deletion is pending", async () => {
+  let finishClear!: () => void;
+  vi.mocked(transport.clearChatData).mockImplementation(() => new Promise<void>(resolve => { finishClear = resolve; }));
+  const { result } = mountWorkspaceController();
+  await waitFor(() => expect(result.current.selectionStatus).toBe("ready"));
+  const source = { messageId: "answer", conversationId: fixture.conversation.id, body: "Source answer" };
+  act(() => {
+    result.current.answerTools.openAsk(source, "Source", "Explain");
+    result.current.answerTools.openEditor(source);
+  });
+  act(() => result.current.answerTools.setRevisionInstruction("Simplify"));
+  let clearing!: Promise<unknown>;
+  act(() => { clearing = result.current.clearConfirmedChatData(); });
+  await waitFor(() => expect(transport.clearChatData).toHaveBeenCalled());
+  expect(result.current.answerTools.externalBusy).toBe(true);
+  act(() => {
+    result.current.answerTools.openAsk({ ...source, messageId: "new-answer" }, "New");
+    result.current.answerTools.openEditor({ ...source, messageId: "new-answer" });
+  });
+  expect(result.current.answerTools.source?.messageId).toBe("answer");
+  expect(result.current.answerTools.documentSource?.messageId).toBe("answer");
+  await act(async () => {
+    await result.current.answerTools.sendQuestion();
+    await result.current.answerTools.requestRevision();
+  });
+  expect(transport.createConversation).not.toHaveBeenCalled();
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+  await act(async () => { finishClear(); await clearing; });
+  expect(result.current.answerTools.open).toBe(false);
 });

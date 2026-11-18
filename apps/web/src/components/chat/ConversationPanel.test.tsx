@@ -646,10 +646,9 @@ test("assistant history shows Gateway, model, and response verification lanes", 
       generationBatches={[privateBatch]}
     />,
   );
-  expect(privateMarkup).toContain('data-verification-summary=');
-  expect(privateMarkup).toContain('data-verification-summary=');
-  expect(privateMarkup).toContain('data-verification-summary=');
-  expect(privateMarkup).toContain('data-verification-summary=');
+  expect(privateMarkup).toContain('data-verification-summary="verified"');
+  expect(privateMarkup).toContain('data-verification-kind="model"');
+  expect(privateMarkup).toContain("Gateway, model &amp; response verified");
   expect(privateMarkup).toContain("Response details");
 
   const incognitoSnapshot = {
@@ -712,8 +711,9 @@ test("assistant history shows Gateway, model, and response verification lanes", 
     />,
   );
   expect(incognitoMarkup).not.toContain('data-verification-lane="model"');
-  expect(incognitoMarkup).toContain('data-verification-summary=');
-  expect(incognitoMarkup).toContain('data-verification-summary=');
+  expect(incognitoMarkup).toContain('data-verification-summary="verified"');
+  expect(incognitoMarkup).toContain('data-verification-kind="gateway"');
+  expect(incognitoMarkup).toContain("Gateway &amp; response verified");
   expect(incognitoMarkup).not.toContain("Private mode");
 
   const chutesSnapshot = {
@@ -777,8 +777,9 @@ test("assistant history shows Gateway, model, and response verification lanes", 
   );
   expect(chutesMarkup).toContain("Unverified Chutes answer");
   expect(chutesMarkup).not.toContain('data-verification-lane="model"');
-  expect(chutesMarkup).toContain('data-verification-summary=');
-  expect(chutesMarkup).toContain('data-verification-summary=');
+  expect(chutesMarkup).toContain('data-verification-summary="failed"');
+  expect(chutesMarkup).toContain('data-verification-kind="gateway"');
+  expect(chutesMarkup).toContain("Verification needs attention");
 });
 
 test("historical verification lanes follow the saved snapshot", () => {
@@ -846,8 +847,9 @@ test("historical verification lanes follow the saved snapshot", () => {
     />,
   );
   expect(markup).not.toContain('data-verification-lane="model"');
-  expect(markup).toContain('data-verification-summary=');
-  expect(markup).toContain('data-verification-summary=');
+  expect(markup).toContain('data-verification-summary="verified"');
+  expect(markup).toContain('data-verification-kind="gateway"');
+  expect(markup).toContain("Gateway &amp; response verified");
 });
 
 test("verified private history exposes model evidence details and a safe re-verification action", () => {

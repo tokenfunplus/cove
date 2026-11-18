@@ -156,7 +156,7 @@ export function useGenerationCommands({
       ? []
       : attachmentDraft.attachments;
     const clientRequestId = crypto.randomUUID();
-    const submission = { cancelRequested: false };
+    const submission: { cancelRequested: boolean; batchId?: string } = { cancelRequested: false };
     pendingSubmissionRef.current = submission;
     if (!override?.preserveDraft) setDraft("");
     setFeedback(undefined);
@@ -226,12 +226,11 @@ export function useGenerationCommands({
           },
         });
       }
-      if (pendingSubmissionRef.current === submission)
-        pendingSubmissionRef.current = undefined;
       if (selectedIdRef.current !== conversationId) {
         await cancelGenerationBatch(next.id).catch(() => undefined);
         return;
       }
+      submission.batchId = next.id;
       ownedBatchRef.current = next.id;
       accepted = true;
       override?.onAccepted?.();
@@ -252,7 +251,21 @@ export function useGenerationCommands({
             selectedTargets,
           ),
         );
-        const branchView = await getConversation(conversationId);
+        setGenerationBatch(next);
+        setLiveTurn(current => current ? hydrateLiveTurnBatch(current, next) : current);
+        let branchView;
+        try {
+          branchView = await getConversation(conversationId);
+        } catch (error) {
+          const stopped = await cancelGenerationBatch(next.id);
+          if (selectedIdRef.current === conversationId) {
+            setGenerationBatch(stopped);
+            setLiveTurn(current => current ? hydrateLiveTurnBatch(current, stopped) : current);
+            setIsSending(false);
+            setFeedback(generationErrorMessage(error, copy));
+          }
+          return;
+        }
         if (selectedIdRef.current !== conversationId) {
           await cancelGenerationBatch(next.id);
           return;
@@ -264,6 +277,8 @@ export function useGenerationCommands({
       setLiveTurn((current) =>
         current ? hydrateLiveTurnBatch(current, next) : current,
       );
+      if (pendingSubmissionRef.current === submission)
+        pendingSubmissionRef.current = undefined;
       if (submission.cancelRequested) {
         const stopped = await cancelGenerationBatch(next.id);
         setGenerationBatch(stopped);
@@ -330,8 +345,20 @@ export function useGenerationCommands({
     // File parsing may still be settling the creation command. Stop that new
     // Batch as soon as its identity arrives, rather than cancelling an older turn.
     if (pendingSubmissionRef.current) {
-      pendingSubmissionRef.current.cancelRequested = true;
-      return true;
+      const submission = pendingSubmissionRef.current;
+      submission.cancelRequested = true;
+      if (!submission.batchId) return true;
+      try {
+        const stopped = await cancelGenerationBatch(submission.batchId);
+        if (pendingSubmissionRef.current === submission) {
+          setGenerationBatch(stopped);
+          setLiveTurn(current => current?.batchId === stopped.id ? hydrateLiveTurnBatch(current, stopped) : current);
+        }
+        return true;
+      } catch (error) {
+        setFeedback(generationErrorMessage(error, copy));
+        return false;
+      }
     }
     const activeBatchID = generationBatch?.id;
     const runs = [...secureGenerationRunsRef.current.values()].filter(

@@ -1,0 +1,45 @@
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -285,11 +285,7 @@
+ };
+ 
+ const analyzeRepeatedExtglob = (body, options) => {
+-  if (options.maxExtglobRecursion === false) {
+-    return { risky: false };
+-  }
+-
+-  const max =
++  const max = options.maxExtglobRecursion === false ? Infinity :
+     typeof options.maxExtglobRecursion === 'number'
+       ? options.maxExtglobRecursion
+       : constants.DEFAULT_MAX_EXTGLOB_RECURSION;
+@@ -341,6 +337,29 @@
+     return combinable
+       ? { risky: true, safeOutput: buildCharClassStar([...new Set(safeChars)]) }
+       : { risky: true };
++  }
++
++  // Only repeat prefix-free ASCII literal alternatives. Regex escapes,
++  // wildcards, groups, classes and braces can introduce ambiguity even when
++  // splitTopLevel found one branch, for example +(*a). Preserve the existing
++  // safeOutput handling of flattened character repetitions above.
++  const flags = options.flags || (options.nocase ? 'i' : '');
++  const literals = branches.map(branch => {
++    const literal = normalizeSimpleBranch(branch);
++    if (!literal || /[^\x20-\x7e]/.test(literal) || branch.includes('\\') || branch.includes('"')) {
++      return;
++    }
++    return flags.includes('i') ? literal.toLowerCase() : literal;
++  });
++  if (literals.some(value => !value)) {
++    return { risky: true };
++  }
++  for (let i = 0; i < literals.length; i++) {
++    for (let j = i + 1; j < literals.length; j++) {
++      if (literals[i].startsWith(literals[j]) || literals[j].startsWith(literals[i])) {
++        return { risky: true };
++      }
++    }
+   }
+ 
+   return { risky: false };

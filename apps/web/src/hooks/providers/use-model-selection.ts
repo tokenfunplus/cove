@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useUpdateSettings } from "@/api/hooks/useSettings";
 
 import {
@@ -44,11 +45,13 @@ export function useModelSelection({
   providerProfiles,
 }: Dependencies) {
   const updateSettings = useUpdateSettings().mutateAsync;
+  const selectionRevisionRef = useRef(0);
 
   function handleProviderChange(providerId: string) {
     if (isSending) {
       return;
     }
+    selectionRevisionRef.current += 1;
     setActiveModelSet(providerId ? [{ providerId, modelId: "" }] : []);
     setFeedback(undefined);
   }
@@ -69,6 +72,7 @@ export function useModelSelection({
       )
     )
       return;
+    const revision = ++selectionRevisionRef.current;
     try {
       const updated = await updateSettings({
         ...settings,
@@ -77,12 +81,14 @@ export function useModelSelection({
           model_id: target.modelId,
         })),
       });
+      if (revision !== selectionRevisionRef.current) return;
       setSettings(updated);
       setActiveModelSet(
         activeModelSetFromWorkspaceSettings(updated, providerProfiles),
       );
       setFeedback(undefined);
     } catch (error) {
+      if (revision !== selectionRevisionRef.current) return;
       setFeedback(providerErrorMessage(error, copy));
     }
   }
@@ -107,6 +113,7 @@ export function useModelSelection({
       setFeedback(copy.modelAlreadyInComparison);
       return;
     }
+    const revision = ++selectionRevisionRef.current;
     try {
       const nextModelSet = activeModelSet.map((candidate, index) =>
         index === targetIndex ? nextTarget : candidate,
@@ -118,12 +125,14 @@ export function useModelSelection({
           model_id: candidate.modelId,
         })),
       });
+      if (revision !== selectionRevisionRef.current) return;
       setSettings(updated);
       setActiveModelSet(
         activeModelSetFromWorkspaceSettings(updated, providerProfiles),
       );
       setFeedback(undefined);
     } catch (error) {
+      if (revision !== selectionRevisionRef.current) return;
       setFeedback(providerErrorMessage(error, copy));
     }
   }
@@ -145,6 +154,7 @@ export function useModelSelection({
       ...activeModelSet,
       { providerId: profile.id, modelId },
     ];
+    const revision = ++selectionRevisionRef.current;
     try {
       const updated = await updateSettings({
         ...settings,
@@ -153,11 +163,13 @@ export function useModelSelection({
           model_id: target.modelId,
         })),
       });
+      if (revision !== selectionRevisionRef.current) return;
       setSettings(updated);
       setActiveModelSet(
         activeModelSetFromWorkspaceSettings(updated, providerProfiles),
       );
     } catch (error) {
+      if (revision !== selectionRevisionRef.current) return;
       setFeedback(providerErrorMessage(error, copy));
     }
   }
@@ -169,6 +181,7 @@ export function useModelSelection({
         candidate.providerId !== target.providerId ||
         candidate.modelId !== target.modelId,
     );
+    const revision = ++selectionRevisionRef.current;
     try {
       const updated = await updateSettings({
         ...settings,
@@ -177,16 +190,19 @@ export function useModelSelection({
           model_id: candidate.modelId,
         })),
       });
+      if (revision !== selectionRevisionRef.current) return;
       setSettings(updated);
       setActiveModelSet(
         activeModelSetFromWorkspaceSettings(updated, providerProfiles),
       );
     } catch (error) {
+      if (revision !== selectionRevisionRef.current) return;
       setFeedback(providerErrorMessage(error, copy));
     }
   }
 
   async function handleSaveSettings(next: WorkspaceSettings) {
+    const revision = ++selectionRevisionRef.current;
     const updated = await updateSettings({
       ...next,
       active_model_set: activeModelSet.map((target) => ({
@@ -194,6 +210,7 @@ export function useModelSelection({
         model_id: target.modelId,
       })),
     });
+    if (revision !== selectionRevisionRef.current) return;
     setSettings(updated);
     setActiveModelSet(
       activeModelSetFromWorkspaceSettings(updated, providerProfiles),
@@ -228,10 +245,13 @@ export function useModelSelection({
       })),
     };
     setActiveModelSet(nextModelSet);
+    const revision = ++selectionRevisionRef.current;
     try {
       const updated = await updateSettings(nextSettings);
+      if (revision !== selectionRevisionRef.current) return;
       setSettings(updated);
     } catch {
+      if (revision !== selectionRevisionRef.current) return;
       setSettings(nextSettings);
       setFeedback(copy.settingsFailed);
     }

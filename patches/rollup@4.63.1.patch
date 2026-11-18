@@ -1,0 +1,266 @@
+--- a/dist/es/shared/node-entry.js
++++ b/dist/es/shared/node-entry.js
+@@ -9947,11 +9947,7 @@
+ 	};
+ 
+ 	const analyzeRepeatedExtglob = (body, options) => {
+-	  if (options.maxExtglobRecursion === false) {
+-	    return { risky: false };
+-	  }
+-
+-	  const max =
++	  const max = options.maxExtglobRecursion === false ? Infinity :
+ 	    typeof options.maxExtglobRecursion === 'number'
+ 	      ? options.maxExtglobRecursion
+ 	      : constants.DEFAULT_MAX_EXTGLOB_RECURSION;
+@@ -10003,6 +9999,29 @@
+ 	    return combinable
+ 	      ? { risky: true, safeOutput: buildCharClassStar([...new Set(safeChars)]) }
+ 	      : { risky: true };
++	  }
++
++	  // Only repeat prefix-free ASCII literal alternatives. Regex escapes,
++	  // wildcards, groups, classes and braces can introduce ambiguity even when
++	  // splitTopLevel found one branch, for example +(*a). Preserve the existing
++	  // safeOutput handling of flattened character repetitions above.
++	  const flags = options.flags || (options.nocase ? 'i' : '');
++	  const literals = branches.map(branch => {
++	    const literal = normalizeSimpleBranch(branch);
++	    if (!literal || /[^\x20-\x7e]/.test(literal) || branch.includes('\\') || branch.includes('"')) {
++	      return;
++	    }
++	    return flags.includes('i') ? literal.toLowerCase() : literal;
++	  });
++	  if (literals.some(value => !value)) {
++	    return { risky: true };
++	  }
++	  for (let i = 0; i < literals.length; i++) {
++	    for (let j = i + 1; j < literals.length; j++) {
++	      if (literals[i].startsWith(literals[j]) || literals[j].startsWith(literals[i])) {
++	        return { risky: true };
++	      }
++	    }
+ 	  }
+ 
+ 	  return { risky: false };
+--- a/dist/es/shared/watch.js
++++ b/dist/es/shared/watch.js
+@@ -971,11 +971,7 @@
+ 	};
+ 
+ 	const analyzeRepeatedExtglob = (body, options) => {
+-	  if (options.maxExtglobRecursion === false) {
+-	    return { risky: false };
+-	  }
+-
+-	  const max =
++	  const max = options.maxExtglobRecursion === false ? Infinity :
+ 	    typeof options.maxExtglobRecursion === 'number'
+ 	      ? options.maxExtglobRecursion
+ 	      : constants.DEFAULT_MAX_EXTGLOB_RECURSION;
+@@ -1000,6 +996,29 @@
+ 
+ 	    if (repeatedExtglobRecursion(branch) > max) {
+ 	      return { risky: true };
++	    }
++	  }
++
++	  // Only repeat prefix-free ASCII literal alternatives. Regex escapes,
++	  // wildcards, groups, classes and braces can introduce ambiguity even when
++	  // splitTopLevel found one branch, for example +(*a). Preserve the existing
++	  // safeOutput handling of flattened character repetitions above.
++	  const flags = options.flags || (options.nocase ? 'i' : '');
++	  const literals = branches.map(branch => {
++	    const literal = normalizeSimpleBranch(branch);
++	    if (!literal || /[^\x20-\x7e]/.test(literal) || branch.includes('\\') || branch.includes('"')) {
++	      return;
++	    }
++	    return flags.includes('i') ? literal.toLowerCase() : literal;
++	  });
++	  if (literals.some(value => !value)) {
++	    return { risky: true };
++	  }
++	  for (let i = 0; i < literals.length; i++) {
++	    for (let j = i + 1; j < literals.length; j++) {
++	      if (literals[i].startsWith(literals[j]) || literals[j].startsWith(literals[i])) {
++	        return { risky: true };
++	      }
+ 	    }
+ 	  }
+ 
+@@ -3688,11 +3707,7 @@
+ 	};
+ 
+ 	const analyzeRepeatedExtglob = (body, options) => {
+-	  if (options.maxExtglobRecursion === false) {
+-	    return { risky: false };
+-	  }
+-
+-	  const max =
++	  const max = options.maxExtglobRecursion === false ? Infinity :
+ 	    typeof options.maxExtglobRecursion === 'number'
+ 	      ? options.maxExtglobRecursion
+ 	      : constants.DEFAULT_MAX_EXTGLOB_RECURSION;
+@@ -3717,6 +3732,29 @@
+ 
+ 	    if (repeatedExtglobRecursion(branch) > max) {
+ 	      return { risky: true };
++	    }
++	  }
++
++	  // Only repeat prefix-free ASCII literal alternatives. Regex escapes,
++	  // wildcards, groups, classes and braces can introduce ambiguity even when
++	  // splitTopLevel found one branch, for example +(*a). Preserve the existing
++	  // safeOutput handling of flattened character repetitions above.
++	  const flags = options.flags || (options.nocase ? 'i' : '');
++	  const literals = branches.map(branch => {
++	    const literal = normalizeSimpleBranch(branch);
++	    if (!literal || /[^\x20-\x7e]/.test(literal) || branch.includes('\\') || branch.includes('"')) {
++	      return;
++	    }
++	    return flags.includes('i') ? literal.toLowerCase() : literal;
++	  });
++	  if (literals.some(value => !value)) {
++	    return { risky: true };
++	  }
++	  for (let i = 0; i < literals.length; i++) {
++	    for (let j = i + 1; j < literals.length; j++) {
++	      if (literals[i].startsWith(literals[j]) || literals[j].startsWith(literals[i])) {
++	        return { risky: true };
++	      }
+ 	    }
+ 	  }
+ 
+--- a/dist/shared/index.js
++++ b/dist/shared/index.js
+@@ -967,11 +967,7 @@
+ 	};
+ 
+ 	const analyzeRepeatedExtglob = (body, options) => {
+-	  if (options.maxExtglobRecursion === false) {
+-	    return { risky: false };
+-	  }
+-
+-	  const max =
++	  const max = options.maxExtglobRecursion === false ? Infinity :
+ 	    typeof options.maxExtglobRecursion === 'number'
+ 	      ? options.maxExtglobRecursion
+ 	      : constants.DEFAULT_MAX_EXTGLOB_RECURSION;
+@@ -996,6 +992,29 @@
+ 
+ 	    if (repeatedExtglobRecursion(branch) > max) {
+ 	      return { risky: true };
++	    }
++	  }
++
++	  // Only repeat prefix-free ASCII literal alternatives. Regex escapes,
++	  // wildcards, groups, classes and braces can introduce ambiguity even when
++	  // splitTopLevel found one branch, for example +(*a). Preserve the existing
++	  // safeOutput handling of flattened character repetitions above.
++	  const flags = options.flags || (options.nocase ? 'i' : '');
++	  const literals = branches.map(branch => {
++	    const literal = normalizeSimpleBranch(branch);
++	    if (!literal || /[^\x20-\x7e]/.test(literal) || branch.includes('\\') || branch.includes('"')) {
++	      return;
++	    }
++	    return flags.includes('i') ? literal.toLowerCase() : literal;
++	  });
++	  if (literals.some(value => !value)) {
++	    return { risky: true };
++	  }
++	  for (let i = 0; i < literals.length; i++) {
++	    for (let j = i + 1; j < literals.length; j++) {
++	      if (literals[i].startsWith(literals[j]) || literals[j].startsWith(literals[i])) {
++	        return { risky: true };
++	      }
+ 	    }
+ 	  }
+ 
+@@ -3684,11 +3703,7 @@
+ 	};
+ 
+ 	const analyzeRepeatedExtglob = (body, options) => {
+-	  if (options.maxExtglobRecursion === false) {
+-	    return { risky: false };
+-	  }
+-
+-	  const max =
++	  const max = options.maxExtglobRecursion === false ? Infinity :
+ 	    typeof options.maxExtglobRecursion === 'number'
+ 	      ? options.maxExtglobRecursion
+ 	      : constants.DEFAULT_MAX_EXTGLOB_RECURSION;
+@@ -3713,6 +3728,29 @@
+ 
+ 	    if (repeatedExtglobRecursion(branch) > max) {
+ 	      return { risky: true };
++	    }
++	  }
++
++	  // Only repeat prefix-free ASCII literal alternatives. Regex escapes,
++	  // wildcards, groups, classes and braces can introduce ambiguity even when
++	  // splitTopLevel found one branch, for example +(*a). Preserve the existing
++	  // safeOutput handling of flattened character repetitions above.
++	  const flags = options.flags || (options.nocase ? 'i' : '');
++	  const literals = branches.map(branch => {
++	    const literal = normalizeSimpleBranch(branch);
++	    if (!literal || /[^\x20-\x7e]/.test(literal) || branch.includes('\\') || branch.includes('"')) {
++	      return;
++	    }
++	    return flags.includes('i') ? literal.toLowerCase() : literal;
++	  });
++	  if (literals.some(value => !value)) {
++	    return { risky: true };
++	  }
++	  for (let i = 0; i < literals.length; i++) {
++	    for (let j = i + 1; j < literals.length; j++) {
++	      if (literals[i].startsWith(literals[j]) || literals[j].startsWith(literals[i])) {
++	        return { risky: true };
++	      }
+ 	    }
+ 	  }
+ 
+--- a/dist/shared/rollup.js
++++ b/dist/shared/rollup.js
+@@ -1948,11 +1948,7 @@
+ 	};
+ 
+ 	const analyzeRepeatedExtglob = (body, options) => {
+-	  if (options.maxExtglobRecursion === false) {
+-	    return { risky: false };
+-	  }
+-
+-	  const max =
++	  const max = options.maxExtglobRecursion === false ? Infinity :
+ 	    typeof options.maxExtglobRecursion === 'number'
+ 	      ? options.maxExtglobRecursion
+ 	      : constants.DEFAULT_MAX_EXTGLOB_RECURSION;
+@@ -2004,6 +2000,29 @@
+ 	    return combinable
+ 	      ? { risky: true, safeOutput: buildCharClassStar([...new Set(safeChars)]) }
+ 	      : { risky: true };
++	  }
++
++	  // Only repeat prefix-free ASCII literal alternatives. Regex escapes,
++	  // wildcards, groups, classes and braces can introduce ambiguity even when
++	  // splitTopLevel found one branch, for example +(*a). Preserve the existing
++	  // safeOutput handling of flattened character repetitions above.
++	  const flags = options.flags || (options.nocase ? 'i' : '');
++	  const literals = branches.map(branch => {
++	    const literal = normalizeSimpleBranch(branch);
++	    if (!literal || /[^\x20-\x7e]/.test(literal) || branch.includes('\\') || branch.includes('"')) {
++	      return;
++	    }
++	    return flags.includes('i') ? literal.toLowerCase() : literal;
++	  });
++	  if (literals.some(value => !value)) {
++	    return { risky: true };
++	  }
++	  for (let i = 0; i < literals.length; i++) {
++	    for (let j = i + 1; j < literals.length; j++) {
++	      if (literals[i].startsWith(literals[j]) || literals[j].startsWith(literals[i])) {
++	        return { risky: true };
++	      }
++	    }
+ 	  }
+ 
+ 	  return { risky: false };

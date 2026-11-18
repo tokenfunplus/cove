@@ -12,6 +12,8 @@
 
 ### Fixed
 
+- Preserve branch cancellation during loading, revision failures, unsent edits, token counts, verification details, and reading updates across asynchronous transitions.
+- Apply conservative local picomatch and bundled Rollup parser patches for GHSA-fc5q-39xc-vjpf, with a checksum-verified CI audit gate.
 - Separate structured Provider reasoning from answer text and collapse it after streaming, including the NearAI Gateway Responses path.
 - Preserve the reading position while reasoning folds or streamed content changes, and show how many answers changed while following was paused.
 - Use themed filter menus with correct nested Escape, focus, and narrow-screen behavior instead of operating-system dropdowns.

@@ -14,7 +14,7 @@ export function useGenerationState() {
   const [liveTurn, setLiveTurn] = useState<LiveTurn>();
 
   const [isSending, setIsSending] = useState(false);
-  const pendingSubmissionRef = useRef<{ cancelRequested: boolean } | undefined>(
+  const pendingSubmissionRef = useRef<{ cancelRequested: boolean; batchId?: string } | undefined>(
     undefined,
   );
 

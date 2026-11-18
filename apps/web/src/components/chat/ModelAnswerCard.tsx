@@ -129,7 +129,8 @@ export function ModelAnswerCard({
         {phase==="failed" && <FailureActions targetId={targetId} code={errorCode ?? verification?.failure_code}/>}
         {body || reasoning ? (
           answer ? <AnswerActions source={answer}><AssistantMessage content={body} reasoning={reasoning} streaming={phase === "streaming"} /></AnswerActions> : <AssistantMessage content={body} reasoning={reasoning} streaming={phase === "streaming"} />
-        ) : !waiting && stateMessage ? (
+        ) : null}
+        {!body && !waiting && stateMessage ? (
           <p
             className={cn(
               messagesStyles.message_body,

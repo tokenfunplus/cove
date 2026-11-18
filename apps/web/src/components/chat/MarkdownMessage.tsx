@@ -198,7 +198,7 @@ function renderInline(
         ),
       );
     } else if (match[5] !== undefined) {
-      nodes.push(<code key={key}>{match[6]}</code>);
+      nodes.push(<code key={key}>{match[6].replace(math.pattern, token => math.expressions.get(token)?.source ?? token)}</code>);
     } else if (match[7] !== undefined || match[8] !== undefined) {
       nodes.push(<strong key={key}>{renderText(match[7] ?? match[8])}</strong>);
     } else {

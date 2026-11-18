@@ -980,14 +980,21 @@ test("Incognito environment refresh verifies only the Gateway attestation", asyn
   expect(refreshed.gateway.kind).toBe("gateway");
 });
 
-test("Browser Gateway Responses client posts /responses and verifies the captured Gateway signature", async () => {
+test.each([
+  { name: "Responses usage", event: { type: "response.completed", response: { id: "resp-1", usage: { input_tokens: 128, output_tokens: 32 } } }, expected: { inputTokens: 128, outputTokens: 32 } },
+  { name: "Chat Completions usage and zero", event: { id: "resp-1", usage: { prompt_tokens: 0, completion_tokens: 32 } }, expected: { inputTokens: 0, outputTokens: 32 } },
+  { name: "partial usage", event: { type: "response.completed", response: { id: "resp-1", usage: { input_tokens: 128 } } }, expected: { inputTokens: 128, outputTokens: undefined } },
+  { name: "invalid string/negative counts", event: { type: "response.completed", response: { id: "resp-1", usage: { input_tokens: "128", output_tokens: -1 } } }, expected: undefined },
+  { name: "fractional/oversized counts", event: { type: "response.completed", response: { id: "resp-1", usage: { input_tokens: 1.5, output_tokens: 1_000_000_001 } } }, expected: undefined },
+])("Browser Gateway Responses client preserves $name and verifies the captured signature", async ({ event, expected }) => {
   const requestBodies: Uint8Array[] = [];
   const responseBodies: Uint8Array[] = [];
   const sse =
     'data: {"type":"response.created","response":{"id":"resp-1"}}\n\n' +
     'data: {"type":"response.reasoning_summary_text.delta","delta":"Plan a useful answer."}\n\n' +
     'data: {"type":"response.function_call_arguments.delta","delta":"not assistant text"}\n\n' +
-    'data: {"id":"resp-1","type":"response.output_text.delta","delta":"Hello from Gateway"}\n\ndata: [DONE]\n\n';
+    'data: {"id":"resp-1","type":"response.output_text.delta","delta":"Hello from Gateway"}\n\n' +
+    `data: ${JSON.stringify(event)}\n\ndata: [DONE]\n\n`;
   const gatewayAttestation = {
     nonce: "aa".repeat(32),
     signer: {
@@ -1072,6 +1079,7 @@ test("Browser Gateway Responses client posts /responses and verifies the capture
   }
   expect(chunks.map(chunk => chunk.delta).join("")).toBe("Hello from Gateway");
   expect(chunks.filter(chunk => chunk.reasoningDelta).map(chunk => chunk.reasoningDelta)).toEqual(["Plan a useful answer."]);
+  expect(chunks.filter(chunk => chunk.usage).map(chunk => chunk.usage)).toEqual(expected ? [expected] : []);
   const receipt = await client.verifyResponse("resp-1");
   expect(receipt.signatureKind).toBe("gateway");
   expect(receipt.completionId).toBe("resp-1");

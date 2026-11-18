@@ -123,3 +123,30 @@ $$`} />);
   expect(container.textContent).toContain("\uE000COVE0\uE001");
   expect(container.querySelector("[data-math-source]")).toBeNull();
 });
+
+
+test.each([
+  "\\`$x$\\`",
+  '`unmatched\n\n`$x$` then `',
+])("code spans restore formula source when Markdown parsers disagree: %s", content => {
+  const { container } = render(<MarkdownMessage content={content.replaceAll("\\n", "\n")} />);
+  expect(container.querySelector("code")?.textContent).toContain("$x$");
+  expect(container.textContent).not.toContain("\uE000COVE");
+});
+
+test("a lone dollar leaves following prose, emphasis and links as Markdown", () => {
+  const { container } = render(<MarkdownMessage content="Set $HOME to **path** and [docs](https://example.com/docs) first." />);
+  expect(container.textContent).toBe("Set $HOME to path and docs first.");
+  expect(container.querySelector("strong")?.textContent).toBe("path");
+  expect(container.querySelector("a")?.getAttribute("href")).toBe("https://example.com/docs");
+  expect(container.querySelector("[data-math]")).toBeNull();
+});
+
+
+test("single-dollar source becomes math once its closing delimiter arrives", () => {
+  const { container, rerender } = render(<MarkdownMessage content="$x_i" />);
+  expect(container.textContent).toBe("$x_i");
+  expect(container.querySelector(".katex")).toBeNull();
+  rerender(<MarkdownMessage content="$x_i$" />);
+  expect(container.querySelector(".katex")).toBeTruthy();
+});

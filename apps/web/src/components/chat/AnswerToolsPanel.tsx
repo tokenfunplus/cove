@@ -51,6 +51,13 @@ export function AnswerToolsPanel({ tools }: { tools: AnswerTools }) {
             message.generation_batch_id === state.generationBatch?.id,
         ) ?? [])
       : [];
+  const savedRevisionAttempts = new Set(
+    revisionBatch?.targets.filter(target => revisionMessages.some(message => message.id === target.generation.assistant_message_id))
+      .map(target => target.generation.id),
+  );
+  const liveRevisionTargets = state.liveTurn?.targets?.filter(target =>
+    busy || target.phase !== "completed" || !savedRevisionAttempts.has(target.generationId ?? ""),
+  ) ?? [];
   const canApply = tools.revisionTask?.base === history.content;
   const candidateRange = tools.revisionTask?.range;
   const candidateDocument =
@@ -294,10 +301,10 @@ export function AnswerToolsPanel({ tools }: { tools: AnswerTools }) {
                   after={history.content}
                 />
               )}
-              {busy && tools.revisionTask && (
+              {tools.revisionTask && liveRevisionTargets.length > 0 && (
                 <div className="space-y-2" role="status">
-                  <p className={styles.hint}>{toolCopy.preparingRevision}</p>
-                  {state.liveTurn?.targets?.map((target) => (
+                  {busy && <p className={styles.hint}>{toolCopy.preparingRevision}</p>}
+                  {liveRevisionTargets.map((target) => (
                     <ModelAnswerCard
                       key={target.key}
                       targetId={target.targetId ?? target.key}

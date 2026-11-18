@@ -674,9 +674,9 @@ type replay struct {
 
 func (buffer *replay) append(event GenerationEvent) {
 	buffer.events = append(buffer.events, event)
-	buffer.bytes += len(event.Delta)
+	buffer.bytes += len(event.Delta) + len(event.ReasoningDelta)
 	for len(buffer.events) > maxReplayEvents || buffer.bytes > maxReplayBytes {
-		buffer.bytes -= len(buffer.events[0].Delta)
+		buffer.bytes -= len(buffer.events[0].Delta) + len(buffer.events[0].ReasoningDelta)
 		buffer.events[0] = GenerationEvent{}
 		buffer.events = buffer.events[1:]
 	}

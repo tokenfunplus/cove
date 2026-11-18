@@ -6,6 +6,6 @@ Settlement, cancellation, deadline expiry, and subsequent Generation creation ar
 
 Deadline expiry carries failed verification lanes. Without a browser receipt, the Local Service does not infer successful verification from a reported phase or a timeout diagnostic.
 
-Both Generation and Batch event hubs disconnect subscribers whose bounded event buffers fill. Provider workers never wait for a browser while holding the hub mutex. The browser continues using the existing `Last-Event-ID` reconnection and persisted-state reconciliation. Replay remains bounded to the latest 256 events; completed content in SQLite is authoritative, as established in [ADR-0011](0011-separate-generation-command-and-event-stream.md).
+Both Generation and Batch event hubs disconnect subscribers whose bounded event buffers fill. Provider workers never wait for a browser while holding the hub mutex. The browser continues using the existing `Last-Event-ID` reconnection and persisted-state reconciliation. Replay remains bounded to the latest 256 events and 256 KiB of combined answer/reasoning text; completed content in SQLite is authoritative, as established in [ADR-0011](0011-separate-generation-command-and-event-stream.md).
 
 This extends the lifecycle ownership in [ADR-0012](0012-make-chat-the-local-service-application-facade.md) and the single-active-Batch rule in [ADR-0014](0014-model-submissions-as-generation-batches.md). It does not change Provider context, comparison selection, cryptographic verification, or the API shape.

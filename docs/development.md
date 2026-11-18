@@ -24,11 +24,14 @@ For workspace field values, defaults, storage, Local Service flags, and environm
 | `make test-fuzz` | Fuzz text snapshots and Provider SSE parsing; 10 seconds per target by default |
 | `make dmg` | Package an Apple Silicon app and DMG |
 | `make test-package-macos` | Build and launch an isolated acceptance fixture |
-| `pnpm audit` | Inspect JavaScript dependency advisories |
+| `pnpm audit` | Inspect raw JavaScript dependency advisories |
+| `pnpm run audit:dependencies` | Verify local parser patches and block unpatched moderate-or-higher advisories |
 
 `make build-service` builds web assets first. Calling `scripts/go build` directly before a web build embeds an English setup page instead of the application. Generated assets live in `services/local-service/internal/webassets/content/dist/` and stay untracked.
 
 The Go wrapper sets a macOS 13 deployment target and matching cgo compiler/linker flags on macOS. Local builds can override `MACOSX_DEPLOYMENT_TARGET`; packaged builds use `LSMinimumSystemVersion` from the app's Info.plist. This prevents a newer build Mac from silently raising the Local Service's minimum OS above the Launcher's requirement.
+
+See [local dependency patches](dependency-patches.md) before updating picomatch, Rollup, or the lockfile inventory.
 
 ## Brand assets
 

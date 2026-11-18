@@ -6,6 +6,9 @@ onlyBuiltDependencies:
 # Refresh a vulnerable transitive patch without changing its major version.
 overrides:
   source-map-js: 1.2.2
+patchedDependencies:
+  picomatch@4.0.7: patches/picomatch@4.0.7.patch
+  rollup@4.63.1: patches/rollup@4.63.1.patch
 # crypto-browser 0.1.8 imports the curves 2.x nist.js API but still declares a 1.x peer.
 # Accept the 2.x copy provided by sigstore-browser; do not downgrade its runtime.
 peerDependencyRules:

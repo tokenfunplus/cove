@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import * as api from "@/api";
+import { AnswerToolsPanel } from "@/components/chat/AnswerToolsPanel";
 import { useAnswerTools } from "@/hooks/chat/use-answer-tools";
 import { createWorkspaceFixture } from "@/test/workspace-fixture";
 import { englishConversationCopy } from "@/messages";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, render, renderHook, waitFor } from "@testing-library/react";
 import type { ConversationView, GenerationBatch } from "@cove/api-contract";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -176,4 +177,78 @@ test("a stale revision cannot replace edits made since its request", async () =>
   const event = new Event("beforeunload", { cancelable: true });
   window.dispatchEvent(event);
   expect(event.defaultPrevented).toBe(true);
+});
+
+
+test("replacing a source protects an unsent revision instruction even without draft edits", () => {
+  const { result } = mount();
+  act(() => result.current.openEditor(source));
+  act(() => result.current.setRevisionInstruction("Unsent changes"));
+  const next = { ...source, messageId: "another-answer", body: "Another answer" };
+  act(() => result.current.openEditor(next));
+  expect(result.current.replacement?.source).toEqual(next);
+  expect(result.current.documentSource).toEqual(source);
+  expect(result.current.revisionInstruction).toBe("Unsent changes");
+  act(() => result.current.confirmReplacement());
+  expect(result.current.documentSource).toEqual(next);
+  expect(result.current.revisionInstruction).toBe("");
+});
+
+test("content changes invalidate the current selection but preserve a submitted revision range", async () => {
+  const { result } = mount();
+  act(() => result.current.openEditor({ ...source, body: "alpha beta gamma" }));
+  act(() => result.current.dispatch({ type: "edit", content: "prefix alpha beta gamma" }));
+  act(() => {
+    result.current.setRevisionInstruction("Simplify");
+    result.current.setRevisionRange({ start: 13, end: 17 });
+  });
+  await act(async () => { await result.current.requestRevision(); });
+  act(() => result.current.dispatch({ type: "undo" }));
+  expect(result.current.history.content).toBe("alpha beta gamma");
+  expect(result.current.revisionRange).toBeUndefined();
+  expect(result.current.revisionTask?.range).toEqual({ start: 13, end: 17 });
+  act(() => result.current.setRevisionRange({ start: 6, end: 10 }));
+  act(() => result.current.dispatch({ type: "redo" }));
+  expect(result.current.revisionRange).toBeUndefined();
+  act(() => result.current.setRevisionRange({ start: 13, end: 17 }));
+  act(() => result.current.dispatch({ type: "edit", content: "Changed" }));
+  expect(result.current.revisionRange).toBeUndefined();
+});
+
+
+test.each(["failed", "stopped"] as const)("a %s revision remains visible after settlement without a saved answer", async phase => {
+  vi.mocked(api.subscribeGenerationBatch).mockImplementation(async function* () {
+    batch = { ...batch, state: phase, targets: batch.targets.map(target => ({ ...target,
+      generation: { ...target.generation, state: phase, error: phase === "failed" ? { code: "provider_unavailable", message: "Unavailable" } : undefined },
+    })) };
+    view = { ...view, messages: [], generation_batches: [batch] };
+  });
+  const { result } = mount();
+  act(() => result.current.openEditor(source));
+  act(() => result.current.setRevisionInstruction("Simplify"));
+  await act(async () => { await result.current.requestRevision(); });
+  await waitFor(() => expect(result.current.busy).toBe(false));
+  const { container } = render(<AnswerToolsPanel tools={result.current} />);
+  expect(container.querySelector(`.model-answer-card--${phase}`)).toBeTruthy();
+  expect(container.textContent).not.toContain("Preparing revision");
+});
+
+
+test("a completed revision represented in saved history does not duplicate its live card", async () => {
+  const { result } = mount();
+  act(() => result.current.openEditor(source));
+  act(() => result.current.setRevisionInstruction("Simplify"));
+  await act(async () => { await result.current.requestRevision(); });
+  await waitFor(() => expect(result.current.sideConversation?.messages).toHaveLength(1));
+  const { container } = render(<AnswerToolsPanel tools={result.current} />);
+  expect(container.querySelectorAll(".model-answer-card--completed")).toHaveLength(1);
+});
+
+test("unchanged draft actions preserve the current selection", () => {
+  const { result } = mount();
+  act(() => result.current.openEditor(source));
+  act(() => result.current.setRevisionRange({ start: 7, end: 21 }));
+  act(() => result.current.dispatch({ type: "edit", content: source.body }));
+  act(() => result.current.dispatch({ type: "checkpoint" }));
+  expect(result.current.revisionRange).toEqual({ start: 7, end: 21 });
 });

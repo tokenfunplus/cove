@@ -544,9 +544,10 @@ export function ConversationPanel({
             />
           ) : !liveComparison ? (
             liveTargets.map((target) => {
-              const liveVerification = liveBatch?.targets.find(
+              const liveGeneration = liveBatch?.targets.find(
                 (candidate) => candidate.id === target.targetId,
-              )?.generation.verification;
+              )?.generation;
+              const liveVerification = liveGeneration?.verification;
               const liveWaiting =
                 target.phase === "pending" ||
                 target.phase === "verifying_environment" ||
@@ -598,7 +599,7 @@ export function ConversationPanel({
                       {copy.generationDeliveryUnknown}
                     </p>
                   ) : null}
-                  {(target.assistantBody || !liveWaiting) && <ResponseDetails snapshot={target.snapshot} verification={liveVerification} copy={copy} mode={inferenceModeForSnapshot(target.snapshot)} onVerifyAgain={target.targetId && onVerifyAgain ? kind=>onVerifyAgain(target.targetId!,kind):undefined}/>}
+                  {(target.assistantBody || !liveWaiting) && <ResponseDetails metrics={liveGeneration?.metrics} snapshot={target.snapshot} verification={liveVerification} copy={copy} mode={inferenceModeForSnapshot(target.snapshot)} onVerifyAgain={target.targetId && onVerifyAgain ? kind=>onVerifyAgain(target.targetId!,kind):undefined}/>}
                   {!canStopFromComposer &&
                   liveWaiting &&
                   target.assistantBody &&

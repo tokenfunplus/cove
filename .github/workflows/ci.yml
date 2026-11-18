@@ -44,7 +44,8 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
-      - run: pnpm audit --audit-level moderate
+      - name: Audit dependencies and verify the local picomatch security patch
+        run: pnpm run audit:dependencies
 
   package-macos:
     runs-on: macos-15

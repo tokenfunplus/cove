@@ -354,8 +354,8 @@ export function usePrivateGeneration({
             await markSecureGenerationStreaming(generationID);
             updatePhase("streaming");
           } else if (event.type === "usage") {
-            inputTokens = event.inputTokens;
-            outputTokens = event.outputTokens;
+            if (event.inputTokens !== undefined) inputTokens = event.inputTokens;
+            if (event.outputTokens !== undefined) outputTokens = event.outputTokens;
           } else if (event.type === "reasoning") {
             if (event.delta) {
               lastDeltaAt = performance.now();
