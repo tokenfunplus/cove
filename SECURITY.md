@@ -14,7 +14,7 @@ Areas requiring particular care include local browser authorization, loopback an
 
 ## Dependency review
 
-Run `pnpm audit` and review the full findings, including low-severity advisories and transitive dependencies. CI blocks moderate-or-higher npm advisories. A passing audit does not establish the absence of vulnerabilities. Known dependency limitations are recorded in [privacy.md](docs/privacy.md).
+Run `pnpm audit` and review the full findings, including low-severity advisories and transitive dependencies. CI runs `pnpm run audit:dependencies` and blocks unpatched moderate-or-higher npm advisories. The gate verifies all installed standalone and bundled parser patches before recognizing one exact advisory revision as locally patched; raw `pnpm audit` still reports the published affected version. See [local dependency patches](docs/dependency-patches.md) for compatibility, integrity checks, and removal criteria. A passing audit does not establish the absence of vulnerabilities. Known dependency limitations are recorded in [privacy.md](docs/privacy.md).
 
 ## OpenSSF Scorecard
 

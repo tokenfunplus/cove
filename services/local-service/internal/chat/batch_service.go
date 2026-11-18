@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
@@ -73,7 +74,7 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		return GenerationBatchStart{}, err
 	}
 	batch, err := service.store.BeginGenerationBatch(ctx, persistence.BeginGenerationBatchInput{
-		ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID, Body: input.Body, InputContent: inputContent, Attachments: attachments, SystemPrompt: systemPrompt, GenerationParameters: parameters, Targets: batchTargets,
+		EditOfBatchID: input.EditOfBatchID, ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID, Body: input.Body, InputContent: inputContent, Attachments: attachments, SystemPrompt: systemPrompt, GenerationParameters: parameters, Targets: batchTargets,
 	})
 	if err != nil {
 		return GenerationBatchStart{}, err
@@ -403,6 +404,29 @@ func (service *Service) activeModelSet(ctx context.Context, fallback SendInput) 
 		if len(settings.ActiveModelSet) == 0 {
 			return nil, "", persistence.GenerationParameters{}, ErrProviderSelectionRequired
 		}
+		if fallback.EditOfBatchID != "" && fallback.ExpectedTargets != nil {
+			chosen := make([]persistence.ActiveModelTarget, 0, len(fallback.ExpectedTargets))
+			seen := make(map[persistence.ActiveModelTarget]bool)
+			for _, requested := range fallback.ExpectedTargets {
+				target := persistence.ActiveModelTarget{ProviderID: requested.ProviderID, ModelID: requested.ModelID}
+				found := false
+				for _, current := range settings.ActiveModelSet {
+					if current == target {
+						found = true
+						break
+					}
+				}
+				if !found || seen[target] {
+					return nil, "", persistence.GenerationParameters{}, ErrGenerationSelectionChanged
+				}
+				chosen = append(chosen, target)
+				seen[target] = true
+			}
+			if len(chosen) == 0 {
+				return nil, "", persistence.GenerationParameters{}, ErrProviderSelectionRequired
+			}
+			return chosen, settings.SystemPrompt, settings.GenerationParameters, nil
+		}
 		return settings.ActiveModelSet, settings.SystemPrompt, settings.GenerationParameters, nil
 	}
 	if strings.TrimSpace(fallback.ProviderID) == "" || strings.TrimSpace(fallback.ModelID) == "" {
@@ -476,6 +500,7 @@ func isTerminalBatch(state persistence.GenerationBatchState) bool {
 
 func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetID string, generation persistence.Generation, profile provider.Profile, secret credentials.Secret, messages []provider.ProviderMessage, configuration persistence.GenerationConfigurationSnapshot) {
 	defer service.finishGeneration(generation.ID)
+	measurement := generationMeasurement{started: time.Now()}
 	if ctx.Err() != nil {
 		service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationStopped, "stopped", "Generation stopped.")
 		return
@@ -490,7 +515,7 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 		return
 	}
 	defer stream.Close()
-	var body strings.Builder
+	var body, reasoning strings.Builder
 	var finishReason string
 	for {
 		event, err := stream.Recv(ctx)
@@ -502,20 +527,22 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 			}
 			return
 		}
+		measurement.observe(event)
 		switch event.Type {
 		case provider.EventStarted:
 			_ = service.store.MarkGenerationStreaming(context.Background(), generation.ID)
 			service.publishBatch(GenerationEvent{BatchID: batchID, TargetID: targetID, GenerationID: generation.ID, Type: EventStarted, Snapshot: &generation.Snapshot})
 		case provider.EventDelta:
-			if len(event.Delta) > provider.MaxCompletionBytes-body.Len() {
+			if len(event.Delta)+len(event.ReasoningDelta) > provider.MaxCompletionBytes-body.Len()-reasoning.Len() {
 				service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationFailed, "protocol_error", "The Provider response exceeded the size limit.")
 				return
 			}
 			body.WriteString(event.Delta)
+			reasoning.WriteString(event.ReasoningDelta)
 			if event.FinishReason != "" {
 				finishReason = event.FinishReason
 			}
-			service.publishBatch(GenerationEvent{BatchID: batchID, TargetID: targetID, GenerationID: generation.ID, Type: EventDelta, Delta: event.Delta})
+			service.publishBatch(GenerationEvent{BatchID: batchID, TargetID: targetID, GenerationID: generation.ID, Type: EventDelta, Delta: event.Delta, ReasoningDelta: event.ReasoningDelta})
 		case provider.EventCompleted:
 			if event.FinishReason != "" {
 				finishReason = event.FinishReason
@@ -528,7 +555,7 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 			if !service.claimTerminal(generation.ID) {
 				return
 			}
-			if err := service.store.CompleteGeneration(context.Background(), persistence.CompleteGenerationInput{GenerationID: generation.ID, Body: body.String()}); err != nil {
+			if err := service.store.CompleteGeneration(context.Background(), persistence.CompleteGenerationInput{GenerationID: generation.ID, Body: body.String(), Reasoning: reasoning.String(), Metrics: measurement.snapshot()}); err != nil {
 				_ = service.store.TerminateGeneration(context.Background(), persistence.TerminateGenerationInput{GenerationID: generation.ID, State: persistence.GenerationFailed, ErrorCode: "internal_error", ErrorMessage: "The completed response could not be saved."})
 				service.publishBatchTerminal(batchID, GenerationEvent{BatchID: batchID, TargetID: targetID, GenerationID: generation.ID, Type: EventFailed, ErrorCode: "internal_error", ErrorMessage: "The completed response could not be saved."})
 				return

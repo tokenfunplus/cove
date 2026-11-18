@@ -1,3 +1,4 @@
+import { ModelPicker } from "./ModelPicker";
 import { settingsStyles } from "@/styles/settings";
 import { primitivesStyles } from "@/styles/primitives";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,8 @@ import { englishConversationCopy, type ApplicationCopy } from "@/messages";
 import {
   type ProviderProfile,
   type ProviderProfileInput,
+  type ProviderModelMetadata,
+  type ProviderValidationResponse,
 } from "@cove/api-contract";
 import { KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -32,7 +35,9 @@ export function ProviderSettings({
   id?: string;
   profiles: ProviderProfile[];
   onSave: (input: ProviderProfileInput) => Promise<ProviderProfile>;
-  onTest: (input: ProviderProfileInput) => Promise<string[]>;
+  onTest: (
+    input: ProviderProfileInput,
+  ) => Promise<string[] | ProviderValidationResponse>;
   onDelete: (id: string) => Promise<void>;
   onDeleteKey: (id: string) => Promise<void>;
   copy?: ApplicationCopy;
@@ -59,6 +64,9 @@ export function ProviderSettings({
   const [models, setModels] = useState<string[]>(
     selectedProfile?.model_id ? [selectedProfile.model_id] : [],
   );
+  const [metadata, setMetadata] = useState<
+    Record<string, ProviderModelMetadata>
+  >({});
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -102,6 +110,7 @@ export function ProviderSettings({
     setAuthMethod(profile?.auth_method ?? "bearer");
     setModel(profile?.model_id ?? "");
     setModels(profile?.model_id ? [profile.model_id] : []);
+    setMetadata({});
     setSecret("");
     setConnectionTest("idle");
     setFeedback(undefined);
@@ -115,6 +124,7 @@ export function ProviderSettings({
     setAuthMethod("bearer");
     setModel("");
     setModels([]);
+    setMetadata({});
     setSecret("");
     setConnectionTest("idle");
     setFeedback(undefined);
@@ -130,8 +140,8 @@ export function ProviderSettings({
     };
     return Boolean(
       selectedProfile?.configured &&
-      !secret.trim() &&
-      normalize(endpoint) !== normalize(selectedProfile.endpoint),
+        !secret.trim() &&
+        normalize(endpoint) !== normalize(selectedProfile.endpoint),
     );
   }
 
@@ -143,7 +153,15 @@ export function ProviderSettings({
     setIsTesting(true);
     setFeedback(undefined);
     try {
-      const availableModels = await onTest(input());
+      const result = await onTest(input());
+      const availableModels = Array.isArray(result) ? result : result.models;
+      setMetadata(
+        Object.fromEntries(
+          (Array.isArray(result) ? [] : (result.model_metadata ?? [])).map(
+            (item) => [item.id, item],
+          ),
+        ),
+      );
       setModels(availableModels);
       const nextModel = defaultModelAfterTest(availableModels, model);
       if (nextModel !== model) {
@@ -375,21 +393,17 @@ export function ProviderSettings({
                   setAuthMethod(value as "bearer" | "x_api_key")
                 }
               />
-              <FrontSelect
+              <ModelPicker
                 ariaLabel={copy.model}
                 label={copy.model}
-                searchable
-                searchPlaceholder={copy.searchModels}
-                emptyText={copy.noMatchingModels}
-                options={[
-                  { value: "", label: copy.selectModel },
-                  ...models.map((availableModel) => ({
-                    value: availableModel,
-                    label: availableModel,
-                  })),
-                ]}
+                copy={copy}
+                providerId={selectedProfile?.id ?? "setup"}
+                models={models}
+                metadata={metadata}
+                showPrivacyMode={kind === "nearai"}
                 value={model}
                 onValueChange={setModel}
+                placeholder={copy.selectModel}
               />
             </div>
             <div

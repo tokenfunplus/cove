@@ -20,7 +20,7 @@ func TestSourceMigrationFromVersion13PreservesExistingMessages(t *testing.T) {
 	if _, err := store.AddMessage(ctx, conversation.ID, MessageInput{Role: "user", Body: "Existing history"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.db.Exec(`ALTER TABLE generation_batches DROP COLUMN input_content; ALTER TABLE generation_batches DROP COLUMN attachments; ALTER TABLE generation_batches DROP COLUMN attachment_data; ALTER TABLE provider_profiles DROP COLUMN credential_ref; PRAGMA user_version = 13;`); err != nil {
+	if _, err := store.db.Exec(`DROP TABLE conversation_branches; ALTER TABLE messages DROP COLUMN reasoning; ALTER TABLE generations DROP COLUMN metrics; ALTER TABLE generation_batches DROP COLUMN input_content; ALTER TABLE generation_batches DROP COLUMN attachments; ALTER TABLE generation_batches DROP COLUMN attachment_data; ALTER TABLE provider_profiles DROP COLUMN credential_ref; PRAGMA user_version = 13;`); err != nil {
 		t.Fatal(err)
 	}
 	dropConversationSearchIndex(t, store)

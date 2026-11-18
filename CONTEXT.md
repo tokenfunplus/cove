@@ -90,6 +90,18 @@ _Avoid_: Optimistic message, temporary message, streaming message
 The user-visible local name of a Conversation, initially derived from its first user message and editable without contacting a Provider.
 _Avoid_: AI-generated summary, Remote title
 
+**Side Conversation**:
+A separate locally saved conversation opened beside a source answer. Its first user message contains the chosen passage and question; it does not inherit the main conversation's history or change its Selected Answers.
+_Avoid_: Hidden context, merged conversation
+
+**Working Draft**:
+An editable, window-local copy of a saved answer. Manual edits and explicitly applied model revisions do not modify the original answer, verification evidence, or Provider context. Downloading preserves the draft outside this window.
+_Avoid_: Edited Generation, verified revision
+
+**Generation Metrics**:
+Observed per-attempt elapsed times and optional Provider-reported input/output token counts. Browser measurements include the private-inference verification path. Missing measurements are unavailable, not zero; costs calculated from user-supplied rates are estimates.
+_Avoid_: Billing receipt, benchmark guarantee
+
 **Unconfigured Provider**:
 A Provider Profile whose non-secret settings remain available but whose Keychain secret is absent or has been deleted, so it cannot start a Generation.
 _Avoid_: Deleted provider, Invalid provider
@@ -97,3 +109,19 @@ _Avoid_: Deleted provider, Invalid provider
 **Browser Session**:
 The short-lived local authorization state created when the Launcher exchanges a one-time launch token for access to the Chat Surface.
 _Avoid_: Secure Chat account, Cloud login
+
+**Reasoning**:
+Provider-declared intermediate text saved separately from the final assistant body. It collapses after streaming and stays out of later Selected Answer context. Older embedded tagged blocks have a presentation fallback; unmarked historical prose is not reclassified.
+_Avoid_: Final answer, verification evidence
+
+**Model Catalog Details**:
+Optional Provider-advertised names, prices, context/output limits, and capabilities shown when selecting a model. Local brand icons identify model families; they do not establish transport or verification properties.
+_Avoid_: Billing guarantee, enabled client feature
+
+**Conversation Branch**:
+A separate locally saved conversation created by editing a saved user turn. Its inherited history copies that turn's immutable Selected Answer context and source snapshots; the new prompt uses current generation settings. Deleting the source does not change the branch.
+_Avoid_: Mutated original conversation, newly verified copied answer
+
+**Conversation Branch**:
+A separate locally saved conversation created by editing a saved user turn. Its inherited history copies that turn's immutable Selected Answer context and source snapshots; the new prompt uses current generation settings. Deleting the source does not remove the branch's copies.
+_Avoid_: Edited original history, regenerated evidence

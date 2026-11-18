@@ -1,16 +1,16 @@
+import { GenerationActivity, FailureActions } from "./ChatExperience";
+import { AnswerActions, type AnswerSource } from "@/components/chat/AnswerActions";
+import { ResponseDetails, VerificationStatus } from "./ResponseDetails";
+import type { GenerationMetrics as Metrics } from "@cove/api-contract";
 import { comparisonStyles } from "@/styles/comparison";
 import { messagesStyles } from "@/styles/messages";
 import { motionStyles } from "@/styles/motion";
 import { cn } from "@/lib/utils";
 import { generationFailureMessage } from "@/components/chat/generation-status";
-import { PrivateGenerationProgress } from "@/components/chat/GenerationProgress";
-import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
-import { ProviderSnapshotView } from "@/components/chat/ProviderSnapshotView";
+import { AssistantMessage } from "@/components/chat/AssistantMessage";
 import {
-  VerificationDetailsButton,
   type VerificationRefresh,
 } from "@/components/verification/VerificationDetailsButton";
-import { VerificationLanes } from "@/components/verification/VerificationLanes";
 import { formatTime } from "@/lib/format-date";
 import { type SecureInferenceMode } from "@/lib/inference/secure-inference";
 import { type ApplicationCopy } from "@/messages";
@@ -31,6 +31,8 @@ export type ModelAnswerPhase =
   | "unknown";
 
 export function ModelAnswerCard({
+  answer,
+  metrics,
   targetId,
   providerName,
   modelId,
@@ -38,6 +40,7 @@ export function ModelAnswerCard({
   verification,
   mode,
   body,
+  reasoning,
   phase,
   errorCode,
   createdAt,
@@ -45,7 +48,10 @@ export function ModelAnswerCard({
   selected = false,
   copy,
   onVerifyAgain,
+  onStop,
 }: {
+  answer?: AnswerSource;
+  metrics?: Metrics;
   targetId: string;
   providerName?: string;
   modelId: string;
@@ -53,6 +59,7 @@ export function ModelAnswerCard({
   verification?: GenerationVerification;
   mode?: SecureInferenceMode;
   body: string;
+  reasoning?: string;
   phase: ModelAnswerPhase;
   errorCode?: string;
   createdAt?: string;
@@ -60,17 +67,13 @@ export function ModelAnswerCard({
   selected?: boolean;
   copy: ApplicationCopy;
   onVerifyAgain?: VerificationRefresh;
+  onStop?:()=>void;
 }) {
   const waiting =
     phase === "pending" ||
     phase === "verifying_environment" ||
     phase === "streaming" ||
     phase === "verifying_response";
-  const privateProgress =
-    waiting &&
-    (verification?.status === "pending" ||
-      phase === "verifying_environment" ||
-      phase === "verifying_response");
   const stateMessage =
     phase === "verifying_environment"
       ? copy.privateInferenceVerifying
@@ -104,14 +107,7 @@ export function ModelAnswerCard({
         </div>
         <div className={comparisonStyles.modelAnswerCard_identity}>
           {mode || verification ? (
-            <VerificationLanes
-              copy={copy}
-              mode={mode}
-              verification={verification}
-              providerName={providerName}
-              modelId={modelId}
-              onVerifyAgain={onVerifyAgain}
-            />
+            <VerificationStatus verification={verification} mode={mode}/>
           ) : null}
           {selected ? (
             <span className={comparisonStyles.modelAnswerCard_selected}>
@@ -129,23 +125,12 @@ export function ModelAnswerCard({
         ) : null}
       </header>
       <div className={comparisonStyles.modelAnswerCard_body}>
-        {privateProgress ? (
-          <PrivateGenerationProgress
-            phase={
-              phase as Extract<
-                ModelAnswerPhase,
-                | "pending"
-                | "verifying_environment"
-                | "streaming"
-                | "verifying_response"
-              >
-            }
-            copy={copy}
-          />
+        {waiting && <GenerationActivity onStop={onStop} stopWhenStalledOnly phase={phase} body={body} reasoning={reasoning}/>}
+        {phase==="failed" && <FailureActions targetId={targetId} code={errorCode ?? verification?.failure_code}/>}
+        {body || reasoning ? (
+          answer ? <AnswerActions source={answer}><AssistantMessage content={body} reasoning={reasoning} streaming={phase === "streaming"} /></AnswerActions> : <AssistantMessage content={body} reasoning={reasoning} streaming={phase === "streaming"} />
         ) : null}
-        {body ? (
-          <MarkdownMessage content={body} />
-        ) : !privateProgress && stateMessage ? (
+        {!body && !waiting && stateMessage ? (
           <p
             className={cn(
               messagesStyles.message_body,
@@ -161,16 +146,7 @@ export function ModelAnswerCard({
           </p>
         ) : null}
       </div>
-      {snapshot ? (
-        <ProviderSnapshotView copy={copy} snapshot={snapshot} />
-      ) : null}
-      <VerificationDetailsButton
-        verification={verification}
-        providerName={providerName}
-        modelId={modelId}
-        copy={copy}
-        onVerifyAgain={onVerifyAgain}
-      />
+      <ResponseDetails metrics={metrics} snapshot={snapshot} verification={verification} mode={mode} copy={copy} onVerifyAgain={onVerifyAgain}/>
       {actions ? (
         <footer className={comparisonStyles.modelAnswerCard_actions}>
           {actions}

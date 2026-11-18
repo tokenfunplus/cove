@@ -1,7 +1,7 @@
 import { messagesStyles } from "@/styles/messages";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { VerificationLanes } from "@/components/verification/VerificationLanes";
+import { VerificationStatus } from "./ResponseDetails";
 import { type VerificationRefresh } from "@/components/verification/VerificationDetailsButton";
 import { formatTime } from "@/lib/format-date";
 import { type SecureInferenceMode } from "@/lib/inference/secure-inference";
@@ -18,7 +18,6 @@ export function MessageMeta({
   verification,
   copy,
   mode,
-  onVerifyAgain,
 }: {
   role: string;
   providerName?: string;
@@ -49,14 +48,7 @@ export function MessageMeta({
       </span>
       {modelId ? <code>{modelId}</code> : null}
       {isAssistant && (verification || mode) ? (
-        <VerificationLanes
-          copy={copy}
-          mode={mode}
-          verification={verification}
-          providerName={providerName}
-          modelId={modelId}
-          onVerifyAgain={onVerifyAgain}
-        />
+        <VerificationStatus verification={verification} mode={mode}/>
       ) : null}
       {createdAt ? (
         <time className={messagesStyles.message_timestamp} dateTime={createdAt}>

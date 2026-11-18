@@ -1,0 +1,22 @@
+export const modelCatalogCopy = {
+  detailsUnavailable: "Details not supplied by Provider",
+  input: "In",
+  output: "Out",
+  perMillion: "per 1M tokens",
+  context: "context",
+  maxOutput: "max output",
+  text_input: "Text input",
+  image_input: "Image input",
+  audio_input: "Audio input",
+  video_input: "Video input",
+  image_output: "Image output",
+  audio_output: "Audio output",
+  video_output: "Video output",
+  tools: "Tools",
+  json_mode: "JSON mode",
+  structured_outputs: "Structured outputs",
+  reasoning: "Reasoning",
+  capabilityNotice:
+    "Provider-advertised capability. Cove currently sends text and extracted document text.",
+  catalogNotice: "Catalog details from Provider · Prices in USD per 1M tokens",
+} as const;

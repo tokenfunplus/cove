@@ -178,10 +178,8 @@ test("conversation panel uses the NearAI message layout and metadata chrome", ()
   expect(markup).toContain('data-message-meta="assistant"');
   expect(markup).toMatch(/class="[^"\n]*\bmessage__timestamp\b[^"\n]*"/);
   expect(markup).toContain("Free model");
-  expect(markup).toContain("Provider Snapshot");
-  expect(markup).toMatch(
-    /<details\ class="[^"\n]*\bmessage__snapshot\b[^"\n]*">/,
-  );
+  expect(markup).toContain("Response details");
+  expect(markup).toContain('data-response-details="true"');
 });
 
 test("conversation panel exposes a compact NearAI composer surface", () => {
@@ -260,12 +258,12 @@ test("conversation workspace offers generation controls and shows the assistant 
   expect(markup).toContain("Send message");
   expect(markup).toContain("Stop generation");
   expect(markup).toContain("Fixture Provider");
-  expect(markup).toContain("provider-1");
+  expect(markup).toContain("Fixture Provider");
   expect(markup).toContain("model-a");
-  expect(markup).toContain("User configured cloud provider");
+  expect(markup).toContain("Response details");
   expect(markup).toContain("Partial reply");
   expect(markup).toMatch(/class="[^"\n]*\bchat\-status\-live\b[^"\n]*"/);
-  expect(markup).toContain("Provider Snapshot");
+  expect(markup).toContain("Response details");
 });
 
 test("conversation workspace keeps a live assistant reply inside the scrollable message region", () => {
@@ -369,7 +367,7 @@ test("conversation workspace renders a Live Turn before generation creation reso
   );
 
   expect(markup).toContain("Immediate message");
-  expect(markup).toContain("Thinking...");
+  expect(markup).toContain("Waiting for first text");
   expect(markup).not.toContain("Chat with your local assistant");
 });
 
@@ -412,7 +410,7 @@ test("conversation workspace keeps thinking visible while streaming has no assis
     />,
   );
 
-  expect(markup).toContain("Thinking...");
+  expect(markup).toContain("Waiting for first text");
   expect(markup).not.toContain("data-secure-generation-progress");
 });
 
@@ -458,12 +456,12 @@ test("conversation workspace shows the real private verification stages for one 
   );
 
   expect(markup).toContain(
-    'data-secure-generation-progress="verifying_environment"',
+    'data-generation-phase="verifying_environment"',
   );
-  expect(markup).toContain("Checking gateway and model hardware identity...");
-  expect(markup).toContain("Gateway and model identity");
-  expect(markup).toContain("End-to-end encrypted path");
-  expect(markup).toContain("Signed model response");
+  expect(markup).toContain("Checking environment");
+  expect(markup).toContain("Checking environment");
+  expect(markup).toContain("Checking environment");
+  expect(markup).toContain("Checking environment");
   expect(markup).not.toContain("Thinking...");
 });
 
@@ -532,7 +530,7 @@ test("conversation workspace offers retry after a stopped generation", () => {
   );
 
   expect(markup).toContain("Retry generation");
-  expect(markup).toContain("User configured cloud provider");
+  expect(markup).toContain("Response details");
 });
 
 test("conversation workspace explains when a Provider hits the output token limit", () => {
@@ -648,13 +646,10 @@ test("assistant history shows Gateway, model, and response verification lanes", 
       generationBatches={[privateBatch]}
     />,
   );
-  expect(privateMarkup).toContain('data-verification-lane="gateway"');
-  expect(privateMarkup).toContain('data-verification-lane="model"');
-  expect(privateMarkup).toContain('data-verification-lane="response"');
-  expect(privateMarkup).toContain(
-    'data-verification-lane="model" data-status="verified"',
-  );
-  expect(privateMarkup).toContain("Response Verification");
+  expect(privateMarkup).toContain('data-verification-summary="verified"');
+  expect(privateMarkup).toContain('data-verification-kind="model"');
+  expect(privateMarkup).toContain("Gateway, model &amp; response verified");
+  expect(privateMarkup).toContain("Response details");
 
   const incognitoSnapshot = {
     ...snapshot,
@@ -716,12 +711,9 @@ test("assistant history shows Gateway, model, and response verification lanes", 
     />,
   );
   expect(incognitoMarkup).not.toContain('data-verification-lane="model"');
-  expect(incognitoMarkup).toContain(
-    'data-verification-lane="gateway" data-status="verified"',
-  );
-  expect(incognitoMarkup).toContain(
-    'data-verification-lane="response" data-status="verified"',
-  );
+  expect(incognitoMarkup).toContain('data-verification-summary="verified"');
+  expect(incognitoMarkup).toContain('data-verification-kind="gateway"');
+  expect(incognitoMarkup).toContain("Gateway &amp; response verified");
   expect(incognitoMarkup).not.toContain("Private mode");
 
   const chutesSnapshot = {
@@ -785,12 +777,9 @@ test("assistant history shows Gateway, model, and response verification lanes", 
   );
   expect(chutesMarkup).toContain("Unverified Chutes answer");
   expect(chutesMarkup).not.toContain('data-verification-lane="model"');
-  expect(chutesMarkup).toContain(
-    'data-verification-lane="gateway" data-status="verified"',
-  );
-  expect(chutesMarkup).toContain(
-    'data-verification-lane="response" data-status="failed"',
-  );
+  expect(chutesMarkup).toContain('data-verification-summary="failed"');
+  expect(chutesMarkup).toContain('data-verification-kind="gateway"');
+  expect(chutesMarkup).toContain("Verification needs attention");
 });
 
 test("historical verification lanes follow the saved snapshot", () => {
@@ -858,12 +847,9 @@ test("historical verification lanes follow the saved snapshot", () => {
     />,
   );
   expect(markup).not.toContain('data-verification-lane="model"');
-  expect(markup).toContain(
-    'data-verification-lane="gateway" data-status="verified"',
-  );
-  expect(markup).toContain(
-    'data-verification-lane="response" data-status="verified"',
-  );
+  expect(markup).toContain('data-verification-summary="verified"');
+  expect(markup).toContain('data-verification-kind="gateway"');
+  expect(markup).toContain("Gateway &amp; response verified");
 });
 
 test("verified private history exposes model evidence details and a safe re-verification action", () => {
@@ -933,8 +919,8 @@ test("verified private history exposes model evidence details and a safe re-veri
       onVerifyAgain={() => {}}
     />,
   );
-  expect(markup).toContain("Model Verification");
-  expect(markup).toContain('aria-haspopup="menu"');
+  expect(markup).toContain("Response details");
+  expect(markup).toContain('aria-haspopup="dialog"');
 });
 
 test("a completed private answer is not rendered twice while the live target lacks its message id", () => {

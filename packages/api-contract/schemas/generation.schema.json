@@ -3,6 +3,7 @@
   "title": "Generation",
   "type": "object",
   "$defs": {
+    "generationMetrics": {"type": "object", "required": ["source", "duration_ms"], "properties": {"source": {"enum": ["service", "browser"]}, "duration_ms": {"type": "integer", "minimum": 0, "maximum": 86400000}, "time_to_first_token_ms": {"type": "integer", "minimum": 0, "maximum": 86400000}, "output_duration_ms": {"type": "integer", "minimum": 0, "maximum": 86400000}, "input_tokens": {"type": "integer", "minimum": 0, "maximum": 1000000000}, "output_tokens": {"type": "integer", "minimum": 0, "maximum": 1000000000}}, "additionalProperties": false},
     "providerSnapshot": {
       "type": "object",
       "required": ["provider_id", "provider_name", "model_id", "runtime_location", "destination", "transport_security", "privacy_notice"],
@@ -87,6 +88,7 @@
   },
   "required": ["id", "conversation_id", "client_request_id", "state", "snapshot", "configuration_snapshot", "verification", "events_url", "created_at", "updated_at"],
   "properties": {
+    "metrics": { "$ref": "#/$defs/generationMetrics" },
     "id": { "type": "string" },
     "conversation_id": { "type": "string" },
     "client_request_id": { "type": "string" },

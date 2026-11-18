@@ -7,6 +7,14 @@ settings:
 overrides:
   source-map-js: 1.2.2
 
+patchedDependencies:
+  picomatch@4.0.7:
+    hash: e43505728257ba523925c9ea7032f19efdab037687525b55eb6dd3ff0cb3372d
+    path: patches/picomatch@4.0.7.patch
+  rollup@4.63.1:
+    hash: 354d1faa16ca5ffe50820d7f9e2990958c942c9461b5fff9864038a601c3cca2
+    path: patches/rollup@4.63.1.patch
+
 importers:
 
   .: {}
@@ -34,6 +42,9 @@ importers:
       clsx:
         specifier: 2.1.1
         version: 2.1.1
+      katex:
+        specifier: 0.19.1
+        version: 0.19.1
       lucide-react:
         specifier: ^0.544.0
         version: 0.544.0(react@19.2.8)
@@ -1664,6 +1675,10 @@ packages:
     resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
     engines: {node: '>=6'}
 
+  commander@15.1.0:
+    resolution: {integrity: sha512-cgnQ88TRrWcC7pVq46RzJVRMktu3W2RcbnoidnfBsl1bmDCBwJS/udcIZpKoCrbAYYaCqsz1yZCVIgbIaU3ddQ==}
+    engines: {node: '>=22.12.0'}
+
   convert-source-map@2.0.0:
     resolution: {integrity: sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==}
 
@@ -1825,6 +1840,10 @@ packages:
   json5@2.2.3:
     resolution: {integrity: sha512-XmOWe7eyHYH14cLdVPoyg+GOH3rYX++KpzrylJwSW98t3Nk+U8XOl8FWKOgwtzdb8lXGf6zYwDUzeHMWfxasyg==}
     engines: {node: '>=6'}
+    hasBin: true
+
+  katex@0.19.1:
+    resolution: {integrity: sha512-jG8uKntjSEcm2EpQOh0XturpPuuC9r3Sq5HLHdsFdWZT27E672SF19QEi+of0/YeOy15lDgRhKvr5614uRrEfA==}
     hasBin: true
 
   lightningcss-android-arm64@1.32.0:
@@ -3918,6 +3937,8 @@ snapshots:
 
   clsx@2.1.1: {}
 
+  commander@15.1.0: {}
+
   convert-source-map@2.0.0: {}
 
   css-tree@3.2.1:
@@ -4025,9 +4046,9 @@ snapshots:
 
   fast-sha256@1.3.0: {}
 
-  fdir@6.5.0(picomatch@4.0.7):
+  fdir@6.5.0(picomatch@4.0.7(patch_hash=e43505728257ba523925c9ea7032f19efdab037687525b55eb6dd3ff0cb3372d)):
     optionalDependencies:
-      picomatch: 4.0.7
+      picomatch: 4.0.7(patch_hash=e43505728257ba523925c9ea7032f19efdab037687525b55eb6dd3ff0cb3372d)
 
   fsevents@2.3.3:
     optional: true
@@ -4103,6 +4124,10 @@ snapshots:
       ts-algebra: 2.0.0
 
   json5@2.2.3: {}
+
+  katex@0.19.1:
+    dependencies:
+      commander: 15.1.0
 
   lightningcss-android-arm64@1.32.0:
     optional: true
@@ -4206,7 +4231,7 @@ snapshots:
 
   picocolors@1.1.1: {}
 
-  picomatch@4.0.7: {}
+  picomatch@4.0.7(patch_hash=e43505728257ba523925c9ea7032f19efdab037687525b55eb6dd3ff0cb3372d): {}
 
   postcss@8.5.28:
     dependencies:
@@ -4357,7 +4382,7 @@ snapshots:
 
   require-from-string@2.0.2: {}
 
-  rollup@4.63.1:
+  rollup@4.63.1(patch_hash=354d1faa16ca5ffe50820d7f9e2990958c942c9461b5fff9864038a601c3cca2):
     dependencies:
       '@types/estree': 1.0.9
     optionalDependencies:
@@ -4428,8 +4453,8 @@ snapshots:
 
   tinyglobby@0.2.17:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.7)
-      picomatch: 4.0.7
+      fdir: 6.5.0(picomatch@4.0.7(patch_hash=e43505728257ba523925c9ea7032f19efdab037687525b55eb6dd3ff0cb3372d))
+      picomatch: 4.0.7(patch_hash=e43505728257ba523925c9ea7032f19efdab037687525b55eb6dd3ff0cb3372d)
 
   tinyrainbow@3.2.0: {}
 
@@ -4497,10 +4522,10 @@ snapshots:
   vite@7.3.7(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.1):
     dependencies:
       esbuild: 0.28.2
-      fdir: 6.5.0(picomatch@4.0.7)
-      picomatch: 4.0.7
+      fdir: 6.5.0(picomatch@4.0.7(patch_hash=e43505728257ba523925c9ea7032f19efdab037687525b55eb6dd3ff0cb3372d))
+      picomatch: 4.0.7(patch_hash=e43505728257ba523925c9ea7032f19efdab037687525b55eb6dd3ff0cb3372d)
       postcss: 8.5.28
-      rollup: 4.63.1
+      rollup: 4.63.1(patch_hash=354d1faa16ca5ffe50820d7f9e2990958c942c9461b5fff9864038a601c3cca2)
       tinyglobby: 0.2.17
     optionalDependencies:
       fsevents: 2.3.3
@@ -4522,7 +4547,7 @@ snapshots:
       magic-string: 0.30.21
       obug: 2.2.1
       pathe: 2.0.3
-      picomatch: 4.0.7
+      picomatch: 4.0.7(patch_hash=e43505728257ba523925c9ea7032f19efdab037687525b55eb6dd3ff0cb3372d)
       std-env: 4.3.0
       tinybench: 2.9.0
       tinyexec: 1.3.1

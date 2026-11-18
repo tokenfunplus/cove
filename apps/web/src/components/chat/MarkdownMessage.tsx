@@ -2,6 +2,8 @@ import { CodeBlock } from "@/components/chat/CodeBlock";
 import { messagesStyles } from "@/styles/messages";
 import { cn } from "@/lib/utils";
 import { memo, type ReactNode } from "react";
+import { MathFormula } from "@/components/chat/MathFormula";
+import { protectMarkdownMath } from "@/lib/chat/markdown-math";
 import {
   useSourceNavigation,
   type SourceNavigation,
@@ -29,7 +31,8 @@ function renderMarkdownBlocks(
   content: string,
   navigation: SourceNavigation,
 ): ReactNode[] {
-  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const math = protectMarkdownMath(content);
+  const lines = math.text.split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
   while (index < lines.length) {
@@ -38,11 +41,19 @@ function renderMarkdownBlocks(
       index += 1;
       continue;
     }
-    if (line.trim().startsWith("```")) {
-      const language = line.trim().slice(3).trim().split(/\s+/)[0] ?? "";
+    const formula = math.expressions.get(line.trim());
+    if (formula?.display) {
+      blocks.push(<MathFormula key={`math-${blocks.length}`} {...formula} />);
+      index += 1;
+      continue;
+    }
+    const fence = line.match(/^[ \t]*(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      const language = fence[2].trim().split(/\s+/)[0] ?? "";
+      const closingFence = new RegExp(`^[ \\t]*${fence[1][0]}{${fence[1].length},}[ \\t]*$`);
       const code: string[] = [];
       index += 1;
-      while (index < lines.length && !lines[index]?.trim().startsWith("```")) {
+      while (index < lines.length && !closingFence.test(lines[index] ?? "")) {
         code.push(lines[index] ?? "");
         index += 1;
       }
@@ -63,7 +74,7 @@ function renderMarkdownBlocks(
       const Heading = `h${heading[1].length}` as "h1" | "h2" | "h3";
       blocks.push(
         <Heading key={`heading-${blocks.length}`}>
-          {renderInline(heading[2], navigation)}
+          {renderInline(heading[2], navigation, math)}
         </Heading>,
       );
       index += 1;
@@ -77,6 +88,7 @@ function renderMarkdownBlocks(
             {renderInline(
               (lines[index] ?? "").replace(/^\s*[-*]\s+/, ""),
               navigation,
+              math,
             )}
           </li>,
         );
@@ -93,6 +105,7 @@ function renderMarkdownBlocks(
             {renderInline(
               (lines[index] ?? "").replace(/^\s*\d+\.\s+/, ""),
               navigation,
+              math,
             )}
           </li>,
         );
@@ -109,29 +122,47 @@ function renderMarkdownBlocks(
       !/^(#{1,3})\s+/.test(lines[index] ?? "") &&
       !/^\s*[-*]\s+/.test(lines[index] ?? "") &&
       !/^\s*\d+\.\s+/.test(lines[index] ?? "") &&
-      !lines[index]?.trim().startsWith("```")
+      !/^[ \t]*(`{3,}|~{3,})/.test(lines[index] ?? "")
     ) {
       paragraph.push(lines[index] ?? "");
       index += 1;
     }
     blocks.push(
       <p key={`paragraph-${blocks.length}`}>
-        {renderInline(paragraph.join("\n"), navigation)}
+        {renderInline(paragraph.join("\n"), navigation, math)}
       </p>,
     );
   }
   return blocks;
 }
 
-function renderInline(text: string, navigation: SourceNavigation): ReactNode[] {
+function renderInline(
+  text: string,
+  navigation: SourceNavigation,
+  math: ReturnType<typeof protectMarkdownMath>,
+): ReactNode[] {
+  function renderText(value: string) {
+    const parts: ReactNode[] = [];
+    let copied = 0;
+    math.pattern.lastIndex = 0;
+    let token: RegExpExecArray | null;
+    while ((token = math.pattern.exec(value))) {
+      parts.push(value.slice(copied, token.index));
+      const formula = math.expressions.get(token[0]);
+      if (formula) parts.push(<MathFormula key={token[0]} {...formula} />);
+      copied = math.pattern.lastIndex;
+    }
+    parts.push(value.slice(copied));
+    return parts;
+  }
   const nodes: ReactNode[] = [];
   const pattern =
-    /!\[([^\]]*)\]\(([^)\s]+)\)|\[([^\]]+)\]\(([^)\s]+)\)|\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`|\*([^*]+)\*|_([^_]+)_/g;
+    /!\[([^\]]*)\]\(([^)\s]+)\)|\[([^\]]+)\]\(([^)\s]+)\)|(?<!`)(`+)(?!`)([\s\S]+?)(?<!`)\5(?!`)|\*\*(.+?)\*\*|__(.+?)__|\*([^*]+)\*|_([^_]+)_/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index));
+      nodes.push(...renderText(text.slice(lastIndex, match.index)));
     }
     const key = `inline-${nodes.length}`;
     if (match[1] !== undefined) {
@@ -150,7 +181,7 @@ function renderInline(text: string, navigation: SourceNavigation): ReactNode[] {
             key={key}
             onClick={openSource}
           >
-            {match[3]}
+            {renderText(match[3])}
           </button>,
         );
         lastIndex = pattern.lastIndex;
@@ -160,23 +191,23 @@ function renderInline(text: string, navigation: SourceNavigation): ReactNode[] {
       nodes.push(
         href ? (
           <a href={href} key={key} rel="noreferrer" target="_blank">
-            {match[3]}
+            {renderText(match[3])}
           </a>
         ) : (
-          match[3]
+          <span key={key}>{renderText(match[3])}</span>
         ),
       );
-    } else if (match[5] !== undefined || match[6] !== undefined) {
-      nodes.push(<strong key={key}>{match[5] ?? match[6]}</strong>);
-    } else if (match[7] !== undefined) {
-      nodes.push(<code key={key}>{match[7]}</code>);
+    } else if (match[5] !== undefined) {
+      nodes.push(<code key={key}>{match[6].replace(math.pattern, token => math.expressions.get(token)?.source ?? token)}</code>);
+    } else if (match[7] !== undefined || match[8] !== undefined) {
+      nodes.push(<strong key={key}>{renderText(match[7] ?? match[8])}</strong>);
     } else {
-      nodes.push(<em key={key}>{match[8] ?? match[9]}</em>);
+      nodes.push(<em key={key}>{renderText(match[9] ?? match[10])}</em>);
     }
     lastIndex = pattern.lastIndex;
   }
   if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
+    nodes.push(...renderText(text.slice(lastIndex)));
   }
   return nodes;
 }

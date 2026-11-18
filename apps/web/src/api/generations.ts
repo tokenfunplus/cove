@@ -1,6 +1,7 @@
 import { request } from "@/api/client";
 import {
   type Generation,
+  type GenerationMetrics,
   type GenerationBatch,
   type GenerationContextMessage,
   type GenerationInput,
@@ -11,6 +12,7 @@ import {
 } from "@cove/api-contract";
 
 export type GenerationSelection = {
+  editOfBatchId?: string;
   clientRequestId: string;
   body: string;
   attachments?: AttachmentInput[];
@@ -22,6 +24,7 @@ export function createGenerationBatch(
   selection: GenerationSelection,
 ): Promise<GenerationBatch> {
   const input: GenerationInput = {
+    ...(selection.editOfBatchId ? {edit_of_batch_id:selection.editOfBatchId} : {}),
     client_request_id: selection.clientRequestId,
     body: selection.body,
     attachments: selection.attachments,
@@ -141,13 +144,15 @@ export function settleSecureGeneration(
   id: string,
   body: string,
   verification: GenerationVerification,
+  metrics?: GenerationMetrics,
+  reasoning?: string,
 ): Promise<Generation> {
   return request<Generation>(
     `/api/generations/${encodeURIComponent(id)}/secure/settle`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body, verification }),
+      body: JSON.stringify({ body, verification, metrics, reasoning }),
     },
   );
 }

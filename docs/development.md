@@ -24,11 +24,14 @@ For workspace field values, defaults, storage, Local Service flags, and environm
 | `make test-fuzz` | Fuzz text snapshots and Provider SSE parsing; 10 seconds per target by default |
 | `make dmg` | Package an Apple Silicon app and DMG |
 | `make test-package-macos` | Build and launch an isolated acceptance fixture |
-| `pnpm audit` | Inspect JavaScript dependency advisories |
+| `pnpm audit` | Inspect raw JavaScript dependency advisories |
+| `pnpm run audit:dependencies` | Verify local parser patches and block unpatched moderate-or-higher advisories |
 
 `make build-service` builds web assets first. Calling `scripts/go build` directly before a web build embeds an English setup page instead of the application. Generated assets live in `services/local-service/internal/webassets/content/dist/` and stay untracked.
 
 The Go wrapper sets a macOS 13 deployment target and matching cgo compiler/linker flags on macOS. Local builds can override `MACOSX_DEPLOYMENT_TARGET`; packaged builds use `LSMinimumSystemVersion` from the app's Info.plist. This prevents a newer build Mac from silently raising the Local Service's minimum OS above the Launcher's requirement.
+
+See [local dependency patches](dependency-patches.md) before updating picomatch, Rollup, or the lockfile inventory.
 
 ## Brand assets
 
@@ -49,6 +52,24 @@ Schema version 16 builds a local FTS5 trigram index for existing message bodies.
 The stable update action reads the existing manifest; the explicit beta action inspects up to 100 recent official GitHub releases and chooses the newest eligible beta, release candidate, or stable version using SemVer precedence. Both compare against the full `CoveReleaseVersion`, ignore current/older candidates, and perform discovery only. Missing metadata and network failures offer an official Releases fallback. See [update channels](adr/0030-discover-prereleases-only-through-explicit-beta-checks.md).
 
 Local search uses `GET /api/conversations/search?q=...&archived=...` behind the Browser Session, Chat, and persistence boundaries. Queries contain at most 256 Unicode characters and return at most 50 conversations with bounded excerpts and message identifiers. Queries are debounced and cancelled on replacement. SQLite narrows longer body queries through the local index, then verifies literal Unicode substrings. Chat applies a three-second deadline. See [local navigation](adr/0029-keep-history-search-and-draft-navigation-local.md).
+
+## Chat storage and rendering compatibility
+
+Current source builds migrate the schema 16 database in three steps:
+
+| Schema | Added data | Historical behavior |
+| --- | --- | --- |
+| 17 | Optional per-attempt Generation Metrics | Missing timing and usage stay unavailable; they are not backfilled as zero. |
+| 18 | Separate assistant Message reasoning | Existing rows default to empty reasoning. Unmarked prose is not reclassified. |
+| 19 | Independent conversation-branch provenance | Edited prompts copy only their immutable selected context, with independent message, Generation, and attachment ownership. |
+
+Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
+
+The existing message submission accepts optional `edit_of_batch_id`; the returned Batch identifies its new branch Conversation. Separate reasoning, metrics, and branch provenance are additive API fields. HTTP adapts the request, Chat owns generation and context validation, and persistence owns copying and transactions. Raw request/response entities used by signature verification stay unchanged.
+
+Assistant Markdown protects math before emphasis parsing, bundles KaTeX 0.19.1 with local fonts, and preserves the original source for copying and export. Incomplete or unsupported expressions use escaped source. Typesetting is bounded to 16,000 UTF-16 code units, 1,000 macro expansions, and 20em user-defined sizes per expression. Trust-requiring commands are denied and macro state is isolated. Generated positioning attributes are parsed as inert data and applied through CSSOM, preserving the existing CSP. See [ADR-0036](adr/0036-render-local-math-in-assistant-markdown.md).
+
+Model brand SVGs are vendored locally with their MIT license. The existing catalog request supplies optional model details; no separate price service is added. Favorite/recent model identifiers, named combinations, and manual cost rates use browser storage. Working drafts remain window-local. Themed Radix Popover/Select controls preserve nested Escape and focus behavior in the workspace and Provider settings. See [catalog presentation](adr/0034-show-provider-model-catalog-details-and-local-brand-icons.md).
 
 ## Local code signing
 
@@ -102,6 +123,8 @@ Bookmarks store only conversation/message identifiers in browser local storage, 
 Screenshots and the accessibility report are written to `.artifacts/frontend-acceptance/` (override with `COVE_BROWSER_ARTIFACT_DIR`). The suite checks authenticated startup, native control interactions, all skins, appearance persistence/system changes, responsive layouts, comparison selection and frozen context, retries/stops, conversation management, exports, settings, Provider/key maintenance, reduced motion, and WCAG rule violations on welcome/settings surfaces in every skin and appearance. Inference protocol and failure transitions also have focused unit/service coverage; real NearAI verification requires a separate disposable live credential.
 
 The harness starts Chrome on a blank page, waits up to 60 seconds for its debugging endpoint and page target, then requests a fresh one-time launch token and navigates to Cove. Slow browser startup does not consume the token's 45-second lifetime. Startup failures report the readiness phase and bounded, redacted browser diagnostics.
+
+The chat regressions also cover side questions and reviewed workbench revisions, response details, structured reasoning collapse and reload, model catalog metadata and local icons, favorites/filters/model combinations, independent edited-prompt branches, and local math in single answers and comparison columns. Filter checks use real themed menu interactions in the workspace and Provider settings, including nested Escape and a 390px viewport. Math checks exercise partial streams, saved raw source, local font loading, long-expression scrolling, accessible notation, and the production CSP without new policy violations.
 
 Linux CI runs the installed Chrome or Chromium inside `dbus-run-session` to provide a temporary session bus. It uploads the synthetic browser evidence for seven days, including on failure when artifacts are available.
 

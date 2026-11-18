@@ -59,6 +59,7 @@ test("a Batch event updates only the addressed Generation Target", () => {
     generation_id: "generation-b",
     type: "delta",
     delta: "B only",
+    reasoning_delta: "B reasoning",
   };
 
   const next = applyLiveTurnEvent(turn, event);
@@ -69,6 +70,7 @@ test("a Batch event updates only the addressed Generation Target", () => {
   });
   expect(next.targets?.[1]).toMatchObject({
     assistantBody: "B only",
+    reasoningBody: "B reasoning",
     phase: "streaming",
   });
 });

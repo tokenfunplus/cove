@@ -14,7 +14,7 @@ History stays on your Mac. Prompts, selected context, and extracted attachment t
 
 ## Where are chats, keys, and bookmarks stored?
 
-History, settings, and original attachments are stored in the local SQLite database. Provider Keys use macOS Keychain by default. Skins and timeline bookmark identifiers are saved in browser storage for the Local Service address. See the [storage reference](configuration.md#local-storage).
+History, settings, and original attachments are stored in the local SQLite database. Provider Keys use macOS Keychain by default. Skins, timeline bookmark identifiers, favorite/recent model identifiers, saved model combinations, and manual cost rates are saved in browser storage for the Local Service address. Working drafts and undo history remain in window memory. See the [storage reference](configuration.md#local-storage).
 
 The database is not encrypted by Cove. Quit Cove before backing it up, and protect exports like the original history. A database backup does not include Keychain credentials or browser preferences. Bookmarks stay in the browser profile and origin where they were saved. If browser storage is unavailable, the bookmark preview reports that changes are session-only.
 
@@ -44,6 +44,16 @@ Provider catalog errors do not automatically retry on browser focus or reconnect
 If you entered a new key, choose a model target for initial setup and click **Save Provider** after testing; a connection test alone does not save it. Provider Profiles describe connections, while model targets belong to the Active Model Set. Setup initializes that target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; confirm or change its targets through the workspace's model controls.
 
 The NearAI preset uses its staging service, so availability and verification capabilities depend on that service and model. See [Provider configuration](configuration.md#provider-profiles).
+
+## Why does a formula still show LaTeX source?
+
+Current source builds render inline `$...$` and `\(...\)`, and display `$$...$$` and `\[...\]`. During streaming, an unfinished expression stays readable until its closing delimiter arrives. Malformed, unsupported, or oversized expressions also retain source. Code spans, fenced code, escaped delimiters, and ordinary currency are excluded. Prefer `\(...\)` when dollar signs are ambiguous. Rendering uses bundled fonts and does not require a remote typesetting service.
+
+Copy and export preserve the original LaTeX. The published Beta 4 package predates this feature; source changes require rebuilding and restarting the Local Service. See [reading mathematical notation](user-guide.md#read-mathematical-notation).
+
+## Does the answer workbench change saved answers?
+
+The workbench edits a window-local copy. It does not change the original saved answer, its verification evidence, or later Provider context. Model revisions are separate saved conversations and require explicit review and application. Copy or download the Working Draft before reloading; it is not persisted as a recoverable draft. See [the workbench guide](user-guide.md#edit-an-answer-in-the-workbench).
 
 ## Which files can I attach?
 

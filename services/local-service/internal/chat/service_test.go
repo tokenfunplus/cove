@@ -24,11 +24,12 @@ func TestServiceStartsGenerationStreamsDeltasAndPersistsOnlyCompletedAssistant(t
 	if err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
+	inputTokens, outputTokens := int64(12), int64(2)
 	upstream := &fakeProvider{stream: &fakeStream{events: []provider.Event{
 		{Type: provider.EventStarted},
 		{Type: provider.EventDelta, Delta: "Hello"},
 		{Type: provider.EventDelta, Delta: " there"},
-		{Type: provider.EventCompleted},
+		{Type: provider.EventCompleted, Usage: &provider.TokenUsage{InputTokens: &inputTokens, OutputTokens: &outputTokens}},
 	}}}
 	service := NewService(store, fakeProviderSource{profile: provider.Profile{
 		ID: "provider-1", Kind: provider.KindOpenAICompatible, Name: "Fixture",
@@ -68,6 +69,9 @@ func TestServiceStartsGenerationStreamsDeltasAndPersistsOnlyCompletedAssistant(t
 	completed, err := store.GetGeneration(context.Background(), started.Generation.ID)
 	if err != nil {
 		t.Fatalf("load generation: %v", err)
+	}
+	if completed.Metrics == nil || completed.Metrics.InputTokens == nil || *completed.Metrics.InputTokens != inputTokens || completed.Metrics.OutputTokens == nil || *completed.Metrics.OutputTokens != outputTokens || completed.Metrics.TimeToFirstTokenMS == nil {
+		t.Fatalf("completed measurements = %#v", completed.Metrics)
 	}
 	if completed.State != persistence.GenerationCompleted {
 		t.Fatalf("generation state = %q, want completed", completed.State)

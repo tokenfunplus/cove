@@ -206,6 +206,8 @@ const messages = {
   composerPlaceholder: "Write a message to your selected Provider…",
   generationPending: "Thinking...",
   generationStreaming: "Generating response",
+  reasoning: "Reasoning",
+  reasoningStreaming: "Streaming…",
   generationDeliveryUnknown: "Checking whether your message was sent",
   privateInferenceVerifying: "Verifying the private model environment",
   privateInferenceVerifyingResponse: "Verifying the private response",

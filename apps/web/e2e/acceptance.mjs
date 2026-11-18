@@ -38,6 +38,19 @@ const requests = [];
 let sawApiKeyHeader = false;
 const attempts = new Map();
 let catalogGate;
+const mathAnswer = [
+  String.raw`Density \(\rho\), energy $E=mc^2$, and **Markdown**.`,
+  "\u5BC6\u5EA6 and fluid mechanics remain readable together.",
+  String.raw`\[
+\frac{\partial \rho}{\partial t} + \nabla \cdot (\rho \mathbf{u}) = 0
+\]`,
+  String.raw`$$\begin{aligned}
+\boldsymbol{\tau} &= \mu\left(\nabla \mathbf{u} + (\nabla \mathbf{u})^T\right) \\
+\mathbf{A} &= \begin{pmatrix} 1 & 2 \\ 3 & 4 \end{pmatrix}
+\end{aligned}$$`,
+  "$$" + Array.from({length: 16}, (_, i) => `\\frac{a_{${i}}+b_{${i}}}{1+c_{${i}}^2}`).join(" + ") + "$$",
+  "Code `$x_i$`, escaped \\$5, ordinary $5 and $10.",
+].join("\n\n");
 const provider = http.createServer(async (request, response) => {
   if (request.headers["x-api-key"]) sawApiKeyHeader = true;
   if (
@@ -58,6 +71,10 @@ const provider = http.createServer(async (request, response) => {
           { id: "model-two" },
           { id: "model-three" },
           { id: "model-four" },
+          { id: "deepseek/fixture", name: "DeepSeek Fixture", owned_by: "deepseek", context_length: 1048576,
+            max_output_length: 65536, pricing: { prompt: "0.0000003", completion: "0.0000012" },
+            architecture: { input_modalities: ["text", "image"] }, supported_features: ["tools", "reasoning"] },
+          { id: "google/gemini-fixture", name: "Gemini Fixture", owned_by: "google" },
           ...Array.from({ length: 80 }, (_, index) => ({
             id: "catalog/model-" + String(index + 1).padStart(3, "0"),
           })),
@@ -85,6 +102,19 @@ const provider = http.createServer(async (request, response) => {
   }
 
   response.writeHead(200, { "Content-Type": "text/event-stream" });
+  if (prompt.includes("Math fixture")) {
+    const split = mathAnswer.indexOf("\\]");
+    const delta = content => response.write("data: " + JSON.stringify({ choices: [{ delta: { content } }] }) + "\n\n");
+    delta(mathAnswer.slice(0, split));
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    delta(mathAnswer.slice(split));
+    response.end("data: [DONE]\n\n");
+    return;
+  }
+  if (prompt.includes("Reasoning fixture")) {
+    response.write('data: {"choices":[{"delta":{"reasoning_content":"Plan the useful answer without tags."}}]}\n\n');
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
   response.write(
     "data: " +
       JSON.stringify({
@@ -134,7 +164,7 @@ const provider = http.createServer(async (request, response) => {
         "\n\n",
     );
   setTimeout(
-    () => response.end("data: [DONE]\n\n"),
+    () => response.end('data: {"choices":[],"usage":{"prompt_tokens":128,"completion_tokens":32}}\n\ndata: [DONE]\n\n'),
     prompt.includes("Slow fixture") ? 3500 : 150,
   );
 });
@@ -403,6 +433,11 @@ try {
     });
     await pause(150);
   }
+  async function scrollMessagesUp() {
+    const rect=await evaluate(`document.querySelector('.message-list').getBoundingClientRect().toJSON()`);
+    await cdp("Input.dispatchMouseEvent",{type:"mouseWheel",x:rect.left+8,y:rect.top+Math.min(rect.height/2,100),deltaX:0,deltaY:-100000});
+    await pause(200);
+  }
   async function send(text) {
     await until('!!document.querySelector("#generation-input")');
     await evaluate(
@@ -633,7 +668,7 @@ try {
       const list = document.querySelector('.front-select__options');
       list.scrollTop = 0;
       const rect = list.getBoundingClientRect();
-      return {rect: rect.toJSON(), maxHeight: Math.min(320, innerHeight * .45),
+      return {rect: rect.toJSON(), maxHeight: Math.min(520, innerHeight * .65),
         scrollHeight: list.scrollHeight, height: list.clientHeight,
         parentScroll: document.querySelector('.settings-dialog__sections').scrollTop};
     })()`);
@@ -1468,9 +1503,7 @@ try {
   await until(
     `document.querySelectorAll('.message__markdown pre').length>0 && !document.querySelector('button[aria-label="Stop generation"]')`,
   );
-  await evaluate(
-    `const list=document.querySelector('.message-list');list.scrollTop=0;list.dispatchEvent(new Event('scroll',{bubbles:true}));`,
-  );
+  await scrollMessagesUp();
   await until(`!!document.querySelector('.conversation-panel__latest')`);
   await click(".conversation-panel__latest");
   await pause(200);
@@ -1480,7 +1513,7 @@ try {
     ),
     "Jump to latest failed",
   );
-  await evaluate(`const node=document.querySelector('.message-list');node.scrollTop=0;node.dispatchEvent(new Event('scroll',{bubbles:true}));`);
+  await scrollMessagesUp();
   await click('button[aria-label="Enter Focus mode"]');
   await until(`document.querySelector('main').dataset.focusMode==='true'`);
   await pause(250);
@@ -1597,11 +1630,10 @@ try {
     1,
   );
   assert.equal(await evaluate(`document.querySelectorAll('.pick').length`), 0);
-  await click(".message--assistant .message__privacy-toggle");
-  await until(`!document.querySelector('.message__privacy-footnote').hidden`);
-  await click(".message__snapshot summary");
-  await until(`document.querySelector('.message__snapshot').open`);
+  await click(".message--assistant [data-response-details] button");
+  await until(`!!document.querySelector('[role="dialog"][aria-labelledby]') && document.body.textContent.includes('Provider Snapshot')`);
   await snapshot("message-disclosures");
+  await click('button[aria-label="Close response details"]');
   // Persist model settings, export all local records and clear history through the confirmation.
   await click('button[aria-label="Settings"]');
   await until(
@@ -1646,12 +1678,12 @@ try {
   await escape();
   async function chooseOption(label) {
     await until(
-      `[...document.querySelectorAll('[role=option]')].some(e=>e.textContent.trim()===${JSON.stringify(label)})`,
+      `[...document.querySelectorAll('[role=option]')].some(e=>(e.querySelector("[data-model-id]")?.dataset.modelId===${JSON.stringify(label)} || e.textContent.trim()===${JSON.stringify(label)}))`,
     );
     await evaluate(
       `(async()=>{
         document.querySelectorAll('[data-fixture-option]').forEach(e=>e.removeAttribute('data-fixture-option'));
-        const e=[...document.querySelectorAll('[role=option]')].find(e=>e.textContent.trim()===${JSON.stringify(label)} && e.getBoundingClientRect().width>0);
+        const e=[...document.querySelectorAll('[role=option]')].find(e=>(e.querySelector("[data-model-id]")?.dataset.modelId===${JSON.stringify(label)} || e.textContent.trim()===${JSON.stringify(label)}) && e.getBoundingClientRect().width>0);
         if(!e)throw Error('Option missing');
         e.setAttribute('data-fixture-option','yes');
         let previous=e.getBoundingClientRect(),stable=0;
@@ -1809,6 +1841,222 @@ try {
     ),
     "Accessibility findings require review",
   );
+  // Answer tools use the same production Chat lifecycle in an isolated fixture.
+  const toolsProfile = await api("/api/models", "POST", {
+    kind: "openai_compatible", name: "Answer tools fixture",
+    endpoint: "http://127.0.0.1:" + provider.address().port,
+    auth_method: "bearer", secret: "synthetic-answer-tools-key",
+  });
+  await api("/api/settings", "PATCH", {
+    ...await api("/api/settings"),
+    active_model_set: [{ provider_id: toolsProfile.id, model_id: "model-one" }],
+  });
+  const toolsConversation = await api("/api/conversations", "POST", { title: "Answer tools acceptance" });
+  const toolsBatch = await api(`/api/conversations/${toolsConversation.id}/messages`, "POST", { client_request_id: randomBytes(16).toString("hex"), body: "Answer tools fixture" });
+  for (let i = 0; i < 100; i++) {
+    const saved = await api(`/api/generation-batches/${toolsBatch.id}`);
+    if (saved.state === "completed") break;
+    await pause(100);
+  }
+  const toolsOriginal = await api(`/api/conversations/${toolsConversation.id}`);
+  assert.equal(toolsOriginal.messages.length, 2);
+  assert.equal(toolsOriginal.generation_batches[0].targets[0].generation.metrics.output_tokens, 32);
+  await reloadPage();
+  await until(`!!document.querySelector('[data-answer-source]')`);
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await click(".answer-tools-main [data-response-details] button");
+  await until(`!!document.querySelector('[role="dialog"]') && document.querySelector('[role="dialog"]').textContent.includes('Input tokens')`);
+  assert(await evaluate(`document.querySelector('[role="dialog"]').textContent.includes('128')`));
+  await snapshot("answer-performance-1440");
+  await evaluate(axe);
+  assert.deepEqual(await evaluate(`axe.run(document.querySelector('[role="dialog"]'),{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}).then(r=>r.violations.filter(v=>v.impact==='critical'||v.impact==='serious').map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})))`),[],"Response details accessibility findings");
+  await click('button[aria-label="Close response details"]');
+  await evaluate(`(()=>{const p=document.querySelector('[data-answer-source] p');const range=document.createRange();range.selectNodeContents(p);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);p.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));})()`);
+  await until(`!!document.querySelector('[aria-label="Selected text actions"]')`);
+  await clickText("Explain", '[aria-label="Selected text actions"]');
+  await clickText("Send question", 'aside[aria-label="Answer tools"]');
+  await until(`document.querySelector('aside[aria-label="Answer tools"]').textContent.includes('Browser answer from model-one') && !!document.querySelector('#side-generation-input') && !document.querySelector('button[aria-label="Stop generation"]')`);
+  assert(requests.at(-1).messages.at(-1).content.includes('"passage":"Browser answer from model-one"'));
+  assert.equal((await api(`/api/conversations/${toolsConversation.id}`)).messages.length, 2);
+  await snapshot("side-conversation-1440");
+  await click('button[aria-label="Close answer tools"]');
+  await clickText("Edit in workbench", ".answer-tools-main");
+  const workingText = "First paragraph to revise.\n\nKeep this paragraph.";
+  await fill('textarea[aria-label="Working draft"]', workingText);
+  await evaluate(`(()=>{const t=document.querySelector('textarea[aria-label="Working draft"]');t.focus();t.setSelectionRange(0,26);t.dispatchEvent(new KeyboardEvent('keyup',{key:'Shift',bubbles:true}));document.dispatchEvent(new Event('selectionchange'));})()`);
+  await until(`document.querySelector('aside[aria-label="Answer tools"]').textContent.includes('26 characters selected')`);
+  await fill('textarea[aria-label="Revision request"]', "Simplify the selected paragraph");
+  await clickText("Rewrite selection", 'aside[aria-label="Answer tools"]');
+  await until(`!!document.querySelector('[aria-label="Proposed revision"]') && !document.querySelector('button[aria-label="Stop generation"]')`);
+  assert.equal(await evaluate(`document.querySelector('textarea[aria-label="Working draft"]').value`), workingText);
+  await clickText("Review changes", 'aside[aria-label="Answer tools"]');
+  await snapshot("workbench-review-1440");
+  await clickText("Apply revision", 'aside[aria-label="Answer tools"]');
+  const revisedText = "Browser answer from model-one" + workingText.slice(26);
+  assert.equal(await evaluate(`document.querySelector('textarea[aria-label="Working draft"]').value`), revisedText);
+  await click('button[aria-label="Undo draft edit"]');
+  assert.equal(await evaluate(`document.querySelector('textarea[aria-label="Working draft"]').value`), workingText);
+  await click('button[aria-label="Redo draft edit"]');
+  assert.equal(await evaluate(`document.querySelector('textarea[aria-label="Working draft"]').value`), revisedText);
+  await clickText("Download", 'aside[aria-label="Answer tools"]');
+  let workbenchDownload;
+  for (let i = 0; i < 50 && workbenchDownload === undefined; i++) {
+    workbenchDownload = await readFile(path.join(downloads, "cove-workbench.md"), "utf8").catch(() => undefined);
+    if (workbenchDownload === undefined) await pause(100);
+  }
+  assert.equal(workbenchDownload, revisedText);
+  assert.equal((await api(`/api/conversations/${toolsConversation.id}`)).messages[1].body, toolsOriginal.messages[1].body);
+  for (const width of [1440, 390]) {
+    await cdp("Emulation.setDeviceMetricsOverride", { width, height: width < 768 ? 844 : 900, deviceScaleFactor: 1, mobile: width < 768 });
+    await pause(250);
+    assert(await evaluate(`document.documentElement.scrollWidth <= innerWidth`), "Answer tools overflow at " + width);
+    await snapshot("workbench-" + width);
+  }
+  await evaluate(axe);
+  const toolsViolations = await evaluate(`axe.run(document.querySelector('aside[aria-label="Answer tools"]'),{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}).then(r=>r.violations.filter(v=>v.impact==='critical'||v.impact==='serious').map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})))`);
+  assert.deepEqual(toolsViolations, [], "Answer tools accessibility findings");
+  await click('button[aria-label="Close answer tools"]');
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await click('[role="combobox"][aria-label="Model"]');
+  await until(`!!document.querySelector('[role="option"] .model-catalog-row')`);
+  await fill('[role="combobox"][aria-label="Model"]', "DeepSeek Fixture");
+  await until(`document.querySelector('[role="option"]').textContent.includes('1,048,576 context')`);
+  assert(await evaluate(`document.querySelector('[role="option"]').textContent.includes('In $0.3 / Out $1.2 per 1M tokens')`));
+  assert(await evaluate(`document.querySelector('img[src="/assets/model-icons/deepseek-color.svg"]').complete && document.querySelector('img[src="/assets/model-icons/deepseek-color.svg"]').naturalWidth > 0`));
+  await snapshot("model-catalog-1440");
+  const pickerViolations = await evaluate(`axe.run(document.querySelector('[role="listbox"]'),{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}).then(r=>r.violations.filter(v=>v.impact==='critical'||v.impact==='serious').map(v=>v.id))`);
+  assert.deepEqual(pickerViolations, [], "Model catalog accessibility findings");
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await pause(250);
+  assert(await evaluate(`(()=>{const r=document.querySelector('[role="listbox"]').getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && document.documentElement.scrollWidth<=innerWidth})()`), "Model catalog exceeds narrow viewport");
+  await snapshot("model-catalog-390");
+  await click('[role="option"]');
+  await until(`!document.querySelector('[role="listbox"]')`);
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await click('button[aria-label="New conversation"]');
+  await fill('#generation-input', "Reasoning fixture");
+  await click('button[aria-label="Send message"]');
+  await until(`!!document.querySelector('[data-reasoning][open]')`);
+  await until(`!!document.querySelector('[data-reasoning]:not([open])') && !document.querySelector('button[aria-label="Stop generation"]')`);
+  assert(await evaluate(`document.querySelector('[data-answer-source]').textContent.includes('Browser answer from deepseek/fixture')`));
+  const reasoningRecord = (await api("/api/conversations"))[0];
+  const reasoningView = await api(`/api/conversations/${reasoningRecord.id}`);
+  const reasoningAnswer = reasoningView.messages.find(message => message.role === "assistant");
+  assert.equal(reasoningAnswer.reasoning, "Plan the useful answer without tags.");
+  assert.equal(reasoningAnswer.body, "Browser answer from deepseek/fixture");
+  await snapshot("reasoning-collapsed-1440");
+  await reloadPage();
+  await until(`!!document.querySelector('[data-reasoning]:not([open])')`);
+  await click('[data-reasoning] summary');
+  await until(`!!document.querySelector('[data-reasoning][open]')`);
+  await click('.model-selector button[aria-label="Add model to favorites"]');
+  await click('.model-selector [role="combobox"][aria-label="Model"]');
+  await until(`document.querySelector('[role="listbox"]').textContent.includes('Favorites')`);
+  await escape();
+  await click('.model-selector button[aria-label="Filter models"]');
+  await until(`!!document.querySelector('[aria-label="Model filters"]')`);
+  await clickText("Any context length", '[aria-label="Model filters"]');
+  await until(`!!document.querySelector('[role="option"][data-state="checked"]')`);
+  await snapshot("model-context-options-1440");
+  await chooseOption("1,000,000 tokens");
+  await until(`document.querySelector('[aria-label="Model filters"]').textContent.includes('1,000,000 tokens') && !document.querySelector('[role="listbox"]')`);
+  assert(await evaluate(`document.querySelector('[aria-label="Model filters"]').textContent.includes('1 matching models')`));
+  await clickText("Any capability", '[aria-label="Model filters"]');
+  await until(`!!document.querySelector('[role="listbox"]')`);
+  await escape();
+  assert(await evaluate(`!!document.querySelector('[aria-label="Model filters"]') && !document.querySelector('[role="listbox"]')`), "Escape must close the nested options before the filters");
+  await snapshot("model-filters-1440");
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await clickText("Any capability", '[aria-label="Model filters"]');
+  await until(`!!document.querySelector('[role="listbox"]')`);
+  assert(await evaluate(`(()=>{const r=document.querySelector('[role="listbox"]').getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.bottom<=innerHeight && document.documentElement.scrollWidth<=innerWidth})()`), "Filter options exceed the narrow viewport");
+  await snapshot("model-filter-options-390");
+  await chooseOption("Reasoning");
+  await until(`document.querySelector('[aria-label="Model filters"]').textContent.includes('Reasoning') && !document.querySelector('[role="listbox"]')`);
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await clickText("Clear filters");await escape();
+  await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await openProviders("Answer tools fixture");
+  await click('#provider-settings button[aria-label="Filter models"]');
+  await clickText("Any capability", '[aria-label="Model filters"]');
+  await chooseOption("Reasoning");
+  assert(await evaluate(`!!document.querySelector('[aria-label="Model filters"]') && !!document.querySelector('.settings-dialog__panel')`), "Nested filter selection dismissed Provider settings");
+  await escape();
+  assert(await evaluate(`!document.querySelector('[aria-label="Model filters"]') && !!document.querySelector('.settings-dialog__panel')`), "Closing filters must preserve Provider settings");
+  await click('button[aria-label="Close settings"]');
+  await click('.model-selector__comparison-toggle');
+  await fill('input[aria-label="Combination name"]',"My comparison");
+  await clickText("Save combination");
+  await until(`document.querySelector('[aria-label="Saved model combinations"]').textContent.includes('My comparison')`);
+  await snapshot("model-combinations-1440");
+  await escape();
+  await click('.model-selector [role="combobox"][aria-label="Model"]');
+  await fill('.model-selector [role="combobox"][aria-label="Model"]',"Gemini Fixture");
+  await chooseOption("google/gemini-fixture");
+  await until(`document.querySelector('.model-selector [role="combobox"][aria-label="Model"]').value==='Gemini Fixture'`);
+  await click('.model-selector__comparison-toggle');
+  await clickText("My comparison · 1",'[aria-label="Saved model combinations"]');
+  await until(`document.querySelector('.model-selector [role="combobox"][aria-label="Model"]').value==='DeepSeek Fixture'`);
+  assert.equal((await api("/api/settings")).active_model_set[0].model_id,"deepseek/fixture");
+  await escape();
+  await clickText("Edit and resend", ".answer-tools-main");
+  await until(`!!document.querySelector('[role="dialog"] textarea')`);
+  await fill('[role="dialog"] textarea',"Edited browser prompt");
+  await snapshot("edit-prompt-1440");
+  await clickText("Send in new branch",'[role="dialog"]');
+  await until(`document.body.textContent.includes('Branch of Reasoning fixture') && !!document.querySelector('[data-answer-source]') && !document.querySelector('button[aria-label="Stop generation"]')`);
+  const branchRecord=(await api("/api/conversations"))[0];
+  const branchView=await api(`/api/conversations/${branchRecord.id}`);
+  assert.equal(branchView.branch.source_batch_id,reasoningView.generation_batches[0].id);
+  assert.equal(branchView.messages.find(message=>message.role==='user').body,"Edited browser prompt");
+  assert.equal((await api(`/api/conversations/${reasoningRecord.id}`)).messages.find(message=>message.role==='user').body,"Reasoning fixture");
+  await snapshot("edited-branch-1440");
+  // Exercise math through production streaming and persisted Conversation History.
+  await api("/api/settings", "PATCH", {
+    ...await api("/api/settings"),
+    active_model_set: ["model-one", "model-two"].map(model_id => ({provider_id: toolsProfile.id, model_id})),
+  });
+  await reloadPage();
+  await until(`!!document.querySelector('#generation-input')`);
+  await click('button[aria-label="New conversation"]');
+  await fill('#generation-input', "Math fixture comparison");
+  await evaluate(`globalThis.mathPolicyViolations=[];document.addEventListener('securitypolicyviolation',e=>globalThis.mathPolicyViolations.push([e.effectiveDirective,e.blockedURI]))`);
+  await click('button[aria-label="Send message"]');
+  await until(`!!document.querySelector('.model-answer-card [data-math-source]') && !!document.querySelector('.model-answer-card .katex')`);
+  await until(`document.querySelectorAll('.model-answer-card .katex').length===10 && !document.querySelector('button[aria-label="Stop generation"]')`);
+  await evaluate("document.fonts.ready");
+  assert(await evaluate(`(()=>{const e=[...document.querySelectorAll('[data-math="inline"]')][1],base=[...e.querySelectorAll('.mathnormal')].at(-1),sup=e.querySelector('.msupsub .mtight');return sup.getBoundingClientRect().top<base.getBoundingClientRect().top})()`), "Superscripts must typeset above their base under the production CSP");
+  const mathRecord = (await api("/api/conversations"))[0];
+  const mathView = await api(`/api/conversations/${mathRecord.id}`);
+  assert.deepEqual(mathView.messages.filter(message => message.role === "assistant").map(message => message.body), [mathAnswer, mathAnswer]);
+  for (const width of [1440, 390]) {
+    await cdp("Emulation.setDeviceMetricsOverride", {width, height: 900, deviceScaleFactor: 1, mobile: width < 768});
+    await pause(250);
+    assert(await evaluate(`document.documentElement.scrollWidth<=innerWidth`), "Math overflowed the page");
+    assert(await evaluate(`(()=>{const card=document.querySelector('.model-answer-card'),e=[...card.querySelectorAll('[data-math="display"]')].at(-1);return getComputedStyle(e).overflowX==='auto' && e.clientWidth<=card.clientWidth && e.scrollWidth>e.clientWidth && (e.scrollLeft=100)>0})()`), "Long math must scroll inside the comparison card");
+    await evaluate(`document.querySelector('.model-answer-card [data-math="display"]').scrollIntoView({block:'start'})`);
+    await snapshot("math-comparison-" + width);
+  }
+  const fontRequests = await evaluate(`performance.getEntriesByType('resource').filter(e=>e.name.includes('KaTeX_')).map(e=>({url:e.name,bytes:e.transferSize}))`);
+  assert(fontRequests.length > 0 && fontRequests.every(entry => new URL(entry.url).origin === origin && entry.bytes > 0), "Math fonts must load locally");
+  assert.deepEqual(await evaluate(`globalThis.mathPolicyViolations`), [], "Math must respect the production CSP");
+  await reloadPage();
+  await until(`document.querySelectorAll('.model-answer-card .katex').length===10`);
+  await evaluate(axe);
+  assert.deepEqual(await evaluate(`axe.run(document.querySelector('.message-list'),{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}).then(r=>r.violations.filter(v=>v.impact==='critical'||v.impact==='serious').map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})))`), [], "Math accessibility findings");
+  await api("/api/settings", "PATCH", {
+    ...await api("/api/settings"),
+    active_model_set: [{provider_id: toolsProfile.id, model_id: "model-one"}],
+  });
+  await cdp("Emulation.setDeviceMetricsOverride", {width: 1440, height: 900, deviceScaleFactor: 1, mobile: false});
+  await reloadPage();
+  await until(`!!document.querySelector('#generation-input')`);
+  await click('button[aria-label="New conversation"]');
+  await fill('#generation-input', "Math fixture single");
+  await click('button[aria-label="Send message"]');
+  await until(`document.querySelectorAll('[data-answer-source] .katex').length===5 && !document.querySelector('button[aria-label="Stop generation"]')`);
+  await evaluate(`document.querySelector('[data-math="display"]').scrollIntoView({block:'start'})`);
+  await snapshot("math-single-1440");
   assert.equal(exceptions.length, 0);
   socket.close();
   console.log(

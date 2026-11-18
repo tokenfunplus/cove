@@ -6,6 +6,7 @@ import {
 import { useRef, useState } from "react";
 
 export function useGenerationState() {
+  const ownedBatchRef = useRef<string | undefined>(undefined);
   const [generationBatch, setGenerationBatch] = useState<GenerationBatch>();
 
   const [draft, setDraft] = useState("");
@@ -13,7 +14,7 @@ export function useGenerationState() {
   const [liveTurn, setLiveTurn] = useState<LiveTurn>();
 
   const [isSending, setIsSending] = useState(false);
-  const pendingSubmissionRef = useRef<{ cancelRequested: boolean } | undefined>(
+  const pendingSubmissionRef = useRef<{ cancelRequested: boolean; batchId?: string } | undefined>(
     undefined,
   );
 
@@ -40,6 +41,7 @@ export function useGenerationState() {
   const streamingFrameRef = useRef<number | undefined>(undefined);
 
   return {
+    ownedBatchRef,
     generationBatch,
     setGenerationBatch,
     draft,

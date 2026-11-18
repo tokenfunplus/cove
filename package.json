@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@10.11.0",
   "scripts": {
+    "audit:dependencies": "node scripts/audit-dependencies.mjs",
     "build": "make build",
     "build:web": "pnpm --filter @cove/web build",
     "check:web": "pnpm --filter @cove/web check",

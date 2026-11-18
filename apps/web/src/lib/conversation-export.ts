@@ -105,6 +105,7 @@ function markdownExport(view: ConversationView): string {
     `- Exported locally from Cove: ${new Date().toISOString()}`,
     "",
   ];
+  if(view.branch) lines.push(`Branch of: ${view.branch.source_title}`, `Source conversation: ${view.branch.source_conversation_id}`, `Edited source batch: ${view.branch.source_batch_id}`, "Earlier messages are copied context; their evidence belongs to the original responses.", "");
   const batches = view.generation_batches ?? [];
   const byUser = new Map(batches.map((batch) => [batch.user_message_id, batch]));
   if (batches.some((batch) => batch.targets.length > 1)) {
@@ -129,6 +130,7 @@ function markdownExport(view: ConversationView): string {
     lines.push(
       `${heading} ${message.role === "assistant" ? "Assistant" : "You"}`,
       "",
+      ...(message.reasoning ? ["<details>", "<summary>Reasoning</summary>", "", message.reasoning, "", "</details>", ""] : []),
       message.body,
       "",
     );

@@ -47,6 +47,7 @@ export function WorkspaceHeader({
   onTargetModelChange,
   onAddModel,
   onRemoveModel,
+  onApplyModelSet,
   onVerifyPrivateConnection,
   onOpenPrivateVerification,
   onOpenPrivacyStatus,
@@ -69,6 +70,7 @@ export function WorkspaceHeader({
   onTargetModelChange?: (targetIndex: number, modelId: string) => void;
   onAddModel?: (profile: ProviderProfile, modelId: string) => void;
   onRemoveModel?: (target: ActiveSelection) => void;
+  onApplyModelSet?: (targets: ActiveModelSet) => void;
   onVerifyPrivateConnection?: () => void;
   onOpenPrivateVerification?: () => void;
   onOpenPrivacyStatus?: () => void;
@@ -160,6 +162,7 @@ export function WorkspaceHeader({
           onTargetModelChange={onTargetModelChange}
           onAddModel={onAddModel}
           onRemoveModel={onRemoveModel}
+          onApplyModelSet={onApplyModelSet}
           disabled={disabled}
           copy={copy}
         />

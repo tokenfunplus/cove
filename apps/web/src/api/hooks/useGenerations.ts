@@ -2,6 +2,7 @@ import * as api from "@/api";
 import { generationKeys } from "@/api/queryKeys";
 import type {
   GenerationVerification,
+  GenerationMetrics,
   AttachmentInput,
 } from "@cove/api-contract";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -111,11 +112,24 @@ export function useSettleSecureGeneration() {
       id,
       body,
       verification,
+      metrics,
+      reasoning,
     }: {
       id: string;
       body: string;
       verification: GenerationVerification;
-    }) => api.settleSecureGeneration(id, body, verification),
+      metrics?: GenerationMetrics;
+      reasoning?: string;
+    }) =>
+      reasoning === undefined
+        ? api.settleSecureGeneration(id, body, verification, metrics)
+        : api.settleSecureGeneration(
+            id,
+            body,
+            verification,
+            metrics,
+            reasoning,
+          ),
     retry: false,
   });
 }

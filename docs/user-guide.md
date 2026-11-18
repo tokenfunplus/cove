@@ -2,6 +2,8 @@
 
 Cove is a local-first AI chat application for Apple Silicon Macs running macOS 13 or later. Its menu-bar Launcher starts a Local Service and opens the Chat Surface in your browser. The interface is English; messages, titles, and prompts support Unicode content.
 
+This guide follows the current source tree, including unreleased features. The published Beta 4 package follows its [release notes](releases/0.1.0-beta.4.md); see the [unreleased changelog](../CHANGELOG.md#unreleased) for newer changes.
+
 ## Install and upgrade
 
 Download [0.1.0-beta.4](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.4), open the DMG, and drag Cove to Applications. Published beta packages are Developer ID signed and Apple notarized. A checksum file accompanies each download.
@@ -25,6 +27,52 @@ macOS may request permission when Cove first reads an existing Provider Key or w
 Choose one model for an ordinary conversation, or up to four targets for a comparison. Each answer retains its Provider Snapshot and available verification evidence. Select the answer you want to include in the next turn's context, or continue without an answer from that turn.
 
 A submitted turn captures its context. Retrying a target uses that same saved context and attached source input. Later changes to an earlier answer selection do not rewrite a turn already submitted.
+
+Provider-supplied reasoning appears in a **Reasoning** section above the answer. It starts expanded while text is streaming and automatically collapses when streaming ends, including while a private response is being verified. Saved answers start collapsed. Click **Reasoning** to expand or collapse it manually. Structured reasoning is saved locally and included in exports, separately from the answer; later turns send only the selected answer body. Responses beginning with explicit `<think>`, `<reasoning>`, or `<analysis>` blocks also support folding, while retaining their original body and context. Previously saved prose without reasoning boundaries cannot be separated automatically.
+
+Model selectors include locally bundled brand icons, model names and identifiers, and available Provider catalog details: input/output USD prices per million tokens, context/output limits, and capability labels. Search by model ID, name, publisher, or capability. Missing details remain unavailable. These are Provider-advertised capabilities; Cove currently sends text and extracted document text. Catalog prices are indicative and do not change your manually configured Generation cost estimates.
+
+### Read mathematical notation
+
+Assistant answers render inline math with `$...$` or `\(...\)`, and multiline display math with `$$...$$` or `\[...\]`. Long equations scroll horizontally inside the answer, including Model Comparison columns. Formula rendering and fonts work locally. Code, escaped delimiters, and ordinary currency stay literal; incomplete or unsupported formulas show readable source. Copying and exports retain the original LaTeX.
+
+Prefer `\(...\)` when dollar signs are ambiguous with currency. Common notation includes fractions, Greek letters, vectors, matrices, and aligned equations. Formula rendering does not contact a Provider or a remote typesetting service.
+
+### Faster model selection and reading
+
+Use the star beside the Model label to favorite the current model. Favorites and recently selected models appear first. The filter button narrows the catalog by capability, minimum context, and maximum input/output USD price per million tokens. Missing Provider details do not pass the corresponding filter. The filter menus use the workspace theme. Escape closes an open option list before closing the filter panel. Clear filters to return to the full list. In Model comparison, name and save a combination to restore its entire model set with one click. Favorites, recent selections, and named combinations stay in this browser profile; storage restrictions can limit them to the current session.
+
+Assistant headers show model identity and a short verification status. Open **Response details** for performance, Provider/Privacy information, and full verification reports. Verification problems remain visible before opening it.
+
+Scrolling upward pauses following new responses. **Jump to latest** shows the number of answers updated while you were reading. Reasoning folds and stream layout changes preserve the current reading block where it remains available. Returning to the latest response or sending a new prompt resumes following.
+
+### Follow up on a passage
+
+Select up to 8,000 characters in a saved assistant answer to open **Explain**, **Give an example**, or **Ask about selection**. The action opens a side panel with a quoted passage and editable question; click **Send question** to contact your active models. **Ask about this** below an answer opens the same tool with its text (or an excerpt for longer answers).
+
+The side question uses your active models, System Prompt, and generation settings. It starts a separate saved conversation with only the quoted passage, question, and source model identifier. It does not inherit or change the main conversation. Later questions use the separate side history; comparisons still need an answer selection or an explicit context skip before continuing. Side conversations remain available in local history. The main conversation and answer tools share Cove's one-active-Batch limit.
+
+### Edit an answer in the workbench
+
+Click **Edit in workbench** below a saved answer. Edit the copy directly, switch between **Edit**, **Preview**, and **Changes**, undo/redo, copy it, or download Markdown. The original answer, Provider context, and verification evidence remain unchanged.
+
+Enter a **Revision request** to ask your active models to revise the draft. Select text in the editor to rewrite only that passage, or choose **Use whole draft**. The current draft and editing request are sent using your existing Provider transport. Review the proposed changes and click **Apply revision** to accept a model's result. A proposal cannot replace newer local edits made after its request.
+
+Working drafts and up to 20 undo steps stay in this window's memory, including while the panel is closed. Download to retain a copy across reloads. Cove asks before replacing a changed draft and uses the browser's refresh/close protection where supported. Drafts are limited to 120,000 browser text units; supplementary Unicode characters count as two units. Revision requests and responses are saved as separate local conversations. Use **Answer tools** above the conversation to reopen the panel.
+
+### Edit a prompt and branch
+
+Click **Edit and resend** on a saved user message, edit the prompt, and choose which of your active models to run. **Send in new branch** creates a separate conversation with the saved context and exact attachments from that turn. It excludes the original answer and later messages; current System Prompt and generation settings apply. Earlier messages in the branch are independent copies, with verification evidence belonging to the original responses. The original conversation remains available. Sending or clearing your current unsent draft is required before editing another prompt.
+
+### Wait and recover
+
+During generation, Cove shows elapsed time and the current stage. A prolonged quiet period offers stopping the attempt. Failure controls can retry the original target, choose a model for a future submission, edit/resend in a branch, or open Provider settings. Selecting a different model does not alter the model used by an ordinary retry.
+
+### Response performance
+
+Open **Response details** below an answer to inspect total time, time to first text, input/output tokens, and output speed. Counts come from the Provider. Missing counts and older measurements are shown as unavailable. Private inference timings are measured in the browser and total time includes verification. Output speed uses the interval between first and last text chunks, so very short or buffered responses may have no useful speed measurement.
+
+Optionally enter your Provider/model's input and output rates in USD per million tokens. Estimated cost uses those current rates and reported counts, excluding Provider-specific cache discounts and other charges. Rates stay in this browser; no pricing lookup or additional inference request is made.
 
 ### Focus and timeline bookmarks
 

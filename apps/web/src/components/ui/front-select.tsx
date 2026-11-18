@@ -23,6 +23,10 @@ import { useId, useState, type ReactNode } from "react";
 export type FrontSelectOption = {
   value: string;
   label: ReactNode;
+  group?: string;
+  hidden?: boolean;
+  selectedLabel?: ReactNode;
+  displayLabel?: string;
   keywords?: string | readonly string[];
   disabled?: boolean;
 };
@@ -46,9 +50,10 @@ export function filterFrontSelectOptions(
   query: string,
 ): FrontSelectOption[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  if (!normalizedQuery) return [...options];
-  return options.filter((option) =>
-    optionSearchText(option).includes(normalizedQuery),
+  if (!normalizedQuery) return options.filter((option) => !option.hidden);
+  return options.filter(
+    (option) =>
+      !option.hidden && optionSearchText(option).includes(normalizedQuery),
   );
 }
 
@@ -67,6 +72,7 @@ export function FrontSelect({
   className = "",
   panelClassName = "",
   optionClassName = "",
+  notice,
 }: {
   id?: string;
   label?: ReactNode;
@@ -82,6 +88,7 @@ export function FrontSelect({
   className?: string;
   panelClassName?: string;
   optionClassName?: string;
+  notice?: ReactNode;
 }) {
   const [query, setQuery] = useState("");
   const generatedId = useId();
@@ -112,7 +119,10 @@ export function FrontSelect({
               className={primitivesStyles.frontSelect_selectedValue}
               aria-hidden="true"
             >
-              {options.find((option) => option.value === value)?.label}
+              {(() => {
+                const option = options.find((item) => item.value === value);
+                return option?.selectedLabel ?? option?.label;
+              })()}
             </span>
             <Search
               aria-hidden="true"
@@ -135,6 +145,7 @@ export function FrontSelect({
                   (candidate) => candidate.value === selectedValue,
                 );
                 if (!option) return "";
+                if (option.displayLabel) return option.displayLabel;
                 return typeof option.label === "string"
                   ? option.label
                   : option.value;
@@ -170,33 +181,49 @@ export function FrontSelect({
               <span>{searchPlaceholder}</span>
               <span className="tabular-nums">{filteredOptions.length}</span>
             </div>
+            {notice ? (
+              <p className="px-3 pb-2 text-[10px] leading-relaxed text-muted-foreground">
+                {notice}
+              </p>
+            ) : null}
             {filteredOptions.length > 0 ? (
-              filteredOptions.map((option) => (
-                <ComboboxOption
-                  className={cn(
-                    primitivesStyles.frontSelect_option,
-                    `front-select__option ${optionClassName}`,
-                  )}
-                  key={option.value}
-                  value={option.value}
-                  disabled={option.disabled}
-                >
-                  {({ selected }) => (
-                    <>
-                      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-                        {option.label}
-                      </span>
-                      <Check
+              filteredOptions.map((option, index) => (
+                <div key={option.value} role="presentation">
+                  {option.group &&
+                    filteredOptions[index - 1]?.group !== option.group && (
+                      <p
+                        className="px-3 pt-2 pb-1 text-[10px] font-semibold text-muted-foreground"
                         aria-hidden="true"
-                        size={14}
-                        className={cn(
-                          "shrink-0 text-primary",
-                          !selected && "invisible",
-                        )}
-                      />
-                    </>
-                  )}
-                </ComboboxOption>
+                      >
+                        {option.group}
+                      </p>
+                    )}
+                  <ComboboxOption
+                    className={cn(
+                      primitivesStyles.frontSelect_option,
+                      `front-select__option ${optionClassName}`,
+                    )}
+                    key={option.value}
+                    value={option.value}
+                    disabled={option.disabled}
+                  >
+                    {({ selected }) => (
+                      <>
+                        <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+                          {option.label}
+                        </span>
+                        <Check
+                          aria-hidden="true"
+                          size={14}
+                          className={cn(
+                            "shrink-0 text-primary",
+                            !selected && "invisible",
+                          )}
+                        />
+                      </>
+                    )}
+                  </ComboboxOption>
+                </div>
               ))
             ) : (
               <p className={primitivesStyles.frontSelect_empty}>{emptyText}</p>
@@ -224,7 +251,8 @@ export function FrontSelect({
           className={cn(primitivesStyles.fieldSelect_trigger, className)}
         >
           <SelectValue placeholder={placeholder}>
-            {options.find((option) => option.value === value)?.label ??
+            {options.find((option) => option.value === value)?.selectedLabel ??
+              options.find((option) => option.value === value)?.label ??
               placeholder}
           </SelectValue>
         </SelectTrigger>

@@ -1,3 +1,4 @@
+import { useAnswerTools } from "@/hooks/chat/use-answer-tools";
 import { useCancelGeneration } from "@/api/hooks/useGenerations";
 import { useConversationSearch } from "@/api/hooks/useConversationSearch";
 import { useProviderCatalogs } from "@/hooks/providers/use-provider-catalogs";
@@ -29,7 +30,9 @@ export function useChatWorkspace() {
   const workspaceUi = useWorkspaceUi();
   const workspaceState = useWorkspaceState(workspaceUi.showingArchived);
   const conversationSearch = useConversationSearch(
-    workspaceUi.conversationSearchQuery, workspaceUi.showingArchived, workspaceState.connection === "ready",
+    workspaceUi.conversationSearchQuery,
+    workspaceUi.showingArchived,
+    workspaceState.connection === "ready",
   );
   const {
     selectedId,
@@ -67,7 +70,10 @@ export function useChatWorkspace() {
     useProviderCatalogs(providerProfiles, activeModelSet);
 
   useEffect(() => {
-    setResumeGenerationBatch(conversationView?.active_generation_batch);
+    const active = conversationView?.active_generation_batch;
+    setResumeGenerationBatch(
+      active?.id === generationState.ownedBatchRef.current ? undefined : active,
+    );
   }, [conversationView?.id]);
 
   useEffect(() => {
@@ -104,9 +110,14 @@ export function useChatWorkspace() {
       conversationView.messages.find(
         (message) => message.id === resumeGenerationBatch.user_message_id,
       )?.body ?? "";
-    setLiveTurn(
-      { ...liveTurnFromBatch(conversationView.id, userBody, resumeGenerationBatch), restored: true },
-    );
+    setLiveTurn({
+      ...liveTurnFromBatch(
+        conversationView.id,
+        userBody,
+        resumeGenerationBatch,
+      ),
+      restored: true,
+    });
     setGenerationBatch(resumeGenerationBatch);
     setIsSending(true);
     setResumeGenerationBatch(undefined);
@@ -166,6 +177,15 @@ export function useChatWorkspace() {
     ...conversationActions,
   });
 
+  const answerTools = useAnswerTools({
+    activeModelSet,
+    providerProfiles,
+    catalogs,
+    selectionStatus,
+    copy,
+    externalBusy: generationState.isSending || workspaceUi.isNavigating || workspaceUi.isClearingChatData,
+  });
+
   const generationCommands = useGenerationCommands({
     attachmentDraft,
     ...workspaceState,
@@ -177,6 +197,7 @@ export function useChatWorkspace() {
     selectionStatus,
     catalogs,
     copy,
+    isSending: generationState.isSending || answerTools.busy,
   });
 
   const modelSelection = useModelSelection({
@@ -195,6 +216,12 @@ export function useChatWorkspace() {
     ...conversationActions,
     attachmentDraft,
     copy,
+    isSending: generationState.isSending || answerTools.busy,
+    handleCancel: async () => {
+      const sideStopped = await answerTools.cancel();
+      return sideStopped && (await generationCommands.handleCancel());
+    },
+    onChatDataCleared: answerTools.clear,
   });
 
   useLauncherNavigation({
@@ -211,6 +238,7 @@ export function useChatWorkspace() {
   });
 
   return {
+    answerTools,
     conversationSearch,
     attachmentDraft,
     ...providerActions,
@@ -224,6 +252,11 @@ export function useChatWorkspace() {
     ...generationCommands,
     ...modelSelection,
     ...conversationLifecycle,
+    isSending: generationState.isSending || answerTools.busy,
+    handleCancel: async () => {
+      const sideStopped = await answerTools.cancel();
+      return sideStopped && (await generationCommands.handleCancel());
+    },
     activeSelection,
     appearance,
     narrowLayout,

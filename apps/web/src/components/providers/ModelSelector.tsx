@@ -1,6 +1,12 @@
+import {
+  ModelOptionLabel,
+  modelSearchText,
+} from "@/components/providers/ModelOptionLabel";
+import { ModelPresets } from "./ModelPresets";
+import { ModelPicker } from "./ModelPicker";
+import { modelCatalogCopy } from "@/messages/model-catalog";
 import { modelsStyles } from "@/styles/models";
 import { primitivesStyles } from "@/styles/primitives";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,14 +17,10 @@ import {
   isDuplicateModelTarget,
   type ModelCatalogs,
   type ModelCatalogState,
-  privacyModeLabel,
 } from "@/components/providers/model-selection";
 import { FrontSelect } from "@/components/ui/front-select";
 import { type ApplicationCopy, englishConversationCopy } from "@/messages";
-import {
-  type ProviderModelMetadata,
-  type ProviderProfile,
-} from "@cove/api-contract";
+import { type ProviderProfile } from "@cove/api-contract";
 import {
   Combobox,
   ComboboxInput,
@@ -28,45 +30,8 @@ import {
   PopoverButton,
   PopoverPanel,
 } from "@headlessui/react";
-import {
-  ChevronDown,
-  GitCompareArrows,
-  LoaderCircle,
-  Plus,
-  Search,
-  X,
-} from "lucide-react";
+import { ChevronDown, GitCompareArrows, Plus, Search, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
-
-function ModelOptionLabel({
-  modelId,
-  metadata,
-  copy,
-  showPrivacyMode = false,
-}: {
-  modelId: string;
-  metadata?: ProviderModelMetadata;
-  copy: ApplicationCopy;
-  showPrivacyMode?: boolean;
-}) {
-  const mode = showPrivacyMode ? metadata?.privacy_mode : undefined;
-  return (
-    <span className={modelsStyles.modelOption}>
-      <span className={modelsStyles.modelOption_id}>{modelId}</span>
-      {mode ? (
-        <Badge
-          className={cn(
-            modelsStyles.modelOption_badge,
-            `model-option__badge model-option__badge--${mode}`,
-          )}
-          data-privacy-mode={mode}
-        >
-          {privacyModeLabel(mode, copy)}
-        </Badge>
-      ) : null}
-    </span>
-  );
-}
 
 export function ModelSelector({
   profiles,
@@ -80,6 +45,7 @@ export function ModelSelector({
   onTargetModelChange,
   onAddModel,
   onRemoveModel,
+  onApplyModelSet,
   trailingAction,
   disabled = false,
   copy = englishConversationCopy,
@@ -95,6 +61,7 @@ export function ModelSelector({
   onTargetModelChange?: (targetIndex: number, modelId: string) => void;
   onAddModel?: (profile: ProviderProfile, modelId: string) => void;
   onRemoveModel?: (target: ActiveSelection) => void;
+  onApplyModelSet?: (targets: ActiveModelSet) => void;
   trailingAction?: ReactNode;
   disabled?: boolean;
   copy?: ApplicationCopy;
@@ -132,9 +99,6 @@ export function ModelSelector({
   const activeModelInvalid =
     Boolean(selectedProfile) &&
     (!selectedTarget?.modelId || selectedModelUnavailable);
-  const catalogsLoading = targets.some(
-    (target) => targetCatalogs[target.providerId]?.status === "loading",
-  );
   const modelPlaceholder =
     selectedCatalog.status === "loading"
       ? selectedTarget?.modelId || copy.loadingModels
@@ -157,7 +121,12 @@ export function ModelSelector({
       profile,
       models: normalizedAddModelQuery
         ? models.filter((modelId) =>
-            modelId.toLocaleLowerCase().includes(normalizedAddModelQuery),
+            modelSearchText(
+              modelId,
+              targetCatalogs[profile.id]?.metadata?.[modelId],
+            )
+              .toLocaleLowerCase()
+              .includes(normalizedAddModelQuery),
           )
         : models,
     }))
@@ -191,55 +160,25 @@ export function ModelSelector({
               disabled || targets.length > 1 || configuredProfiles.length === 0
             }
           />
-          <FrontSelect
+          <ModelPicker
             ariaLabel={copy.model}
-            searchable
-            searchPlaceholder={copy.searchModels}
-            emptyText={copy.noMatchingModels}
-            label={
-              <span className={modelsStyles.modelSelector_fieldLabel}>
-                <span>{copy.model}</span>
-                {catalogsLoading ? (
-                  <span
-                    role="status"
-                    title={copy.loadingModels}
-                    className={modelsStyles.modelSelector_fieldState}
-                  >
-                    <LoaderCircle
-                      aria-hidden="true"
-                      size={11}
-                      strokeWidth={2}
-                    />
-                    <span className="sr-only">{copy.loadingModels}</span>
-                  </span>
-                ) : null}
-              </span>
-            }
+            label={copy.model}
+            copy={copy}
+            providerId={selectedTarget?.providerId ?? ""}
+            models={selectedCatalog.models}
+            metadata={selectedCatalog.metadata}
+            showPrivacyMode={selectedProfile?.kind === "nearai"}
             placeholder={modelPlaceholder}
-            options={selectedCatalog.models.map((model) => ({
-              value: model,
-              keywords: model,
-              label: (
-                <ModelOptionLabel
-                  copy={copy}
-                  modelId={model}
-                  metadata={selectedCatalog.metadata?.[model]}
-                  showPrivacyMode={
-                    configuredProfiles.find(
-                      (profile) => profile.id === selectedTarget?.providerId,
-                    )?.kind === "nearai"
-                  }
-                />
-              ),
-              disabled: selectedTarget
-                ? isDuplicateModelTarget(
-                    targets,
-                    { providerId: selectedTarget.providerId, modelId: model },
-                    selectedTargetIndex,
-                  )
-                : false,
-            }))}
             value={selectedTarget?.modelId ?? ""}
+            unavailableModels={selectedCatalog.models.filter(
+              (model) =>
+                selectedTarget &&
+                isDuplicateModelTarget(
+                  targets,
+                  { providerId: selectedTarget.providerId, modelId: model },
+                  selectedTargetIndex,
+                ),
+            )}
             onValueChange={(modelId) =>
               handleTargetChange(selectedTargetIndex, modelId)
             }
@@ -247,7 +186,7 @@ export function ModelSelector({
               disabled ||
               !selectedTarget ||
               selectedCatalog.status !== "ready" ||
-              selectedCatalog.models.length === 0
+              !selectedCatalog.models.length
             }
           />
         </div>
@@ -305,43 +244,35 @@ export function ModelSelector({
                     <span className={modelsStyles.modelSelector_chipProvider}>
                       {profileName}
                     </span>
-                    <FrontSelect
+                    <ModelPicker
                       ariaLabel={`${copy.model}: ${profileName} ${target.modelId}`}
-                      searchable
-                      searchPlaceholder={copy.searchModels}
-                      emptyText={copy.noMatchingModels}
+                      copy={copy}
+                      providerId={target.providerId}
+                      models={chipCatalog.models}
+                      metadata={chipCatalog.metadata}
+                      showPrivacyMode={
+                        configuredProfiles.find(
+                          (profile) => profile.id === target.providerId,
+                        )?.kind === "nearai"
+                      }
                       className={modelsStyles.modelSelector_chipModelSelect}
-                      options={chipCatalog.models.map((model) => ({
-                        value: model,
-                        keywords: model,
-                        label: (
-                          <ModelOptionLabel
-                            copy={copy}
-                            modelId={model}
-                            metadata={chipCatalog.metadata?.[model]}
-                            showPrivacyMode={
-                              configuredProfiles.find(
-                                (profile) => profile.id === target.providerId,
-                              )?.kind === "nearai"
-                            }
-                          />
-                        ),
-                        disabled: isDuplicateModelTarget(
-                          targets,
-                          { providerId: target.providerId, modelId: model },
-                          targetIndex,
-                        ),
-                      }))}
                       placeholder={copy.selectModel}
                       value={target.modelId}
                       onValueChange={(modelId) => {
                         setEditingTargetIndex(targetIndex);
                         handleTargetChange(targetIndex, modelId);
                       }}
+                      unavailableModels={chipCatalog.models.filter((model) =>
+                        isDuplicateModelTarget(
+                          targets,
+                          { providerId: target.providerId, modelId: model },
+                          targetIndex,
+                        ),
+                      )}
                       disabled={
                         disabled ||
                         chipCatalog.status !== "ready" ||
-                        chipCatalog.models.length === 0
+                        !chipCatalog.models.length
                       }
                     />
                     {onRemoveModel && targets.length > 1 ? (
@@ -429,6 +360,9 @@ export function ModelSelector({
                           static
                           className={modelsStyles.modelSelector_addOptions}
                         >
+                          <p className="px-3 py-2 text-[10px] text-muted-foreground">
+                            {modelCatalogCopy.catalogNotice}
+                          </p>
                           {filteredAddableProfiles.length > 0 ? (
                             filteredAddableProfiles.map(
                               ({ profile, models }) => (
@@ -486,6 +420,15 @@ export function ModelSelector({
                 </PopoverPanel>
               </Popover>
             ) : null}
+            {onApplyModelSet && (
+              <ModelPresets
+                targets={targets}
+                catalogs={targetCatalogs}
+                profiles={configuredProfiles}
+                disabled={disabled}
+                onApply={onApplyModelSet}
+              />
+            )}
           </PopoverPanel>
         </Popover>
         {trailingAction}

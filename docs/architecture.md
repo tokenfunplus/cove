@@ -43,9 +43,15 @@ React Chat Surface
 
 Unit/component tests are colocated with their owning modules. `pages/ChatPage.interactions.test.tsx` covers the composed workspace, `test` contains synthetic fixtures, and `e2e` owns the production browser acceptance harness. Test modules and fixtures are outside the production import graph.
 
+Assistant Markdown protects math delimiters before parsing emphasis and uses locally bundled KaTeX and fonts for presentation. Formula source remains unchanged in storage, copying, and exports. See [local math rendering](adr/0036-render-local-math-in-assistant-markdown.md) for delimiter, fallback, and rendering limits.
+
 `components/ui` owns editable shadcn/Radix primitives. Tailwind recipes in `styles` express domain presentation through semantic variables in `theme/tokens.css`. Component-specific CSS is avoided; CSS retains theme registration, base rules, and shared motion. See [presentation and skin decision](adr/0020-use-tailwind-recipes-and-shadcn-primitives.md).
 
+Model selection preferences contain bounded browser-local identifiers and names; manual cost rates are also browser-local. Model filter popovers and option menus use shared Radix primitives, including nested focus and Escape behavior in Provider settings. Conversation reading anchors and updated-answer counts remain transient presentation state. See [workspace experience and edited-prompt branches](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
+
 See [frontend organization decision](adr/0019-separate-frontend-presentation-and-api-hooks.md) and the [refactor acceptance baseline](frontend-refactor.md).
+
+`hooks/chat/use-answer-tools` composes the existing command, stream, and private-inference controllers for a separate side Conversation. The main workspace and answer tools share the one-active-Batch constraint and cancellation-before-navigation/data-clear behavior. Working Drafts and undo history are window-local React state; only model revision requests/results enter ordinary SQLite history. `lib/chat/workbench` owns draft history, bounded line differences, and revision input construction. See [answer tools and Generation measurements](adr/0032-add-answer-tools-and-generation-measurements.md).
 
 ## Generation lifecycle
 
@@ -53,11 +59,17 @@ A submitted message creates one durable Generation Batch with one to four Target
 
 Every attempt captures its Provider Snapshot and generation configuration. Completed assistant text becomes Conversation History; failed and stopped attempts retain diagnostics without persisting incomplete assistant content. Restart recovery marks interrupted attempts as failed.
 
+Completed attempts may also retain observed Generation Metrics. Chat measures ordinary stream timing and preserves Provider-reported usage; private inference reports browser observations through its existing settlement command. Metrics are additive optional API data. Historical or missing measurements remain unavailable, and user-supplied pricing is a browser-local display preference.
+
+Provider-declared reasoning uses a separate stream/Message field and is excluded from later Selected Answer context. The frontend folds it at the end of streaming without modifying raw verification entities. Legacy explicitly tagged blocks retain a presentation fallback. See [structured reasoning](adr/0033-separate-provider-reasoning-from-answer-text.md). Provider adapters also normalize optional catalog details for model selection; locally bundled brand icons remain presentation only. See [model catalog presentation](adr/0034-show-provider-model-catalog-details-and-local-brand-icons.md).
+
 File chat saves original bytes, extracted source sections, and the augmented user input atomically with the Batch. `internal/documents` owns parsing and text formatting under Chat; persistence owns immutable snapshots and original downloads. The runnable service isolates PDF decoding in a bounded child process without initializing credentials or storage. Browser inference reads the same saved `input_content` used by ordinary Providers. Selected prior turns include that augmented input in later Context Snapshots. Draft previews remain local and ephemeral. See [source document snapshots](adr/0025-snapshot-local-source-documents-for-file-chat.md) for limits, context inspection, and citation semantics.
 
 Chat expires abandoned browser Generations after the inference timeout plus settlement grace. Slow SSE subscribers are disconnected without blocking Provider workers and can reconnect to reconcile persisted results. See [bounded lifetimes and event delivery](adr/0022-bound-browser-generation-lifetimes.md).
 
 Single-model turns select their completed answers automatically. Comparisons require the user to select one answer or skip the turn for later context. Later batches capture immutable Context Snapshots. Unselected answers remain local. Retries preserve original context, model targets, and any Private TEE requirement. The Chat Surface sends the selected target identities and its Private TEE requirements with a new turn. Chat checks them against one current catalog per Provider before saving the turn.
+
+Editing and resending a terminal user turn uses the existing submission command with `edit_of_batch_id`. Chat validates its source and selected active targets; persistence atomically copies the immutable context prefix and saved attachments into an independent Conversation before creating its new Batch. The returned Conversation ID owns ordinary streaming and browser inference. Source deletion cannot mutate the copy. See [edited-prompt branches](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
 ## Private inference boundary
 
