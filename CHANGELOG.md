@@ -2,7 +2,12 @@
 
 ## Unreleased
 
+## 0.1.0-beta.6 - 2026-11-19
+
 ### Fixed
+
+- Preserve terminal Stop and committed round cursors through storage failures, close shutdown/Pause admission races, and retain browser results accepted before expiry.
+- Load full browser verification evidence from checkpoints, guard stale inspection requests, protect pending intervention drafts, and preserve intervention replay beyond the history window.
 
 - Distinguish expired local browser authorization from Provider connection failures in setup, and show how to reopen an authorized session.
 - Include configured NearAI catalogs in Debate model seats and execute their turns through the existing browser verification transport, with exclusive claims, bounded waits, and explicit recovery.
