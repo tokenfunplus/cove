@@ -4,12 +4,80 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 )
+
+type delayedDebateClaimStore struct {
+	*persistence.SQLiteStore
+	delay    atomic.Bool
+	deadline time.Time
+}
+
+func (store *delayedDebateClaimStore) GetDebate(ctx context.Context, id string) (persistence.DebateSession, error) {
+	if store.delay.Swap(false) {
+		time.Sleep(max(0, time.Until(store.deadline)) + time.Millisecond)
+	}
+	return store.SQLiteStore.GetDebate(ctx, id)
+}
+
+func TestDebateBrowserClaimRechecksDeadlineAfterSessionRead(t *testing.T) {
+	ctx := context.Background()
+	service, sqlite, _ := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
+	store := &delayedDebateClaimStore{SQLiteStore: sqlite}
+	service.store = store
+	service.secureTimeout = 500 * time.Millisecond
+	session, err := service.StartDebate(ctx, debateInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return len(view.Turns) == 2 })
+	service.debateMu.Lock()
+	store.deadline = service.debate.browser[view.Turns[0].ID].deadline
+	service.debateMu.Unlock()
+	store.delay.Store(true)
+	if _, err := service.ClaimDebateBrowserTurn(ctx, session.ID, view.Turns[0].ID, "late-claim"); !errors.Is(err, ErrDebateState) {
+		t.Fatal("slow session read admitted an expired claim", err)
+	}
+	if store.delay.Load() {
+		t.Fatal("claim did not exercise the delayed session read")
+	}
+	waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+}
+
+func TestDebateVerificationFailureReleasesOtherUnclaimedOpenings(t *testing.T) {
+	ctx := context.Background()
+	service, store, _ := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
+	session, err := service.StartDebate(ctx, debateInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return len(view.Turns) == 2 })
+	turn := view.Turns[0]
+	if _, err := service.ClaimDebateBrowserTurn(ctx, session.ID, turn.ID, "failed-browser"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserResult{ClaimID: "failed-browser", Verification: persistence.GenerationVerification{Status: persistence.VerificationFailed, FailureCode: "response_verification_failed"}}); err != nil {
+		t.Fatal(err)
+	}
+	waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+	paused, err := store.ReadDebate(ctx, session.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paused.Session.Status != "paused" || paused.Session.TotalTurns != 0 {
+		t.Fatal("automatic pause retained active browser work")
+	}
+	for _, other := range paused.Turns {
+		if other.ID != turn.ID && other.ErrorCode != "paused" {
+			t.Fatal("unclaimed work waited for expiry after automatic pause")
+		}
+	}
+}
 
 func browserDebateFixture(t *testing.T, mode string) (*Service, *persistence.SQLiteStore, *debateTestProvider) {
 	t.Helper()
@@ -122,20 +190,31 @@ func TestDebateBrowserClaimsVerificationAndPartialOpeningRecovery(t *testing.T) 
 }
 
 func TestDebateBrowserAbsenceExpiresAndReleasesActiveWork(t *testing.T) {
-	service, _, upstream := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
+	service, store, upstream := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
 	service.secureTimeout = 30 * time.Millisecond
 	session, err := service.StartDebate(context.Background(), debateInput())
 	if err != nil {
 		t.Fatal(err)
 	}
-	view := waitDebate(t, service, session.ID, func(v persistence.DebateView) bool { return v.Session.Status == "paused" && !service.debateBusy() })
+	waitDebate(t, service, session.ID, func(v persistence.DebateView) bool { return v.Session.Status == "paused" && !service.debateBusy() })
+	view, err := store.ReadDebate(context.Background(), session.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(view.Turns) != 2 || view.Session.TotalTurns != 0 || upstream.calls() != 0 {
 		t.Fatal("abandoned browser retained active work or performed inference")
 	}
+	expired := 0
 	for _, turn := range view.Turns {
-		if turn.ErrorCode != "browser_unavailable" || !strings.Contains(turn.ErrorMessage, "resume") {
+		if turn.ErrorCode == "browser_unavailable" {
+			expired++
+		}
+		if (turn.ErrorCode != "browser_unavailable" && turn.ErrorCode != "paused") || !strings.Contains(strings.ToLower(turn.ErrorMessage), "resume") {
 			t.Fatal("expiry did not explain recovery")
 		}
+	}
+	if expired == 0 {
+		t.Fatal("fixture did not observe browser expiry")
 	}
 }
 

@@ -258,12 +258,7 @@ func (service *Service) ControlDebate(ctx context.Context, id, action string) (p
 	}
 	if run != nil && run.id == id {
 		if action == "pause" {
-			for _, task := range run.browser {
-				if task.claimID == "" && !task.expired {
-					task.expired = true
-					close(task.paused)
-				}
-			}
+			pauseUnclaimedDebateBrowserTurns(run)
 		}
 		if action == "stop" {
 			run.cancel()
@@ -786,6 +781,9 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 	if err = store.FinishDebateTurn(context.Background(), turn, session); err != nil {
 		service.pauseDebateOnStorageErrorLocked(run)
 	}
+	if session.Status == "pausing" {
+		pauseUnclaimedDebateBrowserTurns(run)
+	}
 	delete(run.turns, turn.ID)
 	service.notifyDebateLocked(run.id)
 }
@@ -807,6 +805,7 @@ func (service *Service) pauseDebateForProvider(run *debateRun, reason error) {
 	if err := store.SaveDebate(context.Background(), session); err != nil {
 		service.pauseDebateOnStorageErrorLocked(run)
 	}
+	pauseUnclaimedDebateBrowserTurns(run)
 	service.notifyDebateLocked(run.id)
 }
 

@@ -68,9 +68,6 @@ func (service *Service) ClaimDebateBrowserTurn(ctx context.Context, id, turnID, 
 	if err != nil || task != nil && (task.submitted || task.claimID != "" && task.claimID != claimID) {
 		return DebateBrowserContext{}, ErrDebateState
 	}
-	if task.expired || !time.Now().Before(task.deadline) {
-		return DebateBrowserContext{}, ErrDebateState
-	}
 	if task.claimID == "" {
 		store, _ := service.debateStore()
 		session, err := store.GetDebate(ctx, id)
@@ -81,9 +78,22 @@ func (service *Service) ClaimDebateBrowserTurn(ctx context.Context, id, turnID, 
 			return DebateBrowserContext{}, ErrDebateState
 		}
 	}
+	if task.expired || !time.Now().Before(task.deadline) {
+		return DebateBrowserContext{}, ErrDebateState
+	}
 	task.claimID = claimID
 	turn := run.turns[turnID]
 	return DebateBrowserContext{Turn: turn, Messages: turn.Context}, nil
+}
+
+// Caller holds debateMu. Automatic and explicit pauses share this admission boundary.
+func pauseUnclaimedDebateBrowserTurns(run *debateRun) {
+	for _, task := range run.browser {
+		if task.claimID == "" && !task.expired {
+			task.expired = true
+			close(task.paused)
+		}
+	}
 }
 
 func debateBrowserPhase(phase string) int {
