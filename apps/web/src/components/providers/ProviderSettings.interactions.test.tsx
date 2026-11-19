@@ -66,3 +66,25 @@ test("switching a tested NearAI draft to OpenAI-compatible clears its identity a
   expect(screen.queryAllByText("Connection verified")).toHaveLength(0);
   expect(probe).toHaveBeenCalledTimes(1);
 });
+
+test.each([false, true])("saving settings without a new key does not invent a successful connection test (previous failure: %s)", async (failed) => {
+  const { profile } = createWorkspaceFixture();
+  const save = vi.fn().mockResolvedValue(profile);
+  const probe = vi.fn().mockRejectedValue(new LocalServiceError({
+    error: { code: "authentication_failed", message: "Rejected", details: null, request_id: "fixture" },
+  }));
+  render(<ProviderSettings profiles={[profile]} onSave={save} onTest={probe} onDelete={async () => {}} onDeleteKey={async () => {}} />);
+  const user = userEvent.setup();
+  if (failed) {
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+    await screen.findByText("The Provider rejected the API key");
+  }
+  await user.type(screen.getByLabelText("Display name"), " renamed");
+  await user.click(screen.getByRole("button", { name: "Save Provider" }));
+  await screen.findByText("Provider saved");
+  expect(screen.queryByText("Connection verified")).toBeNull();
+  expect(screen.getByText(failed ? "Provider connection failed" : "Key configured")).toBeTruthy();
+  expect(save).toHaveBeenCalledWith(expect.objectContaining({ id: profile.id, name: profile.name + " renamed" }));
+  expect(save.mock.calls[0][0].secret).toBeUndefined();
+  expect(probe).toHaveBeenCalledTimes(failed ? 1 : 0);
+});

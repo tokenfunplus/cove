@@ -18,6 +18,10 @@ Open **Settings → Provider settings** to configure a connection. Enter a key, 
 
 The NearAI preset currently uses `https://cloud-stg-api.near.ai`. Model availability and verification support depend on its service and catalog. See the [privacy model](privacy.md) for the distinction between transport, execution, and verification claims.
 
+Provider settings initially open the first Provider in the current Active Model Set, falling back to the first saved Provider when none is selected. Testing or saving another Provider does not switch the Active Model Set. Profiles with similar names retain separate destinations and keys; a successful test of a production connection does not validate a staging connection.
+
+NearAI connection tests and new-key saves first use its authenticated `POST /v1/check_api_key` endpoint. Its public model catalog can return successfully even for a rejected key, so catalog discovery alone does not verify a connection. Selecting a model also retains the existing ordinary chat preflight. These checks do not establish TEE verification; the browser separately verifies the Gateway, model evidence, and response. Saving settings without a replacement key preserves the previous connection-test status.
+
 ### Active Model Set
 
 Provider Profiles describe connections; model selection belongs to the Active Model Set. The setup form's model choice initializes one Provider/model target only when no targets are selected. Saving Provider edits does not replace an existing set. After setup, use the workspace's model controls to change targets.

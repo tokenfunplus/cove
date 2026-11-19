@@ -50,6 +50,7 @@ vi.mock("@/api", async (importOriginal) => {
     getConversation: vi.fn(),
     getProviderProfiles: vi.fn(),
     getProviderCatalog: vi.fn(),
+    testProviderConnection: vi.fn(),
     getSettings: vi.fn(),
     createGenerationBatch: vi.fn(),
     subscribeGenerationBatch: vi.fn(),
@@ -1086,6 +1087,44 @@ test("clearing history also removes cached conversation content", async () => {
         conversationKeys.detail(fixture.conversation.id),
       ),
     ).toBeUndefined(),
+  );
+});
+
+test("Provider settings test the active chat connection when a similarly named connection comes first", async () => {
+  configureNearAITarget(0, "private_tee");
+  const production = {
+    ...fixture.profile,
+    name: "nearai",
+    endpoint: "https://cloud-api.near.ai",
+  };
+  const staging = {
+    ...fixture.profile,
+    id: "nearai",
+    kind: "nearai" as const,
+    name: "NearAI",
+    endpoint: "https://cloud-stg-api.near.ai",
+  };
+  vi.mocked(transport.getProviderProfiles).mockResolvedValue([
+    production,
+    staging,
+  ]);
+  vi.mocked(transport.testProviderConnection).mockResolvedValue({
+    models: fixture.models,
+  });
+
+  const { user } = await openWorkspace();
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  await user.click(screen.getByRole("tab", { name: /Provider settings/ }));
+  expect(
+    (screen.getByRole("textbox", { name: "Endpoint" }) as HTMLInputElement).value,
+  ).toBe(staging.endpoint);
+  await user.click(screen.getByRole("button", { name: "Test connection" }));
+  await waitFor(() =>
+    expect(vi.mocked(transport.testProviderConnection).mock.calls[0]?.[0]).toMatchObject({
+      id: staging.id,
+      kind: "nearai",
+      endpoint: staging.endpoint,
+    }),
   );
 });
 

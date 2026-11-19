@@ -149,6 +149,7 @@ export function WorkspaceOverlays({ workspace }: Props) {
             id="provider-settings"
             copy={copy}
             profiles={providerProfiles}
+            initialProviderId={activeSelection.providerId}
             onSave={handleSaveProvider}
             onTest={handleTestProvider}
             onDelete={handleDeleteProvider}
