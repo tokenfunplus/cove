@@ -35,6 +35,8 @@ jobs:
         run: |
           browser_binary="$(command -v google-chrome || command -v chromium)"
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" make test-web-browser
+          dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=debate-focus COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/debate-focus node apps/web/e2e/acceptance.mjs
+          dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=history COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/history node apps/web/e2e/acceptance.mjs
       - name: Upload browser acceptance evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

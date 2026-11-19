@@ -98,6 +98,16 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("GET /api/conversations", browserSession(http.HandlerFunc(server.listConversations)))
 	mux.Handle("GET /api/conversations/search", browserSession(http.HandlerFunc(server.searchConversations)))
 	mux.Handle("POST /api/conversations", browserSession(http.HandlerFunc(server.createConversation)))
+	mux.Handle("POST /api/debates", browserSession(http.HandlerFunc(server.createDebate)))
+	mux.Handle("GET /api/debates/{id}", browserSession(http.HandlerFunc(server.getDebate)))
+	mux.Handle("GET /api/debates/{id}/turns/{turn}", browserSession(http.HandlerFunc(server.getDebateTurn)))
+	mux.Handle("POST /api/debates/{id}/turns/{turn}/browser/claim", browserSession(http.HandlerFunc(server.claimDebateBrowserTurn)))
+	mux.Handle("POST /api/debates/{id}/turns/{turn}/browser/progress", browserSession(http.HandlerFunc(server.progressDebateBrowserTurn)))
+	mux.Handle("POST /api/debates/{id}/turns/{turn}/browser/settle", browserSession(http.HandlerFunc(server.settleDebateBrowserTurn)))
+	mux.Handle("GET /api/debates/{id}/events", browserSession(http.HandlerFunc(server.debateEvents)))
+	mux.Handle("POST /api/debates/{id}/control", browserSession(http.HandlerFunc(server.controlDebate)))
+	mux.Handle("PATCH /api/debates/{id}/rules", browserSession(http.HandlerFunc(server.updateDebateRules)))
+	mux.Handle("POST /api/debates/{id}/interventions", browserSession(http.HandlerFunc(server.addDebateIntervention)))
 	mux.Handle("GET /api/settings", browserSession(http.HandlerFunc(server.getSettings)))
 	mux.Handle("PATCH /api/settings", browserSession(http.HandlerFunc(server.updateSettings)))
 	mux.Handle("GET /api/conversations/{id}", browserSession(http.HandlerFunc(server.getConversation)))
@@ -341,7 +351,30 @@ func (server *Server) searchConversations(writer http.ResponseWriter, request *h
 		writeError(writer, http.StatusInternalServerError, "internal_error", "Local search is unavailable.")
 		return
 	}
-	results, err := server.chat.SearchConversations(request.Context(), query, archived)
+	filter := persistence.ConversationSearchFilter{Kind: request.URL.Query().Get("kind")}
+	if filter.Kind != "" && filter.Kind != "all" && filter.Kind != "chat" && filter.Kind != "debate" {
+		writeError(writer, http.StatusBadRequest, "validation", "Choose a valid conversation type.")
+		return
+	}
+	if value := request.URL.Query().Get("updated_after"); value != "" {
+		cutoff, parseErr := time.Parse(time.RFC3339Nano, value)
+		if parseErr != nil || cutoff.Year() < 1678 || cutoff.Year() > 2261 {
+			writeError(writer, http.StatusBadRequest, "validation", "The activity cutoff must be a valid timestamp.")
+			return
+		}
+		filter.UpdatedAfter = &cutoff
+	}
+	var results []persistence.ConversationSearchResult
+	if filter.Kind == "chat" || filter.Kind == "debate" || filter.UpdatedAfter != nil {
+		service, ok := server.chat.(persistence.FilteredConversationSearcher)
+		if !ok {
+			writeError(writer, http.StatusServiceUnavailable, "service_unavailable", "Filtered local history is unavailable.")
+			return
+		}
+		results, err = service.SearchFilteredConversations(request.Context(), query, archived, filter)
+	} else {
+		results, err = server.chat.SearchConversations(request.Context(), query, archived)
+	}
 	if err != nil {
 		writeError(writer, http.StatusInternalServerError, "internal_error", "Local search is unavailable. Try a more specific phrase.")
 		return
@@ -1018,6 +1051,8 @@ func writeConversationError(writer http.ResponseWriter, err error) {
 
 func writeGenerationError(writer http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, chat.ErrDebateConversation):
+		writeError(writer, http.StatusConflict, "debate_conversation", "Use the debate controls for this conversation.")
 	case errors.Is(err, documents.ErrInvalidDocument), errors.Is(err, documents.ErrContextLimit):
 		writeError(writer, http.StatusBadRequest, "invalid_attachment", err.Error())
 	case errors.Is(err, sql.ErrNoRows):

@@ -27,6 +27,7 @@ import {
 import { useEffect, useRef } from "react";
 
 export function WorkspaceHeader({
+	debateMode = false,
   focusMode = false,
   onEnterFocus,
   onExitFocus,
@@ -56,6 +57,7 @@ export function WorkspaceHeader({
   disabled = false,
   copy = englishConversationCopy,
 }: {
+	debateMode?: boolean;
   focusMode?: boolean;
   onEnterFocus?: () => void;
   onExitFocus?: () => void;
@@ -121,24 +123,24 @@ export function WorkspaceHeader({
       <div className={focusMode ? workspaceStyles.focusIdentity : workspaceStyles.workspace_headerIdentity}>
         {focusMode && <span className={workspaceStyles.focusBadge}>{copy.focusMode}</span>}
         <div className={cn(workspaceStyles.masthead_eyebrow, focusMode && "hidden")} hidden={focusMode}>
-          <span>{copy.conversationSection}</span>
+          <span>{debateMode ? "Debate workspace" : copy.conversationSection}</span>
         </div>
         <div className={focusMode ? workspaceStyles.focusTitle : workspaceStyles.masthead_title} title={title}>
           {title ?? copy.chatSurface}
         </div>
-        {focusMode && activeModelSet.length > 0 && (
+        {focusMode && !debateMode && activeModelSet.length > 0 && (
           <span className={workspaceStyles.focusModel} title={activeModelSet.map((target) => target.modelId).join(", ")}>
             {activeModelSet.length > 1 ? `${copy.modelComparison} · ${activeModelSet.length}` : activeModelId}
           </span>
         )}
       </div>
       <div
-        className={focusMode ? "hidden" : workspaceStyles.workspace_headerModel}
-        hidden={focusMode}
+        className={focusMode || debateMode ? "hidden" : workspaceStyles.workspace_headerModel}
+        hidden={focusMode || debateMode}
         data-workspace-model-controls="compact"
       >
         <ModelSelector
-          trailingAction={onEnterFocus ? (
+          trailingAction={onEnterFocus && !debateMode ? (
             <Button
               ref={enterFocusRef}
               type="button"
@@ -168,6 +170,20 @@ export function WorkspaceHeader({
         />
       </div>
       <div className={focusMode ? workspaceStyles.focusUtilities : workspaceStyles.workspace_headerUtilities}>
+        {debateMode && !focusMode && onEnterFocus && (
+          <Button
+            ref={enterFocusRef}
+            type="button"
+            variant="outline"
+            className={workspaceStyles.focusExit}
+            aria-label={copy.enterFocus}
+            title={copy.enterFocus}
+            onClick={onEnterFocus}
+          >
+            <Maximize aria-hidden="true" size={15} strokeWidth={1.8} />
+            {copy.focusMode}
+          </Button>
+        )}
         {onToggleTheme ? (
           <Button
             variant="outline"
@@ -210,7 +226,7 @@ export function WorkspaceHeader({
           />
           <span className={cn("workspace__status-label", focusMode && "sr-only")}>{copy[connection]}</span>
         </div>
-        {!focusMode && (onVerifyPrivateConnection || onOpenPrivateVerification) ? (
+        {!debateMode && !focusMode && (onVerifyPrivateConnection || onOpenPrivateVerification) ? (
           <Menu
             as="div"
             className={primitivesStyles.workspace_verificationMenu}
@@ -259,7 +275,7 @@ export function WorkspaceHeader({
             </MenuItems>
           </Menu>
         ) : null}
-        {onOpenPrivacyStatus ? (
+        {!debateMode && onOpenPrivacyStatus ? (
           <Button
             variant="outline"
             aria-label={copy.privacyStatus}

@@ -4,6 +4,8 @@ For a first run, follow the [quick start](../README.md#quick-start). Manage ever
 
 ## Provider Profiles
 
+New Provider setup defaults to OpenAI-compatible with an empty Display name and Endpoint. Choosing NearAI fills its fixed preset values. Switching back clears the draft name, endpoint, API key, model catalog, and connection-test result. Explicitly selected saved Provider Profiles retain their settings.
+
 Open **Settings → Provider settings** to configure a connection. Enter a key, click **Test connection** to load the model catalog, choose a model target for initial setup, then click **Save Provider**. Testing alone does not save the key or profile. Enter a Key again when changing a configured connection’s endpoint or authentication method. A saved Key is only used with its saved destination and authentication method. The NearAI preset uses a fixed staging endpoint; custom Providers use OpenAI-compatible APIs.
 
 | Field | Meaning |

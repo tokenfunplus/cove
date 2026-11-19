@@ -39,6 +39,8 @@ Startup rebuilds web assets before compiling the service and opens a fresh authe
 
 ## Why are models unavailable after granting Keychain access?
 
+If Provider setup reports that local browser access is no longer valid, reopen Chat from the Launcher and use the new tab. This can happen after a Local Service restart or Browser Session expiry. The local authorization error does not mean the Provider rejected your API key, and the failed local request is not automatically retried.
+
 Provider catalog errors do not automatically retry on browser focus or reconnect. Open **Settings → Provider settings** and use the explicit connection test after granting access. Check the endpoint, authentication method, Provider availability, and model catalog if the test still fails.
 
 If you entered a new key, choose a model target for initial setup and click **Save Provider** after testing; a connection test alone does not save it. Provider Profiles describe connections, while model targets belong to the Active Model Set. Setup initializes that target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; confirm or change its targets through the workspace's model controls.

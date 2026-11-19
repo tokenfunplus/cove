@@ -20,6 +20,16 @@ test("body search displays a bounded text excerpt without rendering its HTML", (
   expect(markup).not.toContain("<script>");
 });
 
+test("history status labels distinguish Debate states without changing ordinary Chat labels", () => {
+  const conversations: Conversation[] = ["running", "pausing", "paused", "stopped"].map((status, index) => ({ id: status, title: `Debate ${index}`, debate_id: status, debate_status: status as Conversation["debate_status"], debate_round: index + 1, created_at: "2026-11-19T00:00:00Z", updated_at: "2026-11-19T00:00:00Z" }));
+  const markup = renderToStaticMarkup(<ConversationList conversations={conversations} selectedId={undefined} onSelect={() => {}} />);
+  expect(markup).toContain("Running · Round 1");
+  expect(markup).toContain("Pausing · Round 2");
+  expect(markup).toContain("Paused · Round 3");
+  expect(markup).toContain("Stopped · Round 4");
+  expect(markup).toContain('aria-label="Filter history"');
+});
+
 test("conversation workspace shows an empty local history state", () => {
   const markup = renderToStaticMarkup(
     <ConversationList

@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 
 import * as transport from "@/api";
+import * as debateApi from "@/api/debates";
+import { runDebateBrowserTurn } from "@/lib/inference/debate-browser-turn";
+import { defaultDebateRules } from "@/components/debate/DebateSetupDialog";
+import { historyFiltersStorageKey, historyQueryFilter } from "@/components/conversations/history-filters";
 import { conversationKeys } from "@/api/queryKeys";
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 import { App } from "@/App";
@@ -10,7 +14,7 @@ import {
   createBatchEventFeed,
   createWorkspaceFixture,
 } from "@/test/workspace-fixture";
-import type { Generation, ProviderModelPrivacyMode } from "@cove/api-contract";
+import type { DebateView, Generation, ProviderModelPrivacyMode } from "@cove/api-contract";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
@@ -25,6 +29,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const privateInference = vi.hoisted(() => ({ generate: vi.fn() }));
+vi.mock("@/api/debates", () => ({ getDebate: vi.fn(), createDebate: vi.fn(), controlDebate: vi.fn(), updateDebateRules: vi.fn(), addDebateIntervention: vi.fn(), watchDebate: vi.fn(), getDebateExport: vi.fn() }));
+vi.mock("@/lib/inference/debate-browser-turn", () => ({ runDebateBrowserTurn: vi.fn() }));
 
 vi.mock("@/lib/inference/secure-inference", () => ({
   createSecureInferenceTransport: () => ({
@@ -68,9 +74,16 @@ vi.mock("@/api", async (importOriginal) => {
 let fixture: ReturnType<typeof createWorkspaceFixture>;
 let feed: ReturnType<typeof createBatchEventFeed>;
 let queryClient: QueryClient;
+const historyBrowserMethods: string[] = [];
 
 beforeEach(() => {
   vi.resetAllMocks();
+  window.localStorage.removeItem(historyFiltersStorageKey);
+  for (const name of ["hasPointerCapture", "setPointerCapture", "releasePointerCapture", "scrollIntoView"]) {
+    if (Reflect.get(Element.prototype, name) !== undefined) continue;
+    Object.defineProperty(Element.prototype, name, { configurable: true, value: name === "hasPointerCapture" ? () => false : () => {} });
+    historyBrowserMethods.push(name);
+  }
   vi.stubGlobal(
     "matchMedia",
     vi.fn().mockImplementation((media: string) => ({
@@ -108,6 +121,8 @@ afterEach(() => {
   feed.close();
   queryClient.clear();
   vi.unstubAllGlobals();
+  window.localStorage.removeItem(historyFiltersStorageKey);
+  for (const name of historyBrowserMethods.splice(0)) Reflect.deleteProperty(Element.prototype, name);
 });
 
 function configureWorkspace(targetCount = 1) {
@@ -401,6 +416,47 @@ test.each(["filter", "selected-archive"])("empty-draft %s navigation blocks edit
   expect((screen.getByRole("textbox", { name: "Send message" }) as HTMLTextAreaElement).disabled).toBe(false);
 });
 
+test("history filters compose with local search and preserve the open conversation and draft", async () => {
+  fixture.secondConversation.debate_id = fixture.secondConversation.id;
+  fixture.secondConversation.debate_status = "paused";
+  fixture.secondConversation.debate_round = 3;
+  fixture.secondConversation.updated_at = new Date().toISOString();
+  vi.mocked(transport.searchConversations).mockResolvedValue([{ ...fixture.secondConversation, excerpt: "needle in the matching history", role: "assistant" }]);
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Keep this draft while filtering.");
+  await user.click(screen.getByRole("button", { name: "Filter history" }));
+  await user.click(screen.getByRole("combobox", { name: "Conversation type" }));
+  await user.click(await screen.findByRole("option", { name: "Debate" }));
+  await user.click(screen.getByRole("combobox", { name: "Last activity" }));
+  await user.click(await screen.findByRole("option", { name: "Last 7 days" }));
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  const navigation = screen.getByRole("navigation", { name: "Chats" });
+  expect(within(navigation).queryByText("First chat", { exact: true })).toBeNull();
+  expect(within(navigation).getByText("Paused · Round 3")).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Send message" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft while filtering.");
+  await user.type(screen.getByRole("textbox", { name: "Search conversations" }), "needle");
+  await screen.findByText(/needle in the matching history/);
+  expect(transport.searchConversations).toHaveBeenCalledWith("needle", false, expect.any(AbortSignal), historyQueryFilter({ activity: "7d", kind: "debate" }));
+  expect(JSON.parse(window.localStorage.getItem(historyFiltersStorageKey)!)).toEqual({ activity: "7d", kind: "debate" });
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+  expect(transport.getConversation).not.toHaveBeenCalledWith(fixture.secondConversation.id);
+});
+
+test("saved history filters restore and an empty filtered list offers a direct reset", async () => {
+  window.localStorage.setItem(historyFiltersStorageKey, JSON.stringify({ activity: "30d", kind: "debate" }));
+  const { composer, user } = await openWorkspace();
+  expect(await screen.findByText("No conversations match these filters.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Clear activity filter" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Clear type filter" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Reset filters" }));
+  expect(screen.getByRole("navigation", { name: "Chats" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Clear type filter" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Send message" })).toBe(composer);
+  expect(JSON.parse(window.localStorage.getItem(historyFiltersStorageKey)!)).toEqual({ activity: "all", kind: "all" });
+});
+
 test("an empty draft switches immediately, and body search opens its matching conversation", async () => {
   vi.mocked(transport.searchConversations).mockResolvedValue([
     { ...fixture.secondConversation, message_id: "matching-message", role: "assistant", excerpt: "SQLite migration checklist" },
@@ -476,6 +532,51 @@ test("an unchanged search refreshes when a streamed answer is saved", async () =
   await screen.findByRole("button", { name: /First chat.*Answer from model-one/ });
   expect((search as HTMLInputElement).value).toBe("Answer from model-one");
   expect(transport.createGenerationBatch).toHaveBeenCalledTimes(1);
+});
+
+test("Debate Focus preserves a browser turn and intervention draft while restoring navigation and dialog focus", async () => {
+  configureWorkspace(2);
+  fixture.conversation.debate_id = fixture.conversation.id;
+  const view: DebateView = {
+    session: { id: fixture.conversation.id, client_request_id: "debate-request", topic: "Should a CTO keep writing code?", seats: fixture.settings.active_model_set.map((seat, index) => ({ ...seat, role: index ? "Challenger" : "Advocate" })), rules: defaultDebateRules, status: "running", round: 2, position: 0, opening_done: [true, true], total_turns: 2, browser_required: true, created_at: fixture.conversation.created_at, updated_at: fixture.conversation.updated_at },
+    turns: [{ id: "browser-turn", debate_id: fixture.conversation.id, sequence: 3, round: 2, seat: 0, role: "Advocate", rule_version: 1, execution: "browser", state: "streaming", body: "A perspective still being verified.", snapshot: fixture.pendingBatch.targets[0]!.generation.snapshot, configuration: fixture.pendingBatch.targets[0]!.generation.configuration_snapshot, context_ids: [], created_at: fixture.conversation.created_at, updated_at: fixture.conversation.updated_at }],
+    interventions: [], has_more: false,
+  };
+  vi.mocked(debateApi.getDebate).mockResolvedValue(view);
+  vi.mocked(debateApi.watchDebate).mockResolvedValue(undefined);
+  vi.mocked(runDebateBrowserTurn).mockImplementation(async (_commands, signal) => {
+    await new Promise<void>(resolve => signal.addEventListener("abort", () => resolve(), { once: true }));
+  });
+  render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+  const composer = await screen.findByRole("textbox", { name: "Your intervention" });
+  const user = userEvent.setup();
+  await waitFor(() => expect(runDebateBrowserTurn).toHaveBeenCalledTimes(1));
+  const browserSignal = vi.mocked(runDebateBrowserTurn).mock.calls[0]![1];
+  await user.type(composer, "Consider a team of thirty engineers.");
+  const enter = screen.getByRole("button", { name: "Enter Focus mode" });
+  await user.click(enter);
+  expect(screen.getByRole("main").getAttribute("data-focus-mode")).toBe("true");
+  expect(document.getElementById("conversation-sidebar")?.hidden).toBe(true);
+  expect(screen.getByRole("list", { name: "Debate participants" }).querySelectorAll('[data-active-speaker="true"]').length).toBe(1);
+  expect(screen.queryByRole("complementary", { name: "Live brief" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "New debate" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Live brief" }));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("main").getAttribute("data-focus-mode")).toBe("true");
+  await user.keyboard("{Escape}");
+  expect(screen.getByRole("main").hasAttribute("data-focus-mode")).toBe(false);
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Enter Focus mode" }));
+  expect(document.getElementById("conversation-sidebar")?.hidden).toBe(false);
+  expect(screen.getByRole("textbox", { name: "Your intervention" })).toBe(composer);
+  expect((composer as HTMLTextAreaElement).value).toBe("Consider a team of thirty engineers.");
+  expect(browserSignal.aborted).toBe(false);
+  expect(runDebateBrowserTurn).toHaveBeenCalledTimes(1);
+  expect(debateApi.controlDebate).not.toHaveBeenCalled();
+  expect(debateApi.createDebate).not.toHaveBeenCalled();
 });
 
 test("Focus mode preserves the draft and restores the previous sidebar and keyboard focus", async () => {

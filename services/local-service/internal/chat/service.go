@@ -107,6 +107,9 @@ type Chat interface {
 }
 
 func (service *Service) HasActiveGenerationBatch() bool {
+	if service.debateBusy() {
+		return true
+	}
 	service.activeMu.Lock()
 	defer service.activeMu.Unlock()
 	return len(service.active) > 0 || len(service.secureActive) > 0
@@ -136,6 +139,10 @@ type GenerationEvent struct {
 }
 
 type Service struct {
+	debateMu       sync.Mutex
+	debate         *debateRun
+	debateWatchers map[string]map[chan struct{}]bool
+	debateDelay    time.Duration
 	documentParser documents.Parser
 	store          persistence.ChatStore
 	profiles       ProviderSource
@@ -151,6 +158,8 @@ type Service struct {
 	secureTimeout  time.Duration
 	timeout        time.Duration
 	settings       persistence.SettingsStore
+
+	debateAdmissionClosed bool // guarded by startMu
 }
 
 type activeGeneration struct {
@@ -166,7 +175,8 @@ func NewService(store persistence.ChatStore, profiles ProviderSource, upstream p
 
 func NewServiceWithTimeout(store persistence.ChatStore, profiles ProviderSource, upstream provider.Provider, timeout time.Duration) *Service {
 	return &Service{
-		store: store, profiles: profiles, provider: upstream,
+		debateDelay: time.Second,
+		store:       store, profiles: profiles, provider: upstream,
 		hub: newEventHub(), batchHub: newBatchEventHub(),
 		active: make(map[string]*activeGeneration), secureActive: make(map[string]*time.Timer),
 		timeout: timeout, secureTimeout: timeout + 30*time.Second,
@@ -180,6 +190,9 @@ func NewServiceWithSettings(store persistence.ChatStore, profiles ProviderSource
 }
 
 func (service *Service) StartGeneration(ctx context.Context, input SendInput) (GenerationStart, error) {
+	if err := service.guardDebateConversation(ctx, input.ConversationID); err != nil {
+		return GenerationStart{}, err
+	}
 	if service.store == nil || service.profiles == nil || service.provider == nil {
 		return GenerationStart{}, errors.New("chat service dependencies are required")
 	}
@@ -253,6 +266,9 @@ func (service *Service) StartGeneration(ctx context.Context, input SendInput) (G
 // next send as busy after the previous answer is already complete.
 // Callers hold startMu, so another send cannot start while this check waits.
 func (service *Service) generationInProgress(ctx context.Context) (bool, error) {
+	if service.debateBusy() {
+		return true, nil
+	}
 	service.activeMu.Lock()
 	workers := make(map[string]*activeGeneration, len(service.active)+len(service.secureActive))
 	for id, active := range service.active {
@@ -318,6 +334,16 @@ func (service *Service) SearchConversations(ctx context.Context, query string, a
 	return service.store.SearchConversations(ctx, query, archived)
 }
 
+func (service *Service) SearchFilteredConversations(ctx context.Context, query string, archived bool, filter persistence.ConversationSearchFilter) ([]persistence.ConversationSearchResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	store, ok := service.store.(persistence.FilteredConversationSearcher)
+	if !ok {
+		return nil, errors.New("filtered local history is unavailable")
+	}
+	return store.SearchFilteredConversations(ctx, query, archived, filter)
+}
+
 func (service *Service) RenameConversation(ctx context.Context, conversationID, title string) error {
 	return service.store.RenameConversation(ctx, conversationID, title)
 }
@@ -333,6 +359,9 @@ func (service *Service) SetConversationArchived(ctx context.Context, conversatio
 func (service *Service) DeleteConversation(ctx context.Context, conversationID string) error {
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
+	if err := service.stopDebateForDataChange(ctx, conversationID); err != nil {
+		return err
+	}
 	service.activeMu.Lock()
 	ids := make([]string, 0, len(service.active)+len(service.secureActive))
 	for id := range service.active {
@@ -363,6 +392,9 @@ func (service *Service) ClearChatData(ctx context.Context) error {
 	}
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
+	if err := service.stopDebateForDataChange(ctx, ""); err != nil {
+		return err
+	}
 	service.activeMu.Lock()
 	activeGenerationIDs := make([]string, 0, len(service.active)+len(service.secureActive))
 	for id := range service.active {

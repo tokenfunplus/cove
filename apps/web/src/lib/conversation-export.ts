@@ -1,4 +1,5 @@
 import type { Conversation, ConversationView, GenerationBatch, Message } from "@cove/api-contract";
+import { debateMarkdown } from "@/lib/debate-export";
 
 export type ConversationExportFormat = "markdown" | "json";
 
@@ -97,6 +98,7 @@ function startLocalDownload(exported: ConversationExport): void {
 }
 
 function markdownExport(view: ConversationView): string {
+  if (view.debate_export) return debateMarkdown(view.debate_export);
   const lines = [
     `# ${view.title}`,
     "",

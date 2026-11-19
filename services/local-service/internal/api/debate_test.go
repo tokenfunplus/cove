@@ -1,0 +1,87 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
+)
+
+func TestDebateRoutesRequireSessionAndCSRFAndExposeSavedMetadata(t *testing.T) {
+	store, err := persistence.OpenSQLite(filepath.Join(t.TempDir(), "api.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(Config{LaunchToken: "launch-token", Store: store})
+	token, csrf := launchBrowserSession(t, server)
+	for _, command := range []string{"claim", "progress", "settle"} {
+		path := "/api/debates/fixture/turns/turn-one/browser/" + command
+		request := httptest.NewRequest("POST", "http://127.0.0.1:47123"+path, strings.NewReader(`{}`))
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusUnauthorized {
+			t.Fatal("browser turn accepted without a session", recorder.Code)
+		}
+		request = httptest.NewRequest("POST", "http://127.0.0.1:47123"+path, strings.NewReader(`{}`))
+		request.Header.Set("X-Cove-Session-Token", token)
+		recorder = httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusForbidden {
+			t.Fatal("browser turn accepted without origin/CSRF", recorder.Code)
+		}
+	}
+	for _, route := range []struct{ method, path, body string }{{"POST", "/api/debates", `{}`}, {"POST", "/api/debates/fixture/control", `{"action":"stop"}`}, {"PATCH", "/api/debates/fixture/rules", `{}`}, {"POST", "/api/debates/fixture/interventions", `{}`}, {"GET", "/api/debates/fixture", ""}, {"GET", "/api/debates/fixture/events", ""}} {
+		request := httptest.NewRequest(route.method, "http://127.0.0.1:47123"+route.path, strings.NewReader(route.body))
+		recorder := httptest.NewRecorder()
+		server.Handler().ServeHTTP(recorder, request)
+		if recorder.Code < 400 {
+			t.Fatalf("unauthorized %s succeeded", route.path)
+		}
+		if route.method != "GET" {
+			request = httptest.NewRequest(route.method, "http://127.0.0.1:47123"+route.path, strings.NewReader(route.body))
+			request.Header.Set("X-Cove-Session-Token", token)
+			recorder = httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusForbidden {
+				t.Fatalf("mutation without CSRF = %d", recorder.Code)
+			}
+		}
+	}
+	request := httptest.NewRequest("POST", "http://127.0.0.1:47123/api/debates", strings.NewReader(`{"client_request_id":"bad","topic":"Missing model seats"}`))
+	request.Header.Set("X-Cove-Session-Token", token)
+	request.Header.Set("X-Cove-CSRF-Token", csrf)
+	request.Header.Set("Origin", "http://127.0.0.1:47123")
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest || responseErrorCode(t, recorder) != "validation" {
+		t.Fatalf("invalid setup = %d %s", recorder.Code, recorder.Body.String())
+	}
+	session, err := store.CreateDebate(context.Background(), persistence.DebateSession{ClientRequestID: "saved", Topic: "Saved topic", Status: "paused", Round: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = httptest.NewRequest("GET", "http://127.0.0.1:47123/api/conversations/"+session.ID, nil)
+	request.Header.Set("X-Cove-Session-Token", token)
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+	var view map[string]any
+	if err = json.Unmarshal(recorder.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view["debate_id"] != session.ID {
+		t.Fatal("conversation did not identify its debate", recorder.Body.String())
+	}
+	request = httptest.NewRequest("GET", "http://127.0.0.1:47123/api/debates/"+session.ID+"?before=-1", nil)
+	request.Header.Set("X-Cove-Session-Token", token)
+	recorder = httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatal("invalid pagination cursor was accepted")
+	}
+}

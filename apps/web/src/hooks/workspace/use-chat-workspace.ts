@@ -33,6 +33,7 @@ export function useChatWorkspace() {
     workspaceUi.conversationSearchQuery,
     workspaceUi.showingArchived,
     workspaceState.connection === "ready",
+    Object.keys(workspaceUi.historyQueryFilters).length ? workspaceUi.historyQueryFilters : undefined,
   );
   const {
     selectedId,

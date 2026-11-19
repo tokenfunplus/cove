@@ -49,6 +49,8 @@ export const workspaceStyles = {
     [&.conversation-sidebar--collapsed_.conversation-list]:hidden
     [&.conversation-sidebar--collapsed_.conversation-list\_\_search]:hidden
     [&.conversation-sidebar--collapsed_.conversation-list\_\_empty]:hidden
+    [&.conversation-sidebar--collapsed_.history-toolbar]:hidden
+    [&.conversation-sidebar--collapsed_.history-filter-chips]:hidden
     [&.conversation-sidebar--collapsed_.conversation-list-shell_:is(button,a)_>_span]:hidden
     [&.conversation-sidebar--collapsed_.conversation-list-shell_:is(button,a)]:justify-center
     [&.conversation-sidebar--collapsed_.conversation-list-shell_:is(button,a)]:px-0

@@ -14,6 +14,7 @@ import {
   markSecureGenerationResponseVerification,
   markSecureGenerationStreaming,
   renameConversation,
+  searchConversations,
   retryGenerationTarget,
   settleSecureGeneration,
   subscribeGenerationBatch,
@@ -82,6 +83,20 @@ test("web transport reads the locally persisted conversation list", async () => 
   expect(path).toBe("/api/conversations");
   expect(init.credentials).toBe("omit");
   expect(new Headers(init.headers).get("Accept")).toBe("application/json");
+});
+
+test("history search sends encoded activity and type filters with its cancellation signal", async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response("[]", { headers: { "Content-Type": "application/json" } }));
+  vi.stubGlobal("fetch", fetch);
+  const controller = new AbortController();
+  await searchConversations("quoted & phrase", true, controller.signal, { kind: "debate", updatedAfter: "2026-11-12T16:00:00.000Z" });
+  const [path, init] = fetch.mock.calls[0] as [string, RequestInit];
+  const parameters = new URL(path, "http://127.0.0.1").searchParams;
+  expect(parameters.get("q")).toBe("quoted & phrase");
+  expect(parameters.get("archived")).toBe("true");
+  expect(parameters.get("kind")).toBe("debate");
+  expect(parameters.get("updated_after")).toBe("2026-11-12T16:00:00.000Z");
+  expect(init.signal).toBe(controller.signal);
 });
 
 test("web transport deletes a conversation with the local CSRF contract", async () => {

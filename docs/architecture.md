@@ -71,6 +71,14 @@ Single-model turns select their completed answers automatically. Comparisons req
 
 Editing and resending a terminal user turn uses the existing submission command with `edit_of_batch_id`. Chat validates its source and selected active targets; persistence atomically copies the immutable context prefix and saved attachments into an independent Conversation before creating its new Batch. The returned Conversation ID owns ordinary streaming and browser inference. Source deletion cannot mutate the copy. See [edited-prompt branches](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
+## Continuous debates
+
+History presentation owns browser-local activity/type filter choices and applies them to the full conversation list. Filtered message search crosses the existing Chat facade and applies its scope in persistence before the fifty-result cap. Conversation read models carry optional Debate state/round metadata, with lightweight local reconciliation and no Provider calls. See [history filters and Debate metadata](adr/0039-filter-history-and-show-debate-activity.md).
+
+`internal/chat/debate.go` owns the continuous Debate Session scheduler, independent blind openings, bounded context, pause/resume/stop, and the shared active-work reservation. `internal/persistence/debate.go` owns schema 20 records, immutable turn requests, atomic round changes, pagination, and restart recovery. The API adapts commands, reads, and coalesced SSE notifications. `components/debate` and the Debate API hooks present the workspace without scheduling Provider calls in the browser.
+
+Debate turns stay outside ordinary Selected Answer context. Service-driven models continue with the browser closed. For NearAI, Chat schedules an exclusively claimed browser turn and waits for its existing encrypted/verified inference transport; no fallback runs it through the ordinary HTTP adapter. The browser executes only scheduled requests, and pagination does not change its current request. Loss of the browser expires the turn and pauses the session. See [continuous Debate Sessions](adr/0037-add-service-owned-continuous-debate-sessions.md) and [NearAI debate execution](adr/0038-support-browser-verified-nearai-debate-turns.md) for limits, checkpoints, exports, and compatibility.
+
 ## Private inference boundary
 
 The browser performs NearAI cryptography because it owns plaintext before encryption and after decryption. The Local Service retains Provider Keys and proxies protocol bodies without transforming ciphertext. Browser completion commands persist results and evidence through Chat.

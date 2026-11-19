@@ -17,8 +17,13 @@ import { PrivateConnectionProgress } from "@/components/verification/PrivateConn
 import { privacyStatusFromConversation } from "@/lib/verification/privacy-status";
 
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
+import { useState } from "react";
+import { DebateSetupDialog } from "@/components/debate/DebateSetupDialog";
+import { DebateWorkspace } from "@/components/debate/DebateWorkspace";
+import { MessagesSquare } from "lucide-react";
 
 export function ChatPage() {
+	const [debateSetupOpen, setDebateSetupOpen] = useState(false);
   const workspace = useChatWorkspace();
   const narrowAnswerTools = useNarrowLayout("(width <= 900px)");
   const {
@@ -110,6 +115,7 @@ export function ChatPage() {
             className={cn(workspaceStyles.workspace_main, "workspace__main")}
           >
             <WorkspaceHeader
+              debateMode={Boolean(conversationView?.debate_id)}
               focusMode={focusMode}
               onEnterFocus={enterFocusMode}
               onExitFocus={exitFocusMode}
@@ -176,7 +182,9 @@ export function ChatPage() {
                 <WorkspaceToast feedback={feedback} onDismiss={setFeedback} />
               ) : null}
             </div>
-            <div className="flex shrink-0 justify-end border-b border-border/40 px-4 py-1">
+            <div className={cn("flex shrink-0 justify-end gap-2 border-b border-border/40 px-4 py-1", focusMode && conversationView?.debate_id && "hidden")} hidden={focusMode && Boolean(conversationView?.debate_id)}>
+              <Button size="xs" variant="ghost" disabled={isSending || isNavigating || connection !== "ready"} onClick={() => setDebateSetupOpen(true)}><MessagesSquare aria-hidden="true" />New debate</Button>
+              {!conversationView?.debate_id && (
               <Button
                 size="xs"
                 variant="ghost"
@@ -187,7 +195,9 @@ export function ChatPage() {
                 {toolCopy.title}
                 {workspace.answerTools.busy ? " · Working…" : ""}
               </Button>
+              )}
             </div>
+            {conversationView?.debate_id ? <DebateWorkspace key={conversationView.debate_id} id={conversationView.debate_id} focusMode={focusMode} onNewDebate={() => setDebateSetupOpen(true)} /> : (
             <div className={`${answerToolsStyles.layout} relative`}>
               <AnswerToolsContext.Provider
                 value={{
@@ -252,6 +262,7 @@ export function ChatPage() {
                 <AnswerToolsPanel tools={workspace.answerTools} />
               )}
             </div>
+            )}
             {privateConnectionProgress ? (
               <PrivateConnectionProgress
                 providerName={privateConnectionProgress.providerName}
@@ -285,6 +296,7 @@ export function ChatPage() {
         </div>
       </section>
       <WorkspaceOverlays workspace={workspace} />
+      <DebateSetupDialog open={debateSetupOpen} onClose={() => setDebateSetupOpen(false)} profiles={providerProfiles} catalogs={catalogs} activeModelSet={activeModelSet} onStarted={id => { workspace.answerTools.setOpen(false); workspace.setSelectedId(id); workspace.setShowingArchived(false); }} onOpenSettings={() => setSettingsEntry("provider")} />
     </main>
   );
 }

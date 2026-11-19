@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -100,6 +101,35 @@ func run() error {
 		return err
 	}
 	chatService := chat.NewServiceWithSettings(store, providerSetup, provider.NewHTTPAdapter(nil), store)
+	shutdownDone := make(chan struct{})
+	shutdown := func() {
+		shutdownOnce.Do(func() {
+			go func() {
+				defer close(shutdownDone)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = httpServer.Shutdown(ctx)
+			}()
+		})
+	}
+	requestContext, cancelRequests := context.WithCancel(context.Background())
+	httpServer.BaseContext = func(net.Listener) context.Context { return requestContext }
+	var handlers sync.WaitGroup
+	var admission sync.Mutex
+	closing := false
+	defer func() {
+		admission.Lock()
+		closing = true
+		admission.Unlock()
+		cancelRequests()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = chatService.PauseDebatesForShutdown(ctx)
+		shutdown()
+		<-shutdownDone
+		_ = httpServer.Close()
+		handlers.Wait()
+	}()
 	chatService.SetDocumentParser(documents.ProcessParser(executable))
 	localAPI := api.NewServer(api.Config{
 		Security:      security,
@@ -109,17 +139,21 @@ func run() error {
 		Chat:          chatService,
 		ProviderSetup: providerSetup,
 		NearAIProxy:   provider.NewNearAIProxy(providerSetup, nil),
-		Shutdown: func() {
-			shutdownOnce.Do(func() {
-				go func() {
-					shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer cancel()
-					_ = httpServer.Shutdown(shutdownContext)
-				}()
-			})
-		},
+		Shutdown:      shutdown,
 	})
-	httpServer.Handler = localAPI.Handler()
+	handler := localAPI.Handler()
+	httpServer.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		admission.Lock()
+		if closing {
+			admission.Unlock()
+			http.Error(w, "The Local Service is shutting down.", http.StatusServiceUnavailable)
+			return
+		}
+		handlers.Add(1)
+		admission.Unlock()
+		defer handlers.Done()
+		handler.ServeHTTP(w, r)
+	})
 
 	if err := localruntime.WriteReadiness(os.Stdout, listener.Addr(), launchToken); err != nil {
 		return err
@@ -129,12 +163,11 @@ func run() error {
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(interrupt)
 	go func() {
-		<-interrupt
-		shutdownOnce.Do(func() {
-			shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = httpServer.Shutdown(shutdownContext)
-		})
+		select {
+		case <-interrupt:
+			shutdown()
+		case <-requestContext.Done():
+		}
 	}()
 
 	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -1,7 +1,8 @@
 import * as api from "@/api";
-import { conversationKeys, generationKeys } from "@/api/queryKeys";
+import { conversationKeys, debateKeys, generationKeys } from "@/api/queryKeys";
 import type { ConversationUpdateInput } from "@cove/api-contract";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 
 function conversationListOptions(archived = false) {
   return {
@@ -12,10 +13,23 @@ function conversationListOptions(archived = false) {
 }
 
 export function useConversations(archived = false) {
-  return useQuery({
+  const cache = useQueryClient();
+  const previousDebateMetadata = useRef<string | undefined>(undefined);
+  const query = useQuery({
     ...conversationListOptions(archived),
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchInterval: query => query.state.data?.some(item => item.debate_status === "running" || item.debate_status === "pausing") ? 3000 : query.state.data?.some(item => item.debate_id) ? 15000 : false,
   });
+  const debateMetadata = query.data?.filter(item => item.debate_id).map(item => `${item.id}:${item.debate_status}:${item.debate_round}:${item.updated_at}`).join("|");
+  useEffect(() => {
+    if (debateMetadata === undefined) return;
+    if (previousDebateMetadata.current !== undefined && previousDebateMetadata.current !== debateMetadata) {
+      // A state or activity change can alter both badges and filtered membership.
+      void cache.invalidateQueries({ queryKey: conversationKeys.searches });
+    }
+    previousDebateMetadata.current = debateMetadata;
+  }, [cache, debateMetadata]);
+  return query;
 }
 
 export function useConversation(id: string | undefined) {
@@ -82,6 +96,7 @@ export function useDeleteConversation() {
         exact: true,
       });
       cache.removeQueries({ queryKey: generationKeys.all });
+      cache.removeQueries({ queryKey: debateKeys.session(id) });
       return cache.invalidateQueries({ queryKey: conversationKeys.lists });
     },
   });
@@ -95,8 +110,10 @@ export function useClearChatData() {
     onSuccess: async () => {
       await cache.cancelQueries({ queryKey: conversationKeys.all });
       await cache.cancelQueries({ queryKey: generationKeys.all });
+      await cache.cancelQueries({ queryKey: debateKeys.all });
       cache.removeQueries({ queryKey: conversationKeys.all });
       cache.removeQueries({ queryKey: generationKeys.all });
+      cache.removeQueries({ queryKey: debateKeys.all });
       cache.setQueryData(conversationKeys.list(false), []);
       cache.setQueryData(conversationKeys.list(true), []);
     },

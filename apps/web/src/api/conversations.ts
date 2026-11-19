@@ -4,10 +4,13 @@ import {
   type ConversationUpdateInput,
   type ConversationView,
   type ConversationSearchResult,
+  type ConversationSearchFilter,
 } from "@cove/api-contract";
 
-export function searchConversations(query: string, archived = false, signal?: AbortSignal): Promise<ConversationSearchResult[]> {
+export function searchConversations(query: string, archived = false, signal?: AbortSignal, filters: ConversationSearchFilter = {}): Promise<ConversationSearchResult[]> {
   const parameters = new URLSearchParams({ q: query, archived: String(archived) });
+  if (filters.kind) parameters.set("kind", filters.kind);
+  if (filters.updatedAfter) parameters.set("updated_after", filters.updatedAfter);
   return request(`/api/conversations/search?${parameters}`, { signal });
 }
 
