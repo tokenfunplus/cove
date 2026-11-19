@@ -1,5 +1,6 @@
 import { fetchLocalService, request } from "@/api/client";
 import type {
+  DebateControls,
   ConversationView,
   DebateAction,
   DebateIntervention,
@@ -38,6 +39,8 @@ export const controlDebate = (id: string, action: DebateAction) =>
   request<DebateSession>(`${path(id)}/control`, json("POST", { action }));
 export const updateDebateRules = (id: string, rules: DebateRules) =>
   request<DebateSession>(`${path(id)}/rules`, json("PATCH", rules));
+export const updateDebateControls = (id: string, controls: DebateControls) =>
+  request<DebateSession>(`${path(id)}/controls`, json("PATCH", controls));
 export const addDebateIntervention = (
   id: string,
   input: { client_request_id: string; body: string },

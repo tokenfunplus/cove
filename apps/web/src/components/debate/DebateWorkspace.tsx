@@ -1,8 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDebate } from "@/api/hooks/useDebates";
 import { getDebateExport, getDebateTurn } from "@/api/debates";
-import type { DebateRules, DebateTurn } from "@cove/api-contract";
+import type { DebateControls, DebateRules, DebateTurn } from "@cove/api-contract";
+import { DebateControlsFields, DebateUsageStrip, debateControls, debateControlsError } from "./DebateControlsFields";
+import { DebateSummaryCard } from "./DebateSummaryCard";
 import { debateMarkdown } from "@/lib/debate-export";
+import { summarize } from "@/lib/chat/timeline";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -22,6 +25,7 @@ import { debateStyles as styles } from "@/styles/debate";
 import { cn } from "@/lib/utils";
 import { ModelBrandIcon } from "@/components/providers/ModelBrandIcon";
 import {
+  ArrowUp,
   Download,
   MessagesSquare,
   Pause,
@@ -41,10 +45,12 @@ function phase(round: number) {
 export function DebateWorkspace({
   id,
   focusMode = false,
+  newDebateDisabled = false,
   onNewDebate,
 }: {
   id: string;
   focusMode?: boolean;
+  newDebateDisabled?: boolean;
   onNewDebate: () => void;
 }) {
   const [before, setBefore] = useState(0);
@@ -54,6 +60,8 @@ export function DebateWorkspace({
     crypto.randomUUID(),
   );
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const [editedControls, setEditedControls] = useState<DebateControls>();
   const [editedRules, setEditedRules] = useState<DebateRules>();
   const [inspected, setInspected] = useState<DebateTurn>();
   const [briefOpen, setBriefOpen] = useState(false);
@@ -61,10 +69,34 @@ export function DebateWorkspace({
   const [exportError, setExportError] = useState("");
   const end = useRef<HTMLDivElement>(null);
   const transcript = useRef<HTMLDivElement>(null);
+  const interventionInput = useRef<HTMLTextAreaElement>(null);
   const readingAnchor = useRef<{ id: string; offset: number } | undefined>(undefined);
   const follow = useRef(true);
   const inspectionRequest = useRef(0);
   const view = debate.data;
+  useLayoutEffect(() => {
+    const input = interventionInput.current;
+    if (!input) return;
+    const resize = () => {
+      input.style.height = "auto";
+      input.style.height = `${input.scrollHeight + 2}px`;
+    };
+    resize();
+    let width: number | undefined;
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver((entries) => {
+      const entry = entries.find((entry) => entry.target === input);
+      if (!entry || entry.contentRect.width === width) return;
+      width = entry.contentRect.width;
+      resize();
+    });
+    observer?.observe(input);
+    window.addEventListener("resize", resize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", resize);
+      input.style.removeProperty("height");
+    };
+  }, [draft, focusMode, view?.session.id]);
   useLayoutEffect(() => {
     const element = transcript.current;
     const anchor = readingAnchor.current;
@@ -93,10 +125,13 @@ export function DebateWorkspace({
       </section>
     );
   const { session } = view;
+  const interventionHint = session.status === "stopped"
+    ? "Completed turns remain saved. Start a new debate to continue."
+    : "Your input joins at the next round boundary for every model.";
   const pending = view.interventions.filter((note) => !note.applied_round);
   const busy = debate.control.isPending;
   const error =
-    debate.control.error ?? debate.rules.error ?? debate.intervention.error;
+    debate.control.error ?? debate.rules.error ?? debate.intervention.error ?? (!controlsOpen ? debate.controls.error : undefined);
   function addIntervention() {
     if (!draft.trim() || debate.intervention.isPending) return;
     debate.intervention.mutate(
@@ -117,6 +152,11 @@ export function DebateWorkspace({
     document
       .querySelector<HTMLTextAreaElement>("#debate-intervention")
       ?.focus();
+  }
+  function openControls() {
+    debate.controls.reset();
+    setEditedControls(debateControls(session.seats.length, session.controls));
+    setControlsOpen(true);
   }
   function inspectTurn(turnId: string) {
     const request = ++inspectionRequest.current;
@@ -151,26 +191,27 @@ export function DebateWorkspace({
   }
   const brief = (
     <>
+      {session.summary && <DebateSummaryCard summary={session.summary} onInspect={inspectTurn} />}
       <section className={styles.section}>
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">{copy.liveBrief}</h2>
           <span className="text-xs text-muted-foreground">Not a verdict</span>
         </div>
-        <div className="grid grid-cols-3 gap-2 border-y border-border py-4">
+        <div className="grid grid-cols-3 gap-2 border-y border-border py-2">
           <div>
-            <strong className="block text-2xl font-medium">
+            <strong className="block text-lg font-semibold">
               {session.round}
             </strong>
             <span className={styles.hint}>Round</span>
           </div>
           <div>
-            <strong className="block text-2xl font-medium">
+            <strong className="block text-lg font-semibold">
               {session.total_turns}
             </strong>
             <span className={styles.hint}>Completed</span>
           </div>
           <div>
-            <strong className="block text-2xl font-medium">
+            <strong className="block text-lg font-semibold">
               {session.seats.length}
             </strong>
             <span className={styles.hint}>Models</span>
@@ -182,12 +223,12 @@ export function DebateWorkspace({
         <h3 className="text-sm font-semibold">At the table</h3>
         {session.seats.map((seat, index) => (
           <div
-            className="flex items-center gap-3"
+            className="flex items-center gap-2"
             key={`${seat.provider_id}:${seat.model_id}`}
           >
-            <span className={styles.avatar}>{index + 1}</span>
+            <ModelBrandIcon modelId={seat.model_id} className="size-5" />
             <div className="min-w-0">
-              <strong className="block break-all text-sm font-medium">
+              <strong className="block truncate text-xs font-medium" title={seat.model_id}>
                 {seat.model_id}
               </strong>
               <span className={styles.hint}>
@@ -217,7 +258,7 @@ export function DebateWorkspace({
           session.seats.flatMap((_, seat) => {
             const turn = [...view.turns]
               .reverse()
-              .find((turn) => turn.seat === seat && turn.state === "completed");
+              .find((turn) => turn.seat === seat && turn.state === "completed" && turn.kind !== "summary");
             return turn
               ? [
                   {
@@ -235,17 +276,17 @@ export function DebateWorkspace({
             key={position.turn_id}
             onClick={() => inspectTurn(position.turn_id)}
           >
-            <span className="mb-2 block text-xs font-medium text-primary">
+            <span className="mb-1 block text-xs font-medium text-primary">
               Seat {position.seat + 1} · Turn {position.sequence}
             </span>
-            <span className="line-clamp-4 whitespace-pre-wrap">
-              {position.body}
+            <span className="line-clamp-3 whitespace-pre-wrap break-words">
+              {summarize(position.body, 180)}
             </span>
           </button>
         ))}
       </section>
       <section
-        className={`${styles.section} rounded-2xl border border-border bg-accent/25 p-4`}
+        className={`${styles.section} rounded-lg border border-border bg-accent/25 p-3`}
       >
         <h3 className="text-sm font-semibold">A checkpoint, not an ending</h3>
         <p className={styles.hint}>{copy.context}</p>
@@ -268,10 +309,16 @@ export function DebateWorkspace({
   return (
     <section className={focusMode ? styles.focusShell : styles.shell} aria-label={copy.title} data-focus-mode={focusMode ? "true" : undefined}>
       <header className={focusMode ? styles.focusHeader : styles.header}>
-        <div className={focusMode ? styles.focusHeading : undefined}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className={styles.eyebrow}>{focusMode ? copy.focusEyebrow : "An open-ended conversation"}</p>
-          <div className="flex gap-1">
+        <div className={focusMode ? styles.focusHeaderContent : styles.headerContent}>
+        <div className="contents">
+          {!focusMode && (
+            <p className={styles.headerSummary}>
+              <MessagesSquare aria-hidden="true" className="size-4 text-primary" />
+              Continuous debate
+              <span className="font-normal text-muted-foreground">· {session.seats.length} perspectives</span>
+            </p>
+          )}
+          <div className={focusMode ? styles.focusHeaderActions : "ml-auto flex max-w-full flex-wrap items-center justify-end gap-0.5"}>
             <Button
               size="sm"
               variant="ghost"
@@ -300,35 +347,24 @@ export function DebateWorkspace({
               <Settings2 aria-hidden="true" />
               Rules
             </Button>
+              <Button size="sm" variant="ghost" className={focusMode ? "size-8 p-0" : "max-sm:size-8 max-sm:px-0"} title="New debate" disabled={newDebateDisabled || busy} onClick={onNewDebate}>
+                <MessagesSquare aria-hidden="true" />
+                <span className={focusMode ? "sr-only" : "max-sm:sr-only"}>New debate</span>
+              </Button>
           </div>
         </div>
-        <h1 className={focusMode ? styles.focusTopic : styles.topic}>{session.topic}</h1>
-        <div className={focusMode ? "hidden" : styles.tags} hidden={focusMode}>
-          <span className={`${styles.tag} text-primary`}>
-            Continuous debate
-          </span>
-          <span className={styles.tag}>
-            {session.seats.length} perspectives
-          </span>
-          <span className={styles.tag}>
-            Rules v{session.rules.version}
-            {session.pending_rules
-              ? ` · v${session.pending_rules.version} queued`
-              : ""}
-          </span>
-        </div>
+        <h1 className="sr-only">{session.topic}</h1>
         {focusMode && (
-          <div className={cn(styles.focusParticipants, session.seats.length === 3 && "lg:grid-cols-3", session.seats.length === 4 && "lg:grid-cols-4")} role="list" aria-label="Debate participants">
+          <div className={styles.focusParticipants} role="list" aria-label="Debate participants">
             {session.seats.map((seat, index) => {
               const active = (debate.liveData?.turns ?? view.turns).some(turn => turn.seat === index && turn.state === "streaming") && session.status !== "stopped" && session.status !== "paused";
               return (
                 <div key={`${seat.provider_id}:${seat.model_id}`} role="listitem" className={cn(styles.focusParticipant, active && styles.focusParticipantActive)} data-active-speaker={active ? "true" : undefined}>
-                  <ModelBrandIcon modelId={seat.model_id} className="size-7" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold" title={seat.model_id}>{seat.model_id}</p>
-                    <p className="truncate text-xs text-muted-foreground">{seat.role}</p>
-                  </div>
-                  <span className={cn("size-2 shrink-0 rounded-full", active ? "bg-primary" : "bg-border")} aria-hidden="true" />
+                  <ModelBrandIcon modelId={seat.model_id} className="size-4" />
+                  <span className="min-w-0 truncate font-medium" title={seat.model_id}>{seat.model_id.split("/").at(-1)}</span>
+                  <span className="text-muted-foreground" aria-hidden="true">·</span>
+                  <span className="max-w-24 truncate text-[11px] text-muted-foreground" title={seat.role}>{seat.role}</span>
+                  <span className={cn("size-1.5 shrink-0 rounded-full", active ? "bg-primary" : "bg-border")} aria-hidden="true" />
                   <span className="sr-only">{active ? "Speaking" : session.status === "paused" || session.status === "stopped" ? "Inactive" : "Listening"}</span>
                 </div>
               );
@@ -338,9 +374,9 @@ export function DebateWorkspace({
         </div>
       </header>
       <div className={focusMode ? styles.focusControls : styles.controls}>
-        <div className={focusMode ? "mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3" : "contents"}>
-        <div>
-          <p className="text-sm font-medium text-primary" role="status">
+        <div className={focusMode ? styles.focusControlsContent : "flex flex-wrap items-center justify-between gap-x-2 gap-y-1"}>
+        <div className={styles.focusStatus}>
+          <p className="text-xs font-medium text-primary" role="status">
             {session.status === "running"
               ? `Round ${session.round} · ${phase(session.round)}`
               : session.status === "pausing"
@@ -349,33 +385,29 @@ export function DebateWorkspace({
                   ? `Paused · Round ${session.round}`
                   : "Debate stopped"}
           </p>
-          <p className={styles.hint}>
-            {focusMode ? `${session.total_turns} completed turns · Rules v${session.rules.version}${session.pending_rules ? ` · v${session.pending_rules.version} queued` : ""}` : "No round limit · Agreement does not end the debate"}
+          <p className="text-[11px] text-muted-foreground max-sm:sr-only">
+            {session.total_turns} turns · <span>Rules v{session.rules.version}{session.pending_rules ? ` · v${session.pending_rules.version} queued` : ""}</span>
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 gap-1">
           {session.status === "paused" && (
             <Button
-              size="sm"
-              variant="outline"
+              size="xs"
+              variant="ghost"
+              className="max-sm:size-6 max-sm:p-0"
               disabled={busy}
               onClick={() => debate.control.mutate("step")}
               title="Run one turn; the independent opening runs as a group"
             >
               <StepForward aria-hidden="true" />
-              Step
+              <span className="max-sm:sr-only">Step</span>
             </Button>
           )}
-          {session.status === "stopped" ? (
-            <Button size="sm" onClick={onNewDebate}>
-              <MessagesSquare aria-hidden="true" />
-              New debate
-            </Button>
-          ) : (
+          {session.status !== "stopped" && (
             <>
               <Button
-                size="sm"
-                variant="outline"
+                size="xs"
+                variant="ghost"
                 disabled={busy || session.status === "pausing"}
                 onClick={() =>
                   debate.control.mutate(
@@ -391,8 +423,8 @@ export function DebateWorkspace({
                 {session.status === "paused" ? "Resume" : "Pause"}
               </Button>
               <Button
-                size="sm"
-                variant="outline"
+                size="xs"
+                variant="ghost"
                 className="text-destructive"
                 disabled={busy}
                 onClick={() => debate.control.mutate("stop")}
@@ -405,6 +437,7 @@ export function DebateWorkspace({
         </div>
         </div>
       </div>
+      <DebateUsageStrip usage={(debate.liveData ?? view).usage} onEdit={openControls} focusMode={focusMode} />
       <div className={focusMode ? styles.focusGrid : styles.grid}>
         <div className={cn(styles.conversation, focusMode && "flex-1")}>
           <div
@@ -426,10 +459,15 @@ export function DebateWorkspace({
           >
             <div className={focusMode ? styles.focusReading : "space-y-3"}>
             {session.notice && (
-              <p className={`${styles.notice} mt-4`}>{session.notice}</p>
+              <p className={styles.sessionNotice}>{session.notice}</p>
             )}
             {session.browser_required && session.status !== "stopped" && (
-              <p className={focusMode ? "py-1 text-xs text-muted-foreground" : `${styles.notice} mt-4`}>{focusMode ? copy.focusBrowserHint : copy.browserBackground}</p>
+              focusMode ? <p className="py-1 text-xs text-muted-foreground">{copy.focusBrowserHint}</p> : (
+                <details className={styles.connectionNotice}>
+                  <summary>{copy.focusBrowserHint}</summary>
+                  <p>{copy.browserBackground}</p>
+                </details>
+              )
             )}
             {(error || exportError || debate.isError) && (
               <p role="alert" className={`${styles.error} mt-4`}>
@@ -438,7 +476,7 @@ export function DebateWorkspace({
                   "Live updates are unavailable. Reconnecting…"}
               </p>
             )}
-            <div className="flex flex-wrap justify-center gap-2 pt-4">
+            {(view.has_more || before > 0) && <div className="flex flex-wrap justify-center gap-2 pt-2">
               {view.has_more && (
                 <Button
                   size="xs"
@@ -462,7 +500,7 @@ export function DebateWorkspace({
                   Back to latest
                 </Button>
               )}
-            </div>
+            </div>}
             {view.turns.length === 0 && (
               <div className="py-10 text-center text-sm text-muted-foreground">
                 The opening perspectives are being prepared. Each model sees the
@@ -476,13 +514,13 @@ export function DebateWorkspace({
                 key={turn.id}
               >
                 <div className={styles.turnHeading}>
-                  <span className={styles.avatar}>{focusMode ? <ModelBrandIcon modelId={turn.snapshot.model_id} /> : turn.seat + 1}</span>
+                  <span className={styles.avatar}><ModelBrandIcon modelId={turn.snapshot.model_id} /></span>
                   <div className="min-w-0 flex-1">
                     <strong className="break-all font-semibold">
-                      {turn.snapshot.model_id}
+                      {turn.kind === "summary" ? `Stage summary · ${turn.snapshot.model_id}` : turn.snapshot.model_id}
                     </strong>
                     <p className="text-xs text-muted-foreground">
-                      {turn.role} · {turn.snapshot.provider_name}
+                      {turn.kind === "summary" ? "Summary model" : turn.role} · {turn.snapshot.provider_name}
                     </p>
                   </div>
                   <span className="text-xs text-muted-foreground">
@@ -491,7 +529,7 @@ export function DebateWorkspace({
                   </span>
                 </div>
                 <div className={focusMode ? styles.focusBody : styles.body}>
-                  {turn.body ? (
+                  {turn.summary ? <DebateSummaryCard summary={turn.summary} onInspect={inspectTurn} /> : turn.kind === "summary" && turn.state === "streaming" ? <p className="text-sm text-muted-foreground">Preparing a stage summary with source citations…</p> : turn.kind === "summary" && turn.state === "failed" ? <p className="text-sm text-muted-foreground">{turn.error_message}</p> : turn.body ? (
                     <MarkdownMessage content={turn.body} />
                   ) : (
                     <p className="text-sm text-muted-foreground">
@@ -504,9 +542,6 @@ export function DebateWorkspace({
                 {turn.state === "streaming" && (
                   <p className="mt-2 text-xs text-primary">{turn.phase === "verifying_environment" ? "Verifying NearAI environment…" : turn.phase === "verifying_response" ? "Verifying response…" : "Speaking…"}</p>
                 )}
-                {turn.verification && (
-                  <p className="mt-2 text-xs text-muted-foreground">{turn.verification.status === "verified_model" ? "Model and response verified" : turn.verification.status === "verified_gateway" ? "Gateway and response verified" : "Verification incomplete"}</p>
-                )}
                 {turn.reasoning && (
                   <details className="mt-3 text-sm">
                     <summary className="cursor-pointer text-muted-foreground">
@@ -517,7 +552,10 @@ export function DebateWorkspace({
                 )}
                 <div className={styles.footer}>
                   <span>{turn.state}</span>
-                  {turn.state === "completed" && (
+                  {turn.verification && (
+                    <span>{turn.verification.status === "verified_model" ? "Model and response verified" : turn.verification.status === "verified_gateway" ? "Gateway and response verified" : "Verification incomplete"}</span>
+                  )}
+                  {turn.state === "completed" && turn.kind !== "summary" && (
                     <Button
                       size="xs"
                       variant="ghost"
@@ -547,7 +585,7 @@ export function DebateWorkspace({
               addIntervention();
             }}
           >
-            <div className={focusMode ? `${styles.focusHeading} space-y-2` : "contents"}>
+            <div className={focusMode ? `${styles.focusHeading} space-y-2` : "space-y-2"}>
             {pending.length > 0 && (
               <div className={styles.pending}>
                 <p className="text-xs font-semibold text-primary">
@@ -562,17 +600,22 @@ export function DebateWorkspace({
                 ))}
               </div>
             )}
+            <div className={styles.inputRow}>
             <label className="sr-only" htmlFor="debate-intervention">
               Your intervention
             </label>
             <Textarea
+              ref={interventionInput}
               id="debate-intervention"
+              className={styles.interventionInput}
+              aria-describedby="debate-intervention-hint"
+              title={interventionHint}
               value={draft}
               onChange={(event) => {
                 setDraft(event.target.value);
                 setInterventionId(crypto.randomUUID());
               }}
-              rows={2}
+              rows={1}
               maxLength={4000}
               disabled={
                 session.status === "stopped" || debate.intervention.isPending
@@ -589,14 +632,14 @@ export function DebateWorkspace({
                 }
               }}
             />
-            <div className="flex items-center justify-between gap-3">
-              <p className={styles.hint}>
-                {session.status === "stopped"
-                  ? "Completed turns remain saved. Start a new debate to continue."
-                  : "Your input joins at the next round boundary for every model."}
+            <div className="contents">
+              <p id="debate-intervention-hint" className="sr-only">
+                {interventionHint}
               </p>
               <Button
-                size="sm"
+                size="icon-sm"
+                className={styles.interventionSubmit}
+                title="Add to debate (Command/Ctrl+Enter)"
                 type="submit"
                 disabled={
                   !draft.trim() ||
@@ -605,8 +648,10 @@ export function DebateWorkspace({
                   pending.length >= 8
                 }
               >
-                {debate.intervention.isPending ? "Adding…" : "Add to debate"}
+                <ArrowUp aria-hidden="true" />
+                <span className="sr-only">{debate.intervention.isPending ? "Adding…" : "Add to debate"}</span>
               </Button>
+            </div>
             </div>
             </div>
           </form>
@@ -615,6 +660,30 @@ export function DebateWorkspace({
           {brief}
         </aside>
       </div>
+      <Dialog
+        open={controlsOpen}
+        onClose={() => { if (!debate.controls.isPending) setControlsOpen(false); }}
+        className={styles.dialog}
+      >
+        <DialogOverlay />
+        <DialogContent className={styles.dialogContent}>
+          <div className="flex items-center justify-between gap-4">
+            <DialogTitle>Summaries, budget &amp; pace</DialogTitle>
+            <Button size="icon" variant="ghost" aria-label="Close debate settings" disabled={debate.controls.isPending} onClick={() => setControlsOpen(false)}><X aria-hidden="true" /></Button>
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">Settings apply before further calls. Active requests can finish. Raise a budget or disable automatic pause before resuming a budget-paused session.</p>
+          {(debate.liveData ?? view).usage && <p className="mt-2 text-xs text-muted-foreground">Reported input: {(debate.liveData ?? view).usage!.input_tokens.toLocaleString()} tokens · Output: {(debate.liveData ?? view).usage!.output_tokens.toLocaleString()} tokens</p>}
+          {editedControls && <form className="mt-5 space-y-5" onSubmit={event => {
+            event.preventDefault();
+            if (session.status === "stopped" || debateControlsError(editedControls, session.seats.length) || debate.controls.isPending) return;
+            debate.controls.mutate(editedControls, { onSuccess: () => setControlsOpen(false) });
+          }}>
+            <fieldset disabled={session.status === "stopped" || debate.controls.isPending}><DebateControlsFields controls={editedControls} seats={session.seats} onChange={setEditedControls} /></fieldset>
+            {debate.controls.error && <p className={styles.error} role="alert">{debate.controls.error.message}</p>}
+            {session.status === "stopped" ? <p className={styles.hint}>This session is stopped. Settings are kept for reference.</p> : <div className="flex justify-end"><Button type="submit" disabled={debate.controls.isPending || !!debateControlsError(editedControls, session.seats.length)}>{debate.controls.isPending ? "Saving…" : "Save settings"}</Button></div>}
+          </form>}
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={rulesOpen}
         onClose={() => setRulesOpen(false)}
@@ -717,13 +786,18 @@ export function DebateWorkspace({
                 Round {inspected.round} · Rules v{inspected.rule_version} ·{" "}
                 {inspected.state}
               </p>
-              <MarkdownMessage
+              {inspected.kind === "summary" ? (
+                <>
+                  {inspected.summary ? <DebateSummaryCard summary={inspected.summary} onInspect={inspectTurn} /> : <p className="text-sm text-muted-foreground">{inspected.error_message || "Summary unavailable."}</p>}
+                  {inspected.body && <details open={!inspected.summary} className="mt-4 text-sm"><summary>Original summary response</summary><pre className="mt-2 whitespace-pre-wrap break-words text-xs">{inspected.body}</pre></details>}
+                </>
+              ) : <MarkdownMessage
                 content={
                   inspected.body ||
                   inspected.error_message ||
                   "The turn is still in progress."
                 }
-              />
+              />}
               <div className="mt-6">
                 <ProviderSnapshotView
                   snapshot={inspected.snapshot}

@@ -18,6 +18,7 @@ import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 import { runDebateFocusAcceptance } from "./debate-focus.mjs";
 import { runHistoryAcceptance } from "./history.mjs";
+import { runDebateControlsAcceptance } from "./debate-controls.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -104,6 +105,15 @@ const provider = http.createServer(async (request, response) => {
   }
 
   response.writeHead(200, { "Content-Type": "text/event-stream" });
+  if (input.messages[0]?.content?.startsWith("Create a stage summary")) {
+    const matches = [...prompt.matchAll(/\[Turn (\d+),/g)];
+    const first = Number(matches[0][1]);
+    const last = Number(matches.at(-1)[1]);
+    const answer = JSON.stringify({new_ideas:[{text:"The discussion introduced team size as a boundary condition and distinguished prototypes from critical-path ownership.",sources:[first,last]}],position_changes:[],open_questions:[{text:"Which evidence would show that hands-on work improves technical judgment without becoming a bottleneck?",sources:[last]}]});
+    response.write("data: " + JSON.stringify({choices:[{delta:{content:answer}}]}) + "\n\n");
+    setTimeout(() => response.end('data: {"choices":[],"usage":{"prompt_tokens":128,"completion_tokens":128}}\n\ndata: [DONE]\n\n'),150);
+    return;
+  }
   if (input.messages[0]?.content?.includes("continuing multi-model debate")) {
     const answer = input.model.includes("deepseek")
       ? "### Stay close to the code\n\nA CTO should keep a small, deliberate share of hands-on work. Reviewing a difficult change or building a prototype exposes constraints that status reports can miss.\n\n**The boundary matters:** own an experiment, not the critical path. A team of five may need a coding CTO; a team of two hundred needs a CTO who develops technical judgment across teams.\n\n**Question for the opposing view:** how will a CTO test architectural assumptions without becoming dependent on secondhand reports?"
@@ -563,7 +573,12 @@ try {
     );
     await cdp("Input.insertText", { text: value });
   }
-  if (process.env.COVE_BROWSER_SCENARIO === "history") {
+  if (process.env.COVE_BROWSER_SCENARIO === "debate-controls") {
+    const axeSource = await readFile(require.resolve("axe-core/axe.min.js"), "utf8");
+    await runDebateControlsAcceptance({api,cdp,evaluate,until,click,snapshot,reloadPage,profile,axeSource,requestCount:()=>requests.length});
+    assert.equal(exceptions.length,0);
+    socket.close();
+  } else if (process.env.COVE_BROWSER_SCENARIO === "history") {
     await runHistoryAcceptance({ api, cdp, evaluate, until, click, snapshot, reloadPage, profile, dataDir: temp });
     assert.equal(exceptions.length, 0);
     socket.close();
@@ -2099,6 +2114,11 @@ try {
     service.kill();
     await exit;
   }
+  // Chrome helpers can retain inherited pipes after the main process exits on
+  // macOS. Release our readers so a successful fixture can finish cleanly.
+  chrome?.stderr?.destroy();
+  service?.stdout?.destroy();
+  service?.stderr?.destroy();
   await new Promise((resolve) => provider.close(resolve));
   // Chrome subprocesses can finish profile writes just after the main process
   // exits on Linux. Retry transient ENOTEMPTY/EBUSY cleanup failures.

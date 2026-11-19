@@ -23,6 +23,10 @@ func (server *Server) debateChat(writer http.ResponseWriter) chat.Debates {
 
 func writeDebateError(writer http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, chat.ErrInvalidDebateControls):
+		writeError(writer, http.StatusBadRequest, "debate_controls", "Choose valid summary and pacing settings, positive budgets, and input/output rates for every seat when using a cost budget.")
+	case errors.Is(err, chat.ErrDebateBudget):
+		writeError(writer, http.StatusConflict, "debate_budget", "Review the usage and raise the budget or disable automatic pause before resuming.")
 	case errors.Is(err, chat.ErrInvalidDebate):
 		writeError(writer, http.StatusBadRequest, "validation", "Choose a topic, two to four distinct model targets, valid roles, and ground rules.")
 	case errors.Is(err, chat.ErrDebateState):
@@ -32,6 +36,25 @@ func writeDebateError(writer http.ResponseWriter, err error) {
 	default:
 		writeGenerationError(writer, err)
 	}
+}
+
+func (server *Server) updateDebateControls(writer http.ResponseWriter, request *http.Request) {
+	request.Body = http.MaxBytesReader(writer, request.Body, 8<<10)
+	service := server.debateChat(writer)
+	if service == nil {
+		return
+	}
+	var input persistence.DebateControls
+	if decodeJSON(request, &input) != nil {
+		writeDebateError(writer, chat.ErrInvalidDebateControls)
+		return
+	}
+	result, err := service.UpdateDebateControls(request.Context(), request.PathValue("id"), input)
+	if err != nil {
+		writeDebateError(writer, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, result)
 }
 
 func (server *Server) createDebate(writer http.ResponseWriter, request *http.Request) {

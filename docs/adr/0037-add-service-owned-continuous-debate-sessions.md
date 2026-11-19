@@ -40,3 +40,7 @@ A failed turn transaction cancels the run and reconciles abandoned streaming tur
 Shutdown closes Debate admission under the generation-start lock before checking active work. Requests still resolving catalogs cannot launch afterward. The HTTP service cancels and drains admitted handlers before closing SQLite.
 
 Accepted intervention request IDs remain idempotent beyond the paginated history window, including after Stop or a full pending queue. Every intervention newly effective in a round reserves context space before older answers and checkpoints consume the remaining byte budget.
+
+## Stage summaries and run controls
+
+[ADR-0041](0041-add-debate-stage-summaries-and-run-controls.md) adds explicit model-generated stage analyses alongside these excerpt checkpoints, cumulative usage budgets, and persisted pacing. It supersedes the initial summary-free scope and extends storage to schema 21 so older services cannot ignore the new controls.

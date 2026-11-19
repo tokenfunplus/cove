@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,8 +15,124 @@ import (
 
 type delayedDebateClaimStore struct {
 	*persistence.SQLiteStore
-	delay    atomic.Bool
-	deadline time.Time
+	delay     atomic.Bool
+	saveDelay atomic.Bool
+	deadline  time.Time
+}
+
+type canceledDebateClaimStore struct {
+	*persistence.SQLiteStore
+	cancel           context.CancelFunc
+	cancelAfterWrite atomic.Bool
+}
+
+func (store *canceledDebateClaimStore) SaveDebateTurn(ctx context.Context, turn persistence.DebateTurn) error {
+	err := store.SQLiteStore.SaveDebateTurn(ctx, turn)
+	if err == nil && turn.UsageExpected && store.cancelAfterWrite.Swap(false) {
+		store.cancel()
+	}
+	return err
+}
+
+func TestRejectedDebateBrowserClaimDoesNotInventUsageAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	dataDir := t.TempDir()
+	t.Setenv("COVE_DATA_DIR", dataDir)
+	databasePath := filepath.Join(dataDir, "debate.sqlite")
+	sqlite, err := persistence.OpenSQLite(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlite.Close() })
+	service, _, _ := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
+	claimCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	store := &canceledDebateClaimStore{SQLiteStore: sqlite, cancel: cancel}
+	service.store = store
+	session, err := service.StartDebate(ctx, debateInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return len(view.Turns) == 2 })
+	store.cancelAfterWrite.Store(true)
+	if _, err := service.ClaimDebateBrowserTurn(claimCtx, session.ID, view.Turns[0].ID, "canceled-claim"); !errors.Is(err, context.Canceled) {
+		t.Fatal("claim was not canceled after its durable usage write", err)
+	}
+	// Reopen the durable records before an old worker can normalize them.
+	service.debateMu.Lock()
+	reopened, err := persistence.OpenSQLite(databasePath)
+	service.debateMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if err := reopened.RecoverInterruptedGenerations(ctx); err != nil {
+		t.Fatal(err)
+	}
+	usage, err := reopened.ReadDebateUsage(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, seat := range usage {
+		if seat.Calls != 0 || seat.MissingUsageCalls != 0 || seat.ActiveCalls != 0 {
+			t.Fatal("restart counted a rejected claim as a model call", usage)
+		}
+	}
+}
+
+func TestUnclaimedDebateBrowserSummaryRemainsDueAfterResume(t *testing.T) {
+	ctx := context.Background()
+	service, _, _ := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
+	service.secureTimeout = 500 * time.Millisecond
+	input := debateInput()
+	input.Controls.SummaryEvery = 1
+	session, err := service.StartDebate(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return len(view.Turns) == 2 })
+	for _, turn := range view.Turns {
+		if _, err := service.ClaimDebateBrowserTurn(ctx, session.ID, turn.ID, "opening"); err != nil {
+			t.Fatal(err)
+		}
+		if err := service.ProgressDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserProgress{ClaimID: "opening", Phase: "verifying_response"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserResult{ClaimID: "opening", Body: "A verified opening.", Verification: verifiedSettlement("").Verification}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	view = waitDebate(t, service, session.ID, func(view persistence.DebateView) bool {
+		return view.Session.Status == "paused" && !service.debateBusy()
+	})
+	if len(view.Turns) != 3 || view.Turns[2].Kind != "summary" || view.Turns[2].UsageExpected || view.Session.LastSummaryRound != 0 {
+		t.Fatal("unclaimed summary advanced the attempted-summary cursor", view.Session.LastSummaryRound)
+	}
+	if _, err := service.ControlDebate(ctx, session.ID, "resume"); err != nil {
+		t.Fatal(err)
+	}
+	view = waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return len(view.Turns) >= 4 })
+	retry := view.Turns[3]
+	if retry.Kind != "summary" || retry.Round != 1 {
+		t.Fatal("Resume skipped the unclaimed stage summary")
+	}
+	if _, err := service.ClaimDebateBrowserTurn(ctx, session.ID, retry.ID, "summary-retry"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ControlDebate(ctx, session.ID, "pause"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ProgressDebateBrowserTurn(ctx, session.ID, retry.ID, DebateBrowserProgress{ClaimID: "summary-retry", Phase: "verifying_response"}); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"new_ideas":[{"text":"A shared boundary condition.","sources":[1,2]}],"position_changes":[],"open_questions":[]}`
+	if _, err := service.SettleDebateBrowserTurn(ctx, session.ID, retry.ID, DebateBrowserResult{ClaimID: "summary-retry", Body: body, Verification: verifiedSettlement("").Verification}); err != nil {
+		t.Fatal(err)
+	}
+	view = waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+	if view.Session.LastSummaryRound != 1 || view.Session.Summary == nil || view.Usage.SummaryCalls != 1 {
+		t.Fatal("the authorized summary retry did not settle independently", view.Usage)
+	}
 }
 
 func (store *delayedDebateClaimStore) GetDebate(ctx context.Context, id string) (persistence.DebateSession, error) {
@@ -23,6 +140,40 @@ func (store *delayedDebateClaimStore) GetDebate(ctx context.Context, id string) 
 		time.Sleep(max(0, time.Until(store.deadline)) + time.Millisecond)
 	}
 	return store.SQLiteStore.GetDebate(ctx, id)
+}
+
+func (store *delayedDebateClaimStore) SaveDebateTurn(ctx context.Context, turn persistence.DebateTurn) error {
+	if store.saveDelay.Swap(false) {
+		time.Sleep(max(0, time.Until(store.deadline)) + time.Millisecond)
+	}
+	return store.SQLiteStore.SaveDebateTurn(ctx, turn)
+}
+
+func TestDebateBrowserClaimRechecksDeadlineAfterUsageWrite(t *testing.T) {
+	ctx := context.Background()
+	service, sqlite, _ := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
+	store := &delayedDebateClaimStore{SQLiteStore: sqlite}
+	service.store = store
+	service.secureTimeout = 500 * time.Millisecond
+	session, err := service.StartDebate(ctx, debateInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return len(view.Turns) == 2 })
+	service.debateMu.Lock()
+	store.deadline = service.debate.browser[view.Turns[0].ID].deadline
+	service.debateMu.Unlock()
+	store.saveDelay.Store(true)
+	if _, err := service.ClaimDebateBrowserTurn(ctx, session.ID, view.Turns[0].ID, "late-claim"); !errors.Is(err, ErrDebateState) {
+		t.Fatal("slow usage write admitted an expired claim", err)
+	}
+	if store.saveDelay.Load() {
+		t.Fatal("claim did not exercise the delayed usage write")
+	}
+	view = waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+	if view.Usage.Calls != 0 || view.Usage.MissingUsageCalls != 0 {
+		t.Fatal("a rejected claim was recorded as chargeable work")
+	}
 }
 
 func TestDebateBrowserClaimRechecksDeadlineAfterSessionRead(t *testing.T) {
@@ -86,6 +237,77 @@ func browserDebateFixture(t *testing.T, mode string) (*Service, *persistence.SQL
 	profile := provider.Profile{ID: "fixture", Kind: provider.KindNearAIPreset, Name: "NearAI fixture", Endpoint: "https://cloud-stg-api.near.ai", AuthMethod: provider.AuthBearer}
 	service.profiles = classifiedProviderSource{profileProviderSource: profileProviderSource{profiles: map[string]provider.Profile{"fixture": profile}}, metadata: provider.ModelMetadata{PrivacyMode: mode, Verifiable: mode == provider.PrivacyModePrivateTEE}}
 	return service, store, upstream
+}
+
+func TestDebateBrowserStageSummaryRequiresVerificationAndAccountsForUsage(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		verified         bool
+		invalidCitations bool
+	}{{name: "verified", verified: true}, {name: "rejected receipt"}, {name: "verified with invalid citations", verified: true, invalidCitations: true}} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			service, _, upstream := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
+			budget := int64(90)
+			input := debateInput()
+			input.Controls = persistence.DebateControls{SummaryEvery: 1, AutoPause: true, TokenBudget: &budget}
+			session, err := service.StartDebate(ctx, input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			view := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return len(view.Turns) == 2 })
+			in, out := int64(20), int64(10)
+			metrics := &persistence.GenerationMetrics{Source: "browser", InputTokens: &in, OutputTokens: &out}
+			for _, turn := range view.Turns {
+				if _, err := service.ClaimDebateBrowserTurn(ctx, session.ID, turn.ID, "fixture-browser"); err != nil {
+					t.Fatal(err)
+				}
+				if err := service.ProgressDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserProgress{ClaimID: "fixture-browser", Phase: "verifying_response"}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserResult{ClaimID: "fixture-browser", Body: "A completed public position.", Metrics: metrics, Verification: verifiedSettlement("").Verification}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			view = waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return len(view.Turns) == 3 })
+			turn := view.Turns[2]
+			if turn.Kind != "summary" || turn.Execution != "browser" {
+				t.Fatal("summary bypassed browser execution")
+			}
+			if _, err := service.ClaimDebateBrowserTurn(ctx, session.ID, turn.ID, "summary-browser"); err != nil {
+				t.Fatal(err)
+			}
+			if err := service.ProgressDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserProgress{ClaimID: "summary-browser", Phase: "verifying_response"}); err != nil {
+				t.Fatal(err)
+			}
+			body := `{"new_ideas":[{"text":"The participants proposed different evaluation criteria.","sources":[1,2]}],"position_changes":[],"open_questions":[]}`
+			if test.invalidCitations {
+				body = strings.Replace(body, "[1,2]", "[999999]", 1)
+			}
+			verification := verifiedSettlement("").Verification
+			if !test.verified {
+				verification = persistence.GenerationVerification{Status: persistence.VerificationFailed, FailureCode: "response_verification_failed"}
+			}
+			if _, err := service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserResult{ClaimID: "summary-browser", Body: body, Metrics: metrics, Verification: verification}); err != nil {
+				t.Fatal(err)
+			}
+			waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+			current, err := service.ReadDebate(ctx, session.ID, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.Usage.Calls != 3 || current.Usage.SummaryCalls != 1 || current.Usage.InputTokens+current.Usage.OutputTokens != 90 || current.Session.TotalTurns != 2 || upstream.calls() != 0 {
+				t.Fatal("browser summary usage or execution changed", current.Usage)
+			}
+			if (current.Session.Summary != nil) != (test.verified && !test.invalidCitations) || current.Session.LastSummaryRound != 1 {
+				t.Fatal("unverified interpretation reached the stage summary")
+			}
+			last := current.Turns[len(current.Turns)-1]
+			if test.verified && last.Body != body || !test.verified && last.Body != "" {
+				t.Fatal("summary diagnostics did not preserve the verification boundary")
+			}
+		})
+	}
 }
 
 func TestDebateBrowserClaimsVerificationAndPartialOpeningRecovery(t *testing.T) {

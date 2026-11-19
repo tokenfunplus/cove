@@ -17,6 +17,7 @@ import { PrivateConnectionProgress } from "@/components/verification/PrivateConn
 import { privacyStatusFromConversation } from "@/lib/verification/privacy-status";
 
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
+import { useDebateTopic } from "@/api/hooks/useDebates";
 import { useState } from "react";
 import { DebateSetupDialog } from "@/components/debate/DebateSetupDialog";
 import { DebateWorkspace } from "@/components/debate/DebateWorkspace";
@@ -77,6 +78,7 @@ export function ChatPage() {
     catalog,
     selectionStatus,
   } = workspace;
+  const debateTopic = useDebateTopic(conversationView?.debate_id);
 
   const privacySummary = privacyStatusFromConversation(
     conversationView,
@@ -125,7 +127,7 @@ export function ChatPage() {
               activeModelSet={activeModelSet}
               catalog={catalog}
               catalogs={catalogs}
-              title={conversationView?.title ?? copy.newChat}
+              title={debateTopic ?? conversationView?.title ?? copy.newChat}
               theme={settings.theme}
               appearance={appearance}
               onToggleTheme={() => void handleToggleTheme()}
@@ -182,9 +184,8 @@ export function ChatPage() {
                 <WorkspaceToast feedback={feedback} onDismiss={setFeedback} />
               ) : null}
             </div>
-            <div className={cn("flex shrink-0 justify-end gap-2 border-b border-border/40 px-4 py-1", focusMode && conversationView?.debate_id && "hidden")} hidden={focusMode && Boolean(conversationView?.debate_id)}>
+            {!conversationView?.debate_id && <div className="flex shrink-0 justify-end gap-2 border-b border-border/40 px-4 py-1">
               <Button size="xs" variant="ghost" disabled={isSending || isNavigating || connection !== "ready"} onClick={() => setDebateSetupOpen(true)}><MessagesSquare aria-hidden="true" />New debate</Button>
-              {!conversationView?.debate_id && (
               <Button
                 size="xs"
                 variant="ghost"
@@ -195,9 +196,8 @@ export function ChatPage() {
                 {toolCopy.title}
                 {workspace.answerTools.busy ? " · Working…" : ""}
               </Button>
-              )}
-            </div>
-            {conversationView?.debate_id ? <DebateWorkspace key={conversationView.debate_id} id={conversationView.debate_id} focusMode={focusMode} onNewDebate={() => setDebateSetupOpen(true)} /> : (
+            </div>}
+            {conversationView?.debate_id ? <DebateWorkspace key={conversationView.debate_id} id={conversationView.debate_id} focusMode={focusMode} newDebateDisabled={isSending || isNavigating || connection !== "ready"} onNewDebate={() => setDebateSetupOpen(true)} /> : (
             <div className={`${answerToolsStyles.layout} relative`}>
               <AnswerToolsContext.Provider
                 value={{

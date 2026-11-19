@@ -59,6 +59,41 @@ export interface DebateRules {
   rotate: boolean;
 }
 export interface DebateSeat extends ActiveModelTarget { role: DebateRole }
+export interface DebateRate { input_per_million?: number; output_per_million?: number }
+export interface DebateControls {
+  version: number;
+  summary_every: number;
+  summary_seat: number;
+  turn_delay_ms?: number;
+  token_budget?: number;
+  cost_budget_usd?: number;
+  auto_pause: boolean;
+  rates?: DebateRate[];
+}
+export interface DebateSummaryReference { turn_id: string; sequence: number; seat: number }
+export interface DebateSummaryPoint { text: string; sources: DebateSummaryReference[] }
+export interface DebateStageSummary {
+  turn_id: string;
+  from_round: number;
+  through_round: number;
+  seat: number;
+  new_ideas: DebateSummaryPoint[];
+  position_changes: DebateSummaryPoint[];
+  open_questions: DebateSummaryPoint[];
+  created_at: string;
+}
+export interface DebateUsage {
+  calls: number;
+  summary_calls: number;
+  active_calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  missing_usage_calls: number;
+  unpriced_calls: number;
+  estimated_cost_usd: number;
+  cost_complete: boolean;
+  budget_status?: "token_budget" | "cost_budget" | "usage_missing" | "rates_missing";
+}
 export interface DebatePosition { turn_id: string; sequence: number; seat: number; body: string }
 export interface DebateSession {
   id: string;
@@ -74,6 +109,10 @@ export interface DebateSession {
   total_turns: number;
   browser_required?: boolean;
   checkpoint?: { round: number; positions: DebatePosition[]; created_at: string };
+  controls?: DebateControls;
+  last_summary_round?: number;
+  summary?: DebateStageSummary;
+  next_turn_at?: string;
   notice?: string;
   created_at: string;
   updated_at: string;
@@ -87,6 +126,10 @@ export interface DebateTurn {
   role: DebateRole;
   rule_version: number;
   state: "streaming" | "completed" | "failed" | "stopped";
+  kind?: "summary";
+  usage_expected?: boolean;
+  summary?: DebateStageSummary;
+  summary_from_round?: number;
   execution?: "browser";
   phase?: "verifying_environment" | "streaming" | "verifying_response";
   verification?: GenerationVerification;
@@ -130,12 +173,14 @@ export interface DebateView {
   turns: DebateTurn[];
   interventions: DebateIntervention[];
   has_more: boolean;
+  usage?: DebateUsage;
 }
 export interface StartDebateInput {
   client_request_id: string;
   topic: string;
   seats: DebateSeat[];
   rules: DebateRules;
+  controls?: DebateControls;
 }
 export type DebateAction = "pause" | "resume" | "step" | "stop";
 

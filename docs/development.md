@@ -55,7 +55,7 @@ Local search uses `GET /api/conversations/search?q=...&archived=...` behind the 
 
 ## Chat storage and rendering compatibility
 
-Current source builds migrate the schema 16 database through schema 20. Schema 20 adds separate Debate Session, turn, and intervention records; ordinary selected-answer context is unchanged. See [Debate mode](debate.md) and [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md).
+Current source builds migrate the schema 16 database through schema 21. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Ordinary selected-answer context is unchanged. See [Debate mode](debate.md) and [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md).
 
 | Schema | Added data | Historical behavior |
 | --- | --- | --- |
@@ -63,6 +63,7 @@ Current source builds migrate the schema 16 database through schema 20. Schema 2
 | 18 | Separate assistant Message reasoning | Existing rows default to empty reasoning. Unmarked prose is not reclassified. |
 | 19 | Independent conversation-branch provenance | Edited prompts copy only their immutable selected context, with independent message, Generation, and attachment ownership. |
 | 20 | Separate Debate Sessions, turns, and interventions | Ordinary context is unchanged; interrupted debates recover paused. |
+| 21 | Debate summaries, cumulative usage budgets, and pacing | Existing sessions keep summaries and automatic pause off. Older services reject the schema rather than ignore the controls. |
 
 Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 

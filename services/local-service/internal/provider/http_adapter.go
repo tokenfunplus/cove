@@ -127,6 +127,11 @@ func (adapter *HTTPAdapter) Validate(ctx context.Context, input ValidateInput) (
 	if err != nil {
 		return ValidationResult{}, err
 	}
+	if profile.Kind == KindNearAIPreset {
+		if err := adapter.validateNearAIKey(ctx, profile, input.Secret); err != nil {
+			return ValidationResult{}, err
+		}
+	}
 	metadata, err := adapter.ListModelMetadata(ctx, profile, input.Secret)
 	if err != nil {
 		return ValidationResult{}, err
@@ -142,6 +147,23 @@ func (adapter *HTTPAdapter) Validate(ctx context.Context, input ValidateInput) (
 		return ValidationResult{}, err
 	}
 	return ValidationResult{Models: models, ModelMetadata: metadata}, nil
+}
+
+func (adapter *HTTPAdapter) validateNearAIKey(ctx context.Context, profile Profile, secret credentials.Secret) error {
+	ctx, cancel := context.WithTimeout(ctx, providerPreflightTimeout)
+	defer cancel()
+	// The NearAI catalog is public, including for rejected keys. Use its
+	// authenticated, non-inference check before reporting a verified connection.
+	request, err := adapter.newRequest(ctx, http.MethodPost, profile, "/check_api_key", secret)
+	if err != nil {
+		return err
+	}
+	response, err := adapter.do(request)
+	if err != nil {
+		return fmt.Errorf("validate NearAI key: %w", ErrProviderUnavailable)
+	}
+	defer response.Body.Close()
+	return classifyStatus(response.StatusCode)
 }
 
 func (adapter *HTTPAdapter) Stream(ctx context.Context, input CompletionInput) (CompletionStream, error) {

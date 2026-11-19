@@ -22,11 +22,12 @@ import {
   type ProviderValidationResponse,
 } from "@cove/api-contract";
 import { KeyRound } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function ProviderSettings({
   id,
   profiles,
+  initialProviderId,
   onSave,
   onTest,
   onDelete,
@@ -35,6 +36,7 @@ export function ProviderSettings({
 }: {
   id?: string;
   profiles: ProviderProfile[];
+  initialProviderId?: string;
   onSave: (input: ProviderProfileInput) => Promise<ProviderProfile>;
   onTest: (
     input: ProviderProfileInput,
@@ -43,7 +45,8 @@ export function ProviderSettings({
   onDeleteKey: (id: string) => Promise<void>;
   copy?: ApplicationCopy;
 }) {
-  const existing = profiles[0];
+  const existing =
+    profiles.find((profile) => profile.id === initialProviderId) ?? profiles[0];
   const [selectedProviderId, setSelectedProviderId] = useState(
     existing?.id ?? "",
   );
@@ -74,8 +77,23 @@ export function ProviderSettings({
   >("idle");
   const [feedback, setFeedback] = useState<ProviderFeedback>();
   const [rotateOpen, setRotateOpen] = useState(false);
+  const preferredSelection = useRef({
+    id: initialProviderId,
+    applied: profiles.some((profile) => profile.id === initialProviderId),
+  });
+  const busy = isTesting || isDeleting || isSaving;
 
   useEffect(() => {
+    if (preferredSelection.current.id !== initialProviderId) {
+      preferredSelection.current = { id: initialProviderId, applied: false };
+    }
+    if (busy) return;
+    const preferred = profiles.find((profile) => profile.id === initialProviderId);
+    if (preferred && !preferredSelection.current.applied) {
+      preferredSelection.current.applied = true;
+      if (selectedProviderId !== preferred.id) selectProvider(preferred.id);
+      return;
+    }
     if (
       selectedProviderId === "__new__" ||
       (selectedProviderId && selectedProfile)
@@ -85,10 +103,11 @@ export function ProviderSettings({
     if (profiles.length === 0) {
       return;
     }
-    selectProvider(profiles[0].id);
-  }, [profiles, selectedProfile, selectedProviderId]);
-
-  const busy = isTesting || isDeleting || isSaving;
+    selectProvider(
+      profiles.find((profile) => profile.id === initialProviderId)?.id ??
+        profiles[0].id,
+    );
+  }, [busy, initialProviderId, profiles, selectedProfile, selectedProviderId]);
 
   const input = (): ProviderProfileInput => ({
     id: selectedProfile?.id,
@@ -201,7 +220,7 @@ export function ProviderSettings({
       setModel(saved.model_id);
       setModels(saved.model_id ? [saved.model_id] : models);
       setSecret("");
-      setConnectionTest("verified");
+      if (secret) setConnectionTest("verified");
       setFeedback({ text: copy.providerSaved, tone: "success" });
     } catch (error) {
       setFeedback(providerErrorFeedback(error, copy));
@@ -327,11 +346,12 @@ export function ProviderSettings({
                     { value: "__new__", label: copy.newProvider },
                   ]}
                   value={selectedProviderId}
-                  onValueChange={(providerId) =>
+                  onValueChange={(providerId) => {
+                    preferredSelection.current.applied = true;
                     providerId === "__new__"
                       ? startNewProvider()
-                      : selectProvider(providerId)
-                  }
+                      : selectProvider(providerId);
+                  }}
                 />
               ) : null}
               {selectedProfile ? (

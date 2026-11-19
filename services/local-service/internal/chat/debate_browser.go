@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -81,8 +82,33 @@ func (service *Service) ClaimDebateBrowserTurn(ctx context.Context, id, turnID, 
 	if task.expired || !time.Now().Before(task.deadline) {
 		return DebateBrowserContext{}, ErrDebateState
 	}
-	task.claimID = claimID
 	turn := run.turns[turnID]
+	if task.claimID == "" {
+		turn.UsageExpected = true
+		store, _ := service.debateStore()
+		if err := store.SaveDebateTurn(ctx, turn); err != nil {
+			service.pauseDebateOnStorageErrorLocked(run)
+			return DebateBrowserContext{}, err
+		}
+		reject := func(cause error) (DebateBrowserContext, error) {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+			defer cancel()
+			turn.UsageExpected = false
+			if err := store.SaveDebateTurn(cleanupCtx, turn); err != nil {
+				service.pauseDebateOnStorageErrorLocked(run)
+				return DebateBrowserContext{}, errors.Join(cause, err)
+			}
+			return DebateBrowserContext{}, cause
+		}
+		if ctx.Err() != nil {
+			return reject(ctx.Err())
+		}
+		if !time.Now().Before(task.deadline) {
+			return reject(ErrDebateState)
+		}
+		run.turns[turnID] = turn
+	}
+	task.claimID = claimID
 	return DebateBrowserContext{Turn: turn, Messages: turn.Context}, nil
 }
 

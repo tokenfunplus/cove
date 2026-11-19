@@ -2,6 +2,7 @@ import * as api from "@/api/debates";
 import { conversationKeys, debateKeys } from "@/api/queryKeys";
 import type {
   DebateAction,
+  DebateControls,
   DebateRules,
   StartDebateInput,
   Conversation,
@@ -18,6 +19,16 @@ export function useCreateDebate() {
     onSuccess: () =>
       cache.invalidateQueries({ queryKey: conversationKeys.lists }),
   });
+}
+
+export function useDebateTopic(id?: string) {
+  // Read the workspace query without starting another fetch or browser worker.
+  return useQuery({
+    queryKey: debateKeys.detail(id ?? ""),
+    queryFn: () => api.getDebate(id ?? ""),
+    enabled: false,
+    select: (view) => view.session.topic,
+  }).data;
 }
 
 export function useDebate(id: string, before = 0) {
@@ -81,5 +92,10 @@ export function useDebate(id: string, before = 0) {
     retry: false,
     onSuccess: refresh,
   });
-  return { ...query, liveData: before ? latest.data : query.data, control, rules, intervention };
+  const controls = useMutation({
+    mutationFn: (next: DebateControls) => api.updateDebateControls(id, next),
+    retry: false,
+    onSuccess: refresh,
+  });
+  return { ...query, liveData: before ? latest.data : query.data, control, rules, intervention, controls };
 }

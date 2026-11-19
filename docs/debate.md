@@ -4,6 +4,14 @@ Choose **New debate** in the workspace toolbar. Enter a topic, choose two to fou
 
 **Start debate** opens a locally saved conversation. Models give independent opening answers, then take rotating turns to challenge claims, inspect evidence, and explore new angles. There is no round limit or automatic stop when models agree. Service-driven calls continue while the Local Service runs, including when the browser is closed. For debates with NearAI seats, keep the debate open for encryption and verification. Calls use your configured Provider Keys and Provider allowance.
 
+## Workspace
+
+The topic appears once in the workspace header, including after its Conversation History entry is renamed. A compact toolbar groups **Export**, **Rules**, and **New debate**, with the current round, completed-turn count, and run controls directly below. **New debate** is also available as an icon in Focus mode. The live brief keeps participants and short attributed excerpts alongside the transcript. Expand the NearAI connection notice for its browser-lifecycle details; failed turns and verification results remain visible.
+
+![Compact Debate workspace with synthetic Provider responses](images/debate-workspace.png)
+
+The intervention field starts on one line and grows with the draft. Use its up-arrow **Add to debate** button or Command/Ctrl+Enter to submit; Enter adds a line. Hover over the field for the round-boundary explanation.
+
 ## Controls
 
 ![Debate Focus mode with synthetic Provider responses](images/debate-focus.png)
@@ -17,6 +25,34 @@ Choose **New debate** in the workspace toolbar. Enter a topic, choose two to fou
 
 The live brief shows participants and attributed excerpts from completed turns. Checkpoints do not declare a winner or establish factual correctness. Use turn details to inspect the Provider Snapshot, observed usage, effective rules, and context source identifiers. Missing usage and prices stay unavailable.
 
+## Stage summaries
+
+New debates default to a stage summary every three completed rounds. In setup or **Budget & pace**, choose **Stage summaries** to turn it off or select a cadence of one to ten rounds, then choose an existing seat as the **Summary model**. Older sessions start with summaries off until you enable them. Each summary makes an additional model call with up to 2,048 output tokens and counts toward usage and budgets.
+
+Summaries collect **New ideas**, **Position changes**, and **Open questions**. They appear in the transcript and the live brief, including Focus mode. Select a source **Turn** to inspect the original statement. A summary is a model interpretation of those statements; the linked turns let you assess it. Summary details preserve the original response and any verification evidence.
+
+![Stage summary, original-turn references, and a token budget pause using synthetic responses](images/debate-stage-summary.png)
+
+Summaries cover the configured stage, with an earlier round available for comparison. They use completed public statements, excluding reasoning and failed verification. Generated interpretations do not become participant evidence in later model context. The original excerpt checkpoints remain separate reading aids.
+
+A summary that fails verification or returns invalid citations pauses the debate. Resume continues the discussion after a settled failed summary; no paid summary is retried automatically. Stop remains permanent. Opening an old summary or changing settings does not start a model call.
+
+Invalid citations leave the original completed response available in **Details**, without promoting it to a stage summary. Failed verification still discards the response. A summary the browser never claimed remains due when you Resume.
+
+## Budget and pace
+
+The usage strip shows cumulative calls, reported input/output tokens, summary calls, and an estimated USD cost when rates are available. It includes earlier transcript pages and reported usage from failed/stopped attempts. Missing counts and prices are shown as unavailable or partial. **Budget & pace** exposes the input/output breakdown and editable settings.
+
+![Summary cadence, model, budgets, automatic pause, and turn interval using a synthetic debate](images/debate-budget-controls.png)
+
+- **Token budget** applies to the sum of reported input and output tokens. **Estimated cost budget (USD)** uses the rates saved for every model seat. Both are optional and produce reminders with automatic pause off.
+- **Pause automatically** prevents further calls when a configured budget is reached. It also pauses if missing reported usage prevents a complete assessment. Active requests can finish and exceed a threshold, especially during concurrent openings. These controls are not a Provider billing cap.
+- Increase the limit or turn off automatic pause before Resume or Step. Changing a limit does not erase prior usage. A new debate starts a separate cumulative account.
+- **Cost rates** are USD per million input/output tokens. Setup can suggest your existing browser preferences or Provider-advertised rates. Saving them stores a copy with this debate; editing them recomputes the cumulative estimate. Estimates exclude discounts and other Provider charges.
+- **Turn interval** controls the wait after completed work, from no delay to sixty seconds. Independent opening requests still start together. Changes update a waiting turn immediately; Resume and Step start without the old wait.
+
+Settings apply before further calls, while active requests may finish. Concurrent edits from another tab are rejected; reopen the settings to load the latest version. Settings remain readable after Stop. Ground-rule edits still apply at a round boundary.
+
 Older turns are paginated. **Export** includes all settled turns and the most recent sixty-four interventions. Ordinary conversation and workspace downloads also include debate transcripts. Provider reasoning is separate from public answers and never enters later debate context.
 
 History search currently finds debate conversations by title. Debate turn bodies are read through the paginated transcript rather than the ordinary message search index.
@@ -27,9 +63,9 @@ NearAI turns show environment/response verification phases and the saved verific
 
 ## Compatibility and scope
 
-This feature migrates local storage to schema 20. Older versions reject that schema; preserve a compatible backup if you need to downgrade. See [the architecture decision](adr/0037-add-service-owned-continuous-debate-sessions.md).
+This feature now migrates local storage to schema 21 so older services cannot ignore persisted budget and summary controls. Older versions reject that schema; preserve a compatible backup if you need to downgrade. See [the original architecture decision](adr/0037-add-service-owned-continuous-debate-sessions.md) and [stage summaries and run controls](adr/0041-add-debate-stage-summaries-and-run-controls.md).
 
-The current implementation has no browsing tools, model judge, claim extraction pass, or argument map. The live brief contains source-attributed positions, rather than fabricated agreement or confidence scores. Checkpoints make no extra model calls. Per-turn output, duration, and context stay bounded even though a session has no round limit.
+The current implementation has no browsing tools, winner-selection judge, or argument map. The live brief contains attributed checkpoints and explicitly generated, cited stage summaries. Checkpoints make no extra model calls; stage summaries do. Per-turn output, duration, and context stay bounded even though a session has no round limit.
 
 ## API
 
@@ -46,6 +82,7 @@ All routes require the local Browser Session. Mutations also require the existin
 | GET | `/api/debates/{id}/events` | Coalesced invalidations; reconnect always reconciles reads |
 | POST | `/api/debates/{id}/control` | `pause`, `resume`, `step`, or `stop` |
 | PATCH | `/api/debates/{id}/rules` | Queue the next effective rule version |
+| PATCH | `/api/debates/{id}/controls` | Versioned summary, budget, rate, and pacing settings |
 | POST | `/api/debates/{id}/interventions` | Idempotently queue a user intervention |
 
 The read response includes transient current-turn text while active; only complete answers are saved. Effective rules and exact request messages are saved with each turn. Full request contexts are not repeated in workspace read responses.

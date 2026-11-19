@@ -50,6 +50,67 @@ type DebateSeat struct {
 	Role       string `json:"role"`
 }
 
+type DebateRate struct {
+	InputPerMillion  *float64 `json:"input_per_million,omitempty"`
+	OutputPerMillion *float64 `json:"output_per_million,omitempty"`
+}
+
+type DebateControls struct {
+	Version       int          `json:"version"`
+	SummaryEvery  int          `json:"summary_every"`
+	SummarySeat   int          `json:"summary_seat"`
+	TurnDelayMS   *int64       `json:"turn_delay_ms,omitempty"`
+	TokenBudget   *int64       `json:"token_budget,omitempty"`
+	CostBudgetUSD *float64     `json:"cost_budget_usd,omitempty"`
+	AutoPause     bool         `json:"auto_pause"`
+	Rates         []DebateRate `json:"rates,omitempty"`
+}
+
+type DebateSummaryReference struct {
+	TurnID   string `json:"turn_id"`
+	Sequence int64  `json:"sequence"`
+	Seat     int    `json:"seat"`
+}
+
+type DebateSummaryPoint struct {
+	Text    string                   `json:"text"`
+	Sources []DebateSummaryReference `json:"sources"`
+}
+
+type DebateStageSummary struct {
+	TurnID          string               `json:"turn_id"`
+	FromRound       int                  `json:"from_round"`
+	ThroughRound    int                  `json:"through_round"`
+	Seat            int                  `json:"seat"`
+	NewIdeas        []DebateSummaryPoint `json:"new_ideas"`
+	PositionChanges []DebateSummaryPoint `json:"position_changes"`
+	OpenQuestions   []DebateSummaryPoint `json:"open_questions"`
+	CreatedAt       time.Time            `json:"created_at"`
+}
+
+type DebateSeatUsage struct {
+	Seat              int   `json:"seat"`
+	Calls             int64 `json:"calls"`
+	SummaryCalls      int64 `json:"summary_calls"`
+	ActiveCalls       int64 `json:"active_calls"`
+	InputTokens       int64 `json:"input_tokens"`
+	OutputTokens      int64 `json:"output_tokens"`
+	MissingUsageCalls int64 `json:"missing_usage_calls"`
+}
+
+type DebateUsage struct {
+	Calls             int64   `json:"calls"`
+	SummaryCalls      int64   `json:"summary_calls"`
+	ActiveCalls       int64   `json:"active_calls"`
+	InputTokens       int64   `json:"input_tokens"`
+	OutputTokens      int64   `json:"output_tokens"`
+	MissingUsageCalls int64   `json:"missing_usage_calls"`
+	UnpricedCalls     int64   `json:"unpriced_calls"`
+	EstimatedCostUSD  float64 `json:"estimated_cost_usd"`
+	CostComplete      bool    `json:"cost_complete"`
+	BudgetStatus      string  `json:"budget_status,omitempty"`
+}
+
 type DebatePosition struct {
 	TurnID   string `json:"turn_id"`
 	Sequence int64  `json:"sequence"`
@@ -65,22 +126,26 @@ type DebateCheckpoint struct {
 }
 
 type DebateSession struct {
-	ID              string            `json:"id"`
-	ClientRequestID string            `json:"client_request_id"`
-	Topic           string            `json:"topic"`
-	Seats           []DebateSeat      `json:"seats"`
-	Rules           DebateRules       `json:"rules"`
-	PendingRules    *DebateRules      `json:"pending_rules,omitempty"`
-	Status          string            `json:"status"`
-	Round           int               `json:"round"`
-	Position        int               `json:"position"`
-	OpeningDone     []bool            `json:"opening_done"`
-	TotalTurns      int64             `json:"total_turns"`
-	BrowserRequired bool              `json:"browser_required,omitempty"`
-	Checkpoint      *DebateCheckpoint `json:"checkpoint,omitempty"`
-	Notice          string            `json:"notice,omitempty"`
-	CreatedAt       time.Time         `json:"created_at"`
-	UpdatedAt       time.Time         `json:"updated_at"`
+	ID               string              `json:"id"`
+	ClientRequestID  string              `json:"client_request_id"`
+	Topic            string              `json:"topic"`
+	Seats            []DebateSeat        `json:"seats"`
+	Rules            DebateRules         `json:"rules"`
+	PendingRules     *DebateRules        `json:"pending_rules,omitempty"`
+	Status           string              `json:"status"`
+	Round            int                 `json:"round"`
+	Position         int                 `json:"position"`
+	OpeningDone      []bool              `json:"opening_done"`
+	TotalTurns       int64               `json:"total_turns"`
+	BrowserRequired  bool                `json:"browser_required,omitempty"`
+	Checkpoint       *DebateCheckpoint   `json:"checkpoint,omitempty"`
+	Controls         DebateControls      `json:"controls"`
+	LastSummaryRound int                 `json:"last_summary_round,omitempty"`
+	Summary          *DebateStageSummary `json:"summary,omitempty"`
+	NextTurnAt       *time.Time          `json:"next_turn_at,omitempty"`
+	Notice           string              `json:"notice,omitempty"`
+	CreatedAt        time.Time           `json:"created_at"`
+	UpdatedAt        time.Time           `json:"updated_at"`
 }
 
 type DebateContextMessage struct {
@@ -89,28 +154,32 @@ type DebateContextMessage struct {
 }
 
 type DebateTurn struct {
-	ID            string                          `json:"id"`
-	DebateID      string                          `json:"debate_id"`
-	Sequence      int64                           `json:"sequence"`
-	Round         int                             `json:"round"`
-	Seat          int                             `json:"seat"`
-	Role          string                          `json:"role"`
-	RuleVersion   int                             `json:"rule_version"`
-	State         string                          `json:"state"`
-	Execution     string                          `json:"execution,omitempty"`
-	Phase         string                          `json:"phase,omitempty"`
-	Verification  *GenerationVerification         `json:"verification,omitempty"`
-	Body          string                          `json:"body"`
-	Reasoning     string                          `json:"reasoning,omitempty"`
-	Snapshot      ProviderSnapshot                `json:"snapshot"`
-	Configuration GenerationConfigurationSnapshot `json:"configuration"`
-	Context       []DebateContextMessage          `json:"-"`
-	ContextIDs    []string                        `json:"context_ids"`
-	Metrics       *GenerationMetrics              `json:"metrics,omitempty"`
-	ErrorCode     string                          `json:"error_code,omitempty"`
-	ErrorMessage  string                          `json:"error_message,omitempty"`
-	CreatedAt     time.Time                       `json:"created_at"`
-	UpdatedAt     time.Time                       `json:"updated_at"`
+	ID               string                          `json:"id"`
+	DebateID         string                          `json:"debate_id"`
+	Sequence         int64                           `json:"sequence"`
+	Round            int                             `json:"round"`
+	Seat             int                             `json:"seat"`
+	Role             string                          `json:"role"`
+	RuleVersion      int                             `json:"rule_version"`
+	State            string                          `json:"state"`
+	Kind             string                          `json:"kind,omitempty"`
+	UsageExpected    bool                            `json:"usage_expected"`
+	Summary          *DebateStageSummary             `json:"summary,omitempty"`
+	SummaryFromRound int                             `json:"summary_from_round,omitempty"`
+	Execution        string                          `json:"execution,omitempty"`
+	Phase            string                          `json:"phase,omitempty"`
+	Verification     *GenerationVerification         `json:"verification,omitempty"`
+	Body             string                          `json:"body"`
+	Reasoning        string                          `json:"reasoning,omitempty"`
+	Snapshot         ProviderSnapshot                `json:"snapshot"`
+	Configuration    GenerationConfigurationSnapshot `json:"configuration"`
+	Context          []DebateContextMessage          `json:"-"`
+	ContextIDs       []string                        `json:"context_ids"`
+	Metrics          *GenerationMetrics              `json:"metrics,omitempty"`
+	ErrorCode        string                          `json:"error_code,omitempty"`
+	ErrorMessage     string                          `json:"error_message,omitempty"`
+	CreatedAt        time.Time                       `json:"created_at"`
+	UpdatedAt        time.Time                       `json:"updated_at"`
 }
 
 // Keep immutable request context on disk, but do not repeat it in every read response.
@@ -133,9 +202,12 @@ type DebateView struct {
 	Turns         []DebateTurn         `json:"turns"`
 	Interventions []DebateIntervention `json:"interventions"`
 	HasMore       bool                 `json:"has_more"`
+	Usage         *DebateUsage         `json:"usage,omitempty"`
 }
 
 type DebateStore interface {
+	ReadDebateUsage(context.Context, string) ([]DebateSeatUsage, error)
+	LoadDebateSummaryContext(context.Context, string, int, int) ([]DebateTurn, error)
 	LoadDebateContext(context.Context, string) ([]DebateTurn, error)
 	CreateDebate(context.Context, DebateSession) (DebateSession, error)
 	FindDebateRequest(context.Context, string) (DebateSession, error)
@@ -332,6 +404,9 @@ func (store *SQLiteStore) SaveDebateTurn(ctx context.Context, turn DebateTurn) e
 }
 
 func (store *SQLiteStore) FinishDebateTurn(ctx context.Context, turn DebateTurn, session DebateSession) error {
+	if err := validateGenerationMetrics(turn.Metrics); err != nil {
+		return err
+	}
 	tx, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -443,7 +518,7 @@ func recoverDebatesTx(ctx context.Context, tx *sql.Tx) error {
 var _ DebateStore = (*SQLiteStore)(nil)
 
 func (store *SQLiteStore) LoadDebateContext(ctx context.Context, id string) ([]DebateTurn, error) {
-	rows, err := store.db.QueryContext(ctx, `SELECT json_remove(record,'$.messages','$.reasoning','$.verification') FROM debate_turns WHERE debate_id=? AND json_extract(record,'$.state')='completed' ORDER BY sequence DESC LIMIT 12`, id)
+	rows, err := store.db.QueryContext(ctx, `SELECT json_remove(record,'$.messages','$.reasoning','$.verification') FROM debate_turns WHERE debate_id=? AND json_extract(record,'$.state')='completed' AND COALESCE(json_extract(record,'$.kind'),'')!='summary' ORDER BY sequence DESC LIMIT 12`, id)
 	if err != nil {
 		return nil, err
 	}

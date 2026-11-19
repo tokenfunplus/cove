@@ -50,6 +50,7 @@ vi.mock("@/api", async (importOriginal) => {
     getConversation: vi.fn(),
     getProviderProfiles: vi.fn(),
     getProviderCatalog: vi.fn(),
+    testProviderConnection: vi.fn(),
     getSettings: vi.fn(),
     createGenerationBatch: vi.fn(),
     subscribeGenerationBatch: vi.fn(),
@@ -550,6 +551,9 @@ test("Debate Focus preserves a browser turn and intervention draft while restori
   render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
   const composer = await screen.findByRole("textbox", { name: "Your intervention" });
   const user = userEvent.setup();
+  await waitFor(() =>
+    expect(document.querySelector('[data-workspace-region="workspace-header"] .masthead__title')?.textContent).toBe(view.session.topic),
+  );
   await waitFor(() => expect(runDebateBrowserTurn).toHaveBeenCalledTimes(1));
   const browserSignal = vi.mocked(runDebateBrowserTurn).mock.calls[0]![1];
   await user.type(composer, "Consider a team of thirty engineers.");
@@ -561,7 +565,8 @@ test("Debate Focus preserves a browser turn and intervention draft while restori
   expect(screen.queryByRole("complementary", { name: "Live brief" })).toBeNull();
   expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "New debate" })).toBeNull();
+  expect(screen.getByRole("button", { name: "New debate" })).toBeTruthy();
+  expect(document.querySelector('[data-workspace-region="workspace-header"] .masthead__title')?.textContent).toBe(view.session.topic);
   await user.click(screen.getByRole("button", { name: "Live brief" }));
   expect(screen.getByRole("dialog")).toBeTruthy();
   await user.keyboard("{Escape}");
@@ -1086,6 +1091,44 @@ test("clearing history also removes cached conversation content", async () => {
         conversationKeys.detail(fixture.conversation.id),
       ),
     ).toBeUndefined(),
+  );
+});
+
+test("Provider settings test the active chat connection when a similarly named connection comes first", async () => {
+  configureNearAITarget(0, "private_tee");
+  const production = {
+    ...fixture.profile,
+    name: "nearai",
+    endpoint: "https://cloud-api.near.ai",
+  };
+  const staging = {
+    ...fixture.profile,
+    id: "nearai",
+    kind: "nearai" as const,
+    name: "NearAI",
+    endpoint: "https://cloud-stg-api.near.ai",
+  };
+  vi.mocked(transport.getProviderProfiles).mockResolvedValue([
+    production,
+    staging,
+  ]);
+  vi.mocked(transport.testProviderConnection).mockResolvedValue({
+    models: fixture.models,
+  });
+
+  const { user } = await openWorkspace();
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  await user.click(screen.getByRole("tab", { name: /Provider settings/ }));
+  expect(
+    (screen.getByRole("textbox", { name: "Endpoint" }) as HTMLInputElement).value,
+  ).toBe(staging.endpoint);
+  await user.click(screen.getByRole("button", { name: "Test connection" }));
+  await waitFor(() =>
+    expect(vi.mocked(transport.testProviderConnection).mock.calls[0]?.[0]).toMatchObject({
+      id: staging.id,
+      kind: "nearai",
+      endpoint: staging.endpoint,
+    }),
   );
 });
 
