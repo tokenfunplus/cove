@@ -110,12 +110,25 @@ export function DebateWorkspace({
     );
   }
   function challenge(turn: DebateTurn) {
+    if (debate.intervention.isPending) return;
     setDraft(
       `Regarding turn ${turn.sequence} (${turn.snapshot.model_id}): "${turn.body.slice(0, 300)}"\nMy challenge: `,
     );
     document
       .querySelector<HTMLTextAreaElement>("#debate-intervention")
       ?.focus();
+  }
+  function inspectTurn(turnId: string) {
+    const request = ++inspectionRequest.current;
+    const turn = view!.turns.find(turn => turn.id === turnId);
+    setInspected(turn);
+    if (!turn || turn.execution === "browser" && turn.state !== "streaming") {
+      void getDebateTurn(id, turnId).then(full => {
+        if (inspectionRequest.current === request) setInspected(full);
+      }).catch(() => {
+        if (inspectionRequest.current === request) setExportError("The original turn could not be loaded. Try again.");
+      });
+    }
   }
   async function exportTranscript() {
     setExporting(true);
@@ -220,16 +233,7 @@ export function DebateWorkspace({
           <button
             className={styles.position}
             key={position.turn_id}
-            onClick={() => {
-              const turn = view.turns.find(
-                (turn) => turn.id === position.turn_id,
-              );
-              if (turn) {
-                setInspected(turn);
-                return;
-              }
-              void getDebateTurn(id, position.turn_id).then(setInspected).catch(() => setExportError("The original turn could not be loaded. Try again."));
-            }}
+            onClick={() => inspectTurn(position.turn_id)}
           >
             <span className="mb-2 block text-xs font-medium text-primary">
               Seat {position.seat + 1} · Turn {position.sequence}
@@ -517,6 +521,7 @@ export function DebateWorkspace({
                     <Button
                       size="xs"
                       variant="ghost"
+                      disabled={debate.intervention.isPending}
                       onClick={() => challenge(turn)}
                     >
                       Challenge
@@ -525,13 +530,7 @@ export function DebateWorkspace({
                   <Button
                     size="xs"
                     variant="ghost"
-                    onClick={() => {
-                      const request = ++inspectionRequest.current;
-                      setInspected(turn);
-                      if (turn.execution === "browser" && turn.state !== "streaming") {
-                        void getDebateTurn(id, turn.id).then(full => { if (inspectionRequest.current === request) setInspected(full); }).catch(() => setExportError("Verification details could not be loaded. Try again."));
-                      }
-                    }}
+                    onClick={() => inspectTurn(turn.id)}
                   >
                     Details
                   </Button>

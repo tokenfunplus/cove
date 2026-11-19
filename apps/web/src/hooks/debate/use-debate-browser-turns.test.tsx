@@ -19,6 +19,17 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+test("Stop invalidates a deferred browser start before a controller exists", async () => {
+  vi.useFakeTimers();
+  try {
+    const hook = renderHook(() => useDebateBrowserTurns("debate-one", fixture(), () => {}));
+    act(() => hook.result.current());
+    await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    expect(runDebateBrowserTurn).not.toHaveBeenCalled();
+    hook.unmount();
+  } finally { vi.useRealTimers(); }
+});
+
 function fixture(): DebateView {
   const chat = createWorkspaceFixture();
   return { session: { id: "debate-one", client_request_id: "request-one", topic: "Synthetic question", rules: defaultDebateRules, seats: [], status: "running", round: 1, position: 0, opening_done: [], total_turns: 0, browser_required: true, created_at: chat.conversation.created_at, updated_at: chat.conversation.updated_at }, turns: [{ id: "turn-one", debate_id: "debate-one", execution: "browser", sequence: 1, round: 1, seat: 0, role: "Advocate", rule_version: 1, state: "streaming", body: "", context_ids: [], snapshot: chat.pendingBatch.targets[0]!.generation.snapshot, configuration: chat.pendingBatch.targets[0]!.generation.configuration_snapshot, created_at: chat.conversation.created_at, updated_at: chat.conversation.updated_at }], interventions: [], has_more: false };

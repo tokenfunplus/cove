@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -7,9 +7,9 @@ import * as api from "@/api/debates";
 import { DebateWorkspace } from "./DebateWorkspace";
 import { DebateSetupDialog, defaultDebateRules } from "./DebateSetupDialog";
 import { createWorkspaceFixture } from "@/test/workspace-fixture";
-import type { DebateSession, DebateView } from "@cove/api-contract";
+import type { DebateSession, DebateTurn, DebateView } from "@cove/api-contract";
 
-vi.mock("@/api/debates", () => ({ getDebate: vi.fn(), createDebate: vi.fn(), controlDebate: vi.fn(), updateDebateRules: vi.fn(), addDebateIntervention: vi.fn(), watchDebate: vi.fn(async () => {}), getDebateExport: vi.fn() }));
+vi.mock("@/api/debates", () => ({ getDebate: vi.fn(), getDebateTurn: vi.fn(), createDebate: vi.fn(), controlDebate: vi.fn(), updateDebateRules: vi.fn(), addDebateIntervention: vi.fn(), watchDebate: vi.fn(async () => {}), getDebateExport: vi.fn() }));
 
 let view: DebateView;
 let cache: QueryClient;
@@ -70,6 +70,53 @@ test("details retain Provider identity, original rules, and context references",
   expect(within(dialog).getByText("Test Provider · model-one")).toBeTruthy();
   expect(within(dialog).getByText(/Independent opening; no other participant/)).toBeTruthy();
   await user.keyboard("{Escape}"); expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("checkpoint browser details fetch evidence and stale requests cannot replace or reopen a dialog", async () => {
+  const user = userEvent.setup();
+  const first = { ...view.turns[0]!, execution: "browser" as const };
+  const second: DebateTurn = { ...view.turns[0]!, id: "turn-two", sequence: 2, seat: 1, role: "Challenger", body: "Another public position." };
+  view.turns = [first, second];
+  let resolve!: (turn: DebateTurn) => void;
+  vi.mocked(api.getDebateTurn).mockImplementation(() => new Promise(done => { resolve = done; }));
+  mount(<DebateWorkspace id="debate-one" onNewDebate={() => {}} />);
+  await user.click(await screen.findByRole("button", { name: /Seat 1 · Turn 1/ }));
+  expect(api.getDebateTurn).toHaveBeenCalledExactlyOnceWith("debate-one", first.id);
+  await act(async () => resolve({ ...first, body: "Full browser evidence response." }));
+  expect(within(screen.getByRole("dialog")).getByText("Full browser evidence response.")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Close turn details" }));
+  await user.click(screen.getByRole("button", { name: /Seat 1 · Turn 1/ }));
+  const stale = resolve;
+  await user.click(screen.getByRole("button", { name: "Close turn details" }));
+  await user.click(screen.getByRole("button", { name: /Seat 2 · Turn 2/ }));
+  await act(async () => stale({ ...first, body: "Stale evidence response." }));
+  expect(within(screen.getByRole("dialog")).getByText("Another public position.")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Close turn details" }));
+  await user.click(screen.getByRole("button", { name: /Seat 1 · Turn 1/ }));
+  await user.keyboard("{Escape}");
+  await act(async () => resolve(first));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("Challenge cannot replace an intervention while its submission is pending", async () => {
+  const user = userEvent.setup();
+  let finish!: () => void;
+  vi.mocked(api.addDebateIntervention).mockImplementation(async (_id, input) => {
+    await new Promise<void>(resolve => { finish = resolve; });
+    return { ...input, id: "note-one", applied_round: 0, created_at: view.session.created_at };
+  });
+  mount(<DebateWorkspace id="debate-one" onNewDebate={() => {}} />);
+  await screen.findByText(view.session.topic);
+  await user.type(screen.getByLabelText("Your intervention"), "Submitted draft.");
+  await user.click(screen.getByRole("button", { name: "Add to debate" }));
+  const challenge = screen.getByRole("button", { name: "Challenge" });
+  expect(challenge.hasAttribute("disabled")).toBe(true);
+  await user.click(challenge);
+  expect((screen.getByLabelText("Your intervention") as HTMLTextAreaElement).value).toBe("Submitted draft.");
+  await act(async () => finish());
+  await waitFor(() => expect(challenge.hasAttribute("disabled")).toBe(false));
+  await user.click(challenge);
+  expect((screen.getByLabelText("Your intervention") as HTMLTextAreaElement).value).toContain("My challenge:");
 });
 
 test("setup uses supported catalogs, keeps roles separate, and starts a real session", async () => {

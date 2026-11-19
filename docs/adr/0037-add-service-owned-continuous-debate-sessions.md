@@ -32,3 +32,11 @@ Authenticated commands create/control sessions, edit pending rules, and queue in
 - Existing chat, comparisons, private inference, verification, and Selected Answer contracts retain their behavior. Content stays in local storage and is sent to selected Providers for inference.
 - Database schema 20 is a compatibility change. Older Local Service versions reject it; retain a compatible backup before reverting the application.
 - This implementation has no browsing tools, claim extraction model, automated judge, or spatial argument map. The workspace displays attributed positions and the actual transcript. These capabilities may be added with explicit source and privacy semantics.
+
+## Storage and shutdown failure boundaries
+
+A failed turn transaction cancels the run and reconciles abandoned streaming turns against the committed cursor. Unsaved answers never advance the round, opening completion, or completed-turn count. Recovery preserves terminal Stop state; Resume must reconcile abandoned work successfully before scheduling another request. A failed Provider-pause write also cancels the run rather than retrying automatically.
+
+Shutdown closes Debate admission under the generation-start lock before checking active work. Requests still resolving catalogs cannot launch afterward. The HTTP service cancels and drains admitted handlers before closing SQLite.
+
+Accepted intervention request IDs remain idempotent beyond the paginated history window, including after Stop or a full pending queue. Every intervention newly effective in a round reserves context space before older answers and checkpoints consume the remaining byte budget.

@@ -14,6 +14,9 @@ import (
 type debateBrowserTurn struct {
 	claimID   string
 	submitted bool
+	expired   bool
+	deadline  time.Time
+	paused    chan struct{}
 	result    chan DebateBrowserResult
 	done      chan struct{}
 }
@@ -64,6 +67,19 @@ func (service *Service) ClaimDebateBrowserTurn(ctx context.Context, id, turnID, 
 	run, task, err := service.activeDebateBrowserTurn(id, turnID)
 	if err != nil || task != nil && (task.submitted || task.claimID != "" && task.claimID != claimID) {
 		return DebateBrowserContext{}, ErrDebateState
+	}
+	if task.expired || !time.Now().Before(task.deadline) {
+		return DebateBrowserContext{}, ErrDebateState
+	}
+	if task.claimID == "" {
+		store, _ := service.debateStore()
+		session, err := store.GetDebate(ctx, id)
+		if err != nil {
+			return DebateBrowserContext{}, err
+		}
+		if session.Status != "running" {
+			return DebateBrowserContext{}, ErrDebateState
+		}
 	}
 	task.claimID = claimID
 	turn := run.turns[turnID]
@@ -122,6 +138,10 @@ func (service *Service) SettleDebateBrowserTurn(ctx context.Context, id, turnID 
 		return persistence.DebateTurn{}, ErrInvalidDebate
 	}
 	if !task.submitted {
+		if task.expired || !time.Now().Before(task.deadline) {
+			service.debateMu.Unlock()
+			return persistence.DebateTurn{}, ErrDebateState
+		}
 		task.submitted = true
 		task.result <- input
 	}
@@ -141,13 +161,36 @@ func (service *Service) runDebateBrowserTurn(run *debateRun, turn persistence.De
 		close(task.done)
 		service.debateMu.Unlock()
 	}()
-	ctx, cancel := context.WithTimeout(run.ctx, service.secureTimeout)
+	service.debateMu.Lock()
+	deadline := task.deadline
+	service.debateMu.Unlock()
+	ctx, cancel := context.WithDeadline(run.ctx, deadline)
 	defer cancel()
+	var accepted *DebateBrowserResult
 	select {
 	case input := <-task.result:
-		service.debateMu.Lock()
-		turn.Phase = run.turns[turn.ID].Phase
-		service.debateMu.Unlock()
+		accepted = &input
+	case <-ctx.Done():
+	case <-task.paused:
+	}
+	// Acceptance and expiry share debateMu. A receipt accepted before the
+	// deadline wins even when the worker observes the timer at the same time.
+	service.debateMu.Lock()
+	if accepted == nil && task.submitted {
+		input := <-task.result
+		accepted = &input
+	}
+	task.expired = true
+	turn.Phase = run.turns[turn.ID].Phase
+	paused := false
+	select {
+	case <-task.paused:
+		paused = true
+	default:
+	}
+	service.debateMu.Unlock()
+	if accepted != nil {
+		input := *accepted
 		turn.Body, turn.Reasoning, turn.Metrics = input.Body, input.Reasoning, input.Metrics
 		verification := input.Verification
 		turn.Verification = &verification
@@ -160,7 +203,9 @@ func (service *Service) runDebateBrowserTurn(run *debateRun, turn persistence.De
 		} else {
 			service.finishDebateTurn(run, turn, "failed", "verification_failed", "Browser verification did not complete. Check the connection and resume to retry.", blind)
 		}
-	case <-ctx.Done():
+	} else if paused {
+		service.finishDebateTurn(run, turn, "failed", "paused", "Paused before browser inference started. Resume to retry.", blind)
+	} else {
 		service.finishDebateTurn(run, turn, "failed", "browser_unavailable", "Keep this debate open for NearAI verification, then resume to retry.", blind)
 	}
 }

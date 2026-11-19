@@ -6,9 +6,10 @@ import { runDebateBrowserTurn } from "@/lib/inference/debate-browser-turn";
 export function useDebateBrowserTurns(id: string, view: DebateView | undefined, refresh: () => void) {
   const runs = useRef(new Map<string, AbortController>());
   const attempted = useRef(new Set<string>());
+  const cancellation = useRef(0);
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
-  const cancel = useCallback(() => { for (const controller of runs.current.values()) controller.abort(); }, []);
+  const cancel = useCallback(() => { cancellation.current++; for (const controller of runs.current.values()) controller.abort(); }, []);
   useEffect(() => {
     const exit = () => {
       if (runs.current.size) {
@@ -25,7 +26,9 @@ export function useDebateBrowserTurns(id: string, view: DebateView | undefined, 
     const live = new Set(view.turns.map(turn => turn.id));
     for (const turnId of attempted.current) if (!live.has(turnId) && !runs.current.has(turnId)) attempted.current.delete(turnId);
     // Defer starts so React's development effect replay cannot claim twice.
+    const generation = cancellation.current;
     const timer = setTimeout(() => {
+      if (generation !== cancellation.current) return;
       for (const turn of view.turns) {
         if (turn.execution !== "browser" || turn.state !== "streaming" || attempted.current.has(turn.id)) continue;
         attempted.current.add(turn.id);

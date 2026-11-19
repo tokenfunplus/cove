@@ -19,3 +19,7 @@ Pause finishes active requests. Stop cancels browser work, records a terminal se
 - Optional browser execution, phase, and verification fields live in existing schema 20 JSON records. No table migration or secret storage change is needed.
 - List reads expose receipt summaries and fetch large evidence only through individual turn details. Rolling model context excludes verification records and reasoning; only completed verified public answers enter later turns.
 - SQLite retains browser-reported evidence; the service does not independently perform the cryptographic verification or turn reported verification into a factual-correctness guarantee.
+
+## Pause and settlement ordering
+
+The first successful browser claim is the admission boundary for an active request. Pause rejects new claims and wakes unclaimed tasks immediately; already claimed requests may settle. The browser also invalidates deferred starts when Stop is requested. Result acceptance and deadline expiry are serialized: a receipt accepted before the fixed deadline wins even if the worker observes both signals together, and receipts arriving after the deadline are rejected.

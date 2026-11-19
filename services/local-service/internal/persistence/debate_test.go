@@ -5,10 +5,62 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestDebateFailedSettlementRollsBackAndReconcilesCommittedCursor(t *testing.T) {
+	for _, stopped := range []bool{false, true} {
+		t.Run(fmt.Sprint(stopped), func(t *testing.T) {
+			ctx := context.Background()
+			store, err := OpenSQLite(filepath.Join(t.TempDir(), "debate.sqlite"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			session := storedDebateFixture(t, store)
+			turn, err := store.BeginDebateTurn(ctx, DebateTurn{DebateID: session.ID, State: "streaming", Seat: 0})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stopped {
+				session.Status = "stopped"
+				if err := store.SaveDebate(ctx, session); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := store.db.ExecContext(ctx, `CREATE TRIGGER fail_debate_session BEFORE UPDATE ON debate_sessions BEGIN SELECT RAISE(FAIL, 'synthetic settlement rollback'); END`); err != nil {
+				t.Fatal(err)
+			}
+			unsaved := session
+			unsaved.OpeningDone = []bool{true, false}
+			unsaved.TotalTurns = 1
+			turn.State, turn.Body = "completed", "Unsaved public answer"
+			if err := store.FinishDebateTurn(ctx, turn, unsaved); err == nil {
+				t.Fatal("fixture did not roll back the transaction")
+			}
+			if _, err := store.db.ExecContext(ctx, `DROP TRIGGER fail_debate_session`); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.InterruptDebate(ctx, session.ID, "Resume to retry."); err != nil {
+				t.Fatal(err)
+			}
+			view, err := store.ReadDebate(ctx, session.ID, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantSession, wantTurn := "paused", "failed"
+			if stopped {
+				wantSession, wantTurn = "stopped", "stopped"
+			}
+			if view.Session.Status != wantSession || view.Session.TotalTurns != 0 || view.Session.Position != 0 || view.Session.OpeningDone[0] || view.Turns[0].State != wantTurn || view.Turns[0].Body != "" {
+				t.Fatal("recovery retained unsaved progress or changed Stop state")
+			}
+		})
+	}
+}
 
 func storedDebateFixture(t *testing.T, store *SQLiteStore) DebateSession {
 	t.Helper()

@@ -33,6 +33,11 @@ func TestDebateBrowserClaimsVerificationAndPartialOpeningRecovery(t *testing.T) 
 			if upstream.calls() != 0 {
 				t.Fatal("NearAI was downgraded to ordinary HTTP inference")
 			}
+			for _, turn := range view.Turns {
+				if _, err := service.ClaimDebateBrowserTurn(ctx, session.ID, turn.ID, "browser-one"); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if _, err = service.ControlDebate(ctx, session.ID, "pause"); err != nil {
 				t.Fatal(err)
 			}
@@ -131,6 +136,106 @@ func TestDebateBrowserAbsenceExpiresAndReleasesActiveWork(t *testing.T) {
 		if turn.ErrorCode != "browser_unavailable" || !strings.Contains(turn.ErrorMessage, "resume") {
 			t.Fatal("expiry did not explain recovery")
 		}
+	}
+}
+
+func TestDebatePauseRejectsUnclaimedBrowserWorkAndReleasesReservation(t *testing.T) {
+	ctx := context.Background()
+	service, _, upstream := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
+	session, err := service.StartDebate(ctx, debateInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return len(view.Turns) == 2 })
+	if _, err := service.ControlDebate(ctx, session.ID, "pause"); err != nil {
+		t.Fatal(err)
+	}
+	for _, turn := range view.Turns {
+		if _, err := service.ClaimDebateBrowserTurn(ctx, session.ID, turn.ID, "late-browser"); !errors.Is(err, ErrDebateState) {
+			t.Fatal("Pause admitted a new browser call", err)
+		}
+	}
+	paused := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+	if paused.Session.Status != "paused" || paused.Session.TotalTurns != 0 || upstream.calls() != 0 {
+		t.Fatal("unclaimed tasks retained the work reservation")
+	}
+}
+
+func TestDebateAcceptedBrowserReceiptWinsWhenWorkerObservesExpiry(t *testing.T) {
+	ctx := context.Background()
+	service, store, _ := browserDebateFixture(t, provider.PrivacyModeIncognito)
+	input := debateInput()
+	session, err := store.CreateDebate(ctx, persistence.DebateSession{ClientRequestID: input.ClientRequestID, Topic: input.Topic, Seats: input.Seats, Rules: input.Rules, Status: "running", Round: 1, OpeningDone: []bool{false, false}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn, err := store.BeginDebateTurn(ctx, persistence.DebateTurn{DebateID: session.ID, Seat: 0, Round: 1, State: "streaming", Execution: "browser", Phase: "verifying_response"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	task := &debateBrowserTurn{claimID: "browser-one", deadline: time.Now().Add(time.Minute), paused: make(chan struct{}), result: make(chan DebateBrowserResult, 1), done: make(chan struct{})}
+	run := &debateRun{id: session.ID, ctx: runContext, cancel: cancel, turns: map[string]persistence.DebateTurn{turn.ID: turn}, browser: map[string]*debateBrowserTurn{turn.ID: task}}
+	service.debate = run
+	defer func() { service.debateMu.Lock(); service.debate = nil; service.debateMu.Unlock() }()
+	settled := make(chan error, 1)
+	go func() {
+		_, err := service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserResult{ClaimID: "browser-one", Body: "Accepted verified answer", Verification: verifiedSettlement("").Verification})
+		settled <- err
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		service.debateMu.Lock()
+		accepted := task.submitted
+		if accepted {
+			task.deadline = time.Now().Add(-time.Second)
+		}
+		service.debateMu.Unlock()
+		if accepted {
+			break
+		}
+		select {
+		case err := <-settled:
+			t.Fatal("receipt was rejected", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("receipt was not accepted")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	// Both the queued receipt and the worker's deadline are ready now.
+	service.runDebateBrowserTurn(run, turn, task, true)
+	if err := <-settled; err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.ReadDebateTurn(ctx, session.ID, turn.ID)
+	if err != nil || saved.State != "completed" || saved.Body != "Accepted verified answer" {
+		t.Fatal("accepted receipt lost to expiry", err)
+	}
+}
+
+func TestDebateBrowserSettlementAfterDeadlineIsRejected(t *testing.T) {
+	ctx := context.Background()
+	service, _, _ := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
+	session, err := service.StartDebate(ctx, debateInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return len(view.Turns) == 2 })
+	turn := view.Turns[0]
+	if _, err := service.ClaimDebateBrowserTurn(ctx, session.ID, turn.ID, "browser-one"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ProgressDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserProgress{ClaimID: "browser-one", Phase: "verifying_response"}); err != nil {
+		t.Fatal(err)
+	}
+	service.debateMu.Lock()
+	service.debate.browser[turn.ID].deadline = time.Now().Add(-time.Second)
+	service.debateMu.Unlock()
+	if _, err := service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserResult{ClaimID: "browser-one", Body: "Too late", Verification: verifiedSettlement("").Verification}); !errors.Is(err, ErrDebateState) {
+		t.Fatal("late receipt was accepted", err)
 	}
 }
 

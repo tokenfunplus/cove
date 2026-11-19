@@ -40,15 +40,16 @@ type Debates interface {
 }
 
 type debateRun struct {
-	id         string
-	ctx        context.Context
-	cancel     context.CancelFunc
-	done       chan struct{}
-	wake       chan struct{}
-	step       bool
-	turns      map[string]persistence.DebateTurn
-	browser    map[string]*debateBrowserTurn
-	lastNotify time.Time
+	id             string
+	ctx            context.Context
+	cancel         context.CancelFunc
+	done           chan struct{}
+	wake           chan struct{}
+	step           bool
+	turns          map[string]persistence.DebateTurn
+	browser        map[string]*debateBrowserTurn
+	lastNotify     time.Time
+	storageFailure bool // guarded by debateMu
 }
 
 func (service *Service) debateStore() (persistence.DebateStore, error) {
@@ -95,6 +96,9 @@ func (service *Service) StartDebate(ctx context.Context, input StartDebateInput)
 	}
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
+	if service.debateAdmissionClosed {
+		return persistence.DebateSession{}, ErrDebateState
+	}
 	if existing, err := store.FindDebateRequest(ctx, input.ClientRequestID); !errors.Is(err, sql.ErrNoRows) {
 		return existing, err
 	}
@@ -189,6 +193,9 @@ func (service *Service) ControlDebate(ctx context.Context, id, action string) (p
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
 	if action == "resume" || action == "step" {
+		if service.debateAdmissionClosed {
+			return persistence.DebateSession{}, ErrDebateState
+		}
 		if service.profiles == nil || service.provider == nil {
 			return persistence.DebateSession{}, errors.New("debate service dependencies are required")
 		}
@@ -222,6 +229,10 @@ func (service *Service) ControlDebate(ctx context.Context, id, action string) (p
 			service.debateMu.Unlock()
 			return session, ErrDebateState
 		}
+		if err = store.InterruptDebate(ctx, id, ""); err != nil {
+			service.debateMu.Unlock()
+			return session, err
+		}
 		session.Status = "running"
 		session.Notice = ""
 	case "stop":
@@ -246,6 +257,14 @@ func (service *Service) ControlDebate(ctx context.Context, id, action string) (p
 		service.launchDebateLocked(id, action == "step")
 	}
 	if run != nil && run.id == id {
+		if action == "pause" {
+			for _, task := range run.browser {
+				if task.claimID == "" && !task.expired {
+					task.expired = true
+					close(task.paused)
+				}
+			}
+		}
 		if action == "stop" {
 			run.cancel()
 		}
@@ -362,11 +381,11 @@ func (service *Service) AddDebateIntervention(ctx context.Context, id string, in
 		return input, err
 	}
 	// Replaying an accepted command returns the original input even after stopping.
+	if note, err := store.FindDebateIntervention(ctx, id, input.ClientRequestID); !errors.Is(err, sql.ErrNoRows) {
+		return note, err
+	}
 	pending := 0
 	for _, note := range view.Interventions {
-		if note.ClientRequestID == input.ClientRequestID {
-			return note, nil
-		}
 		if note.AppliedRound == 0 {
 			pending++
 		}
@@ -392,7 +411,9 @@ func (service *Service) runDebate(run *debateRun) {
 	defer func() {
 		service.debateMu.Lock()
 		if store, err := service.debateStore(); err == nil {
-			if session, err := store.GetDebate(context.Background(), run.id); err == nil && (session.Status == "pausing" || session.Status == "running") {
+			if run.storageFailure {
+				_ = store.InterruptDebate(context.Background(), run.id, "Local history could not be updated. Resume to retry.")
+			} else if session, err := store.GetDebate(context.Background(), run.id); err == nil && (session.Status == "pausing" || session.Status == "running") {
 				session.Status = "paused"
 				_ = store.SaveDebate(context.Background(), session)
 			}
@@ -474,6 +495,9 @@ func (service *Service) runDebate(run *debateRun) {
 			group.Wait()
 			service.debateMu.Lock()
 			current, readErr := store.GetDebate(context.Background(), run.id)
+			if readErr != nil {
+				service.pauseDebateOnStorageErrorLocked(run)
+			}
 			if readErr == nil && (current.Status == "running" || current.Status == "pausing") {
 				allDone := true
 				for _, done := range current.OpeningDone {
@@ -485,7 +509,9 @@ func (service *Service) runDebate(run *debateRun) {
 				if run.step && current.Status == "running" {
 					current.Status = "pausing"
 				}
-				_ = store.SaveDebate(context.Background(), current)
+				if err := store.SaveDebate(context.Background(), current); err != nil {
+					service.pauseDebateOnStorageErrorLocked(run)
+				}
 			}
 			service.debateMu.Unlock()
 		} else {
@@ -556,37 +582,40 @@ func debateMessages(session persistence.DebateSession, view persistence.DebateVi
 	for i, s := range session.Seats {
 		fmt.Fprintf(&contextText, "Seat %d: %s / %s (%s)\n", i+1, s.ProviderID, s.ModelID, s.Role)
 	}
+	// Reserve context for every intervention newly effective in this round before
+	// spending the remaining budget on older positions and discussion history.
+	appendEntry := func(id, entry string) bool {
+		if contextText.Len()+len(entry) > 55800 {
+			return false
+		}
+		contextText.WriteString(entry)
+		ids = append(ids, id)
+		return true
+	}
+	contextText.WriteString("\nUser interventions effective in this round:\n")
+	for _, note := range view.Interventions {
+		if note.AppliedRound == session.Round {
+			appendEntry(note.ID, fmt.Sprintf("[User intervention %s, round %d]\n%s\n", note.ID, note.AppliedRound, debateExcerpt(note.Body, 1800)))
+		}
+	}
 	if session.Checkpoint != nil {
 		contextText.WriteString("\nLast checkpoint: attributed excerpts, not established facts.\n")
 		for _, p := range session.Checkpoint.Positions {
-			fmt.Fprintf(&contextText, "[Turn %d, seat %d]\n%s\n", p.Sequence, p.Seat+1, p.Body)
-			ids = append(ids, p.TurnID)
+			appendEntry(p.TurnID, fmt.Sprintf("[Turn %d, seat %d]\n%s\n", p.Sequence, p.Seat+1, debateExcerpt(p.Body, 1800)))
 		}
 	}
-	contextText.WriteString("\nRecent completed public answers:\n")
-	start := len(view.Turns) - 12
-	if start < 0 {
-		start = 0
-	}
-	for _, t := range view.Turns[start:] {
-		if t.State != "completed" {
-			continue
+	contextText.WriteString("\nRecent completed public answers (newest first):\n")
+	start := max(0, len(view.Turns)-12)
+	for index := len(view.Turns) - 1; index >= start; index-- {
+		t := view.Turns[index]
+		if t.State == "completed" {
+			appendEntry(t.ID, fmt.Sprintf("[Turn %d, round %d, seat %d, rules v%d]\n%s\n\n", t.Sequence, t.Round, t.Seat+1, t.RuleVersion, debateExcerpt(t.Body, 3000)))
 		}
-		fmt.Fprintf(&contextText, "[Turn %d, round %d, seat %d, rules v%d]\n%s\n\n", t.Sequence, t.Round, t.Seat+1, t.RuleVersion, debateExcerpt(t.Body, 3000))
-		ids = append(ids, t.ID)
 	}
-	contextText.WriteString("\nUser interventions effective in this round (newest first):\n")
+	contextText.WriteString("\nEarlier user interventions (newest first):\n")
 	for _, note := range view.Interventions {
-		if note.AppliedRound > 0 && note.AppliedRound <= session.Round {
-			entry := fmt.Sprintf("[User intervention %s, round %d]\n%s\n", note.ID, note.AppliedRound, debateExcerpt(note.Body, 1800))
-			if contextText.Len()+len(entry) > 56000 {
-				break
-			}
-			contextText.WriteString(entry)
-			ids = append(ids, note.ID)
-			if len(ids) > 28 {
-				break
-			}
+		if note.AppliedRound > 0 && note.AppliedRound < session.Round && len(ids) < 29 {
+			appendEntry(note.ID, fmt.Sprintf("[User intervention %s, round %d]\n%s\n", note.ID, note.AppliedRound, debateExcerpt(note.Body, 1800)))
 		}
 	}
 	messages = append(messages, persistence.DebateContextMessage{Role: "user", Content: debateExcerpt(contextText.String(), 56000)}, persistence.DebateContextMessage{Role: "user", Content: fmt.Sprintf("It is round %d. Speak as seat %d now. Reference specific prior turn numbers where useful. %s", session.Round, seat+1, phase)})
@@ -625,7 +654,12 @@ func (service *Service) runDebateTurn(run *debateRun, session persistence.Debate
 		return
 	}
 	current, readErr := store.GetDebate(context.Background(), run.id)
-	if readErr != nil || current.Status != "running" {
+	if readErr != nil {
+		service.pauseDebateOnStorageErrorLocked(run)
+		service.debateMu.Unlock()
+		return
+	}
+	if current.Status != "running" {
 		service.debateMu.Unlock()
 		return
 	}
@@ -634,7 +668,7 @@ func (service *Service) runDebateTurn(run *debateRun, session persistence.Debate
 	if err == nil {
 		run.turns[turn.ID] = turn
 		if connection.isSecure() {
-			browserTurn = &debateBrowserTurn{result: make(chan DebateBrowserResult, 1), done: make(chan struct{})}
+			browserTurn = &debateBrowserTurn{result: make(chan DebateBrowserResult, 1), done: make(chan struct{}), paused: make(chan struct{}), deadline: time.Now().Add(service.secureTimeout)}
 			run.browser[turn.ID] = browserTurn
 		}
 		service.notifyDebateLocked(run.id)
@@ -709,6 +743,7 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 	defer service.debateMu.Unlock()
 	session, err := store.GetDebate(context.Background(), run.id)
 	if err != nil {
+		service.pauseDebateOnStorageErrorLocked(run)
 		return
 	}
 	if session.Status == "stopped" {
@@ -732,7 +767,9 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 		turn.Metrics = nil
 		if session.Status != "stopped" && session.Status != "paused" {
 			session.Status = "pausing"
-			session.Notice = "A Provider turn failed. Resume retries the unfinished seat. " + message
+			if code != "paused" {
+				session.Notice = "A Provider turn failed. Resume retries the unfinished seat. " + message
+			}
 		}
 	} else {
 		session.TotalTurns++
@@ -747,10 +784,7 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 		}
 	}
 	if err = store.FinishDebateTurn(context.Background(), turn, session); err != nil {
-		session.Status = "paused"
-		session.Notice = "The turn could not be saved. Resume to retry."
-		_ = store.SaveDebate(context.Background(), session)
-		run.cancel()
+		service.pauseDebateOnStorageErrorLocked(run)
 	}
 	delete(run.turns, turn.ID)
 	service.notifyDebateLocked(run.id)
@@ -761,26 +795,32 @@ func (service *Service) pauseDebateForProvider(run *debateRun, reason error) {
 	service.debateMu.Lock()
 	defer service.debateMu.Unlock()
 	session, err := store.GetDebate(context.Background(), run.id)
-	if err != nil || session.Status == "stopped" {
+	if err != nil {
+		service.pauseDebateOnStorageErrorLocked(run)
+		return
+	}
+	if session.Status == "stopped" {
 		return
 	}
 	session.Status = "pausing"
 	session.Notice = "A participant is unavailable. Check the Provider connection, then resume to retry."
-	_ = store.SaveDebate(context.Background(), session)
+	if err := store.SaveDebate(context.Background(), session); err != nil {
+		service.pauseDebateOnStorageErrorLocked(run)
+	}
 	service.notifyDebateLocked(run.id)
 }
 
 func (service *Service) pauseDebateOnStorageError(run *debateRun) {
-	store, _ := service.debateStore()
 	service.debateMu.Lock()
 	defer service.debateMu.Unlock()
-	session, err := store.GetDebate(context.Background(), run.id)
-	if err == nil && session.Status != "stopped" {
-		session.Status = "paused"
-		session.Notice = "Local history could not be updated. Resume to retry."
-		_ = store.SaveDebate(context.Background(), session)
-	}
+	service.pauseDebateOnStorageErrorLocked(run)
+}
+
+func (service *Service) pauseDebateOnStorageErrorLocked(run *debateRun) {
+	store, _ := service.debateStore()
+	run.storageFailure = true
 	run.cancel()
+	_ = store.InterruptDebate(context.Background(), run.id, "Local history could not be updated. Resume to retry.")
 	service.notifyDebateLocked(run.id)
 }
 
@@ -840,6 +880,7 @@ func loadDebateSchedulingView(ctx context.Context, store persistence.DebateStore
 func (service *Service) PauseDebatesForShutdown(ctx context.Context) error {
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
+	service.debateAdmissionClosed = true
 	service.debateMu.Lock()
 	run := service.debate
 	if run == nil {

@@ -158,6 +158,8 @@ type Service struct {
 	secureTimeout  time.Duration
 	timeout        time.Duration
 	settings       persistence.SettingsStore
+
+	debateAdmissionClosed bool // guarded by startMu
 }
 
 type activeGeneration struct {

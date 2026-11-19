@@ -191,8 +191,10 @@ func TestDebateContinuousSchedulingPauseStepAndRoundBoundaries(t *testing.T) {
 
 func TestDebateStopRejectsLateCompletionAndRetainsNoPartialAnswer(t *testing.T) {
 	gate := make(chan struct{})
+	var release sync.Once
 	upstream := &debateTestProvider{gate: gate, ignoreCancel: true}
 	service, store := newDebateTest(t, upstream)
+	t.Cleanup(func() { release.Do(func() { close(gate) }) })
 	session, err := service.StartDebate(context.Background(), debateInput())
 	if err != nil {
 		t.Fatal(err)
@@ -209,12 +211,29 @@ func TestDebateStopRejectsLateCompletionAndRetainsNoPartialAnswer(t *testing.T) 
 			t.Fatal("partial text reached disk")
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err = service.ControlDebate(ctx, session.ID, "stop"); !errors.Is(err, context.DeadlineExceeded) {
+	stopped := make(chan error, 1)
+	go func() { _, err := service.ControlDebate(ctx, session.ID, "stop"); stopped <- err }()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		current, err := store.GetDebate(context.Background(), session.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.Status == "stopped" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("Stop did not persist its terminal state")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	if err = <-stopped; !errors.Is(err, context.Canceled) {
 		t.Fatal("fixture should hold cancellation cleanup", err)
 	}
-	close(gate)
+	release.Do(func() { close(gate) })
 	view := waitDebate(t, service, session.ID, func(v persistence.DebateView) bool { return !service.debateBusy() })
 	if view.Session.Status != "stopped" || view.Session.TotalTurns != 0 {
 		t.Fatal("late completion changed stopped state")

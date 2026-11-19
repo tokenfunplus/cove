@@ -1,3 +1,4 @@
+import { markVisibleAction } from "./visible-action.mjs";
 import assert from "node:assert/strict";
 
 /** Synthetic Provider only; uses the harness's isolated data and browser profile. */
@@ -5,7 +6,7 @@ export async function runDebateFocusAcceptance({ api, cdp, evaluate, until, clic
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   const scope = 'section[aria-label="Debate mode"]';
   async function action(text) {
-    const found = await evaluate(`(()=>{const e=[...document.querySelectorAll(${JSON.stringify(scope + " button")})].find(e=>e.textContent.trim()===${JSON.stringify(text)}&&e.getBoundingClientRect().width>0);if(!e)return false;e.dataset.debateAction='true';return true})()`);
+    const found = await markVisibleAction(cdp, scope + " button", text, "data-debate-action");
     assert(found, "Visible debate action missing: " + text);
     await click('[data-debate-action="true"]');
     await evaluate(`document.querySelector('[data-debate-action]')?.removeAttribute('data-debate-action')`);

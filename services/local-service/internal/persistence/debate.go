@@ -147,6 +147,8 @@ type DebateStore interface {
 	FinishDebateTurn(context.Context, DebateTurn, DebateSession) error
 	ReadDebateTurn(context.Context, string, string) (DebateTurn, error)
 	AddDebateIntervention(context.Context, string, DebateIntervention) (DebateIntervention, error)
+	FindDebateIntervention(context.Context, string, string) (DebateIntervention, error)
+	InterruptDebate(context.Context, string, string) error
 	AdvanceDebateRound(context.Context, DebateSession) (DebateSession, error)
 }
 
@@ -358,13 +360,9 @@ func (store *SQLiteStore) ReadDebateTurn(ctx context.Context, id, turnID string)
 }
 
 func (store *SQLiteStore) AddDebateIntervention(ctx context.Context, id string, input DebateIntervention) (DebateIntervention, error) {
-	var data string
-	var round int
-	err := store.db.QueryRowContext(ctx, `SELECT record,applied_round FROM debate_interventions WHERE debate_id=? AND client_request_id=?`, id, input.ClientRequestID).Scan(&data, &round)
+	existing, err := store.FindDebateIntervention(ctx, id, input.ClientRequestID)
 	if err == nil {
-		err = json.Unmarshal([]byte(data), &input)
-		input.AppliedRound = round
-		return input, err
+		return existing, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return input, err
@@ -380,6 +378,35 @@ func (store *SQLiteStore) AddDebateIntervention(ctx context.Context, id string, 
 	}
 	_, err = store.db.ExecContext(ctx, `INSERT INTO debate_interventions(id,debate_id,client_request_id,record) VALUES(?,?,?,?)`, input.ID, id, input.ClientRequestID, string(payload))
 	return input, err
+}
+
+func (store *SQLiteStore) FindDebateIntervention(ctx context.Context, id, requestID string) (DebateIntervention, error) {
+	var input DebateIntervention
+	var data string
+	var round int
+	err := store.db.QueryRowContext(ctx, `SELECT record,applied_round FROM debate_interventions WHERE debate_id=? AND client_request_id=?`, id, requestID).Scan(&data, &round)
+	if err == nil {
+		err = json.Unmarshal([]byte(data), &input)
+		input.AppliedRound = round
+		return input, err
+	}
+	return input, err
+}
+
+// Reconcile abandoned turns against the committed cursor, never an unsaved answer.
+func (store *SQLiteStore) InterruptDebate(ctx context.Context, id, notice string) error {
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE debate_turns SET record=json_set(json_remove(record,'$.verification','$.metrics'),'$.state',CASE WHEN (SELECT status FROM debate_sessions WHERE id=?)='stopped' THEN 'stopped' ELSE 'failed' END,'$.body','','$.reasoning','','$.error_code','interrupted','$.error_message','The turn was interrupted before completion.') WHERE debate_id=? AND json_extract(record,'$.state')='streaming'`, id, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE debate_sessions SET status='paused',record=json_set(record,'$.status','paused','$.notice',?) WHERE id=? AND status!='stopped'`, notice, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (store *SQLiteStore) AdvanceDebateRound(ctx context.Context, session DebateSession) (DebateSession, error) {

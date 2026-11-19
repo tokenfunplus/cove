@@ -1,3 +1,4 @@
+import { markVisibleAction } from "./visible-action.mjs";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -6,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 export async function runHistoryAcceptance({ api, cdp, evaluate, until, click, snapshot, reloadPage, profile, dataDir }) {
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   async function button(text, selector = "button") {
-    const found = await evaluate(`(()=>{const e=[...document.querySelectorAll(${JSON.stringify(selector)})].find(e=>e.textContent.trim()===${JSON.stringify(text)}&&e.getBoundingClientRect().width>0);if(!e)return false;e.dataset.historyAction='true';return true})()`);
+    const found = await markVisibleAction(cdp, selector, text, "data-history-action");
     assert(found, "History action is unavailable: " + text);
     await click('[data-history-action="true"]');
     await evaluate(`document.querySelector('[data-history-action]')?.removeAttribute('data-history-action')`);
