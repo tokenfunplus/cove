@@ -43,4 +43,4 @@ Accepted intervention request IDs remain idempotent beyond the paginated history
 
 ## Stage summaries and run controls
 
-[ADR-0040](0040-add-debate-stage-summaries-and-run-controls.md) adds explicit model-generated stage analyses alongside these excerpt checkpoints, cumulative usage budgets, and persisted pacing. It supersedes the initial summary-free scope and extends storage to schema 21 so older services cannot ignore the new controls.
+[ADR-0041](0041-add-debate-stage-summaries-and-run-controls.md) adds explicit model-generated stage analyses alongside these excerpt checkpoints, cumulative usage budgets, and persisted pacing. It supersedes the initial summary-free scope and extends storage to schema 21 so older services cannot ignore the new controls.

@@ -31,6 +31,8 @@ New debates default to a stage summary every three completed rounds. In setup or
 
 Summaries collect **New ideas**, **Position changes**, and **Open questions**. They appear in the transcript and the live brief, including Focus mode. Select a source **Turn** to inspect the original statement. A summary is a model interpretation of those statements; the linked turns let you assess it. Summary details preserve the original response and any verification evidence.
 
+![Stage summary, original-turn references, and a token budget pause using synthetic responses](images/debate-stage-summary.png)
+
 Summaries cover the configured stage, with an earlier round available for comparison. They use completed public statements, excluding reasoning and failed verification. Generated interpretations do not become participant evidence in later model context. The original excerpt checkpoints remain separate reading aids.
 
 A summary that fails verification or returns invalid citations pauses the debate. Resume continues the discussion after a settled failed summary; no paid summary is retried automatically. Stop remains permanent. Opening an old summary or changing settings does not start a model call.
@@ -38,6 +40,8 @@ A summary that fails verification or returns invalid citations pauses the debate
 ## Budget and pace
 
 The usage strip shows cumulative calls, reported input/output tokens, summary calls, and an estimated USD cost when rates are available. It includes earlier transcript pages and reported usage from failed/stopped attempts. Missing counts and prices are shown as unavailable or partial. **Budget & pace** exposes the input/output breakdown and editable settings.
+
+![Summary cadence, model, budgets, automatic pause, and turn interval using a synthetic debate](images/debate-budget-controls.png)
 
 - **Token budget** applies to the sum of reported input and output tokens. **Estimated cost budget (USD)** uses the rates saved for every model seat. Both are optional and produce reminders with automatic pause off.
 - **Pause automatically** prevents further calls when a configured budget is reached. It also pauses if missing reported usage prevents a complete assessment. Active requests can finish and exceed a threshold, especially during concurrent openings. These controls are not a Provider billing cap.
@@ -57,7 +61,7 @@ NearAI turns show environment/response verification phases and the saved verific
 
 ## Compatibility and scope
 
-This feature now migrates local storage to schema 21 so older services cannot ignore persisted budget and summary controls. Older versions reject that schema; preserve a compatible backup if you need to downgrade. See [the original architecture decision](adr/0037-add-service-owned-continuous-debate-sessions.md) and [stage summaries and run controls](adr/0040-add-debate-stage-summaries-and-run-controls.md).
+This feature now migrates local storage to schema 21 so older services cannot ignore persisted budget and summary controls. Older versions reject that schema; preserve a compatible backup if you need to downgrade. See [the original architecture decision](adr/0037-add-service-owned-continuous-debate-sessions.md) and [stage summaries and run controls](adr/0041-add-debate-stage-summaries-and-run-controls.md).
 
 The current implementation has no browsing tools, winner-selection judge, or argument map. The live brief contains attributed checkpoints and explicitly generated, cited stage summaries. Checkpoints make no extra model calls; stage summaries do. Per-turn output, duration, and context stay bounded even though a session has no round limit.
 

@@ -16,4 +16,4 @@ This extends ADR-0014, ADR-0015, ADR-0019, and ADR-0029 without superseding thei
 
 ## Debate pricing extension
 
-[ADR-0040](0040-add-debate-stage-summaries-and-run-controls.md) adds explicitly saved, debate-specific rates for background budget estimates. General model pricing preferences remain browser-local.
+[ADR-0041](0041-add-debate-stage-summaries-and-run-controls.md) adds explicitly saved, debate-specific rates for background budget estimates. General model pricing preferences remain browser-local.
