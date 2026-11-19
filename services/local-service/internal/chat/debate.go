@@ -19,10 +19,11 @@ var ErrDebateState = errors.New("the debate cannot perform this action in its cu
 var ErrDebateConversation = errors.New("use debate commands for this conversation")
 
 type StartDebateInput struct {
-	ClientRequestID string                   `json:"client_request_id"`
-	Topic           string                   `json:"topic"`
-	Seats           []persistence.DebateSeat `json:"seats"`
-	Rules           persistence.DebateRules  `json:"rules"`
+	ClientRequestID string                     `json:"client_request_id"`
+	Topic           string                     `json:"topic"`
+	Seats           []persistence.DebateSeat   `json:"seats"`
+	Rules           persistence.DebateRules    `json:"rules"`
+	Controls        persistence.DebateControls `json:"controls"`
 }
 
 // Debates keeps the HTTP adapter behind Chat without expanding ordinary test doubles.
@@ -32,6 +33,7 @@ type Debates interface {
 	ReadDebateTurn(context.Context, string, string) (persistence.DebateTurn, error)
 	ControlDebate(context.Context, string, string) (persistence.DebateSession, error)
 	UpdateDebateRules(context.Context, string, persistence.DebateRules) (persistence.DebateSession, error)
+	UpdateDebateControls(context.Context, string, persistence.DebateControls) (persistence.DebateSession, error)
 	AddDebateIntervention(context.Context, string, persistence.DebateIntervention) (persistence.DebateIntervention, error)
 	SubscribeDebate(context.Context, string) (<-chan struct{}, error)
 	ClaimDebateBrowserTurn(context.Context, string, string, string) (DebateBrowserContext, error)
@@ -74,6 +76,9 @@ func (service *Service) StartDebate(ctx context.Context, input StartDebateInput)
 	if input.ClientRequestID == "" || len(input.ClientRequestID) > 128 || input.Topic == "" || utf8.RuneCountInString(input.Topic) > 2000 || len(input.Seats) < 2 || len(input.Seats) > 4 || !validDebateRules(input.Rules) {
 		return persistence.DebateSession{}, ErrInvalidDebate
 	}
+	if !validDebateControls(input.Controls, len(input.Seats)) {
+		return persistence.DebateSession{}, ErrInvalidDebateControls
+	}
 	if existing, err := store.FindDebateRequest(ctx, input.ClientRequestID); !errors.Is(err, sql.ErrNoRows) {
 		return existing, err
 	}
@@ -114,11 +119,12 @@ func (service *Service) StartDebate(ctx context.Context, input StartDebateInput)
 		}
 	}
 	input.Rules.Version = 1
+	input.Controls.Version = 1
 	browserRequired := false
 	for _, target := range resolved {
 		browserRequired = browserRequired || target.isSecure()
 	}
-	session, err := store.CreateDebate(ctx, persistence.DebateSession{ClientRequestID: input.ClientRequestID, Topic: input.Topic, Seats: input.Seats, Rules: input.Rules, Status: "running", Round: 1, BrowserRequired: browserRequired, OpeningDone: make([]bool, len(input.Seats))})
+	session, err := store.CreateDebate(ctx, persistence.DebateSession{ClientRequestID: input.ClientRequestID, Topic: input.Topic, Seats: input.Seats, Rules: input.Rules, Controls: input.Controls, Status: "running", Round: 1, BrowserRequired: browserRequired, OpeningDone: make([]bool, len(input.Seats))})
 	if err != nil {
 		return session, err
 	}
@@ -182,7 +188,8 @@ func (service *Service) ReadDebate(ctx context.Context, id string, before int64)
 			}
 		}
 	}
-	return view, nil
+	view.Usage, err = service.readDebateUsage(ctx, view.Session)
+	return view, err
 }
 
 func (service *Service) ControlDebate(ctx context.Context, id, action string) (persistence.DebateSession, error) {
@@ -229,12 +236,22 @@ func (service *Service) ControlDebate(ctx context.Context, id, action string) (p
 			service.debateMu.Unlock()
 			return session, ErrDebateState
 		}
+		usage, readErr := service.readDebateUsage(ctx, session)
+		if readErr != nil {
+			service.debateMu.Unlock()
+			return session, readErr
+		}
+		if session.Controls.AutoPause && usage.BudgetStatus != "" {
+			service.debateMu.Unlock()
+			return session, ErrDebateBudget
+		}
 		if err = store.InterruptDebate(ctx, id, ""); err != nil {
 			service.debateMu.Unlock()
 			return session, err
 		}
 		session.Status = "running"
 		session.Notice = ""
+		session.NextTurnAt = nil
 	case "stop":
 		session.Status = "stopped"
 		session.Notice = "Stopped by you. Completed turns remain in local history."
@@ -441,6 +458,22 @@ func (service *Service) runDebate(run *debateRun) {
 			service.debateMu.Unlock()
 			return
 		}
+		if !service.checkDebateBudgetLocked(run, &session) {
+			service.debateMu.Unlock()
+			continue
+		}
+		if !run.step && session.NextTurnAt != nil && time.Until(*session.NextTurnAt) > 0 {
+			wait := time.Until(*session.NextTurnAt)
+			service.debateMu.Unlock()
+			timer := time.NewTimer(wait)
+			select {
+			case <-timer.C:
+			case <-run.wake:
+			case <-run.ctx.Done():
+			}
+			timer.Stop()
+			continue
+		}
 		// A restart can occur after all opening results commit but before the
 		// group cursor advances. Normalize that cursor without repeating calls.
 		if session.Round == 1 && session.Position < len(session.Seats) && len(session.OpeningDone) == len(session.Seats) {
@@ -458,6 +491,11 @@ func (service *Service) runDebate(run *debateRun) {
 			}
 		}
 		if session.Position >= len(session.Seats) {
+			if session.Controls.SummaryEvery > 0 && session.Round%session.Controls.SummaryEvery == 0 && session.LastSummaryRound < session.Round {
+				service.debateMu.Unlock()
+				service.runDebateSummary(run, session)
+				continue
+			}
 			if session.Round%session.Rules.CheckpointEvery == 0 {
 				session.Checkpoint = debateCheckpoint(view)
 			}
@@ -519,15 +557,7 @@ func (service *Service) runDebate(run *debateRun) {
 		if run.ctx.Err() != nil {
 			return
 		}
-		timer := time.NewTimer(service.debateDelay)
-		select {
-		case <-timer.C:
-		case <-run.ctx.Done():
-			timer.Stop()
-			return
-		case <-run.wake:
-			timer.Stop()
-		}
+
 	}
 }
 
@@ -539,7 +569,7 @@ func debateCheckpoint(view persistence.DebateView) *persistence.DebateCheckpoint
 	seen := map[int]bool{}
 	for i := len(view.Turns) - 1; i >= 0; i-- {
 		turn := view.Turns[i]
-		if turn.State != "completed" || seen[turn.Seat] {
+		if turn.State != "completed" || turn.Kind == "summary" || seen[turn.Seat] {
 			continue
 		}
 		seen[turn.Seat] = true
@@ -603,7 +633,7 @@ func debateMessages(session persistence.DebateSession, view persistence.DebateVi
 	start := max(0, len(view.Turns)-12)
 	for index := len(view.Turns) - 1; index >= start; index-- {
 		t := view.Turns[index]
-		if t.State == "completed" {
+		if t.State == "completed" && t.Kind != "summary" {
 			appendEntry(t.ID, fmt.Sprintf("[Turn %d, round %d, seat %d, rules v%d]\n%s\n\n", t.Sequence, t.Round, t.Seat+1, t.RuleVersion, debateExcerpt(t.Body, 3000)))
 		}
 	}
@@ -617,7 +647,7 @@ func debateMessages(session persistence.DebateSession, view persistence.DebateVi
 	return messages, ids
 }
 
-func (service *Service) runDebateTurn(run *debateRun, session persistence.DebateSession, view persistence.DebateView, seat int, blind bool) {
+func (service *Service) runDebateRequest(run *debateRun, session persistence.DebateSession, view persistence.DebateView, seat int, blind, summary bool) {
 	store, _ := service.debateStore()
 	ctx, cancel := context.WithTimeout(run.ctx, service.timeout)
 	defer cancel()
@@ -636,9 +666,17 @@ func (service *Service) runDebateTurn(run *debateRun, session persistence.Debate
 		service.pauseDebateForProvider(run, err)
 		return
 	}
-	messages, ids := debateMessages(session, view, seat, blind)
+	messages, ids := debateMessages(session, view, seat, blind || summary)
 	maxTokens := session.Rules.MaxTokens
 	turn := persistence.DebateTurn{DebateID: session.ID, Round: session.Round, Seat: seat, Role: target.Role, RuleVersion: session.Rules.Version, State: "streaming", Snapshot: snapshotFor(connection.profile, connection.metadata.PrivacyMode), Context: messages, ContextIDs: ids, Configuration: persistence.GenerationConfigurationSnapshot{SystemPrompt: messages[0].Content, GenerationParameters: persistence.GenerationParameters{MaxTokens: &maxTokens}}}
+	if summary {
+		maxTokens = 2048
+		turn.Kind = "summary"
+		turn.Context, turn.ContextIDs, turn.SummaryFromRound = debateSummaryMessages(session, view.ContextTurns)
+		turn.Configuration.SystemPrompt = turn.Context[0].Content
+		messages = turn.Context
+	}
+	turn.UsageExpected = !connection.isSecure()
 	if connection.isSecure() {
 		turn.Execution = "browser"
 		turn.Phase = "verifying_environment"
@@ -655,6 +693,20 @@ func (service *Service) runDebateTurn(run *debateRun, session persistence.Debate
 		return
 	}
 	if current.Status != "running" {
+		service.debateMu.Unlock()
+		return
+	}
+	if summary && (current.Controls.Version != session.Controls.Version || current.Controls.SummaryEvery == 0 || current.Controls.SummarySeat != seat) {
+		service.debateMu.Unlock()
+		return
+	}
+	// Resolving a target can overlap a pacing edit. Recheck the durable deadline
+	// before starting paid work; concurrent blind openings share no such delay.
+	if !blind && !run.step && current.NextTurnAt != nil && time.Now().Before(*current.NextTurnAt) {
+		service.debateMu.Unlock()
+		return
+	}
+	if !service.checkDebateBudgetLocked(run, &current) {
 		service.debateMu.Unlock()
 		return
 	}
@@ -689,10 +741,14 @@ func (service *Service) runDebateTurn(run *debateRun, session persistence.Debate
 	}
 	defer stream.Close()
 	var body, reasoning strings.Builder
+	finish := func(status, code, message string) {
+		turn.Metrics = measurement.snapshot()
+		service.finishDebateTurn(run, turn, status, code, message, blind)
+	}
 	for {
 		event, err := stream.Recv(ctx)
 		if err != nil {
-			service.finishDebateTurn(run, turn, "failed", "protocol_error", "The Provider stream ended before completion.", blind)
+			finish("failed", "protocol_error", "The Provider stream ended before completion.")
 			return
 		}
 		measurement.observe(event)
@@ -700,7 +756,7 @@ func (service *Service) runDebateTurn(run *debateRun, session persistence.Debate
 		case provider.EventStarted:
 		case provider.EventDelta:
 			if len(event.Delta)+len(event.ReasoningDelta) > (256<<10)-body.Len()-reasoning.Len() {
-				service.finishDebateTurn(run, turn, "failed", "output_limit", "The Provider response exceeded the size limit.", blind)
+				finish("failed", "output_limit", "The Provider response exceeded the size limit.")
 				return
 			}
 			body.WriteString(event.Delta)
@@ -716,17 +772,17 @@ func (service *Service) runDebateTurn(run *debateRun, session persistence.Debate
 			service.debateMu.Unlock()
 		case provider.EventCompleted:
 			if strings.TrimSpace(body.String()) == "" {
-				service.finishDebateTurn(run, turn, "failed", "empty_response", "The Provider returned no public answer.", blind)
+				finish("failed", "empty_response", "The Provider returned no public answer.")
 				return
 			}
 			turn.Metrics = measurement.snapshot()
-			service.finishDebateTurn(run, turn, "completed", "", "", blind)
+			finish("completed", "", "")
 			return
 		case provider.EventStopped, provider.EventFailed:
-			service.finishDebateTurn(run, turn, "failed", "provider_error", "The Provider could not complete this turn.", blind)
+			finish("failed", "provider_error", "The Provider could not complete this turn.")
 			return
 		default:
-			service.finishDebateTurn(run, turn, "failed", "protocol_error", "The Provider returned an invalid event.", blind)
+			finish("failed", "protocol_error", "The Provider returned an invalid event.")
 			return
 		}
 	}
@@ -753,20 +809,43 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 		message = "The turn was interrupted before completion."
 		session.Status = "paused"
 	}
+	if live, ok := run.turns[turn.ID]; ok {
+		turn.UsageExpected = live.UsageExpected
+	}
+	if turn.Kind == "summary" && status == "completed" {
+		sources, readErr := store.LoadDebateSummaryContext(context.Background(), run.id, turn.SummaryFromRound, turn.Round)
+		if readErr != nil {
+			service.pauseDebateOnStorageErrorLocked(run)
+			return
+		}
+		parsed, parseErr := decodeDebateSummary(turn, sources)
+		if parseErr != nil {
+			status, code, message = "failed", "invalid_summary", "The model returned a summary without valid source citations."
+		} else {
+			turn.Summary = parsed
+			session.Summary = parsed
+		}
+	}
+	if turn.Kind == "summary" && status != "stopped" && code != "paused" && code != "interrupted" {
+		session.LastSummaryRound = max(session.LastSummaryRound, turn.Round)
+	}
 	turn.State = status
 	turn.ErrorCode = code
 	turn.ErrorMessage = message
 	if status != "completed" {
 		turn.Body = ""
 		turn.Reasoning = ""
-		turn.Metrics = nil
+		turn.Summary = nil
 		if session.Status != "stopped" && session.Status != "paused" {
 			session.Status = "pausing"
 			if code != "paused" {
 				session.Notice = "A Provider turn failed. Resume retries the unfinished seat. " + message
+				if turn.Kind == "summary" {
+					session.Notice = "The stage summary could not be created. Resume continues the discussion. " + message
+				}
 			}
 		}
-	} else {
+	} else if turn.Kind != "summary" {
 		session.TotalTurns++
 		if blind {
 			session.OpeningDone[turn.Seat] = true
@@ -778,8 +857,17 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 			}
 		}
 	}
+	if status == "completed" {
+		next := time.Now().UTC().Add(service.debateTurnDelay(session))
+		session.NextTurnAt = &next
+		if turn.Kind == "summary" && run.step {
+			session.Status = "pausing"
+		}
+	}
 	if err = store.FinishDebateTurn(context.Background(), turn, session); err != nil {
 		service.pauseDebateOnStorageErrorLocked(run)
+	} else if session.Status == "running" {
+		service.checkDebateBudgetLocked(run, &session)
 	}
 	if session.Status == "pausing" {
 		pauseUnclaimedDebateBrowserTurns(run)

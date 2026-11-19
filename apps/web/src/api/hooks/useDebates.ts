@@ -2,6 +2,7 @@ import * as api from "@/api/debates";
 import { conversationKeys, debateKeys } from "@/api/queryKeys";
 import type {
   DebateAction,
+  DebateControls,
   DebateRules,
   StartDebateInput,
   Conversation,
@@ -81,5 +82,10 @@ export function useDebate(id: string, before = 0) {
     retry: false,
     onSuccess: refresh,
   });
-  return { ...query, liveData: before ? latest.data : query.data, control, rules, intervention };
+  const controls = useMutation({
+    mutationFn: (next: DebateControls) => api.updateDebateControls(id, next),
+    retry: false,
+    onSuccess: refresh,
+  });
+  return { ...query, liveData: before ? latest.data : query.data, control, rules, intervention, controls };
 }

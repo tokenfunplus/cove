@@ -17,11 +17,12 @@
 | Manual update check | Cove's GitHub release manifest |
 | Markdown or JSON exports | Files downloaded to your device |
 | Favorite/recent model IDs, named model combinations, and manual cost rates | Browser-local preferences for the Local Service address; no Provider Keys or conversation text |
+| Debate summaries, budget controls, and debate-specific cost rates | Local SQLite database; public statement excerpts go to the selected summary model when a summary is due |
 | Formula typesetting, fonts, and model brand icons | Bundled application assets; rendering makes no remote request |
 
 Side Conversations send only the selected passage and their own selected history, together with the workspace System Prompt, to the active Providers. Workbench revision requests send the current working draft, editing request, and optional selected passage. Both requests and their completed answers are saved as separate local conversations. Merely opening a tool or editing a draft makes no Provider request.
 
-Working Drafts and undo history stay in window memory; they are lost on reload unless downloaded or copied. User-supplied model pricing is browser-local metadata. Generation Metrics contain timing observations and optional Provider-reported token counts; they are not billing receipts or independently verified performance evidence.
+Working Drafts and undo history stay in window memory; they are lost on reload unless downloaded or copied. General model pricing preferences stay browser-local. Rates explicitly saved with a debate are copied into its local record so the Local Service can enforce estimated budgets while the page is closed. Stage summaries use public answers only, with an additional call to a selected participant model. Generation Metrics contain timing observations and optional Provider-reported token counts; they are not billing receipts or independently verified performance evidence.
 
 Structured Provider reasoning is retained locally and in exports, but is excluded from later selected-answer context. Older text containing explicit reasoning tags retains its original saved body and context behavior. Collapsing a Reasoning section changes presentation only.
 

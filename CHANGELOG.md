@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Cited Debate stage summaries for new ideas, supported position changes, and open questions, using a selected model seat and the existing service or NearAI verification transport.
+- Cumulative Debate token/cost estimates, optional budget reminders and automatic pause, editable rates, and service-owned turn intervals. Summary calls and reported failed/stopped usage count toward budgets independently of transcript pagination.
+
+### Changed
+
+- Guard persisted Debate budget and summary controls with schema 21. Existing debates retain disabled summaries and budgets until configured; older services reject upgraded databases.
+
 ## 0.1.0-beta.6 - 2026-11-19
 
 ### Fixed

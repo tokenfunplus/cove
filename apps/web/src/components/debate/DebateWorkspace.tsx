@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDebate } from "@/api/hooks/useDebates";
 import { getDebateExport, getDebateTurn } from "@/api/debates";
-import type { DebateRules, DebateTurn } from "@cove/api-contract";
+import type { DebateControls, DebateRules, DebateTurn } from "@cove/api-contract";
+import { DebateControlsFields, DebateUsageStrip, debateControls, debateControlsError } from "./DebateControlsFields";
+import { DebateSummaryCard } from "./DebateSummaryCard";
 import { debateMarkdown } from "@/lib/debate-export";
 import { summarize } from "@/lib/chat/timeline";
 import { Button } from "@/components/ui/button";
@@ -58,6 +60,8 @@ export function DebateWorkspace({
     crypto.randomUUID(),
   );
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
+  const [editedControls, setEditedControls] = useState<DebateControls>();
   const [editedRules, setEditedRules] = useState<DebateRules>();
   const [inspected, setInspected] = useState<DebateTurn>();
   const [briefOpen, setBriefOpen] = useState(false);
@@ -118,7 +122,7 @@ export function DebateWorkspace({
   const pending = view.interventions.filter((note) => !note.applied_round);
   const busy = debate.control.isPending;
   const error =
-    debate.control.error ?? debate.rules.error ?? debate.intervention.error;
+    debate.control.error ?? debate.rules.error ?? debate.intervention.error ?? (!controlsOpen ? debate.controls.error : undefined);
   function addIntervention() {
     if (!draft.trim() || debate.intervention.isPending) return;
     debate.intervention.mutate(
@@ -139,6 +143,11 @@ export function DebateWorkspace({
     document
       .querySelector<HTMLTextAreaElement>("#debate-intervention")
       ?.focus();
+  }
+  function openControls() {
+    debate.controls.reset();
+    setEditedControls(debateControls(session.seats.length, session.controls));
+    setControlsOpen(true);
   }
   function inspectTurn(turnId: string) {
     const request = ++inspectionRequest.current;
@@ -173,6 +182,7 @@ export function DebateWorkspace({
   }
   const brief = (
     <>
+      {session.summary && <DebateSummaryCard summary={session.summary} onInspect={inspectTurn} />}
       <section className={styles.section}>
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">{copy.liveBrief}</h2>
@@ -239,7 +249,7 @@ export function DebateWorkspace({
           session.seats.flatMap((_, seat) => {
             const turn = [...view.turns]
               .reverse()
-              .find((turn) => turn.seat === seat && turn.state === "completed");
+              .find((turn) => turn.seat === seat && turn.state === "completed" && turn.kind !== "summary");
             return turn
               ? [
                   {
@@ -425,6 +435,7 @@ export function DebateWorkspace({
         </div>
         </div>
       </div>
+      <DebateUsageStrip usage={(debate.liveData ?? view).usage} onEdit={openControls} focusMode={focusMode} />
       <div className={focusMode ? styles.focusGrid : styles.grid}>
         <div className={cn(styles.conversation, focusMode && "flex-1")}>
           <div
@@ -504,10 +515,10 @@ export function DebateWorkspace({
                   <span className={styles.avatar}><ModelBrandIcon modelId={turn.snapshot.model_id} /></span>
                   <div className="min-w-0 flex-1">
                     <strong className="break-all font-semibold">
-                      {turn.snapshot.model_id}
+                      {turn.kind === "summary" ? `Stage summary · ${turn.snapshot.model_id}` : turn.snapshot.model_id}
                     </strong>
                     <p className="text-xs text-muted-foreground">
-                      {turn.role} · {turn.snapshot.provider_name}
+                      {turn.kind === "summary" ? "Summary model" : turn.role} · {turn.snapshot.provider_name}
                     </p>
                   </div>
                   <span className="text-xs text-muted-foreground">
@@ -516,7 +527,7 @@ export function DebateWorkspace({
                   </span>
                 </div>
                 <div className={focusMode ? styles.focusBody : styles.body}>
-                  {turn.body ? (
+                  {turn.summary ? <DebateSummaryCard summary={turn.summary} onInspect={inspectTurn} /> : turn.kind === "summary" && turn.state === "streaming" ? <p className="text-sm text-muted-foreground">Preparing a stage summary with source citations…</p> : turn.body ? (
                     <MarkdownMessage content={turn.body} />
                   ) : (
                     <p className="text-sm text-muted-foreground">
@@ -542,7 +553,7 @@ export function DebateWorkspace({
                   {turn.verification && (
                     <span>{turn.verification.status === "verified_model" ? "Model and response verified" : turn.verification.status === "verified_gateway" ? "Gateway and response verified" : "Verification incomplete"}</span>
                   )}
-                  {turn.state === "completed" && (
+                  {turn.state === "completed" && turn.kind !== "summary" && (
                     <Button
                       size="xs"
                       variant="ghost"
@@ -648,6 +659,30 @@ export function DebateWorkspace({
         </aside>
       </div>
       <Dialog
+        open={controlsOpen}
+        onClose={() => { if (!debate.controls.isPending) setControlsOpen(false); }}
+        className={styles.dialog}
+      >
+        <DialogOverlay />
+        <DialogContent className={styles.dialogContent}>
+          <div className="flex items-center justify-between gap-4">
+            <DialogTitle>Summaries, budget &amp; pace</DialogTitle>
+            <Button size="icon" variant="ghost" aria-label="Close debate settings" disabled={debate.controls.isPending} onClick={() => setControlsOpen(false)}><X aria-hidden="true" /></Button>
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">Settings apply before further calls. Active requests can finish. Raise a budget or disable automatic pause before resuming a budget-paused session.</p>
+          {(debate.liveData ?? view).usage && <p className="mt-2 text-xs text-muted-foreground">Reported input: {(debate.liveData ?? view).usage!.input_tokens.toLocaleString()} tokens · Output: {(debate.liveData ?? view).usage!.output_tokens.toLocaleString()} tokens</p>}
+          {editedControls && <form className="mt-5 space-y-5" onSubmit={event => {
+            event.preventDefault();
+            if (session.status === "stopped" || debateControlsError(editedControls, session.seats.length) || debate.controls.isPending) return;
+            debate.controls.mutate(editedControls, { onSuccess: () => setControlsOpen(false) });
+          }}>
+            <fieldset disabled={session.status === "stopped" || debate.controls.isPending}><DebateControlsFields controls={editedControls} seats={session.seats} onChange={setEditedControls} /></fieldset>
+            {debate.controls.error && <p className={styles.error} role="alert">{debate.controls.error.message}</p>}
+            {session.status === "stopped" ? <p className={styles.hint}>This session is stopped. Settings are kept for reference.</p> : <div className="flex justify-end"><Button type="submit" disabled={debate.controls.isPending || !!debateControlsError(editedControls, session.seats.length)}>{debate.controls.isPending ? "Saving…" : "Save settings"}</Button></div>}
+          </form>}
+        </DialogContent>
+      </Dialog>
+      <Dialog
         open={rulesOpen}
         onClose={() => setRulesOpen(false)}
         className={styles.dialog}
@@ -749,13 +784,13 @@ export function DebateWorkspace({
                 Round {inspected.round} · Rules v{inspected.rule_version} ·{" "}
                 {inspected.state}
               </p>
-              <MarkdownMessage
+              {inspected.summary ? <><DebateSummaryCard summary={inspected.summary} onInspect={inspectTurn} /><details className="mt-4 text-sm"><summary>Original summary response</summary><pre className="mt-2 whitespace-pre-wrap break-words text-xs">{inspected.body}</pre></details></> : <MarkdownMessage
                 content={
                   inspected.body ||
                   inspected.error_message ||
                   "The turn is still in progress."
                 }
-              />
+              />}
               <div className="mt-6">
                 <ProviderSnapshotView
                   snapshot={inspected.snapshot}

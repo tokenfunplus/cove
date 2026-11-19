@@ -81,8 +81,23 @@ func (service *Service) ClaimDebateBrowserTurn(ctx context.Context, id, turnID, 
 	if task.expired || !time.Now().Before(task.deadline) {
 		return DebateBrowserContext{}, ErrDebateState
 	}
-	task.claimID = claimID
 	turn := run.turns[turnID]
+	if task.claimID == "" {
+		turn.UsageExpected = true
+		store, _ := service.debateStore()
+		if err := store.SaveDebateTurn(ctx, turn); err != nil {
+			service.pauseDebateOnStorageErrorLocked(run)
+			return DebateBrowserContext{}, err
+		}
+		if ctx.Err() != nil {
+			return DebateBrowserContext{}, ctx.Err()
+		}
+		if !time.Now().Before(task.deadline) {
+			return DebateBrowserContext{}, ErrDebateState
+		}
+		run.turns[turnID] = turn
+	}
+	task.claimID = claimID
 	return DebateBrowserContext{Turn: turn, Messages: turn.Context}, nil
 }
 

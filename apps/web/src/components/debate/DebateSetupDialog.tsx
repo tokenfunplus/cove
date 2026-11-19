@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   DebateRole,
+  DebateControls,
+  DebateRate,
   DebateRules,
   DebateSeat,
   ProviderProfile,
@@ -10,6 +12,7 @@ import type {
   ModelCatalogs,
 } from "@/components/providers/model-selection";
 import { useCreateDebate } from "@/api/hooks/useDebates";
+import { DebateControlsFields, debateControls, debateControlsError } from "./DebateControlsFields";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -163,6 +166,9 @@ export function DebateSetupDialog({
   const [topic, setTopic] = useState("");
   const [rules, setRules] = useState(defaultDebateRules);
   const [seats, setSeats] = useState<DebateSeat[]>([]);
+  const [controls, setControls] = useState<DebateControls>(() => ({ ...debateControls(0), summary_every: 3 }));
+  const ratesByTarget = useRef(new Map<string, DebateRate>());
+  const previousTargets = useRef<string[]>([]);
   const requestId = useRef(crypto.randomUUID());
   const initialized = useRef(false);
   const options = profiles
@@ -210,7 +216,26 @@ export function DebateSetupDialog({
     requestId.current = crypto.randomUUID();
     create.reset();
   }, [open, options.map((option) => option.value).join("|"), activeModelSet]);
+  const seatKeys = seats.map(seat => JSON.stringify([seat.provider_id, seat.model_id]));
+  useEffect(() => {
+    const target = previousTargets.current[controls.summary_seat];
+    const summarySeat = target ? seatKeys.indexOf(target) : 0;
+    previousTargets.current = seatKeys;
+    const rates = seats.map((seat, index) => {
+        const cached = ratesByTarget.current.get(seatKeys[index]!);
+        if (cached) return cached;
+        const metadata = catalogs[seat.provider_id]?.metadata?.[seat.model_id];
+        const suggested: DebateRate = { input_per_million: metadata?.input_price_per_million, output_per_million: metadata?.output_price_per_million };
+        try {
+          const saved: unknown = JSON.parse(localStorage.getItem(`cove:model-pricing:${JSON.stringify([seat.provider_id, seat.model_id])}`) ?? "null");
+          if (Array.isArray(saved) && saved.length === 2 && saved.every(rate => typeof rate === "string" && rate.trim() && Number.isFinite(Number(rate)) && Number(rate) >= 0 && Number(rate) <= 1e6)) return { input_per_million: Number(saved[0]), output_per_million: Number(saved[1]) };
+        } catch { /* Optional display preferences may be unavailable. */ }
+        return suggested;
+      });
+    setControls(current => debateControls(seats.length, { ...current, rates, summary_seat: summarySeat < 0 ? 0 : summarySeat }));
+  }, [seatKeys.join("|")]);
   const canStart =
+    !debateControlsError(controls, seats.length) &&
     seats.length >= 2 &&
     seats.every((seat) =>
       options.some(
@@ -261,6 +286,7 @@ export function DebateSetupDialog({
                 topic: topic.trim(),
                 seats,
                 rules,
+                controls,
               },
               {
                 onSuccess: (result) => {
@@ -406,6 +432,13 @@ export function DebateSetupDialog({
             </p>
           </fieldset>
           <DebateRulesFields rules={rules} onChange={setRules} />
+          <fieldset className="space-y-3 rounded-xl border border-border p-4">
+            <legend className="px-1 text-sm font-medium">Summaries, budget &amp; pace</legend>
+            <DebateControlsFields controls={controls} seats={seats} onChange={next => {
+              seats.forEach((_, index) => ratesByTarget.current.set(seatKeys[index]!, next.rates?.[index] ?? {}));
+              setControls(next);
+            }} />
+          </fieldset>
           <div className={styles.notice}>
             <p>{browserRequired ? copy.browserBackground : copy.background}</p>
             <p className="mt-2">{copy.pause}</p>

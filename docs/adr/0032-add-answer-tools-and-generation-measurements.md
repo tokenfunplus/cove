@@ -13,3 +13,7 @@ OpenAI-compatible requests ask for streaming usage. A single fallback without th
 The response panel shows first text, total time, reported tokens, and token throughput when an interval is available. Speed divides reported output tokens by the time between first and last nonempty text chunks; it is an observational estimate, not a controlled model benchmark. Optional user-supplied USD rates are browser-local non-secret preferences keyed by Provider/model. Displayed costs use those current rates and exclude Provider-specific cache adjustments, discounts, and other charges.
 
 This extends ADR-0014, ADR-0015, ADR-0019, and ADR-0029 without superseding their ownership or context rules. HTTP remains an adapter, Chat owns generation lifecycles, and SQLite owns local history. Clearing history also clears the window-local answer tools after both generation owners have stopped.
+
+## Debate pricing extension
+
+[ADR-0040](0040-add-debate-stage-summaries-and-run-controls.md) adds explicitly saved, debate-specific rates for background budget estimates. General model pricing preferences remain browser-local.

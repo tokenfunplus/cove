@@ -107,6 +107,7 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("GET /api/debates/{id}/events", browserSession(http.HandlerFunc(server.debateEvents)))
 	mux.Handle("POST /api/debates/{id}/control", browserSession(http.HandlerFunc(server.controlDebate)))
 	mux.Handle("PATCH /api/debates/{id}/rules", browserSession(http.HandlerFunc(server.updateDebateRules)))
+	mux.Handle("PATCH /api/debates/{id}/controls", browserSession(http.HandlerFunc(server.updateDebateControls)))
 	mux.Handle("POST /api/debates/{id}/interventions", browserSession(http.HandlerFunc(server.addDebateIntervention)))
 	mux.Handle("GET /api/settings", browserSession(http.HandlerFunc(server.getSettings)))
 	mux.Handle("PATCH /api/settings", browserSession(http.HandlerFunc(server.updateSettings)))
