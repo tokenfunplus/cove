@@ -37,6 +37,8 @@ Summaries cover the configured stage, with an earlier round available for compar
 
 A summary that fails verification or returns invalid citations pauses the debate. Resume continues the discussion after a settled failed summary; no paid summary is retried automatically. Stop remains permanent. Opening an old summary or changing settings does not start a model call.
 
+Invalid citations leave the original completed response available in **Details**, without promoting it to a stage summary. Failed verification still discards the response. A summary the browser never claimed remains due when you Resume.
+
 ## Budget and pace
 
 The usage strip shows cumulative calls, reported input/output tokens, summary calls, and an estimated USD cost when rates are available. It includes earlier transcript pages and reported usage from failed/stopped attempts. Missing counts and prices are shown as unavailable or partial. **Budget & pace** exposes the input/output breakdown and editable settings.

@@ -529,7 +529,7 @@ export function DebateWorkspace({
                   </span>
                 </div>
                 <div className={focusMode ? styles.focusBody : styles.body}>
-                  {turn.summary ? <DebateSummaryCard summary={turn.summary} onInspect={inspectTurn} /> : turn.kind === "summary" && turn.state === "streaming" ? <p className="text-sm text-muted-foreground">Preparing a stage summary with source citations…</p> : turn.body ? (
+                  {turn.summary ? <DebateSummaryCard summary={turn.summary} onInspect={inspectTurn} /> : turn.kind === "summary" && turn.state === "streaming" ? <p className="text-sm text-muted-foreground">Preparing a stage summary with source citations…</p> : turn.kind === "summary" && turn.state === "failed" ? <p className="text-sm text-muted-foreground">{turn.error_message}</p> : turn.body ? (
                     <MarkdownMessage content={turn.body} />
                   ) : (
                     <p className="text-sm text-muted-foreground">
@@ -786,7 +786,12 @@ export function DebateWorkspace({
                 Round {inspected.round} · Rules v{inspected.rule_version} ·{" "}
                 {inspected.state}
               </p>
-              {inspected.summary ? <><DebateSummaryCard summary={inspected.summary} onInspect={inspectTurn} /><details className="mt-4 text-sm"><summary>Original summary response</summary><pre className="mt-2 whitespace-pre-wrap break-words text-xs">{inspected.body}</pre></details></> : <MarkdownMessage
+              {inspected.kind === "summary" ? (
+                <>
+                  {inspected.summary ? <DebateSummaryCard summary={inspected.summary} onInspect={inspectTurn} /> : <p className="text-sm text-muted-foreground">{inspected.error_message || "Summary unavailable."}</p>}
+                  {inspected.body && <details open={!inspected.summary} className="mt-4 text-sm"><summary>Original summary response</summary><pre className="mt-2 whitespace-pre-wrap break-words text-xs">{inspected.body}</pre></details>}
+                </>
+              ) : <MarkdownMessage
                 content={
                   inspected.body ||
                   inspected.error_message ||

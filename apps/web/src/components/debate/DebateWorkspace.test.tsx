@@ -116,6 +116,18 @@ test("details retain Provider identity, original rules, and context references",
   await user.keyboard("{Escape}"); expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+test("a rejected summary keeps its original response in Details without presenting parsed points", async () => {
+  const body = '{"new_ideas":[{"text":"Unsupported statement","sources":[999]}]}';
+  view.turns[0] = { ...view.turns[0]!, kind: "summary", state: "failed", body, error_message: "Invalid source citations." };
+  mount(<DebateWorkspace id="debate-one" onNewDebate={() => {}} />);
+  await screen.findByText("Invalid source citations.");
+  expect(screen.queryByText(body)).toBeNull();
+  await userEvent.setup().click(screen.getByRole("button", { name: "Details" }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Original summary response")).toBeTruthy();
+  expect(within(dialog).getByText(body)).toBeTruthy();
+});
+
 test("stage summaries link interpretations to original participant turns", async () => {
   const user = userEvent.setup();
   const source = view.turns[0]!;

@@ -826,14 +826,16 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 			session.Summary = parsed
 		}
 	}
-	if turn.Kind == "summary" && status != "stopped" && code != "paused" && code != "interrupted" {
+	if turn.Kind == "summary" && turn.UsageExpected && status != "stopped" && code != "paused" && code != "interrupted" {
 		session.LastSummaryRound = max(session.LastSummaryRound, turn.Round)
 	}
 	turn.State = status
 	turn.ErrorCode = code
 	turn.ErrorMessage = message
 	if status != "completed" {
-		turn.Body = ""
+		if turn.Kind != "summary" || code != "invalid_summary" {
+			turn.Body = ""
+		}
 		turn.Reasoning = ""
 		turn.Summary = nil
 		if session.Status != "stopped" && session.Status != "paused" {
