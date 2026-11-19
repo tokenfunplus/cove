@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-beta.7 - 2026-11-19
+
 ### Added
 
 - Cited Debate stage summaries for new ideas, supported position changes, and open questions, using a selected model seat and the existing service or NearAI verification transport.
@@ -10,6 +12,13 @@
 ### Changed
 
 - Guard persisted Debate budget and summary controls with schema 21. Existing debates retain disabled summaries and budgets until configured; older services reject upgraded databases.
+- Compact standard and Focus Debate layouts, group workspace actions, grow the intervention field with its content and container width, and shorten live-brief previews.
+
+### Fixed
+
+- Authenticate NearAI keys before trusting the public model catalog. Open Provider settings on the active connection, follow delayed profile selection, and preserve manual drafts and connection-test status during metadata-only saves.
+- Keep the canonical Debate topic visible after renaming its history entry, and make New debate available in Focus mode.
+- Clear accounting markers for rejected browser claims before restart recovery, retain original completed summary responses with invalid citations in Details, and retry unclaimed summaries without repeating settled paid analysis.
 
 ## 0.1.0-beta.6 - 2026-11-19
 

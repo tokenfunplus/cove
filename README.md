@@ -21,14 +21,14 @@ Requires an Apple Silicon Mac running macOS 13 or later.
 
 > 🎁 **NEAR AI starter key** · [Sign in to Cove Web](https://www.hicove.io/account) to claim an API key with a $1 spending limit. One key per verified account, while supplies last.
 
-1. Download [Cove 0.1.0-beta.6 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.6/Cove-0.1.0-beta.6-arm64.dmg).
+1. Download [Cove 0.1.0-beta.7 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.7/Cove-0.1.0-beta.7-arm64.dmg).
 2. Quit an earlier Cove instance, open the DMG, and drag **Cove.app** to **Applications**.
 3. Launch Cove, open **Settings → Provider settings**, enter your Provider key, click **Test connection**, choose a model for your initial Active Model Set, then click **Save Provider**.
 4. Confirm the Provider/model target in the workspace, then send your first message. Use **Model comparison** to select up to four targets.
 
 Provider Profiles describe connections; model targets belong to the Active Model Set. Initial setup adds the chosen target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; change its targets through the workspace's model controls.
 
-The package is Developer ID signed and Apple notarized. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.6) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English; messages, titles, and prompts support Unicode content.
+The package is Developer ID signed and Apple notarized. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.7) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English; messages, titles, and prompts support Unicode content.
 
 See the [user guide](docs/user-guide.md) for file chat, Focus mode, and timeline bookmarks, or the [configuration reference](docs/configuration.md) for Provider and generation settings.
 
@@ -57,14 +57,16 @@ Building the native Launcher requires Swift 5.10+; its XCTest suite requires ful
 
 The actual Cove interface with synthetic conversation content and simulated Atlas/Lumen replies. [View Focus and timeline bookmarks](docs/images/focus-mode.webp), explore [more workspace previews](https://tokenfunplus.github.io/cove/#preview), or read the [capture notes](docs/images/README.md).
 
-Current development captures: [Local math rendering](docs/images/chat-math.png) · [Reviewed workbench revisions](docs/images/answer-workbench.png) · [Model filters](docs/images/model-filters.png) · [Response details](docs/images/response-details.png). These use the same isolated synthetic browser fixtures; they are newer than the published Beta 4 package.
+Additional captures: [Local math rendering](docs/images/chat-math.png) · [Reviewed workbench revisions](docs/images/answer-workbench.png) · [Model filters](docs/images/model-filters.png) · [Response details](docs/images/response-details.png). These use the same isolated synthetic browser fixtures.
 
 ## Features
 
-This section describes the current source tree, including unreleased changes. Published downloads follow their [release notes](docs/releases/0.1.0-beta.6.md); see the [unreleased changelog](CHANGELOG.md#unreleased) for newer work.
+This section describes the current source tree, including unreleased changes. Published downloads follow their [release notes](docs/releases/0.1.0-beta.7.md); see the [unreleased changelog](CHANGELOG.md#unreleased) for newer work.
 
 - Stream responses from OpenAI-compatible providers or the built-in NearAI preset.
 - Compare up to four models in one turn; select the answer used in later context.
+- Run continuous multi-model Debates with cited stage summaries, explicit pause/step/stop, saved history, and compact Focus reading.
+- Track cumulative Debate usage and optional cost estimates, configure budget reminders or automatic pause, and set turn intervals.
 - Browse model brand icons, advertised prices, context limits, and capabilities; use favorites, recent models, filters, and saved model combinations.
 - Read Provider-declared reasoning separately; it folds when streaming ends and stays out of later selected-answer context.
 - Render inline and multiline LaTeX, matrices, and aligned equations locally, with horizontal scrolling for long comparison formulas.
@@ -109,7 +111,7 @@ Browse the [full FAQ](docs/faq.md) for language and support questions. For build
 make dmg
 ```
 
-The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.6-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
+The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.7-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
 
 ## Community
 
