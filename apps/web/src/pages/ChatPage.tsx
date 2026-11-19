@@ -17,6 +17,7 @@ import { PrivateConnectionProgress } from "@/components/verification/PrivateConn
 import { privacyStatusFromConversation } from "@/lib/verification/privacy-status";
 
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
+import { useDebateTopic } from "@/api/hooks/useDebates";
 import { useState } from "react";
 import { DebateSetupDialog } from "@/components/debate/DebateSetupDialog";
 import { DebateWorkspace } from "@/components/debate/DebateWorkspace";
@@ -77,6 +78,7 @@ export function ChatPage() {
     catalog,
     selectionStatus,
   } = workspace;
+  const debateTopic = useDebateTopic(conversationView?.debate_id);
 
   const privacySummary = privacyStatusFromConversation(
     conversationView,
@@ -125,7 +127,7 @@ export function ChatPage() {
               activeModelSet={activeModelSet}
               catalog={catalog}
               catalogs={catalogs}
-              title={conversationView?.title ?? copy.newChat}
+              title={debateTopic ?? conversationView?.title ?? copy.newChat}
               theme={settings.theme}
               appearance={appearance}
               onToggleTheme={() => void handleToggleTheme()}

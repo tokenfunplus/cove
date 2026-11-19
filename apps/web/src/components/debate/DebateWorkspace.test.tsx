@@ -26,8 +26,51 @@ beforeEach(() => {
   vi.mocked(api.addDebateIntervention).mockImplementation(async (_id, input) => { const note = { ...input, id: "note-one", applied_round: 0, created_at: view.session.created_at }; view.interventions.push(note); return note; });
   vi.mocked(api.createDebate).mockResolvedValue(session);
 });
-afterEach(() => { cleanup(); cache.clear(); });
+afterEach(() => { cleanup(); cache.clear(); vi.unstubAllGlobals(); });
 function mount(element: React.ReactNode) { return render(<QueryClientProvider client={cache}>{element}</QueryClientProvider>); }
+
+test("intervention sizing follows container width, ignores height-only notifications, and disconnects", async () => {
+  let notify: ResizeObserverCallback = () => {};
+  const observe = vi.fn();
+  const disconnect = vi.fn();
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(callback: ResizeObserverCallback) { notify = callback; }
+    observe = observe;
+    disconnect = disconnect;
+  });
+  const { unmount } = mount(<DebateWorkspace id="debate-one" onNewDebate={() => {}} />);
+  const input = await screen.findByRole("textbox", { name: "Your intervention" });
+  expect(observe).toHaveBeenCalledWith(input);
+  let contentHeight = 38;
+  Object.defineProperty(input, "scrollHeight", { get: () => contentHeight });
+  const resize = (width: number) => act(() => notify([
+    { target: input, contentRect: new DOMRectReadOnly(0, 0, width, 40), borderBoxSize: [], contentBoxSize: [], devicePixelContentBoxSize: [] },
+  ], {} as ResizeObserver));
+  resize(600);
+  expect(input.style.height).toBe("40px");
+  contentHeight = 78;
+  resize(600);
+  expect(input.style.height).toBe("40px");
+  resize(300);
+  expect(input.style.height).toBe("80px");
+  unmount();
+  expect(disconnect).toHaveBeenCalledOnce();
+  expect(input.style.height).toBe("");
+});
+
+test.each(["running", "paused", "stopped"] as const)("Focus offers one New debate action while %s and respects its disabled state", async (status) => {
+  view.session.status = status;
+  const onNewDebate = vi.fn();
+  const { rerender } = mount(<DebateWorkspace id="debate-one" focusMode onNewDebate={onNewDebate} />);
+  const button = await screen.findByRole("button", { name: "New debate" });
+  expect(screen.getAllByRole("button", { name: "New debate" })).toHaveLength(1);
+  await userEvent.setup().click(button);
+  expect(onNewDebate).toHaveBeenCalledOnce();
+  rerender(<QueryClientProvider client={cache}><DebateWorkspace id="debate-one" focusMode newDebateDisabled onNewDebate={onNewDebate} /></QueryClientProvider>);
+  expect(button.hasAttribute("disabled")).toBe(true);
+  await userEvent.setup().click(button);
+  expect(onNewDebate).toHaveBeenCalledOnce();
+});
 
 test("workspace controls pause, step, resume, and stop through commands", async () => {
   const user = userEvent.setup(); const newDebate = vi.fn();

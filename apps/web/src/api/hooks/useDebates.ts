@@ -21,6 +21,16 @@ export function useCreateDebate() {
   });
 }
 
+export function useDebateTopic(id?: string) {
+  // Read the workspace query without starting another fetch or browser worker.
+  return useQuery({
+    queryKey: debateKeys.detail(id ?? ""),
+    queryFn: () => api.getDebate(id ?? ""),
+    enabled: false,
+    select: (view) => view.session.topic,
+  }).data;
+}
+
 export function useDebate(id: string, before = 0) {
   const cache = useQueryClient();
   const query = useQuery({

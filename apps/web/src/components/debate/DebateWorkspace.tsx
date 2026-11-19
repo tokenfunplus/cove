@@ -82,8 +82,17 @@ export function DebateWorkspace({
       input.style.height = `${input.scrollHeight + 2}px`;
     };
     resize();
+    let width: number | undefined;
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver((entries) => {
+      const entry = entries.find((entry) => entry.target === input);
+      if (!entry || entry.contentRect.width === width) return;
+      width = entry.contentRect.width;
+      resize();
+    });
+    observer?.observe(input);
     window.addEventListener("resize", resize);
     return () => {
+      observer?.disconnect();
       window.removeEventListener("resize", resize);
       input.style.removeProperty("height");
     };
@@ -338,12 +347,10 @@ export function DebateWorkspace({
               <Settings2 aria-hidden="true" />
               Rules
             </Button>
-            {!focusMode && (
-              <Button size="sm" variant="ghost" className="max-sm:size-8 max-sm:px-0" title="New debate" disabled={newDebateDisabled || busy} onClick={onNewDebate}>
+              <Button size="sm" variant="ghost" className={focusMode ? "size-8 p-0" : "max-sm:size-8 max-sm:px-0"} title="New debate" disabled={newDebateDisabled || busy} onClick={onNewDebate}>
                 <MessagesSquare aria-hidden="true" />
-                <span className="max-sm:sr-only">New debate</span>
+                <span className={focusMode ? "sr-only" : "max-sm:sr-only"}>New debate</span>
               </Button>
-            )}
           </div>
         </div>
         <h1 className="sr-only">{session.topic}</h1>
@@ -396,12 +403,7 @@ export function DebateWorkspace({
               <span className="max-sm:sr-only">Step</span>
             </Button>
           )}
-          {session.status === "stopped" ? (
-            focusMode ? <Button size="xs" disabled={newDebateDisabled} onClick={onNewDebate}>
-              <MessagesSquare aria-hidden="true" />
-              New debate
-            </Button> : null
-          ) : (
+          {session.status !== "stopped" && (
             <>
               <Button
                 size="xs"

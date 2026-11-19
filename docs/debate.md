@@ -6,7 +6,7 @@ Choose **New debate** in the workspace toolbar. Enter a topic, choose two to fou
 
 ## Workspace
 
-The topic appears once in the workspace header. A compact toolbar groups **Export**, **Rules**, and **New debate**, with the current round, completed-turn count, and run controls directly below. The live brief keeps participants and short attributed excerpts alongside the transcript. Expand the NearAI connection notice for its browser-lifecycle details; failed turns and verification results remain visible.
+The topic appears once in the workspace header, including after its Conversation History entry is renamed. A compact toolbar groups **Export**, **Rules**, and **New debate**, with the current round, completed-turn count, and run controls directly below. **New debate** is also available as an icon in Focus mode. The live brief keeps participants and short attributed excerpts alongside the transcript. Expand the NearAI connection notice for its browser-lifecycle details; failed turns and verification results remain visible.
 
 ![Compact Debate workspace with synthetic Provider responses](images/debate-workspace.png)
 
