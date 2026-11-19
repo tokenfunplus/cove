@@ -1,5 +1,7 @@
 # Using Cove
 
+For continuous multi-model discussions, see [Debate mode](debate.md).
+
 Cove is a local-first AI chat application for Apple Silicon Macs running macOS 13 or later. Its menu-bar Launcher starts a Local Service and opens the Chat Surface in your browser. The interface is English; messages, titles, and prompts support Unicode content.
 
 This guide follows the current source tree, including unreleased features. The published Beta 5 package follows its [release notes](releases/0.1.0-beta.5.md); see the [unreleased changelog](../CHANGELOG.md#unreleased) for newer changes.
@@ -81,6 +83,16 @@ Click the four-corner button beside Model comparison to enter Focus. It hides th
 The slim timeline on the right has one marker per user turn; the longer, darker marker follows your reading position. Hover or keyboard-focus a marker to preview its prompt and a short answer excerpt. Move into the card to save or remove a bookmark, or click a marker to jump to that turn. The card stays open while moving between the marker and its controls. On touch screens, tap a marker to open its preview and navigate.
 
 Bookmarks save conversation/message identifiers only in this browser profile for the Local Service address. They survive reloads but are not included in database backups or conversation exports. Clearing browser data removes them. If storage is unavailable, the card reports that changes last for the current session only. Previewing and bookmarking do not contact a Provider or change later conversation context.
+
+## Filter history
+
+![History filter menu with synthetic conversations](images/history-filters.png)
+
+Use the filter button beside **History** below the sidebar search field. **Last activity** offers All time, Today, Last 7 days, and Last 30 days; **Conversation type** offers All types, Chat, and Debate. Dates follow your local timezone and include today. Filters combine with search and the archive view. The toolbar shows the matching count and removable filter chips; **Reset filters** returns to the full list. Filtering preserves the conversation and draft already open.
+
+Only the two filter choices are remembered in this browser profile for the Local Service address. Search phrases and conversation content are not stored with those preferences. Activity uses the conversation's existing update time, including completed model responses and Debate updates.
+
+Debates show Running, Pausing, Paused, or Stopped and their current round. State labels reconcile with the Local Service while the page is open. Reading or filtering history does not start Provider work. Debate body search remains limited to its title; ordinary Chat search also matches locally saved user/assistant text.
 
 ## Ask about files
 

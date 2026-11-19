@@ -44,6 +44,11 @@ export function providerErrorMessage(
     return fallback;
   }
   switch (error.envelope.error.code) {
+    case "invalid_session":
+    case "invalid_csrf":
+    case "invalid_origin":
+    case "invalid_host":
+      return copy.providerLocalAuthorizationRequired;
     case "service_unavailable":
       return copy.unavailable;
     case "provider_unconfigured":
@@ -64,6 +69,12 @@ export function providerErrorMessage(
     default:
       return fallback;
   }
+}
+
+export function isLocalProviderSetupError(error: unknown): boolean {
+  return error instanceof LocalServiceError && [
+    "invalid_session", "invalid_csrf", "invalid_origin", "invalid_host", "service_unavailable",
+  ].includes(error.envelope.error.code);
 }
 
 export type ProviderFeedback = {

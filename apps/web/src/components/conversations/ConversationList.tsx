@@ -5,11 +5,17 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { groupConversations } from "@/components/conversations/group-conversations";
 import { englishConversationCopy, type ApplicationCopy } from "@/messages";
-import { type Conversation, type ConversationSearchResult } from "@cove/api-contract";
+import { type Conversation, type ConversationSearchFilter, type ConversationSearchResult } from "@cove/api-contract";
+import { HistoryToolbar } from "./HistoryToolbar";
+import { defaultHistoryFilters, filterHistory, historyQueryFilter, type HistoryFilters } from "./history-filters";
+import { historyCopy } from "@/messages/history";
+import { historyStyles } from "@/styles/history";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
 import {
   Archive,
   MessageCircleMore,
+  MessageCircle,
+  MessagesSquare,
   MoreHorizontal,
   Plus,
   Search,
@@ -40,7 +46,13 @@ export function ConversationList({
   revealSearch,
   deleteDisabled = false,
   copy = englishConversationCopy,
+  historyFilters,
+  historyQueryFilters,
+  onHistoryFiltersChange,
 }: {
+  historyFilters?: HistoryFilters;
+  historyQueryFilters?: ConversationSearchFilter;
+  onHistoryFiltersChange?: (filters: HistoryFilters) => void;
   conversations: Conversation[];
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
@@ -64,6 +76,13 @@ export function ConversationList({
   copy?: ApplicationCopy;
 }) {
   const [localQuery, setQuery] = useState("");
+  const [localFilters, setLocalFilters] = useState(defaultHistoryFilters);
+  const filters = historyFilters ?? localFilters;
+  const filtering = filters.kind !== "all" || filters.activity !== "all";
+  function changeFilters(value: HistoryFilters) {
+    setLocalFilters(value);
+    onHistoryFiltersChange?.(value);
+  }
   const query = searchQuery ?? localQuery;
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -90,11 +109,12 @@ export function ConversationList({
     };
   }, [revealSearch]);
   const normalizedQuery = query.trim().toLowerCase();
-  const visibleConversations = normalizedQuery
+  const matchingConversations = normalizedQuery
     ? searchResults ?? conversations.filter((conversation) =>
         conversation.title.toLowerCase().includes(normalizedQuery),
       )
     : conversations;
+  const visibleConversations = filterHistory(matchingConversations, historyQueryFilters ?? historyQueryFilter(filters));
   const groups = groupConversations(visibleConversations, !showingArchived);
   const matches = new Map((normalizedQuery ? searchResults ?? [] : []).map((result) => [result.id, result]));
 
@@ -133,10 +153,16 @@ export function ConversationList({
         />
         <kbd className="pointer-coarse:hidden">⌘K</kbd>
       </label>
+      <HistoryToolbar filters={filters} onChange={changeFilters} count={visibleConversations.length} pending={Boolean(normalizedQuery) && searchPending} archived={showingArchived} />
       {normalizedQuery && (searchPending || searchFailed) ? (
         <p className={workspaceStyles.conversationList_empty} role="status">
           {searchFailed ? copy.searchFailed : copy.searchingConversations}
         </p>
+      ) : filtering && visibleConversations.length === 0 ? (
+        <div className={historyStyles.empty} role="status">
+          <p>{historyCopy.empty}</p>
+          <Button size="xs" type="button" variant="outline" onClick={() => changeFilters(defaultHistoryFilters)}>{historyCopy.reset}</Button>
+        </div>
       ) : conversations.length === 0 && !normalizedQuery ? (
         <p className={workspaceStyles.conversationList_empty}>
           {copy.noConversations}
@@ -179,7 +205,14 @@ export function ConversationList({
                     type="button"
                   >
                     <span className="flex min-w-0 flex-col items-start gap-1">
-                      <span className={cn(workspaceStyles.conversation_title, "max-w-full")}>{conversation.title}</span>
+                      <span className={historyStyles.rowTitle}>
+                        {conversation.debate_id ? <MessagesSquare className={historyStyles.rowIcon} aria-hidden="true" /> : <MessageCircle className={historyStyles.rowIcon} aria-hidden="true" />}
+                        <span className={cn(workspaceStyles.conversation_title, "min-w-0 max-w-full")}>{conversation.title}</span>
+                      </span>
+                      {conversation.debate_id && <span className={historyStyles.status}>
+                        <span className={cn(historyStyles.dot, (conversation.debate_status === "running" || conversation.debate_status === "pausing") && historyStyles.activeDot)} aria-hidden="true" />
+                        <span>{conversation.debate_status ? historyCopy.status[conversation.debate_status] : historyCopy.debate}{conversation.debate_round ? ` · Round ${conversation.debate_round}` : ""}</span>
+                      </span>}
                       {matches.get(conversation.id)?.excerpt ? (
                         <span className="line-clamp-2 max-w-full whitespace-normal break-words text-left text-xs font-normal text-muted-foreground">
                           {matches.get(conversation.id)?.role === "user" ? copy.you : copy.assistant}: {matches.get(conversation.id)?.excerpt}

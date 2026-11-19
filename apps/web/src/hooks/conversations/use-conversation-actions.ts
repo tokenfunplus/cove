@@ -8,6 +8,7 @@ import {
 import { type WorkspaceState } from "@/hooks/workspace/use-workspace-state";
 import { type WorkspaceUi } from "@/hooks/workspace/use-workspace-ui";
 import { type ApplicationCopy } from "@/messages";
+import { loadDebateForExport } from "@/api/debates";
 
 type Dependencies = Pick<
   WorkspaceUi,
@@ -87,7 +88,7 @@ export function useConversationActions({
   async function handleRequestDownload(conversationID: string) {
     setFeedback(undefined);
     try {
-      setDownloadTarget(await getConversation(conversationID));
+      setDownloadTarget(await loadDebateForExport(await getConversation(conversationID)));
     } catch {
       setFeedback(copy.downloadFailed);
     }

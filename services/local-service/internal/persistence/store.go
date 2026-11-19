@@ -19,7 +19,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 19
+const schemaVersion = 20
 
 const defaultConversationTitle = "New conversation"
 
@@ -112,12 +112,15 @@ type ActiveModelTarget struct {
 }
 
 type Conversation struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Pinned    bool      `json:"pinned"`
-	Archived  bool      `json:"archived"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	DebateID     string    `json:"debate_id,omitempty"`
+	DebateStatus string    `json:"debate_status,omitempty"`
+	DebateRound  int       `json:"debate_round,omitempty"`
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	Pinned       bool      `json:"pinned"`
+	Archived     bool      `json:"archived"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type Message struct {
@@ -693,6 +696,12 @@ PRAGMA user_version = 15;
 		if _, err := tx.Exec(`CREATE TABLE conversation_branches (conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE, source_conversation_id TEXT NOT NULL, source_batch_id TEXT NOT NULL, source_title TEXT NOT NULL); PRAGMA user_version = 19;`); err != nil {
 			return fmt.Errorf("apply SQLite migration 19: %w", err)
 		}
+		version = 19
+	}
+	if version == 19 {
+		if _, err := tx.Exec(debateMigration); err != nil {
+			return fmt.Errorf("apply SQLite migration 20: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit SQLite migration: %w", err)
@@ -1112,15 +1121,14 @@ func (store *SQLiteStore) MarkGenerationVerifyingResponse(ctx context.Context, i
 	return store.updateGenerationState(ctx, id, GenerationVerifyingResponse, "", "")
 }
 
-func (store *SQLiteStore) SettleSecureGeneration(ctx context.Context, input SecureGenerationSettlementInput) error {
+// ValidateBrowserSettlement applies the shared limits and receipt contract to
+// browser-owned inference. Cryptographic checks remain owned by the browser.
+func ValidateBrowserSettlement(input SecureGenerationSettlementInput) error {
 	if input.Metrics != nil && input.Metrics.Source != "browser" {
 		return errors.New("secure generation metrics must describe browser measurements")
 	}
 	if err := validateGenerationMetrics(input.Metrics); err != nil {
 		return err
-	}
-	if strings.TrimSpace(input.GenerationID) == "" {
-		return errors.New("generation ID is required")
 	}
 	if input.Verification.Status != VerificationModel && input.Verification.Status != VerificationGateway && input.Verification.Status != VerificationFailed && input.Verification.Status != VerificationUnsupported {
 		return errors.New("secure generation verification status is invalid")
@@ -1136,6 +1144,16 @@ func (store *SQLiteStore) SettleSecureGeneration(ctx context.Context, input Secu
 	}
 	if (input.Verification.Status == VerificationModel || input.Verification.Status == VerificationGateway) && strings.TrimSpace(input.Body) == "" {
 		return errors.New("secure generation body is required")
+	}
+	return nil
+}
+
+func (store *SQLiteStore) SettleSecureGeneration(ctx context.Context, input SecureGenerationSettlementInput) error {
+	if strings.TrimSpace(input.GenerationID) == "" {
+		return errors.New("generation ID is required")
+	}
+	if err := ValidateBrowserSettlement(input); err != nil {
+		return err
 	}
 	tx, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1322,6 +1340,9 @@ func (store *SQLiteStore) RecoverInterruptedGenerations(ctx context.Context) err
 		if err := refreshGenerationBatchTx(ctx, tx, batchID); err != nil {
 			return fmt.Errorf("refresh interrupted generation batch: %w", err)
 		}
+	}
+	if err := recoverDebatesTx(ctx, tx); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -1662,13 +1683,13 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-const conversationSelect = `SELECT id, title, CASE WHEN pinned_at IS NULL THEN 0 ELSE 1 END, CASE WHEN archived_at IS NULL THEN 0 ELSE 1 END, created_at, updated_at FROM conversations`
+const conversationSelect = `SELECT id, title, CASE WHEN pinned_at IS NULL THEN 0 ELSE 1 END, CASE WHEN archived_at IS NULL THEN 0 ELSE 1 END, created_at, updated_at, COALESCE((SELECT id FROM debate_sessions WHERE id=conversations.id),''), COALESCE((SELECT status FROM debate_sessions WHERE id=conversations.id),''), COALESCE((SELECT json_extract(record,'$.round') FROM debate_sessions WHERE id=conversations.id),0) FROM conversations`
 
 func scanConversation(row rowScanner) (Conversation, error) {
 	var conversation Conversation
 	var pinned, archived int
 	var createdAt, updatedAt int64
-	if err := row.Scan(&conversation.ID, &conversation.Title, &pinned, &archived, &createdAt, &updatedAt); err != nil {
+	if err := row.Scan(&conversation.ID, &conversation.Title, &pinned, &archived, &createdAt, &updatedAt, &conversation.DebateID, &conversation.DebateStatus, &conversation.DebateRound); err != nil {
 		return Conversation{}, err
 	}
 	conversation.Pinned = pinned != 0

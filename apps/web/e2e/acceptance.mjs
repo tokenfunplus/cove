@@ -16,6 +16,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import assert from "node:assert/strict";
+import { runDebateFocusAcceptance } from "./debate-focus.mjs";
+import { runHistoryAcceptance } from "./history.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -102,6 +104,14 @@ const provider = http.createServer(async (request, response) => {
   }
 
   response.writeHead(200, { "Content-Type": "text/event-stream" });
+  if (input.messages[0]?.content?.includes("continuing multi-model debate")) {
+    const answer = input.model.includes("deepseek")
+      ? "### Stay close to the code\n\nA CTO should keep a small, deliberate share of hands-on work. Reviewing a difficult change or building a prototype exposes constraints that status reports can miss.\n\n**The boundary matters:** own an experiment, not the critical path. A team of five may need a coding CTO; a team of two hundred needs a CTO who develops technical judgment across teams.\n\n**Question for the opposing view:** how will a CTO test architectural assumptions without becoming dependent on secondhand reports?"
+      : "### Protect the team's leverage\n\nThe question is where the CTO's next hour has the greatest effect. Unblocking a team, improving hiring, or resolving an architectural disagreement can matter more than shipping another patch.\n\n**A counterexample:** when the CTO owns a production subsystem, review and delivery can become dependent on one busy person. Stay technically engaged through reviews and bounded prototypes, with delivery owned by the team.\n\n**What would change my view:** a small team facing an immediate technical gap may need hands-on implementation for a defined period.";
+    response.write("data: " + JSON.stringify({ choices: [{ delta: { content: answer } }] }) + "\n\n");
+    setTimeout(() => response.end('data: {"choices":[],"usage":{"prompt_tokens":128,"completion_tokens":128}}\n\ndata: [DONE]\n\n'), 1800);
+    return;
+  }
   if (prompt.includes("Math fixture")) {
     const split = mathAnswer.indexOf("\\]");
     const delta = content => response.write("data: " + JSON.stringify({ choices: [{ delta: { content } }] }) + "\n\n");
@@ -171,7 +181,7 @@ const provider = http.createServer(async (request, response) => {
 await new Promise((resolve) => provider.listen(0, "127.0.0.1", resolve));
 try {
   service = spawn(
-    ".artifacts/cove-local-service",
+    process.env.COVE_BROWSER_SERVICE_BIN ?? ".artifacts/cove-local-service",
     [
       "--control-token",
       control,
@@ -546,6 +556,24 @@ try {
       true,
     );
   }
+  async function fill(selector, value) {
+    await click(selector);
+    await evaluate(
+      `document.querySelector(${JSON.stringify(selector)}).select()`,
+    );
+    await cdp("Input.insertText", { text: value });
+  }
+  if (process.env.COVE_BROWSER_SCENARIO === "history") {
+    await runHistoryAcceptance({ api, cdp, evaluate, until, click, snapshot, reloadPage, profile, dataDir: temp });
+    assert.equal(exceptions.length, 0);
+    socket.close();
+    console.log("History browser acceptance passed: combined filters, search, remembered preferences, live Debate status, reset, archives, and mobile menus.");
+  } else if (process.env.COVE_BROWSER_SCENARIO === "debate-focus") {
+    await runDebateFocusAcceptance({ api, cdp, evaluate, until, click, snapshot, reloadPage, profile, requestCount: () => requests.length });
+    assert.equal(exceptions.length, 0);
+    socket.close();
+    console.log("Debate Focus browser acceptance passed: layout, controls, reading anchor, drafts, dialogs, responsive themes, and no duplicate inference.");
+  } else {
   for (const [width, height] of [
     [1440, 900],
     [1280, 720],
@@ -1091,13 +1119,6 @@ try {
     mobile: false,
   });
   await pause(250);
-  async function fill(selector, value) {
-    await click(selector);
-    await evaluate(
-      `document.querySelector(${JSON.stringify(selector)}).select()`,
-    );
-    await cdp("Input.insertText", { text: value });
-  }
   async function clickText(text, scope = "body") {
     const found = await evaluate(
       `(()=>{const e=[...document.querySelectorAll(${JSON.stringify(scope + " button, " + scope + " [role=menuitem]")})].find(e=>e.textContent.trim()===${JSON.stringify(text)}&&e.getBoundingClientRect().width>0);if(!e)return false;e.setAttribute('data-fixture-click','true');return true})()`,
@@ -2065,6 +2086,7 @@ try {
   console.log(
     "Captured synthetic desktop and narrow-screen evidence. Browser runtime exceptions: 0.",
   );
+  }
 } finally {
   catalogGate?.resolve();
   if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {

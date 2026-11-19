@@ -20,6 +20,15 @@ type ConversationSearchResult struct {
 	Excerpt       string `json:"excerpt,omitempty"`
 }
 
+type ConversationSearchFilter struct {
+	Kind         string
+	UpdatedAfter *time.Time
+}
+
+type FilteredConversationSearcher interface {
+	SearchFilteredConversations(context.Context, string, bool, ConversationSearchFilter) ([]ConversationSearchResult, error)
+}
+
 const conversationSearchMigration = `
 CREATE INDEX generations_assistant_message_idx ON generations(assistant_message_id) WHERE assistant_message_id IS NOT NULL;
 CREATE VIEW message_search_content AS SELECT rowid, cove_search_text(CAST(body AS BLOB)) AS body FROM messages;
@@ -56,12 +65,16 @@ func init() {
 }
 
 func (store *SQLiteStore) SearchConversations(ctx context.Context, query string, archived bool) ([]ConversationSearchResult, error) {
+	return store.SearchFilteredConversations(ctx, query, archived, ConversationSearchFilter{})
+}
+
+func (store *SQLiteStore) SearchFilteredConversations(ctx context.Context, query string, archived bool, filter ConversationSearchFilter) ([]ConversationSearchResult, error) {
 	query = strings.ToLower(strings.TrimSpace(query))
 	results := make([]ConversationSearchResult, 0)
 	if query == "" {
 		return results, nil
 	}
-	statement, args := conversationSearchQuery(query, archived)
+	statement, args := conversationSearchQuery(query, archived, filter)
 	rows, err := store.db.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("search conversations: %w", err)
@@ -71,7 +84,7 @@ func (store *SQLiteStore) SearchConversations(ctx context.Context, query string,
 		var item ConversationSearchResult
 		var createdAt, updatedAt int64
 		var messageID, role, body, turnMessageID sql.NullString
-		if err := rows.Scan(&item.ID, &item.Title, &item.Pinned, &item.Archived, &createdAt, &updatedAt, &messageID, &role, &body, &turnMessageID); err != nil {
+		if err := rows.Scan(&item.ID, &item.Title, &item.Pinned, &item.Archived, &createdAt, &updatedAt, &item.DebateID, &item.DebateStatus, &item.DebateRound, &messageID, &role, &body, &turnMessageID); err != nil {
 			return nil, fmt.Errorf("read conversation search result: %w", err)
 		}
 		item.CreatedAt, item.UpdatedAt = time.Unix(0, createdAt).UTC(), time.Unix(0, updatedAt).UTC()
@@ -85,15 +98,23 @@ func (store *SQLiteStore) SearchConversations(ctx context.Context, query string,
 	return results, rows.Err()
 }
 
-func conversationSearchQuery(query string, archived bool) (string, []any) {
+func conversationSearchQuery(query string, archived bool, filters ...ConversationSearchFilter) (string, []any) {
+	filter := ConversationSearchFilter{}
+	if len(filters) > 0 {
+		filter = filters[0]
+	}
+	filterSQL, filterArgs := conversationSearchFilterSQL(filter)
 	predicate := "cove_contains(CAST(body AS BLOB), CAST(? AS BLOB)) = 1"
 	args := []any{archived}
+	args = append(args, filterArgs...)
 	// Trigrams cannot represent one/two-rune queries or NUL-delimited text.
 	if utf8.RuneCountInString(query) >= 3 && !strings.ContainsRune(query, 0) {
 		predicate = "rowid IN (SELECT rowid FROM message_search WHERE message_search MATCH ?) AND " + predicate
 		args = append(args, `"`+strings.ReplaceAll(query, `"`, `""`)+`"`)
 	}
-	args = append(args, query, archived, query)
+	args = append(args, query, archived)
+	args = append(args, filterArgs...)
+	args = append(args, query)
 	order := "c.pinned_at IS NULL, c.pinned_at DESC, c.updated_at DESC, c.id DESC"
 	if archived {
 		order = "c.archived_at DESC, c.updated_at DESC, c.id DESC"
@@ -101,19 +122,39 @@ func conversationSearchQuery(query string, archived bool) (string, []any) {
 	return `
 WITH matching_messages AS MATERIALIZED (
   SELECT id, conversation_id, created_at FROM messages
-  WHERE conversation_id IN (SELECT id FROM conversations WHERE (archived_at IS NOT NULL) = ?)
+  WHERE conversation_id IN (SELECT c.id FROM conversations c WHERE (c.archived_at IS NOT NULL) = ?` + filterSQL + `)
     AND role IN ('user', 'assistant') AND ` + predicate + `
 )
 SELECT c.id, c.title, c.pinned_at IS NOT NULL, c.archived_at IS NOT NULL, c.created_at, c.updated_at,
+       COALESCE(d.id,''), COALESCE(d.status,''), COALESCE(json_extract(d.record,'$.round'),0),
        m.id, m.role, m.body,
        COALESCE((SELECT user_message_id FROM generations WHERE assistant_message_id = m.id LIMIT 1), CASE WHEN m.role = 'user' THEN m.id END)
 FROM conversations c
+LEFT JOIN debate_sessions d ON d.id = c.id
 LEFT JOIN messages m ON m.id = (
   SELECT id FROM matching_messages WHERE conversation_id = c.id
   ORDER BY created_at, id LIMIT 1
 )
-WHERE (c.archived_at IS NOT NULL) = ? AND (cove_contains(CAST(c.title AS BLOB), CAST(? AS BLOB)) = 1 OR m.id IS NOT NULL)
+WHERE (c.archived_at IS NOT NULL) = ?` + filterSQL + ` AND (cove_contains(CAST(c.title AS BLOB), CAST(? AS BLOB)) = 1 OR m.id IS NOT NULL)
 ORDER BY ` + order + ` LIMIT 50`, args
+}
+
+// Apply filters before the result cap so older matching history is not hidden
+// behind fifty unrelated conversations. All values remain SQL parameters.
+func conversationSearchFilterSQL(filter ConversationSearchFilter) (string, []any) {
+	condition := ""
+	args := []any{}
+	if filter.Kind == "chat" {
+		condition += " AND NOT EXISTS (SELECT 1 FROM debate_sessions WHERE id=c.id)"
+	}
+	if filter.Kind == "debate" {
+		condition += " AND EXISTS (SELECT 1 FROM debate_sessions WHERE id=c.id)"
+	}
+	if filter.UpdatedAfter != nil {
+		condition += " AND c.updated_at >= ?"
+		args = append(args, filter.UpdatedAfter.UnixNano())
+	}
+	return condition, args
 }
 
 func searchExcerpt(body, query string) string {

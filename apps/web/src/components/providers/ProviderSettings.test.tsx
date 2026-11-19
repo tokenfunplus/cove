@@ -5,6 +5,7 @@ import {
   providerConnectionStatus,
   providerErrorFeedback,
   providerErrorMessage,
+  isLocalProviderSetupError,
   shouldDismissProviderDialog,
 } from "@/components/providers/provider-feedback";
 import { applicationMessages } from "@/messages";
@@ -62,6 +63,15 @@ test("provider settings preserve distinct connection error states", () => {
   expect(providerErrorMessage(error("service_unavailable"))).toBe(
     "Local service unavailable",
   );
+  for (const code of ["invalid_session", "invalid_csrf", "invalid_origin", "invalid_host"]) {
+    expect(providerErrorMessage(error(code))).toBe(
+      "Local browser access is no longer valid. Reopen Cove from the Launcher, then try again.",
+    );
+    expect(isLocalProviderSetupError(error(code))).toBe(true);
+  }
+  expect(isLocalProviderSetupError(error("service_unavailable"))).toBe(true);
+  expect(isLocalProviderSetupError(error("authentication_failed"))).toBe(false);
+  expect(isLocalProviderSetupError(error("provider_unavailable"))).toBe(false);
   expect(providerErrorMessage(error("provider_unconfigured"))).toBe(
     "Provider key is not configured",
   );

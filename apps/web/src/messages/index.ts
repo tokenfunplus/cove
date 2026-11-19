@@ -137,6 +137,8 @@ const messages = {
   providerSaved: "Provider saved",
   providerTested: "Connection verified",
   providerFailed: "Provider connection failed",
+  providerLocalAuthorizationRequired:
+    "Local browser access is no longer valid. Reopen Cove from the Launcher, then try again.",
   providerUnconfigured: "Provider key is not configured",
   authenticationFailed: "The Provider rejected the API key",
   providerValidationFailed: "The Provider settings are invalid",

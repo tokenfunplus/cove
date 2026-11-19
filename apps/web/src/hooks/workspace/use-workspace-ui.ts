@@ -7,6 +7,7 @@ import {
   type VerificationEvidence,
 } from "@cove/api-contract";
 import { useCallback, useEffect, useState } from "react";
+import { useHistoryFilters } from "@/hooks/conversations/use-history-filters";
 
 export type WorkspaceFeedback = {
   message: string;
@@ -14,6 +15,7 @@ export type WorkspaceFeedback = {
 };
 
 export function useWorkspaceUi() {
+  const history = useHistoryFilters();
   const [conversationSearchQuery, setConversationSearchQuery] = useState("");
   const [conversationNavigation, setConversationNavigation] = useState<ConversationNavigation>();
   const [isSavingTitle, setIsSavingTitle] = useState(false);
@@ -93,6 +95,7 @@ export function useWorkspaceUi() {
   const [downloadTarget, setDownloadTarget] = useState<ConversationView>();
 
   return {
+    ...history,
     conversationSearchQuery,
     setConversationSearchQuery,
     conversationNavigation,

@@ -18,6 +18,7 @@ import {
   loadWorkspaceExportViews,
 } from "@/lib/conversation-export";
 import { type ApplicationCopy } from "@/messages";
+import { loadDebateForExport } from "@/api/debates";
 
 type Dependencies = Pick<
   WorkspaceState,
@@ -259,7 +260,7 @@ export function useConversationLifecycle({
     try {
       const views = await loadWorkspaceExportViews(
         (archived) => getConversations({ archived }),
-        getConversation,
+        async (id) => loadDebateForExport(await getConversation(id)),
       );
       downloadWorkspaceExport(views, format);
     } catch {

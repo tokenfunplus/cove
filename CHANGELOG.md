@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Fixed
+
+- Distinguish expired local browser authorization from Provider connection failures in setup, and show how to reopen an authorized session.
+- Include configured NearAI catalogs in Debate model seats and execute their turns through the existing browser verification transport, with exclusive claims, bounded waits, and explicit recovery.
+
+### Added
+
+- A history toolbar with remembered activity/type filters, clear/reset actions, filtered local search, and current Debate state/round labels in active and archived history.
+- Debate Focus mode with a full-width transcript, participant activity, emphasized turn cards, an on-demand live brief, and preserved debate controls and intervention drafts.
+- Continuous Debate mode with two to four model seats, roles, blind openings, rotating turns, versioned rules, round-boundary interventions, attributed checkpoints, local history, and transcript exports.
+- Service-owned scheduling with pause, step, resume, immediate stop, bounded context, Provider-error recovery, and paused restart recovery. Service-driven models continue with the browser closed; NearAI participation requires the debate page to remain open.
+
+### Changed
+
+- Default new Provider setup to OpenAI-compatible with blank identity/endpoint fields. Changing connection type clears the previous draft credentials, model catalog, and connection-test state.
+
+- Migrate SQLite to schema 20 for Debate Sessions and their turns/interventions. Older services reject the newer schema. Debate supports both service-driven and browser-verified NearAI models without changing their transport requirements.
+
 ## 0.1.0-beta.5 - 2026-11-18
 
 ### Added

@@ -55,13 +55,14 @@ Local search uses `GET /api/conversations/search?q=...&archived=...` behind the 
 
 ## Chat storage and rendering compatibility
 
-Current source builds migrate the schema 16 database in three steps:
+Current source builds migrate the schema 16 database through schema 20. Schema 20 adds separate Debate Session, turn, and intervention records; ordinary selected-answer context is unchanged. See [Debate mode](debate.md) and [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md).
 
 | Schema | Added data | Historical behavior |
 | --- | --- | --- |
 | 17 | Optional per-attempt Generation Metrics | Missing timing and usage stay unavailable; they are not backfilled as zero. |
 | 18 | Separate assistant Message reasoning | Existing rows default to empty reasoning. Unmarked prose is not reclassified. |
 | 19 | Independent conversation-branch provenance | Edited prompts copy only their immutable selected context, with independent message, Generation, and attachment ownership. |
+| 20 | Separate Debate Sessions, turns, and interventions | Ordinary context is unchanged; interrupted debates recover paused. |
 
 Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
@@ -109,6 +110,12 @@ Focus is available beside Model comparison. It hides the sidebar, compacts the h
 Focus is in-memory presentation state. It preserves drafts, attachments, model selection, active streams, and answer-selection requirements, without writing settings or changing Generation commands. The composer grows for multiline drafts and attachments. Model headers stay visible while reading long comparisons. Provider identity and verification remain available in the responses and the header's privacy action. The desktop conversation-search shortcut leaves Focus and reveals the sidebar search.
 
 Browser acceptance covers desktop/mobile layout, response-space gains, nested Escape handling, stream cancellation, long-answer reading position, and the adaptive Jump to latest position. Component tests cover draft/file preservation and keyboard focus restoration.
+
+Debate has its own Focus header entry, participant activity strip, emphasized transcript cards, and an on-demand live brief. It shares window-local Focus state and Escape handling, and switching presentation must not remount a browser inference worker. After `make build-service`, run the focused synthetic browser scenario with `COVE_BROWSER_SCENARIO=debate-focus node apps/web/e2e/acceptance.mjs`. Evidence is written to the normal browser artifact directory. The scenario uses temporary data, a fake Provider, and an isolated browser profile; it checks responsive light/dark layouts, draft and reading-anchor preservation, nested dialogs, and inference counts.
+
+### History filters
+
+The history toolbar has a focused browser scenario: after building web assets and a Local Service, run `COVE_BROWSER_SCENARIO=history node apps/web/e2e/acceptance.mjs`. It uses only the harness's temporary SQLite data, synthetic Provider, and isolated browser profile. It exercises combined date/type filters, search, pin/archive scope, persisted enum preferences, status reconciliation without navigation, and nested mobile filter menus. `COVE_BROWSER_SERVICE_BIN` can point the harness at a separate fixture executable.
 
 ### Conversation timeline
 

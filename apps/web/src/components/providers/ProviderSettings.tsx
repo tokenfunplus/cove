@@ -10,6 +10,7 @@ import {
   providerConnectionLabel,
   providerConnectionStatus,
   providerErrorFeedback,
+  isLocalProviderSetupError,
   type ProviderFeedback,
 } from "@/components/providers/provider-feedback";
 import { FrontSelect } from "@/components/ui/front-select";
@@ -50,12 +51,10 @@ export function ProviderSettings({
     (profile) => profile.id === selectedProviderId,
   );
   const [kind, setKind] = useState<"nearai" | "openai_compatible">(
-    selectedProfile?.kind ?? "nearai",
+    selectedProfile?.kind ?? "openai_compatible",
   );
-  const [name, setName] = useState(selectedProfile?.name ?? "NearAI");
-  const [endpoint, setEndpoint] = useState(
-    selectedProfile?.endpoint ?? "https://cloud-stg-api.near.ai",
-  );
+  const [name, setName] = useState(selectedProfile?.name ?? "");
+  const [endpoint, setEndpoint] = useState(selectedProfile?.endpoint ?? "");
   const [authMethod, setAuthMethod] = useState<"bearer" | "x_api_key">(
     selectedProfile?.auth_method ?? "bearer",
   );
@@ -104,9 +103,9 @@ export function ProviderSettings({
   function selectProvider(id: string) {
     const profile = profiles.find((candidate) => candidate.id === id);
     setSelectedProviderId(id);
-    setKind(profile?.kind ?? "nearai");
-    setName(profile?.name ?? "NearAI");
-    setEndpoint(profile?.endpoint ?? "https://cloud-stg-api.near.ai");
+    setKind(profile?.kind ?? "openai_compatible");
+    setName(profile?.name ?? "");
+    setEndpoint(profile?.endpoint ?? "");
     setAuthMethod(profile?.auth_method ?? "bearer");
     setModel(profile?.model_id ?? "");
     setModels(profile?.model_id ? [profile.model_id] : []);
@@ -170,7 +169,7 @@ export function ProviderSettings({
       setConnectionTest("verified");
       setFeedback({ text: copy.providerTested, tone: "success" });
     } catch (error) {
-      setConnectionTest("failed");
+      setConnectionTest(isLocalProviderSetupError(error) ? "idle" : "failed");
       setFeedback(providerErrorFeedback(error, copy));
     } finally {
       setIsTesting(false);
@@ -356,12 +355,17 @@ export function ProviderSettings({
                   value={kind}
                   onValueChange={(value) => {
                     const nextKind = value as "nearai" | "openai_compatible";
+                    if (nextKind === kind) return;
                     setKind(nextKind);
-                    if (nextKind === "nearai") {
-                      setName("NearAI");
-                      setEndpoint("https://cloud-stg-api.near.ai");
-                      setAuthMethod("bearer");
-                    }
+                    setName(nextKind === "nearai" ? "NearAI" : "");
+                    setEndpoint(nextKind === "nearai" ? "https://cloud-stg-api.near.ai" : "");
+                    setAuthMethod("bearer");
+                    setSecret("");
+                    setModel("");
+                    setModels([]);
+                    setMetadata({});
+                    setConnectionTest("idle");
+                    setFeedback(undefined);
                   }}
                 />
               )}

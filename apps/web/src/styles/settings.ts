@@ -143,15 +143,13 @@ export const settingsStyles = {
   `),
   prov_body: cn(String.raw`
     prov__body grid gap-4 p-5 [&_>_label]:grid [&_>_label]:grid-cols-[115px_minmax(0,_1fr)]
-    [&_>_label]:items-center [&_>_label]:gap-2 [&_>_label]:text-[11px] [&_>_.relative]:grid
-    [&_>_.relative]:grid-cols-[115px_minmax(0,_1fr)] [&_>_.relative]:items-center [&_>_.relative]:gap-2
-    [&_>_.relative]:text-[11px] [&_>_.front-select]:grid
+    [&_>_label]:items-center [&_>_label]:gap-2 [&_>_label]:text-[11px] [&_>_.front-select]:grid
     [&_>_.front-select]:grid-cols-[115px_minmax(0,_1fr)] [&_>_.front-select]:items-center
     [&_>_.front-select]:gap-2 [&_>_.front-select]:text-[11px] [&_label]:text-[11px]
     [&_label]:tracking-[0] [&_label]:[text-transform:none] [&_label]:font-medium [&_input]:text-xs
     [&_input]:rounded-[calc(var(--radius)*0.75)] [&_button]:text-xs
     [&_button]:rounded-[calc(var(--radius)*0.75)] [&_input]:py-2.5 [&_.front-select\_\_input]:px-8
-    max-[767px]:p-[15px] max-[767px]:[&_>_label]:grid-cols-1 max-[767px]:[&_>_.relative]:grid-cols-1
+    max-[767px]:p-[15px] max-[767px]:[&_>_label]:grid-cols-1
     max-[767px]:[&_>_.front-select]:grid-cols-1 [&_>_.field-select]:grid-cols-[115px_minmax(0,_1fr)]
     [&_>_.field-select]:items-center [&_>_.field-select]:gap-x-2
     [&_>_.field-select:not(:has(>_.field-select\_\_label))]:grid-cols-1

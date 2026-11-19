@@ -22,6 +22,9 @@ type Props = {
     | "conversations"
     | "conversationSearch"
     | "conversationSearchQuery"
+    | "historyFilters"
+    | "historyQueryFilters"
+    | "setHistoryFilters"
     | "setConversationSearchQuery"
     | "selectedId"
     | "showingArchived"
@@ -99,6 +102,9 @@ export function WorkspaceSidebar({ workspace }: Props) {
             : undefined
         }
         conversations={conversations}
+        historyFilters={workspace.historyFilters}
+        historyQueryFilters={workspace.historyQueryFilters}
+        onHistoryFiltersChange={workspace.setHistoryFilters}
         searchQuery={conversationSearchQuery}
         onSearchQueryChange={setConversationSearchQuery}
         searchResults={conversationSearch.results}

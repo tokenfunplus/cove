@@ -74,6 +74,10 @@ _Avoid_: Multi-turn conversation, merged response
 The one or more Provider Profile and model targets selected in the workspace for future Generations. A set of one produces a normal single-model answer; a larger set produces a Model Comparison.
 _Avoid_: Request-supplied model list, provider default
 
+**Debate Session**:
+A locally saved continuous discussion with a fixed topic, two to four model seats and roles, versioned rules, bounded turns, and explicit running/paused/stopped controls. Chat owns scheduling in the Local Service; NearAI turns delegate encryption and verification to the open Chat Surface. A running session reserves the global active-work slot; ordinary Model Comparison context remains separate.
+_Avoid_: Model Comparison, unlimited Generation, automatic consensus verdict
+
 **Key Rotation**:
 The deliberate replacement of a Provider Profile's secret with a newly validated secret, preserving the previous usable secret when validation of the replacement fails.
 _Avoid_: Automatic renewal, password reset

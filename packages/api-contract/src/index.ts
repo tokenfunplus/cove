@@ -36,6 +36,10 @@ export interface ActiveModelTarget {
 }
 
 export interface Conversation {
+	/** A separate continuous Debate Session, outside ordinary comparison context. */
+	debate_id?: string;
+  debate_status?: DebateSession["status"];
+  debate_round?: number;
   id: string;
   title: string;
   /** Present on every current Local Service response; optional for v1 compatibility. */
@@ -45,6 +49,95 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
 }
+
+export type DebateRole = "Advocate" | "Challenger" | "Evidence analyst" | "Synthesizer" | "First principles" | "Risk analyst";
+export interface DebateRules {
+  version: number;
+  text: string;
+  max_tokens: 512 | 1024 | 2048;
+  checkpoint_every: number;
+  rotate: boolean;
+}
+export interface DebateSeat extends ActiveModelTarget { role: DebateRole }
+export interface DebatePosition { turn_id: string; sequence: number; seat: number; body: string }
+export interface DebateSession {
+  id: string;
+  client_request_id: string;
+  topic: string;
+  seats: DebateSeat[];
+  rules: DebateRules;
+  pending_rules?: DebateRules;
+  status: "running" | "pausing" | "paused" | "stopped";
+  round: number;
+  position: number;
+  opening_done: boolean[];
+  total_turns: number;
+  browser_required?: boolean;
+  checkpoint?: { round: number; positions: DebatePosition[]; created_at: string };
+  notice?: string;
+  created_at: string;
+  updated_at: string;
+}
+export interface DebateTurn {
+  id: string;
+  debate_id: string;
+  sequence: number;
+  round: number;
+  seat: number;
+  role: DebateRole;
+  rule_version: number;
+  state: "streaming" | "completed" | "failed" | "stopped";
+  execution?: "browser";
+  phase?: "verifying_environment" | "streaming" | "verifying_response";
+  verification?: GenerationVerification;
+  body: string;
+  reasoning?: string;
+  snapshot: ProviderSnapshot;
+  configuration: GenerationConfigurationSnapshot;
+  context_ids: string[];
+  metrics?: GenerationMetrics;
+  error_code?: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+}
+export interface DebateBrowserContext {
+  turn: DebateTurn;
+  messages: { role: "system" | "user" | "assistant"; content: string }[];
+}
+export interface DebateBrowserProgress {
+  claim_id: string;
+  phase: NonNullable<DebateTurn["phase"]>;
+  body: string;
+  reasoning?: string;
+}
+export interface DebateBrowserResult {
+  claim_id: string;
+  body: string;
+  reasoning?: string;
+  metrics?: GenerationMetrics;
+  verification: GenerationVerification;
+}
+export interface DebateIntervention {
+  id: string;
+  client_request_id: string;
+  body: string;
+  applied_round: number;
+  created_at: string;
+}
+export interface DebateView {
+  session: DebateSession;
+  turns: DebateTurn[];
+  interventions: DebateIntervention[];
+  has_more: boolean;
+}
+export interface StartDebateInput {
+  client_request_id: string;
+  topic: string;
+  seats: DebateSeat[];
+  rules: DebateRules;
+}
+export type DebateAction = "pause" | "resume" | "step" | "stop";
 
 export interface ConversationUpdateInput {
   title?: string;
@@ -58,6 +151,11 @@ export interface ConversationSearchResult extends Conversation {
   turn_message_id?: string;
   role?: string;
   excerpt?: string;
+}
+
+export interface ConversationSearchFilter {
+  kind?: "chat" | "debate";
+  updatedAfter?: string;
 }
 
 export interface Message {
@@ -74,6 +172,8 @@ export interface Message {
 }
 
 export interface ConversationView extends Conversation {
+  /** Populated by local export loading, rather than the bounded workspace query. */
+  debate_export?: DebateView;
   branch?: { source_conversation_id: string; source_batch_id: string; source_title: string };
   messages: Message[];
   active_generation_batch?: GenerationBatch;

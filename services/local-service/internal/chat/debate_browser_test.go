@@ -1,0 +1,145 @@
+package chat
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
+	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
+)
+
+func browserDebateFixture(t *testing.T, mode string) (*Service, *persistence.SQLiteStore, *debateTestProvider) {
+	t.Helper()
+	upstream := &debateTestProvider{}
+	service, store := newDebateTest(t, upstream)
+	profile := provider.Profile{ID: "fixture", Kind: provider.KindNearAIPreset, Name: "NearAI fixture", Endpoint: "https://cloud-stg-api.near.ai", AuthMethod: provider.AuthBearer}
+	service.profiles = classifiedProviderSource{profileProviderSource: profileProviderSource{profiles: map[string]provider.Profile{"fixture": profile}}, metadata: provider.ModelMetadata{PrivacyMode: mode, Verifiable: mode == provider.PrivacyModePrivateTEE}}
+	return service, store, upstream
+}
+
+func TestDebateBrowserClaimsVerificationAndPartialOpeningRecovery(t *testing.T) {
+	for _, mode := range []string{provider.PrivacyModePrivateTEE, provider.PrivacyModeIncognito, provider.PrivacyModeChutes} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			service, store, upstream := browserDebateFixture(t, mode)
+			session, err := service.StartDebate(ctx, debateInput())
+			if err != nil || !session.BrowserRequired {
+				t.Fatal("NearAI debate was not available", err)
+			}
+			view := waitDebate(t, service, session.ID, func(v persistence.DebateView) bool { return len(v.Turns) == 2 })
+			if upstream.calls() != 0 {
+				t.Fatal("NearAI was downgraded to ordinary HTTP inference")
+			}
+			if _, err = service.ControlDebate(ctx, session.ID, "pause"); err != nil {
+				t.Fatal(err)
+			}
+			for i, turn := range view.Turns {
+				claimID := "browser-one"
+				claimed, err := service.ClaimDebateBrowserTurn(ctx, session.ID, turn.ID, claimID)
+				if err != nil || len(claimed.Messages) < 2 || turn.Execution != "browser" {
+					t.Fatal("immutable browser request unavailable", err)
+				}
+				if _, err = service.ClaimDebateBrowserTurn(ctx, session.ID, turn.ID, "other-tab"); !errors.Is(err, ErrDebateState) {
+					t.Fatal("another tab claimed the same turn", err)
+				}
+				if _, err = service.ClaimDebateBrowserTurn(ctx, session.ID, turn.ID, claimID); err != nil {
+					t.Fatal("claim replay changed ownership", err)
+				}
+				if err = service.ProgressDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserProgress{ClaimID: claimID, Phase: "streaming", Body: "Unverified partial"}); err != nil {
+					t.Fatal(err)
+				}
+				stored, err := store.ReadDebateTurn(ctx, session.ID, turn.ID)
+				if err != nil || stored.Body != "" {
+					t.Fatal("partial text reached storage", err)
+				}
+				verification := verifiedSettlement("").Verification
+				if mode != provider.PrivacyModePrivateTEE {
+					verification.Status, verification.SignatureKind = persistence.VerificationGateway, "gateway"
+				}
+				input := DebateBrowserResult{ClaimID: claimID, Body: "A verified public position", Verification: verification}
+				if _, err = service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, input); !errors.Is(err, ErrInvalidDebate) {
+					t.Fatal("settled before response verification", err)
+				}
+				if err = service.ProgressDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserProgress{ClaimID: claimID, Phase: "verifying_response", Body: input.Body}); err != nil {
+					t.Fatal(err)
+				}
+				if mode == provider.PrivacyModePrivateTEE {
+					gateway := input
+					gateway.Verification.Status, gateway.Verification.SignatureKind = persistence.VerificationGateway, "gateway"
+					if _, err = service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, gateway); !errors.Is(err, ErrInvalidDebate) {
+						t.Fatal("Private TEE accepted gateway-only evidence", err)
+					}
+				}
+				if i == 1 {
+					input.Verification = persistence.GenerationVerification{Status: persistence.VerificationFailed, FailureCode: "response_verification_failed"}
+				}
+				settled, err := service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, input)
+				if err != nil || settled.Verification == nil {
+					t.Fatal("browser result was not saved", err)
+				}
+				if i == 1 && (settled.Body != "" || settled.State != "failed") {
+					t.Fatal("unverified answer entered debate history")
+				}
+			}
+			paused := waitDebate(t, service, session.ID, func(v persistence.DebateView) bool { return v.Session.Status == "paused" && !service.debateBusy() })
+			if paused.Session.TotalTurns != 1 {
+				t.Fatal("failed verification counted as a completed turn")
+			}
+			if _, err = service.ControlDebate(ctx, session.ID, "resume"); err != nil {
+				t.Fatal(err)
+			}
+			resumed := waitDebate(t, service, session.ID, func(v persistence.DebateView) bool { return len(v.Turns) == 3 })
+			last := resumed.Turns[2]
+			if last.Seat != view.Turns[1].Seat {
+				t.Fatal("resume repeated a verified opening")
+			}
+			if _, err = service.ClaimDebateBrowserTurn(ctx, session.ID, last.ID, "browser-one"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = service.ControlDebate(ctx, session.ID, "stop"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = service.SettleDebateBrowserTurn(ctx, session.ID, last.ID, DebateBrowserResult{ClaimID: "browser-one", Body: "late answer", Verification: verifiedSettlement("").Verification}); !errors.Is(err, ErrDebateState) {
+				t.Fatal("stopped turn accepted a late browser result", err)
+			}
+			stored, err := store.ReadDebateTurn(ctx, session.ID, last.ID)
+			if err != nil || stored.State != "stopped" || stored.Body != "" || stored.Verification != nil {
+				t.Fatal("Stop preserved incomplete browser content", err)
+			}
+			if upstream.calls() != 0 {
+				t.Fatal("browser inference used the unverified fallback")
+			}
+		})
+	}
+}
+
+func TestDebateBrowserAbsenceExpiresAndReleasesActiveWork(t *testing.T) {
+	service, _, upstream := browserDebateFixture(t, provider.PrivacyModePrivateTEE)
+	service.secureTimeout = 30 * time.Millisecond
+	session, err := service.StartDebate(context.Background(), debateInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := waitDebate(t, service, session.ID, func(v persistence.DebateView) bool { return v.Session.Status == "paused" && !service.debateBusy() })
+	if len(view.Turns) != 2 || view.Session.TotalTurns != 0 || upstream.calls() != 0 {
+		t.Fatal("abandoned browser retained active work or performed inference")
+	}
+	for _, turn := range view.Turns {
+		if turn.ErrorCode != "browser_unavailable" || !strings.Contains(turn.ErrorMessage, "resume") {
+			t.Fatal("expiry did not explain recovery")
+		}
+	}
+}
+
+func TestDebateUnknownNearAIModeCannotFallBackToOrdinaryCompletion(t *testing.T) {
+	service, _, upstream := browserDebateFixture(t, "unsupported-mode")
+	if _, err := service.StartDebate(context.Background(), debateInput()); !errors.Is(err, provider.ErrModelUnavailable) {
+		t.Fatal("unknown NearAI mode was accepted", err)
+	}
+	if upstream.calls() != 0 {
+		t.Fatal("unknown NearAI mode used ordinary HTTP inference")
+	}
+}

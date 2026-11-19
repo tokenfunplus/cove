@@ -19,6 +19,9 @@ import (
 )
 
 func (service *Service) StartGenerationBatch(ctx context.Context, input SendInput) (GenerationBatchStart, error) {
+	if err := service.guardDebateConversation(ctx, input.ConversationID); err != nil {
+		return GenerationBatchStart{}, err
+	}
 	if service.store == nil || service.profiles == nil || service.provider == nil {
 		return GenerationBatchStart{}, errors.New("chat service dependencies are required")
 	}
