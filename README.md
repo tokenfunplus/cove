@@ -9,7 +9,7 @@ A local-first Mac chat app with on-device history and verifiable AI inference.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/7jdddhG8ZG)
 
-Cove keeps conversation history on your Mac and connects to the model providers you choose. A SwiftUI menu-bar Launcher starts a local Go service and opens the Chat Surface in your browser. There is no Cove account or cloud conversation store.
+Cove keeps conversation history on your Mac and connects to the model providers you choose. A SwiftUI menu-bar Launcher starts a local Go service and opens the Chat Surface in your browser. You can use the Mac app without signing in.
 
 [Quick start](#quick-start) · [Screenshots](#screenshots) · [Configuration](docs/configuration.md) · [FAQ](#faq) · [Development](docs/development.md) · [Dependency patches](docs/dependency-patches.md)
 
@@ -18,6 +18,8 @@ Cove keeps conversation history on your Mac and connects to the model providers 
 ### Install the beta
 
 Requires an Apple Silicon Mac running macOS 13 or later.
+
+> 🎁 **NEAR AI starter key** · [Sign in to Cove Web](https://www.hicove.io/account) to claim an API key with a $1 spending limit. One key per verified account, while supplies last.
 
 1. Download [Cove 0.1.0-beta.5 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.5/Cove-0.1.0-beta.5-arm64.dmg).
 2. Quit an earlier Cove instance, open the DMG, and drag **Cove.app** to **Applications**.
