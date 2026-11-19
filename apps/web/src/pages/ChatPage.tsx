@@ -182,9 +182,8 @@ export function ChatPage() {
                 <WorkspaceToast feedback={feedback} onDismiss={setFeedback} />
               ) : null}
             </div>
-            <div className={cn("flex shrink-0 justify-end gap-2 border-b border-border/40 px-4 py-1", focusMode && conversationView?.debate_id && "hidden")} hidden={focusMode && Boolean(conversationView?.debate_id)}>
+            {!conversationView?.debate_id && <div className="flex shrink-0 justify-end gap-2 border-b border-border/40 px-4 py-1">
               <Button size="xs" variant="ghost" disabled={isSending || isNavigating || connection !== "ready"} onClick={() => setDebateSetupOpen(true)}><MessagesSquare aria-hidden="true" />New debate</Button>
-              {!conversationView?.debate_id && (
               <Button
                 size="xs"
                 variant="ghost"
@@ -195,9 +194,8 @@ export function ChatPage() {
                 {toolCopy.title}
                 {workspace.answerTools.busy ? " · Working…" : ""}
               </Button>
-              )}
-            </div>
-            {conversationView?.debate_id ? <DebateWorkspace key={conversationView.debate_id} id={conversationView.debate_id} focusMode={focusMode} onNewDebate={() => setDebateSetupOpen(true)} /> : (
+            </div>}
+            {conversationView?.debate_id ? <DebateWorkspace key={conversationView.debate_id} id={conversationView.debate_id} focusMode={focusMode} newDebateDisabled={isSending || isNavigating || connection !== "ready"} onNewDebate={() => setDebateSetupOpen(true)} /> : (
             <div className={`${answerToolsStyles.layout} relative`}>
               <AnswerToolsContext.Provider
                 value={{

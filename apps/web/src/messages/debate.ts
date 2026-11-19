@@ -29,7 +29,7 @@ export const debateCopy = {
     "Continues while the Local Service is running, including when this page is closed. Model calls use your configured Provider Keys.",
   pause:
     "Pause finishes active work. Stop cancels it immediately. A restart pauses the session.",
-  intervention: "Introduce a perspective or challenge an assumption…",
+  intervention: "Add a perspective…",
   pending: "Queued for the next round",
   context:
     "Context uses a checkpoint and recent completed answers. All turns remain saved locally.",

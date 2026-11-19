@@ -3,7 +3,7 @@ import type { LiveTurn } from "@/lib/chat/live-turn";
 
 export type TimelineEntry = { id: string; title: string; excerpt: string };
 
-function summarize(text: string, limit: number) {
+export function summarize(text: string, limit: number) {
   const plain = text
     .slice(0, 2000)
     .replace(/!?(?:\[([^\]]*)\])\([^)]*\)/g, "$1")

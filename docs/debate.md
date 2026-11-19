@@ -4,6 +4,14 @@ Choose **New debate** in the workspace toolbar. Enter a topic, choose two to fou
 
 **Start debate** opens a locally saved conversation. Models give independent opening answers, then take rotating turns to challenge claims, inspect evidence, and explore new angles. There is no round limit or automatic stop when models agree. Service-driven calls continue while the Local Service runs, including when the browser is closed. For debates with NearAI seats, keep the debate open for encryption and verification. Calls use your configured Provider Keys and Provider allowance.
 
+## Workspace
+
+The topic appears once in the workspace header. A compact toolbar groups **Export**, **Rules**, and **New debate**, with the current round, completed-turn count, and run controls directly below. The live brief keeps participants and short attributed excerpts alongside the transcript. Expand the NearAI connection notice for its browser-lifecycle details; failed turns and verification results remain visible.
+
+![Compact Debate workspace with synthetic Provider responses](images/debate-workspace.png)
+
+The intervention field starts on one line and grows with the draft. Use its up-arrow **Add to debate** button or Command/Ctrl+Enter to submit; Enter adds a line. Hover over the field for the round-boundary explanation.
+
 ## Controls
 
 ![Debate Focus mode with synthetic Provider responses](images/debate-focus.png)
