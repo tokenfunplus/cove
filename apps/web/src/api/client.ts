@@ -10,7 +10,8 @@ function loadBrowserSession(): string | undefined {
     const token = fragment.get("cove-session");
     const intent = fragment.get("intent");
     const action =
-      intent === "settings" || intent === "new-chat" ? "#" + intent : "";
+      intent === "settings" || intent === "new-chat" || intent === "provider-setup"
+        ? "#" + intent : "";
     window.history.replaceState(
       window.history.state,
       "",

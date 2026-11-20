@@ -8,27 +8,32 @@ final class LauncherDesktopActions: ObservableObject {
     @Published private(set) var loginStatus = SMAppService.mainApp.status
     @Published private(set) var shortcutEnabled = false
     @Published private(set) var checkingForUpdates = false
+    @Published private var updateAvailability = UpdateAvailability()
+    @Published private(set) var providerSetupRequired: Bool?
 
     let release = LauncherRelease(info: Bundle.main.infoDictionary ?? [:])
     private let launcher: LauncherStateMachine
     private let browser: BrowserOpening
     private let resources: Bundle
     private let updates: UpdateChecker
+    private let serviceStatus: any ServiceStatusReading
+    private var checkingServiceStatus = false
     private var shortcut: GlobalChatShortcut?
 
-    init(launcher: LauncherStateMachine, browser: BrowserOpening, resources: Bundle) {
+    init(launcher: LauncherStateMachine, browser: BrowserOpening, resources: Bundle,
+         serviceStatus: any ServiceStatusReading, updates: UpdateChecker? = nil) {
         self.launcher = launcher
         self.browser = browser
         self.resources = resources
-        updates = UpdateChecker(
+        self.serviceStatus = serviceStatus
+        self.updates = updates ?? UpdateChecker(
             currentVersion: release.version,
             manifestURL: URL(string: Bundle.main.object(forInfoDictionaryKey: "CoveUpdateManifestURL") as? String
                 ?? "https://github.com/tokenfunplus/cove/releases/latest/download/update.json")!,
             requester: URLSessionUpdateRequester()
         )
         shortcut = GlobalChatShortcut { [weak launcher] in
-            if case .ready = launcher?.state { launcher?.openChat() }
-            else { launcher?.startIfNeededAndOpenChat() }
+            launcher?.openChatOrRecover()
         }
         if UserDefaults.standard.bool(forKey: "GlobalChatShortcutEnabled") {
             do {
@@ -45,8 +50,32 @@ final class LauncherDesktopActions: ObservableObject {
         loginStatus == .enabled || loginStatus == .requiresApproval
     }
 
+    var availableUpdate: AppUpdate? { updateAvailability.update }
+
     func refreshLoginStatus() {
         loginStatus = SMAppService.mainApp.status
+    }
+
+    func refreshServiceStatus() {
+        guard case let .ready(readiness) = launcher.state else {
+            providerSetupRequired = nil
+            return
+        }
+        guard !checkingServiceStatus else { return }
+        checkingServiceStatus = true
+        serviceStatus.fetchStatus { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                self.checkingServiceStatus = false
+                guard self.launcher.state == .ready(readiness) else { return }
+                self.providerSetupRequired = try? result.get().providerSetupRequired
+            }
+        }
+    }
+
+    func serviceStateChanged() {
+        providerSetupRequired = nil
+        refreshServiceStatus()
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
@@ -105,12 +134,17 @@ final class LauncherDesktopActions: ObservableObject {
             .applicationName: "Cove",
             .applicationVersion: release.version,
             .version: release.build,
+            .credits: NSAttributedString(string: text("Release Notes"), attributes: [.link: release.releaseURL]),
         ])
     }
 
     func restart() {
         do { try launcher.restart() }
         catch { showNotice("Local Service unavailable.", detail: "Try restarting Cove.") }
+    }
+
+    func openAvailableUpdate() {
+        if let availableUpdate { browser.open(availableUpdate.downloadURL) }
     }
 
     func checkForUpdates(channel: UpdateChannel = .stable) {
@@ -122,6 +156,7 @@ final class LauncherDesktopActions: ObservableObject {
                 self.checkingForUpdates = false
                 switch result {
                 case let .success(update?):
+                    self.updateAvailability.record(update, channel: channel)
                     let alert = NSAlert()
                     alert.messageText = self.text("Update Available")
                     alert.informativeText = String(format: self.text("A new version %@ is available."), update.version)
@@ -130,6 +165,7 @@ final class LauncherDesktopActions: ObservableObject {
                     NSApplication.shared.activate(ignoringOtherApps: true)
                     if alert.runModal() == .alertFirstButtonReturn { self.browser.open(update.downloadURL) }
                 case .success(nil):
+                    self.updateAvailability.record(nil, channel: channel)
                     self.showNotice(channel == .beta ? "No newer beta or stable release was found." : "Cove is up to date.")
                 case let .failure(error):
                     let alert = NSAlert()

@@ -151,6 +151,7 @@ func (server *Server) Handler() http.Handler {
 	control := localsecurity.RequireControlToken(server.controlToken, server.writeSecurityError)
 	mux.Handle("POST /internal/control/shutdown", control(http.HandlerFunc(server.controlShutdown)))
 	mux.Handle("POST /internal/control/launch-token", control(http.HandlerFunc(server.controlLaunchToken)))
+	mux.Handle("POST /internal/control/status", control(http.HandlerFunc(server.launcherStatus)))
 	mux.HandleFunc("/api/", server.apiNotFound)
 	mux.HandleFunc("GET /assets/{path...}", server.assets)
 	mux.HandleFunc("GET /{$}", server.shell)
@@ -231,7 +232,7 @@ func (server *Server) launch(writer http.ResponseWriter, request *http.Request) 
 	// The browser consumes the fragment locally. Other loopback ports never
 	// receive an ambient credential from loading this page.
 	fragment := url.Values{"cove-session": {session.ID}}
-	if intent := request.URL.Query().Get("intent"); intent == "settings" || intent == "new-chat" {
+	if intent := request.URL.Query().Get("intent"); intent == "settings" || intent == "new-chat" || intent == "provider-setup" {
 		fragment.Set("intent", intent)
 	}
 	writer.Header().Set("Location", "/#"+fragment.Encode())

@@ -29,14 +29,50 @@ import CoveLauncher
 
 final class Service: ServiceManaging {
     var minted = 0
+    var starts = 0
+    var stops = 0
+    var failStart = false
     let readiness = try! ServiceReadiness.parse(#"{"url":"http://127.0.0.1:47123","launch_token":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#)
-    func start() throws -> ServiceReadiness { readiness }
+    func start() throws -> ServiceReadiness {
+        starts += 1
+        if failStart { throw LauncherError.serviceDidNotBecomeReady }
+        return readiness
+    }
     func mintBrowserLaunchToken() throws -> String { minted += 1; return "one-time-" + String(minted) }
-    func stop() {}
+    func stop() { stops += 1 }
 }
 final class Browser: BrowserOpening {
     var urls = [URL]()
     func open(_ url: URL) { urls.append(url) }
+}
+
+final class Process: ServiceProcess {
+    var isRunning = true
+    func terminate() { isRunning = false }
+    func waitUntilExit() {}
+    func stopReadingOutput() {}
+}
+struct ProcessLauncher: ServiceProcessLaunching {
+    func launch(executableURL: URL, arguments: [String], onOutput: @escaping @Sendable (Data) -> Void,
+                onTermination: @escaping @Sendable () -> Void) throws -> any ServiceProcess {
+        onOutput(Data((#"{"url":"http://127.0.0.1:47123","launch_token":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"# + "\\n").utf8))
+        return Process()
+    }
+}
+struct FileSystem: ServiceFileSystem {
+    func isExecutableFile(at url: URL) -> Bool { true }
+}
+final class Control: ControlRequesting {
+    var data = Data(#"{"provider_setup_required":true}"#.utf8)
+    var paths = [String]()
+    func post(url: URL, controlToken: String, completion: @escaping @Sendable (Data?, Int?) -> Void) {
+        precondition(!controlToken.isEmpty)
+        paths.append(url.path)
+        completion(data, 200)
+    }
+}
+final class StatusResult: @unchecked Sendable {
+    var value: Result<LauncherServiceStatus, Error>?
 }
 
 MainActor.assumeIsolated {
@@ -51,7 +87,7 @@ MainActor.assumeIsolated {
     let browser = Browser()
     let launcher = LauncherStateMachine(service: service, browser: browser)
     try! launcher.start()
-    for destination in [ChatLaunchDestination.chat, .newChat, .settings] {
+    for destination in [ChatLaunchDestination.chat, .newChat, .settings, .providerSetup] {
         launcher.openChat(destination: destination)
         let url = URLComponents(url: browser.urls.last!, resolvingAgainstBaseURL: false)!
         precondition(url.scheme == "http" && url.host == "127.0.0.1" && url.port == 47123)
@@ -63,7 +99,56 @@ MainActor.assumeIsolated {
         precondition(url.queryItems == expectedQuery)
         precondition(url.fragment == nil)
     }
-    precondition(service.minted == 3)
+    precondition(service.minted == 4)
+
+    let quietService = Service()
+    let quietBrowser = Browser()
+    let quietLauncher = LauncherStateMachine(service: quietService, browser: quietBrowser)
+    quietLauncher.startAtLaunch(isLoginItem: true)
+    quietLauncher.startAtLaunch(isLoginItem: true)
+    precondition(quietService.starts == 1 && quietService.minted == 0 && quietBrowser.urls.isEmpty)
+    quietLauncher.openChatOrRecover()
+    precondition(quietService.starts == 1 && quietService.minted == 1 && quietBrowser.urls.count == 1)
+
+    let failedService = Service()
+    failedService.failStart = true
+    let recoveredBrowser = Browser()
+    let recoveredLauncher = LauncherStateMachine(service: failedService, browser: recoveredBrowser)
+    recoveredLauncher.startAtLaunch(isLoginItem: false)
+    guard case .failed = recoveredLauncher.state else { fatalError("Failed startup was not reported") }
+    precondition(recoveredBrowser.urls.isEmpty)
+    failedService.failStart = false
+    recoveredLauncher.openChatOrRecover(destination: .providerSetup)
+    precondition(failedService.starts == 2 && failedService.stops == 1 && failedService.minted == 1)
+    precondition(URLComponents(url: recoveredBrowser.urls.last!, resolvingAgainstBaseURL: false)!.queryItems?.last == URLQueryItem(name: "intent", value: "provider-setup"))
+    recoveredLauncher.serviceExited()
+    recoveredLauncher.openChatOrRecover(destination: .newChat)
+    precondition(failedService.starts == 3 && failedService.minted == 2)
+
+    var availability = UpdateAvailability()
+    let stable = AppUpdate(version: "1.1.0", downloadURL: URL(string: "https://example.test/stable")!)
+    let beta = AppUpdate(version: "1.2.0-beta.2", downloadURL: URL(string: "https://example.test/beta")!)
+    availability.record(beta, channel: .beta)
+    availability.record(stable, channel: .stable)
+    precondition(availability.update == beta)
+    availability.record(nil, channel: .stable)
+    precondition(availability.update == beta)
+    availability.record(nil, channel: .beta)
+    precondition(availability.update == nil)
+
+    let control = Control()
+    let manager = BundledServiceManager(executableURL: URL(fileURLWithPath: "/fixture/service"),
+        processLauncher: ProcessLauncher(), controlRequester: control, fileSystem: FileSystem())
+    try! manager.start()
+    let status = StatusResult()
+    manager.fetchStatus { status.value = $0 }
+    guard case let .success(value) = status.value else { fatalError("Missing setup status") }
+    precondition(value.providerSetupRequired)
+    precondition(control.paths == ["/internal/control/status"])
+    control.data = Data(#"{}"#.utf8)
+    manager.fetchStatus { status.value = $0 }
+    guard case .failure = status.value else { fatalError("Missing setup status must stay unknown") }
+    manager.stop()
     let release = LauncherRelease(info: ["CoveReleaseVersion": "0.1.0-beta.2"])
     for state in [LauncherState.ready(service.readiness), .failed("synthetic-private-error")] {
         let report = launcherDiagnosticReport(release: release, state: state, launchAtLogin: false, shortcutEnabled: false)

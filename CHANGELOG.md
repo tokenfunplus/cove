@@ -9,6 +9,8 @@
 
 ### Changed
 
+- Streamline the Launcher menu, keep login launches quiet, expose direct service recovery and Provider setup, and retain discovered updates under one menu with installed-version release notes in About Cove.
+
 - Guard persisted Debate budget and summary controls with schema 21. Existing debates retain disabled summaries and budgets until configured; older services reject upgraded databases.
 
 ## 0.1.0-beta.6 - 2026-11-19

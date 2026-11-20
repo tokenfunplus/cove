@@ -97,6 +97,24 @@ final class LauncherStateMachineTests: XCTestCase {
         XCTAssertTrue(process.didStopReadingOutput)
     }
 
+    func testLauncherStatusUsesItsControlChannelAndRejectsUnknownSetupState() throws {
+        let control = StubControlRequester()
+        let manager = BundledServiceManager(
+            executableURL: URL(fileURLWithPath: "/fixture/cove-local-service"),
+            processLauncher: StubProcessLauncher(process: StubProcess()),
+            controlRequester: control, clock: StubClock(), fileSystem: StubFileSystem()
+        )
+        _ = try manager.start()
+        let result = ResultBox<Result<LauncherServiceStatus, Error>>()
+        manager.fetchStatus { result.value = $0 }
+        guard case let .success(status) = result.value else { return XCTFail("Missing Launcher status") }
+        XCTAssertTrue(status.providerSetupRequired)
+        XCTAssertEqual(control.paths, ["/internal/control/status"])
+        control.statusData = Data(#"{}"#.utf8)
+        manager.fetchStatus { result.value = $0 }
+        guard case .failure = result.value else { return XCTFail("Missing status must remain unknown") }
+    }
+
     func testBundledServiceManagerUsesTheTicketSevenPortRangeByDefault() throws {
         let readiness = try ServiceReadiness.parse(
             #"{"url":"http://127.0.0.1:19421","launch_token":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#
@@ -287,9 +305,14 @@ private final class StubProcessLauncher: ServiceProcessLaunching {
 
 private final class StubControlRequester: ControlRequesting {
     var paths: [String] = []
+    var statusData = Data(#"{"provider_setup_required":true}"#.utf8)
 
     func post(url: URL, controlToken: String, completion: @escaping @Sendable (Data?, Int?) -> Void) {
         paths.append(url.path)
+        if url.path == "/internal/control/status" {
+            completion(statusData, 200)
+            return
+        }
         if url.path == "/internal/control/launch-token" {
             completion(Data(#"{"launch_token":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"}"#.utf8), 200)
             return

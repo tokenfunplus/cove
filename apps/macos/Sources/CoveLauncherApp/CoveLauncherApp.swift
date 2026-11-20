@@ -7,6 +7,7 @@ import ServiceManagement
 struct CoveLauncherApp: App {
     @StateObject private var launcher: LauncherStateMachine
     @StateObject private var desktop: LauncherDesktopActions
+    @NSApplicationDelegateAdaptor(LauncherApplicationDelegate.self) private var applicationDelegate
 
     init() {
         let service = BundledServiceManager(
@@ -22,83 +23,96 @@ struct CoveLauncherApp: App {
         }
         _launcher = StateObject(wrappedValue: stateMachine)
         _desktop = StateObject(wrappedValue: LauncherDesktopActions(
-            launcher: stateMachine, browser: browser, resources: launcherResourceBundle
+            launcher: stateMachine, browser: browser, resources: launcherResourceBundle, serviceStatus: service
         ))
-        Task { @MainActor in
-            stateMachine.startIfNeededAndOpenChat()
-        }
+        applicationDelegate.launcher = stateMachine
     }
 
     var body: some Scene {
         MenuBarExtra {
             Group {
-                Text("Cove").font(.headline)
-                Text(statusText)
+                Text("Cove · \(statusText)").font(.headline)
+
+                if canRetry {
+                    Button(localized("Retry and Open Chat")) { launcher.openChatOrRecover() }
+                }
 
                 Divider()
 
+                if isReady && desktop.providerSetupRequired == true {
+                    Button {
+                        launcher.openChatOrRecover(destination: .providerSetup)
+                    } label: {
+                        Label(localized("Set Up Provider…"), systemImage: "key")
+                    }
+                }
+
                 Button {
-                    launcher.openChat()
+                    launcher.openChatOrRecover()
                 } label: {
                     Label(localized("Open Chat"), systemImage: "bubble.left.and.bubble.right")
                 }
                 .keyboardShortcut("o")
-                .disabled(!isReady)
+                .disabled(isStarting)
 
                 Button {
-                    launcher.openChat(destination: .newChat)
+                    launcher.openChatOrRecover(destination: .newChat)
                 } label: {
                     Label(localized("New Chat"), systemImage: "square.and.pencil")
                 }
                 .keyboardShortcut("n")
-                .disabled(!isReady)
+                .disabled(isStarting)
+
+                Divider()
 
                 Button {
-                    launcher.openChat(destination: .settings)
+                    launcher.openChatOrRecover(destination: .settings)
                 } label: {
                     Label(localized("Settings…"), systemImage: "gearshape")
                 }
                 .keyboardShortcut(",")
-                .disabled(!isReady)
+                .disabled(isStarting)
 
-                Divider()
-
-                Toggle(localized("Launch at Login"), isOn: Binding(
-                    get: { desktop.launchAtLogin },
-                    set: { desktop.setLaunchAtLogin($0) }
-                ))
-                if desktop.loginStatus == .requiresApproval {
-                    Button(localized("Allow Launch at Login…")) {
-                        SMAppService.openSystemSettingsLoginItems()
+                Menu(localized("Launcher Settings")) {
+                    Toggle(localized("Launch at Login"), isOn: Binding(
+                        get: { desktop.launchAtLogin },
+                        set: { desktop.setLaunchAtLogin($0) }
+                    ))
+                    if desktop.loginStatus == .requiresApproval {
+                        Button(localized("Allow Launch at Login…")) {
+                            SMAppService.openSystemSettingsLoginItems()
+                        }
                     }
+                    Toggle(localized("Global Shortcut: ⌃⌥Space"), isOn: Binding(
+                        get: { desktop.shortcutEnabled },
+                        set: { desktop.setShortcutEnabled($0) }
+                    ))
                 }
-                Toggle(localized("Global Shortcut: ⌃⌥Space"), isOn: Binding(
-                    get: { desktop.shortcutEnabled },
-                    set: { desktop.setShortcutEnabled($0) }
-                ))
 
                 Menu(localized("Troubleshooting")) {
                     Button(localized("Restart Local Service")) { desktop.restart() }
+                        .disabled(isStarting)
                     Button(localized("Copy Diagnostics")) { desktop.copyDiagnostics() }
                     Button(localized("Open Data Folder")) { desktop.openDataFolder() }
                 }
 
                 Divider()
 
-                Button(localized("About Cove")) { desktop.showAbout() }
-                Button("Version \(desktop.release.version)") { desktop.openReleaseNotes() }
-                Button(localized(desktop.checkingForUpdates ? "Checking for Updates…" : "Check for Updates…")) {
-                    desktop.checkForUpdates()
+                Menu(updateMenuTitle) {
+                    if desktop.availableUpdate != nil {
+                        Button(localized("Open Download Page")) { desktop.openAvailableUpdate() }
+                        Divider()
+                    }
+                    Button(localized("Check Stable Releases…")) { desktop.checkForUpdates() }
+                        .disabled(desktop.checkingForUpdates)
+                    Button(localized("Check Beta Releases…")) { desktop.checkForUpdates(channel: .beta) }
+                        .disabled(desktop.checkingForUpdates)
                 }
-                .disabled(desktop.checkingForUpdates)
-                Button(localized("Check for Beta Updates…")) {
-                    desktop.checkForUpdates(channel: .beta)
-                }
-                .disabled(desktop.checkingForUpdates)
                 Menu(localized("Help & Feedback")) {
                     Button(localized("User Guide")) { desktop.openUserGuide() }
                     Button(localized("Report an Issue…")) { desktop.openIssueTracker() }
                 }
+                Button(localized("About Cove")) { desktop.showAbout() }
 
                 Divider()
 
@@ -108,9 +122,17 @@ struct CoveLauncherApp: App {
                 }
                 .keyboardShortcut("q")
             }
-            .onAppear { desktop.refreshLoginStatus() }
+            .onAppear {
+                desktop.refreshLoginStatus()
+                desktop.refreshServiceStatus()
+            }
+            .onChange(of: launcher.state) { _ in desktop.serviceStateChanged() }
+            .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { _ in
+                desktop.refreshServiceStatus()
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 desktop.refreshLoginStatus()
+                desktop.refreshServiceStatus()
             }
         } label: {
             LauncherMenuBarIcon(bundle: launcherResourceBundle)
@@ -129,14 +151,31 @@ struct CoveLauncherApp: App {
     private var statusText: String {
         switch launcher.state {
         case .stopped:
-            return localized("Local Service stopped")
+            return localized("Stopped")
         case .starting:
-            return localized("Starting Local Service")
+            return localized("Starting…")
         case .ready:
-            return localized("Local Service ready")
+            return localized(desktop.providerSetupRequired == true ? "Set Up Required" : "Ready")
         case .failed:
-            return localized("Local Service unavailable")
+            return localized("Unavailable")
         }
+    }
+
+    private var isStarting: Bool {
+        if case .starting = launcher.state { return true }
+        return false
+    }
+
+    private var canRetry: Bool {
+        switch launcher.state {
+        case .stopped, .failed: return true
+        case .starting, .ready: return false
+        }
+    }
+
+    private var updateMenuTitle: String {
+        if desktop.checkingForUpdates { return localized("Checking for Updates…") }
+        return localized(desktop.availableUpdate == nil ? "Check for Updates" : "Update Available…")
     }
 }
 
