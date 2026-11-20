@@ -2,7 +2,14 @@
 
 ## Local packages
 
-On an Apple Silicon Mac:
+On an Apple Silicon Mac with Python 3.11 or later, install the pinned DMG build tools once:
+
+```sh
+python3 -m venv .artifacts/dmg-tools
+.artifacts/dmg-tools/bin/python -m pip install -r scripts/dmg-requirements.txt
+```
+
+Then build and verify the package:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -12,6 +19,8 @@ make test-package-macos
 ```
 
 Packaging builds web assets before Go, builds the Swift Launcher, assembles `Cove.app`, validates architecture and metadata, signs it, and creates a compressed DMG and SHA-256 checksum in `.artifacts/`. Keychain is the default in every build.
+
+The DMG opens in a compact icon view with Cove, an Applications shortcut, and a Retina installation background. Drag Cove to Applications, then open the installed app and look for its menu-bar icon. Both packaging paths use the same layout, generated without Finder automation. The pinned builder uses `hdiutil` for compatibility with macOS 15 CI runners. The app's signature is preserved when copying it into the image; final DMG signing and notarization happen after layout creation.
 
 Without a signing identity, packages are ad-hoc signed. Gatekeeper may require explicit Finder approval. Acceptance fixtures use temporary data and explicitly opt into the test file Secret Store.
 

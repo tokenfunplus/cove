@@ -84,7 +84,7 @@ xcrun stapler staple "$cove_app"
 xcrun stapler validate "$cove_app"
 spctl --assess --type execute --verbose "$cove_app"
 
-hdiutil create -volname "Cove $cove_version" -srcfolder "$cove_app" -ov -format UDZO "$cove_dmg" >/dev/null
+"$cove_root/scripts/create-macos-dmg.sh" "$cove_app" "$cove_dmg"
 codesign --force --timestamp --sign "$cove_identity" "$cove_dmg"
 notarize "$cove_dmg" "$cove_output/dmg-notarization.json"
 xcrun stapler staple "$cove_dmg"

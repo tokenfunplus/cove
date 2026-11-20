@@ -69,6 +69,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Test macOS launcher
         run: make test-macos
+      - name: Install pinned DMG build tools
+        run: |
+          python3 -m venv .artifacts/dmg-tools
+          .artifacts/dmg-tools/bin/python -m pip install -r scripts/dmg-requirements.txt
       - name: Build and verify macOS DMG
         env:
           COVE_INSECURE_FILE_SECRET_STORE: "1"

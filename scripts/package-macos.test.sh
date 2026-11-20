@@ -120,6 +120,10 @@ cove_mount_attached=1
 test -x "$cove_mount/Cove.app/Contents/MacOS/Cove"
 test -d "$cove_mount/Cove.app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle"
 test -f "$cove_mount/Cove.app/Contents/Resources/AppIcon.icns"
+test "$(readlink "$cove_mount/Applications")" = /Applications
+test -f "$cove_mount/.DS_Store"
+test -f "$cove_mount/.background.tiff"
+codesign --verify --deep --strict "$cove_mount/Cove.app"
 
 # An installed app cannot fall back to resources in its original build tree.
 # Restore this directory even when startup or later assertions fail.

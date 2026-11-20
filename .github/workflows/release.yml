@@ -88,6 +88,10 @@ jobs:
           cache: true
           cache-dependency-path: services/local-service/go.sum
       - run: pnpm install --frozen-lockfile
+      - name: Install pinned DMG build tools
+        run: |
+          python3 -m venv .artifacts/dmg-tools
+          .artifacts/dmg-tools/bin/python -m pip install -r scripts/dmg-requirements.txt
       - name: Test repository
         run: make check test
       - name: Audit dependencies and verify local parser patches
