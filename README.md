@@ -57,7 +57,7 @@ Building the native Launcher requires Swift 5.10+; its XCTest suite requires ful
 
 The actual Cove interface with synthetic conversation content and simulated Atlas/Lumen replies. [View Focus and timeline bookmarks](docs/images/focus-mode.webp), explore [more workspace previews](https://tokenfunplus.github.io/cove/#preview), or read the [capture notes](docs/images/README.md).
 
-Additional captures: [Local math rendering](docs/images/chat-math.png) · [Reviewed workbench revisions](docs/images/answer-workbench.png) · [Model filters](docs/images/model-filters.png) · [Response details](docs/images/response-details.png). These use the same isolated synthetic browser fixtures.
+Additional captures: [Local math rendering](docs/images/chat-math.png) · [Reviewed workbench revisions](docs/images/answer-workbench.png) · [Model filters](docs/images/model-filters.png) · [Response details](docs/images/response-details.png). [Web search settings](docs/images/web-search-settings.png), [the composer toolbar](docs/images/web-search-composer.png), and [mobile dark mode](docs/images/web-search-mobile-dark.png) show the Beta 8 research flow. These use the same isolated synthetic browser fixtures.
 
 ## Features
 

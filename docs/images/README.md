@@ -8,9 +8,14 @@
 | `response-details.png` | The same production browser fixture: observed timing, reported usage, and immutable Provider/Privacy details in one dialog. |
 | `chat-math.png` | The same source build: locally typeset fluid-mechanics equations, aligned matrix notation, and a long scrolling expression. |
 | `model-filters.png` | The same source build: themed minimum-context options nested inside the model filter popover. |
+| `web-search-settings.png` | Cove 0.1.0-beta.8 release preparation at `6052c1b`, 2026-11-21, 1440 × 900: search connection, per-model limits, and folded advanced settings. |
+| `web-search-composer.png` | The same isolated production build: compact source/context actions and the Web search globe in the composer. |
+| `web-search-mobile-dark.png` | The same fixture at 390 × 844: dark-mode advanced search controls inside Settings. |
 
 Atlas and Lumen are demo model names. These captures use an isolated temporary data directory and a loopback simulated Provider with disposable credentials. They contain no personal conversation history or real Provider Keys. The displayed transport/verification state belongs to that fixture and does not demonstrate real Provider verification.
 
 When refreshing screenshots, capture the implemented application with synthetic content. Keep the source version and image descriptions current, use temporary `COVE_DATA_DIR` storage, and explicitly opt into the test file Secret Store when disposable credentials are needed. Do not capture a personal workspace or include browser launch URLs.
 
 The 2026-11-18 captures come directly from `apps/web/e2e/acceptance.mjs` in this change. The model names and responses are synthetic; the loopback Provider reports fixed token counts for the performance example. Neither the displayed metrics nor the fixture's transport labels establish live Provider performance or verification. The screenshots are original production-browser captures, not rendered mockups.
+
+The Beta 8 captures come from the `web-search` scenario in `apps/web/e2e/acceptance.mjs`. It uses only synthetic prompts, a loopback model Provider, and a disposable source/key fixture. No live search service or personal workspace was captured.
