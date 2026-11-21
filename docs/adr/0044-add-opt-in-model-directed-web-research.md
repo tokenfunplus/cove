@@ -27,3 +27,5 @@ This extends the manual reading workflow in ADR 0042 and the file snapshot model
 Search queries go to the selected search service; page reads contact source websites. Their excerpts then enter the selected model transport. These external requests occur outside NearAI encrypted inference, and model receipt verification does not verify search evidence. Source content, queries, and tool proofs remain local conversation data and are removed with their owning history. Search connection settings and keys survive clearing conversation history until explicitly changed or removed.
 
 Provider request contracts: [Tavily](https://docs.tavily.com/documentation/api-reference/endpoint/search), [Linkup](https://docs.linkup.so/pages/documentation/endpoints/search/reference), [Exa](https://exa.ai/docs/reference/search).
+
+References are extracted from explicit links in a CommonMark syntax tree after applying the renderer's math protection. This preserves citations in nested list and quoted paragraphs while excluding inline, fenced, and indented code, math, images, and escaped examples. Source and section identifiers must still resolve to saved evidence, in first-citation order.

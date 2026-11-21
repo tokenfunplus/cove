@@ -19,6 +19,7 @@
     "clsx": "2.1.1",
     "katex": "0.19.1",
     "lucide-react": "^0.544.0",
+    "mdast-util-from-markdown": "2.0.2",
     "radix-ui": "1.6.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
