@@ -5,21 +5,31 @@
 ### Added
 
 - Opt-in autonomous Web search for chat and Model Comparison, with Tavily/Linkup/Exa Keychain configuration, per-attempt request limits, verified NearAI tool requests, saved evidence, References, and local research traces.
-
 - Explicit public webpage reading with bounded credential-free retrieval, session-bound previews, and saved source text/provenance shared by ordinary and NearAI inference, retries, branches, citations, and exports.
+
+### Changed
+
+- Refine Web search setup into connection, usage limits, and advanced options with shared custom selectors, numeric steppers, and a compact composer toolbar.
+- Streamline the Launcher menu, keep login launches quiet, expose direct service recovery and Provider setup, and retain discovered updates under one menu with installed-version release notes in About Cove.
+- Migrate automatic research policy, traces, and saved web sources to SQLite schema 22. Older services reject upgraded databases.
+
+## 0.1.0-beta.7 - 2026-11-19
+
+### Added
 
 - Cited Debate stage summaries for new ideas, supported position changes, and open questions, using a selected model seat and the existing service or NearAI verification transport.
 - Cumulative Debate token/cost estimates, optional budget reminders and automatic pause, editable rates, and service-owned turn intervals. Summary calls and reported failed/stopped usage count toward budgets independently of transcript pagination.
 
 ### Changed
 
-- Refine Web search setup into connection, usage limits, and advanced options with shared custom selectors, numeric steppers, and a compact composer toolbar.
-
-- Streamline the Launcher menu, keep login launches quiet, expose direct service recovery and Provider setup, and retain discovered updates under one menu with installed-version release notes in About Cove.
-
-- Migrate automatic research policy, traces, and saved web sources to SQLite schema 22. Older services reject upgraded databases.
-
 - Guard persisted Debate budget and summary controls with schema 21. Existing debates retain disabled summaries and budgets until configured; older services reject upgraded databases.
+- Compact standard and Focus Debate layouts, group workspace actions, grow the intervention field with its content and container width, and shorten live-brief previews.
+
+### Fixed
+
+- Authenticate NearAI keys before trusting the public model catalog. Open Provider settings on the active connection, follow delayed profile selection, and preserve manual drafts and connection-test status during metadata-only saves.
+- Keep the canonical Debate topic visible after renaming its history entry, and make New debate available in Focus mode.
+- Clear accounting markers for rejected browser claims before restart recovery, retain original completed summary responses with invalid citations in Details, and retry unclaimed summaries without repeating settled paid analysis.
 
 ## 0.1.0-beta.6 - 2026-11-19
 

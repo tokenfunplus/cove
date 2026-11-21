@@ -554,6 +554,9 @@ test("Debate Focus preserves a browser turn and intervention draft while restori
   render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
   const composer = await screen.findByRole("textbox", { name: "Your intervention" });
   const user = userEvent.setup();
+  await waitFor(() =>
+    expect(document.querySelector('[data-workspace-region="workspace-header"] .masthead__title')?.textContent).toBe(view.session.topic),
+  );
   await waitFor(() => expect(runDebateBrowserTurn).toHaveBeenCalledTimes(1));
   const browserSignal = vi.mocked(runDebateBrowserTurn).mock.calls[0]![1];
   await user.type(composer, "Consider a team of thirty engineers.");
@@ -565,7 +568,8 @@ test("Debate Focus preserves a browser turn and intervention draft while restori
   expect(screen.queryByRole("complementary", { name: "Live brief" })).toBeNull();
   expect(screen.getByRole("button", { name: "Pause" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "New debate" })).toBeNull();
+  expect(screen.getByRole("button", { name: "New debate" })).toBeTruthy();
+  expect(document.querySelector('[data-workspace-region="workspace-header"] .masthead__title')?.textContent).toBe(view.session.topic);
   await user.click(screen.getByRole("button", { name: "Live brief" }));
   expect(screen.getByRole("dialog")).toBeTruthy();
   await user.keyboard("{Escape}");

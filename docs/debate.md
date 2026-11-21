@@ -6,7 +6,7 @@ Choose **New debate** in the workspace toolbar. Enter a topic, choose two to fou
 
 ## Workspace
 
-The topic appears once in the workspace header. A compact toolbar groups **Export**, **Rules**, and **New debate**, with the current round, completed-turn count, and run controls directly below. The live brief keeps participants and short attributed excerpts alongside the transcript. Expand the NearAI connection notice for its browser-lifecycle details; failed turns and verification results remain visible.
+The topic appears once in the workspace header, including after its Conversation History entry is renamed. A compact toolbar groups **Export**, **Rules**, and **New debate**, with the current round, completed-turn count, and run controls directly below. **New debate** is also available as an icon in Focus mode. The live brief keeps participants and short attributed excerpts alongside the transcript. Expand the NearAI connection notice for its browser-lifecycle details; failed turns and verification results remain visible.
 
 ![Compact Debate workspace with synthetic Provider responses](images/debate-workspace.png)
 
@@ -36,6 +36,8 @@ Summaries collect **New ideas**, **Position changes**, and **Open questions**. T
 Summaries cover the configured stage, with an earlier round available for comparison. They use completed public statements, excluding reasoning and failed verification. Generated interpretations do not become participant evidence in later model context. The original excerpt checkpoints remain separate reading aids.
 
 A summary that fails verification or returns invalid citations pauses the debate. Resume continues the discussion after a settled failed summary; no paid summary is retried automatically. Stop remains permanent. Opening an old summary or changing settings does not start a model call.
+
+Invalid citations leave the original completed response available in **Details**, without promoting it to a stage summary. Failed verification still discards the response. A summary the browser never claimed remains due when you Resume.
 
 ## Budget and pace
 

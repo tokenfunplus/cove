@@ -21,6 +21,8 @@ type summarizingDebateProvider struct {
 	missingUsage atomic.Bool
 }
 
+const invalidSummaryFixture = `{"new_ideas":[{"text":"Unsupported claim","sources":[999999]}],"position_changes":[],"open_questions":[]}`
+
 func (p *summarizingDebateProvider) Stream(ctx context.Context, input provider.CompletionInput) (provider.CompletionStream, error) {
 	stream, err := p.debateTestProvider.Stream(ctx, input)
 	if err != nil {
@@ -32,7 +34,7 @@ func (p *summarizingDebateProvider) Stream(ctx context.Context, input provider.C
 		body, _ := json.Marshal(map[string]any{"new_ideas": []any{map[string]any{"text": "The participants introduced a measurable boundary condition.", "sources": []int64{sequence}}}, "position_changes": []any{}, "open_questions": []any{map[string]any{"text": "What evidence would separate these positions?", "sources": []int64{sequence}}}})
 		stream.(*debateTestStream).body = string(body)
 		if p.invalid.Load() {
-			stream.(*debateTestStream).body = `{"new_ideas":[{"text":"Unsupported claim","sources":[999999]}],"position_changes":[],"open_questions":[]}`
+			stream.(*debateTestStream).body = invalidSummaryFixture
 		}
 	}
 	return &debateUsageTestStream{CompletionStream: stream, missing: p.missingUsage.Load()}, nil
@@ -145,7 +147,7 @@ func TestDebateInvalidSummaryPausesWithoutInventedCitationsOrAutomaticRetry(t *t
 		t.Fatal(err)
 	}
 	last := view.Turns[len(view.Turns)-1]
-	if upstream.calls() != 3 || last.Kind != "summary" || last.State != "failed" || last.Body != "" || last.Summary != nil || view.Session.Summary != nil || view.Session.LastSummaryRound != 1 || view.Session.TotalTurns != 2 {
+	if upstream.calls() != 3 || last.Kind != "summary" || last.State != "failed" || last.Body != invalidSummaryFixture || last.ErrorCode != "invalid_summary" || last.Summary != nil || view.Session.Summary != nil || view.Session.LastSummaryRound != 1 || view.Session.TotalTurns != 2 {
 		t.Fatal("invalid summary was accepted or repeated")
 	}
 	if _, err := service.ControlDebate(ctx, session.ID, "step"); err != nil {

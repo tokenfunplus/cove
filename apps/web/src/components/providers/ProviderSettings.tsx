@@ -22,7 +22,7 @@ import {
   type ProviderValidationResponse,
 } from "@cove/api-contract";
 import { KeyRound } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function ProviderSettings({
   id,
@@ -77,8 +77,23 @@ export function ProviderSettings({
   >("idle");
   const [feedback, setFeedback] = useState<ProviderFeedback>();
   const [rotateOpen, setRotateOpen] = useState(false);
+  const preferredSelection = useRef({
+    id: initialProviderId,
+    applied: profiles.some((profile) => profile.id === initialProviderId),
+  });
+  const busy = isTesting || isDeleting || isSaving;
 
   useEffect(() => {
+    if (preferredSelection.current.id !== initialProviderId) {
+      preferredSelection.current = { id: initialProviderId, applied: false };
+    }
+    if (busy) return;
+    const preferred = profiles.find((profile) => profile.id === initialProviderId);
+    if (preferred && !preferredSelection.current.applied) {
+      preferredSelection.current.applied = true;
+      if (selectedProviderId !== preferred.id) selectProvider(preferred.id);
+      return;
+    }
     if (
       selectedProviderId === "__new__" ||
       (selectedProviderId && selectedProfile)
@@ -92,9 +107,7 @@ export function ProviderSettings({
       profiles.find((profile) => profile.id === initialProviderId)?.id ??
         profiles[0].id,
     );
-  }, [initialProviderId, profiles, selectedProfile, selectedProviderId]);
-
-  const busy = isTesting || isDeleting || isSaving;
+  }, [busy, initialProviderId, profiles, selectedProfile, selectedProviderId]);
 
   const input = (): ProviderProfileInput => ({
     id: selectedProfile?.id,
@@ -333,11 +346,12 @@ export function ProviderSettings({
                     { value: "__new__", label: copy.newProvider },
                   ]}
                   value={selectedProviderId}
-                  onValueChange={(providerId) =>
+                  onValueChange={(providerId) => {
+                    preferredSelection.current.applied = true;
                     providerId === "__new__"
                       ? startNewProvider()
-                      : selectProvider(providerId)
-                  }
+                      : selectProvider(providerId);
+                  }}
                 />
               ) : null}
               {selectedProfile ? (

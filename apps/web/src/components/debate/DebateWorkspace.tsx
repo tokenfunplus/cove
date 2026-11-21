@@ -82,8 +82,17 @@ export function DebateWorkspace({
       input.style.height = `${input.scrollHeight + 2}px`;
     };
     resize();
+    let width: number | undefined;
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver((entries) => {
+      const entry = entries.find((entry) => entry.target === input);
+      if (!entry || entry.contentRect.width === width) return;
+      width = entry.contentRect.width;
+      resize();
+    });
+    observer?.observe(input);
     window.addEventListener("resize", resize);
     return () => {
+      observer?.disconnect();
       window.removeEventListener("resize", resize);
       input.style.removeProperty("height");
     };
@@ -338,12 +347,10 @@ export function DebateWorkspace({
               <Settings2 aria-hidden="true" />
               Rules
             </Button>
-            {!focusMode && (
-              <Button size="sm" variant="ghost" className="max-sm:size-8 max-sm:px-0" title="New debate" disabled={newDebateDisabled || busy} onClick={onNewDebate}>
+              <Button size="sm" variant="ghost" className={focusMode ? "size-8 p-0" : "max-sm:size-8 max-sm:px-0"} title="New debate" disabled={newDebateDisabled || busy} onClick={onNewDebate}>
                 <MessagesSquare aria-hidden="true" />
-                <span className="max-sm:sr-only">New debate</span>
+                <span className={focusMode ? "sr-only" : "max-sm:sr-only"}>New debate</span>
               </Button>
-            )}
           </div>
         </div>
         <h1 className="sr-only">{session.topic}</h1>
@@ -396,12 +403,7 @@ export function DebateWorkspace({
               <span className="max-sm:sr-only">Step</span>
             </Button>
           )}
-          {session.status === "stopped" ? (
-            focusMode ? <Button size="xs" disabled={newDebateDisabled} onClick={onNewDebate}>
-              <MessagesSquare aria-hidden="true" />
-              New debate
-            </Button> : null
-          ) : (
+          {session.status !== "stopped" && (
             <>
               <Button
                 size="xs"
@@ -527,7 +529,7 @@ export function DebateWorkspace({
                   </span>
                 </div>
                 <div className={focusMode ? styles.focusBody : styles.body}>
-                  {turn.summary ? <DebateSummaryCard summary={turn.summary} onInspect={inspectTurn} /> : turn.kind === "summary" && turn.state === "streaming" ? <p className="text-sm text-muted-foreground">Preparing a stage summary with source citations…</p> : turn.body ? (
+                  {turn.summary ? <DebateSummaryCard summary={turn.summary} onInspect={inspectTurn} /> : turn.kind === "summary" && turn.state === "streaming" ? <p className="text-sm text-muted-foreground">Preparing a stage summary with source citations…</p> : turn.kind === "summary" && turn.state === "failed" ? <p className="text-sm text-muted-foreground">{turn.error_message}</p> : turn.body ? (
                     <MarkdownMessage content={turn.body} />
                   ) : (
                     <p className="text-sm text-muted-foreground">
@@ -784,7 +786,12 @@ export function DebateWorkspace({
                 Round {inspected.round} · Rules v{inspected.rule_version} ·{" "}
                 {inspected.state}
               </p>
-              {inspected.summary ? <><DebateSummaryCard summary={inspected.summary} onInspect={inspectTurn} /><details className="mt-4 text-sm"><summary>Original summary response</summary><pre className="mt-2 whitespace-pre-wrap break-words text-xs">{inspected.body}</pre></details></> : <MarkdownMessage
+              {inspected.kind === "summary" ? (
+                <>
+                  {inspected.summary ? <DebateSummaryCard summary={inspected.summary} onInspect={inspectTurn} /> : <p className="text-sm text-muted-foreground">{inspected.error_message || "Summary unavailable."}</p>}
+                  {inspected.body && <details open={!inspected.summary} className="mt-4 text-sm"><summary>Original summary response</summary><pre className="mt-2 whitespace-pre-wrap break-words text-xs">{inspected.body}</pre></details>}
+                </>
+              ) : <MarkdownMessage
                 content={
                   inspected.body ||
                   inspected.error_message ||

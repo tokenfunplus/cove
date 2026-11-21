@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ProviderSettings } from "./ProviderSettings";
@@ -17,6 +17,55 @@ beforeEach(() => {
   }
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); for (const name of patchedMethods.splice(0)) Reflect.deleteProperty(Element.prototype, name); });
+
+test.each([undefined, "provider-one"])("settings follow a later active Provider (initial: %s)", async (initialProviderId) => {
+  const { profile } = createWorkspaceFixture();
+  const active = { ...profile, id: "active-provider", name: "Active Provider", endpoint: "https://active.example" };
+  const probe = vi.fn().mockResolvedValue({ models: [active.model_id] });
+  const props = { profiles: [profile, active], onSave: vi.fn(), onTest: probe, onDelete: vi.fn(), onDeleteKey: vi.fn() };
+  const { rerender } = render(<ProviderSettings {...props} initialProviderId={initialProviderId} />);
+  rerender(<ProviderSettings {...props} initialProviderId={active.id} />);
+  expect((screen.getByLabelText("Endpoint") as HTMLInputElement).value).toBe(active.endpoint);
+  await userEvent.setup().click(screen.getByRole("button", { name: "Test connection" }));
+  expect(probe).toHaveBeenCalledWith(expect.objectContaining({ id: active.id, endpoint: active.endpoint }));
+});
+
+test("settings adopt an active Provider whose profile arrives after the fallback", () => {
+  const { profile } = createWorkspaceFixture();
+  const active = { ...profile, id: "active-provider", name: "Active Provider", endpoint: "https://active.example" };
+  const props = { initialProviderId: active.id, onSave: vi.fn(), onTest: vi.fn(), onDelete: vi.fn(), onDeleteKey: vi.fn() };
+  const { rerender } = render(<ProviderSettings {...props} profiles={[profile]} />);
+  rerender(<ProviderSettings {...props} profiles={[profile, active]} />);
+  expect((screen.getByLabelText("Endpoint") as HTMLInputElement).value).toBe(active.endpoint);
+});
+
+test("an active Provider change waits for a pending test and clears its old result", async () => {
+  const { profile } = createWorkspaceFixture();
+  const active = { ...profile, id: "active-provider", name: "Active Provider", endpoint: "https://active.example" };
+  let finish!: (result: { models: string[] }) => void;
+  const probe = vi.fn(() => new Promise<{ models: string[] }>(resolve => { finish = resolve; }));
+  const props = { profiles: [profile, active], onSave: vi.fn(), onTest: probe, onDelete: vi.fn(), onDeleteKey: vi.fn() };
+  const { rerender } = render(<ProviderSettings {...props} initialProviderId={profile.id} />);
+  await userEvent.setup().click(screen.getByRole("button", { name: "Test connection" }));
+  rerender(<ProviderSettings {...props} initialProviderId={active.id} />);
+  expect((screen.getByLabelText("Endpoint") as HTMLInputElement).value).toBe(profile.endpoint);
+  await act(async () => finish({ models: [profile.model_id] }));
+  await waitFor(() => expect((screen.getByLabelText("Endpoint") as HTMLInputElement).value).toBe(active.endpoint));
+  expect(screen.queryByText("Connection verified")).toBeNull();
+});
+
+test("refreshing profiles preserves a manually selected Provider and its draft", async () => {
+  const { profile } = createWorkspaceFixture();
+  const other = { ...profile, id: "other-provider", name: "Other Provider" };
+  const props = { profiles: [profile, other], initialProviderId: profile.id, onSave: vi.fn(), onTest: vi.fn(), onDelete: vi.fn(), onDeleteKey: vi.fn() };
+  const { rerender } = render(<ProviderSettings {...props} />);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Provider" }));
+  await user.click(screen.getByRole("option", { name: other.name }));
+  await user.type(screen.getByLabelText("Display name"), " draft");
+  rerender(<ProviderSettings {...props} profiles={[{ ...profile }, { ...other }]} />);
+  expect((screen.getByLabelText("Display name") as HTMLInputElement).value).toBe(other.name + " draft");
+});
 
 function setup() {
   const fixture = createWorkspaceFixture();

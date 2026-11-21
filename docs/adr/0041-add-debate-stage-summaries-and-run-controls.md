@@ -12,9 +12,13 @@ The original model response and verification record remain intact. Parsed points
 
 A settled failed summary pauses without an automatic retry. Its attempted round is recorded atomically with the turn, so an explicit Resume continues the participant discussion rather than repeating that paid analysis. Stop, interruption, and unclaimed work retain their existing terminal/recovery semantics. A failed transaction never advances the summary cursor or stores a new successful summary.
 
+Only an authorized attempt consumes the summary's stage. Unclaimed browser work remains due after a timeout or pause. A completed response rejected for invalid citations retains its original body for inspection, with no parsed summary or participant-context entry. Browser verification failures continue to discard unverified content.
+
 ## Usage and budgets
 
 Persistence aggregates accounting fields across the entire debate independently of transcript pagination. Reported input/output counts include participant and summary calls, including failed/stopped attempts when usage is available. Browser claims durably mark possible usage before authorizing execution and recheck expiry after storage. Unclaimed work is excluded; historical attempts without the new marker remain conservatively unknown. Missing usage remains absent rather than becoming zero.
+
+If cancellation or expiry rejects a claim after its usage marker is written, Chat clears that marker with a bounded context independent of the canceled request. This prevents restart recovery from counting explicitly rejected claims as missing-usage calls.
 
 Optional positive token and USD estimate budgets produce reminders. Automatic pause is an explicit choice. When enabled with a budget, Chat closes admission at a reached threshold, or when missing reported usage prevents a complete budget assessment. Cost budgets require input/output rates for every seat. Active calls, including concurrent openings, may exceed a threshold; this is not a Provider-side billing cap. Resume and Step cannot bypass an unresolved automatic pause. Users can increase a limit or turn automatic pause off.
 
