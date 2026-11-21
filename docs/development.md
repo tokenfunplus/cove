@@ -66,6 +66,7 @@ Current source builds migrate the schema 16 database through schema 22. Schema 2
 | 19 | Independent conversation-branch provenance | Edited prompts copy only their immutable selected context, with independent message, Generation, and attachment ownership. |
 | 20 | Separate Debate Sessions, turns, and interventions | Ordinary context is unchanged; interrupted debates recover paused. |
 | 21 | Debate summaries, cumulative usage budgets, and pacing | Existing sessions keep summaries and automatic pause off. Older services reject the schema rather than ignore the controls. |
+| 22 | Web search settings, immutable attempt policy, tool traces, and saved evidence | Existing conversations keep search off unless enabled in this browser. Older services reject the upgraded schema. |
 
 Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
@@ -156,7 +157,7 @@ Integration fixtures configure temporary directories. Never point tests at perso
 
 ## Troubleshooting
 
-For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.6](releases/0.1.0-beta.6.md).
+For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.8](releases/0.1.0-beta.8.md).
 
 - **Expired browser session:** reopen with `make start-local` or the Launcher. Restarting the service invalidates sessions.
 - **Provider unavailable:** verify endpoint, authentication, model catalog, and availability. The NearAI preset uses a fixed staging endpoint.
