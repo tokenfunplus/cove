@@ -2,6 +2,7 @@ import { browserSessionHeaders, fetchSameOrigin } from "@/api";
 import { verifyNvidiaEvidenceViaSameOriginProxy } from "@/lib/inference/nvidia-verifier";
 import { secureInferenceFailureReason } from "@/lib/inference/secure-inference-errors";
 import type {
+  ModelTool, ModelToolMessage, ModelToolDelta,
   ProviderModelPrivacyMode,
   ProviderProfile,
 } from "@cove/api-contract";
@@ -28,10 +29,7 @@ const verifyTdxQuote = createTdxQuoteVerifier({
   pccsUrl: "https://pccs.phala.network",
 });
 
-type SecureInferenceMessage = {
-  role: "system" | "user" | "assistant";
-  content: string;
-};
+type SecureInferenceMessage = ModelToolMessage;
 
 type SecureInferenceConfiguration = {
   systemPrompt: string;
@@ -43,6 +41,8 @@ type SecureInferenceConfiguration = {
 export type SecureInferenceMode = ProviderModelPrivacyMode;
 
 export type SecureInferenceInput = {
+  tools?: ModelTool[];
+  continuation?: ModelToolMessage[];
   target: Pick<ProviderProfile, "id" | "kind" | "model_id" | "configured">;
   mode?: SecureInferenceMode;
   configuration: SecureInferenceConfiguration;
@@ -102,6 +102,8 @@ export type SecureInferenceVerification = {
 };
 
 export type SecureInferenceEvent =
+  | { type: "tool_calls"; calls: ModelToolDelta[] }
+  | { type: "web_activity"; activity: string; reset?: boolean }
   | { type: "verifying_environment" }
   | { type: "streaming" }
   | { type: "delta"; delta: string }
@@ -124,6 +126,7 @@ export type SecureInferenceVerificationEvent =
   | { type: "failed"; code: "response_verification_failed"; reason?: string };
 
 type SecureInferenceSdkInput = {
+  tools?: ModelTool[];
   /** This is a local, session-authorized proxy URL. It never contains a Provider Key. */
   baseUrl: string;
   model: string;
@@ -134,6 +137,7 @@ type SecureInferenceSdkInput = {
 };
 
 type SecureInferenceStreamChunk = {
+  toolCalls?: ModelToolDelta[];
   reasoningDelta?: string;
   usage?: { inputTokens?: number; outputTokens?: number };
   completionId: string;
@@ -225,6 +229,7 @@ export function createSecureInferenceTransport(
       try {
         client = factory.create(sdkInputFor(input), inferenceMode(input));
         for await (const chunk of client.stream(signal)) {
+          if (chunk.toolCalls?.length) yield { type: "tool_calls", calls: chunk.toolCalls };
           if (chunk.usage) yield { type: "usage", ...chunk.usage };
           completionId = chunk.completionId || completionId;
           if (!startedStreaming) {
@@ -366,10 +371,11 @@ function sdkInputFor(input: SecureInferenceInput): SecureInferenceSdkInput {
       content: input.configuration.systemPrompt,
     });
   }
-  messages.push(...input.context, { role: "user", content: input.message });
+  messages.push(...input.context, { role: "user", content: input.message }, ...(input.continuation ?? []));
   return {
     baseUrl: nearAIProxyBaseURL(input.target.id),
     model: input.target.model_id,
+    tools: input.tools,
     messages,
     ...(input.configuration.temperature === null
       ? {}
@@ -595,7 +601,8 @@ export class BrowserNearAISdkClient implements SecureInferenceSdkClient {
       const completion = await this.client.chat.completions.create(
         {
           model: this.input.model,
-          messages: this.input.messages,
+          messages: this.input.messages.map(message => message.role === "tool" ? {role: "tool" as const, tool_call_id: message.tool_call_id ?? "", content: message.content} : message.role === "assistant" ? {role: "assistant" as const, content: message.content, ...(message.tool_calls?.length ? {tool_calls: message.tool_calls} : {}), ...(message.reasoning_content ? {reasoning_content: message.reasoning_content} : {})} : {role: message.role, content: message.content}),
+          ...(this.input.tools?.length ? { tools: this.input.tools } : {}),
           stream: true,
           ...(this.input.temperature === undefined
             ? {}
@@ -699,9 +706,10 @@ export class BrowserGatewayResponseClient implements SecureInferenceSdkClient {
     );
     const payload: Record<string, unknown> = {
       model: this.input.model,
-      input: this.input.messages,
+      input: responseInputFor(this.input.messages),
       stream: true,
     };
+    if (this.input.tools?.length) payload.tools = this.input.tools.map(tool => ({type: "function", ...tool.function}));
     if (this.input.temperature !== undefined)
       payload.temperature = this.input.temperature;
     if (this.input.topP !== undefined) payload.top_p = this.input.topP;
@@ -731,6 +739,7 @@ export class BrowserGatewayResponseClient implements SecureInferenceSdkClient {
     let buffer = "";
     let responseBytes = 0;
     let completionId = "";
+    const toolIds = new Set<string>();
     let consumed = false;
     try {
       while (true) {
@@ -751,7 +760,7 @@ export class BrowserGatewayResponseClient implements SecureInferenceSdkClient {
         for (const event of parsed.events) {
           const failure = responseFailureFor(event);
           if (failure) throw new Error(failure);
-          const chunk = responseChunkFor(event);
+          const chunk = responseChunkFor(event, toolIds);
           if (!chunk) continue;
           if (chunk.completionId) completionId = chunk.completionId;
           yield {
@@ -759,6 +768,7 @@ export class BrowserGatewayResponseClient implements SecureInferenceSdkClient {
             delta: chunk.delta,
             reasoningDelta: chunk.reasoningDelta,
             usage: chunk.usage,
+            toolCalls: chunk.toolCalls,
           };
         }
         if (done) {
@@ -870,16 +880,19 @@ function responseFailureFor(value: unknown): string | undefined {
 
 function responseChunkFor(
   value: unknown,
+  toolIds: Set<string> = new Set(),
 ): SecureInferenceStreamChunk | undefined {
   if (!value || typeof value !== "object") return undefined;
   const event = value as {
     id?: unknown;
-    response?: { id?: unknown };
+    response?: { id?: unknown; output?: Array<{ type: string; call_id?: string; name?: string; arguments?: string }> };
+    item?: { type: string; call_id?: string; name?: string; arguments?: string };
     type?: unknown;
     delta?: unknown;
     choices?: Array<{
       delta?: {
         content?: unknown;
+        tool_calls?: ModelToolDelta[];
         reasoning_content?: unknown;
         reasoning?: unknown;
       };
@@ -891,6 +904,15 @@ function responseChunkFor(
       : typeof event.response?.id === "string"
         ? event.response.id
         : "";
+  const items = event.type === "response.output_item.done" && event.item ? [event.item] : event.type === "response.completed" ? event.response?.output ?? [] : [];
+  const toolCalls: ModelToolDelta[] = [];
+  for (const item of items) {
+    if (item.type !== "function_call" || !item.call_id || toolIds.has(item.call_id)) continue;
+    const index = toolIds.size;
+    toolIds.add(item.call_id);
+    toolCalls.push({ index, id: item.call_id, type: "function", function: { name: item.name, arguments: item.arguments } });
+  }
+  if (toolCalls.length) return { completionId, delta: "", toolCalls, usage: tokenUsageFor(value) };
   if (
     (event.type === "response.reasoning_text.delta" ||
       event.type === "response.reasoning_summary_text.delta") &&
@@ -916,6 +938,7 @@ function responseChunkFor(
       completionId,
       delta: typeof chatDelta.content === "string" ? chatDelta.content : "",
       reasoningDelta: chatReasoningFor(chatDelta),
+      toolCalls: chatDelta.tool_calls,
       usage: tokenUsageFor(value),
     };
   return completionId || tokenUsageFor(value)
@@ -943,6 +966,7 @@ function streamChunkFor(
     choices?: Array<{
       delta?: {
         content?: unknown;
+        tool_calls?: ModelToolDelta[];
         reasoning_content?: unknown;
         reasoning?: unknown;
       };
@@ -954,6 +978,7 @@ function streamChunkFor(
     completionId: chunk.id,
     delta: typeof delta === "string" ? delta : "",
     reasoningDelta: chatReasoningFor(chunk.choices?.[0]?.delta),
+    toolCalls: chunk.choices?.[0]?.delta?.tool_calls,
     usage: tokenUsageFor(value),
   };
 }
@@ -1121,4 +1146,14 @@ function tokenUsageFor(value: unknown): SecureInferenceStreamChunk["usage"] {
   return inputTokens !== undefined || outputTokens !== undefined
     ? { inputTokens, outputTokens }
     : undefined;
+}
+
+function responseInputFor(messages: ModelToolMessage[]): unknown[] {
+  return messages.flatMap((message): unknown[] => {
+    if (message.role === "tool") return [{ type: "function_call_output", call_id: message.tool_call_id, output: message.content }];
+    const result: unknown[] = [];
+    if (message.content || !message.tool_calls?.length) result.push({ role: message.role, content: message.content });
+    for (const call of message.tool_calls ?? []) result.push({ type: "function_call", call_id: call.id, name: call.function.name, arguments: call.function.arguments });
+    return result;
+  });
 }

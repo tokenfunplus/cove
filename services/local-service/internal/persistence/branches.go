@@ -78,21 +78,21 @@ func copyBranchTurnTx(ctx context.Context, tx *sql.Tx, conversationID string, it
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, body, provider_snapshot, created_at, reasoning) SELECT ?, ?, role, body, provider_snapshot, ?, reasoning FROM messages WHERE id = ?`, userID, conversationID, timestamp, item.UserMessageID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, body, provider_snapshot, created_at, reasoning, web_sources, context_body) SELECT ?, ?, role, body, provider_snapshot, ?, reasoning, web_sources, context_body FROM messages WHERE id = ?`, userID, conversationID, timestamp, item.UserMessageID); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, body, provider_snapshot, created_at, reasoning) SELECT ?, ?, role, body, provider_snapshot, ?, reasoning FROM messages WHERE id = ?`, answerID, conversationID, timestamp+1, generation.AssistantMessageID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, body, provider_snapshot, created_at, reasoning, web_sources, context_body) SELECT ?, ?, role, body, provider_snapshot, ?, reasoning, web_sources, context_body FROM messages WHERE id = ?`, answerID, conversationID, timestamp+1, generation.AssistantMessageID); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO generation_batches (id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments, attachment_data)
- SELECT ?, ?, ?, ?, system_prompt, temperature, top_p, max_tokens, 'completed', ?, 0, 1, ?, ?, input_content, attachments, attachment_data FROM generation_batches WHERE user_message_id = ?`, batchID, conversationID, "branch:"+batchID, userID, generationID, timestamp, timestamp, item.UserMessageID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO generation_batches (id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments, attachment_data, web_search_policy)
+ SELECT ?, ?, ?, ?, system_prompt, temperature, top_p, max_tokens, 'completed', ?, 0, 1, ?, ?, input_content, attachments, attachment_data, web_search_policy FROM generation_batches WHERE user_message_id = ?`, batchID, conversationID, "branch:"+batchID, userID, generationID, timestamp, timestamp, item.UserMessageID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO generation_targets (id, generation_batch_id, provider_id, model_id, position, latest_generation_id) VALUES (?, ?, ?, ?, 0, ?)`, targetID, batchID, generation.Snapshot.ProviderID, generation.Snapshot.ModelID, generationID); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO generations (id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, assistant_message_id, created_at, updated_at, generation_batch_id, generation_target_id, metrics)
- SELECT ?, ?, ?, ?, 'completed', provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, ?, ?, ?, ?, ?, metrics FROM generations WHERE id = ?`, generationID, conversationID, "branch:"+generationID, userID, answerID, timestamp, timestamp, batchID, targetID, generation.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO generations (id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, assistant_message_id, created_at, updated_at, generation_batch_id, generation_target_id, metrics, web_search_policy, web_search_run, web_search_info)
+ SELECT ?, ?, ?, ?, 'completed', provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, ?, ?, ?, ?, ?, metrics, web_search_policy, web_search_run, web_search_info FROM generations WHERE id = ?`, generationID, conversationID, "branch:"+generationID, userID, answerID, timestamp, timestamp, batchID, targetID, generation.ID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO batch_context_items (generation_batch_id, position, user_message_id, selected_generation_id) SELECT ?, ROW_NUMBER() OVER (ORDER BY created_at, id) - 1, user_message_id, selected_generation_id FROM generation_batches WHERE conversation_id = ? AND id != ?`, batchID, conversationID, batchID); err != nil {

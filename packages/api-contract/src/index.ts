@@ -204,6 +204,7 @@ export interface ConversationSearchFilter {
 }
 
 export interface Message {
+  web_sources?: AttachmentSnapshot[];
   /** Provider-labelled reasoning, separate from the answer used for future context. */
   reasoning?: string;
   id: string;
@@ -344,6 +345,7 @@ export interface ProviderSnapshot {
 
 /** The immutable workspace configuration actually used for one Generation attempt. */
 export interface GenerationConfigurationSnapshot {
+  web_search?: WebSearchPolicy;
   system_prompt: string;
   /** Null keeps the Provider default; zero is an explicitly configured value. */
   temperature: number | null;
@@ -361,6 +363,7 @@ export interface GenerationMetrics {
 }
 
 export interface Generation {
+  web_search?: WebSearchInfo;
   metrics?: GenerationMetrics;
   id: string;
   conversation_id: string;
@@ -385,10 +388,12 @@ export interface ExpectedGenerationTarget {
 }
 
 export interface GenerationInput {
+  web_search_enabled?: boolean;
   edit_of_batch_id?: string;
   client_request_id: string;
   body: string;
   attachments?: AttachmentInput[];
+  web_source_tokens?: string[];
   expected_targets?: ExpectedGenerationTarget[];
 }
 
@@ -405,19 +410,34 @@ export interface SourceSection {
 }
 
 export interface AttachmentSnapshot {
-  /** SHA-256 of the original bytes. */
+  /** File content hash, or the identity of an immutable webpage capture. */
   id: string;
   name: string;
-  media_type: "text/plain" | "application/pdf";
+  media_type: "text/plain" | "application/pdf" | "text/html";
   size: number;
   characters: number;
   extraction_version: string;
   sections: SourceSection[];
+  web?: {
+    kind?: "search_result";
+    published_at?: string;
+    original_url: string;
+    final_url: string;
+    fetched_at: string;
+    content_sha256: string;
+  };
 }
 
-export type GenerationEventType = "started" | "delta" | "completed" | "stopped" | "failed";
+export interface PreparedWebSource {
+  source_token: string;
+  snapshot: AttachmentSnapshot;
+}
+
+export type GenerationEventType = "started" | "delta" | "web_activity" | "completed" | "stopped" | "failed";
 
 export interface GenerationEvent {
+  web_activity?: string;
+  reset?: boolean;
   event_id: string;
   generation_id: string;
   type: GenerationEventType;
@@ -431,6 +451,7 @@ export interface GenerationEvent {
 export type GenerationBatchState = "pending" | "streaming" | "completed" | "completed_with_errors" | "stopped" | "failed";
 
 export interface GenerationTargetAttempt {
+  web_search?: WebSearchInfo;
   metrics?: GenerationMetrics;
   created_at?: string;
   updated_at?: string;
@@ -465,6 +486,7 @@ export interface GenerationPromptMessage {
 }
 
 export interface GenerationBatch {
+  web_search?: WebSearchPolicy;
   id: string;
   conversation_id: string;
   client_request_id: string;
@@ -493,3 +515,37 @@ export interface GenerationBatchEvent extends GenerationEvent {
   batch_id: string;
   target_id: string;
 }
+
+export interface WebSearchPolicy {
+  provider: "tavily" | "linkup" | "exa";
+  max_searches: number;
+  max_pages: number;
+  max_rounds: number;
+  max_results: number;
+  timeout_seconds: number;
+  depth: "standard" | "deep";
+  include_domains?: string[];
+  exclude_domains?: string[];
+}
+export interface WebSearchSettings {
+  policy: WebSearchPolicy;
+  providers: { provider: WebSearchPolicy["provider"]; configured: boolean }[];
+}
+export interface WebSearchInfo {
+  provider: string;
+  searches: number;
+  pages: number;
+  steps: { id: string; name: string; query?: string; url?: string; status: string; cached?: boolean; error?: string; usage?: unknown; started_at: string; finished_at?: string }[];
+  sources: AttachmentSnapshot[];
+}
+export interface ModelToolCall { id: string; type: "function"; function: { name: string; arguments: string } }
+export interface ModelToolDelta { index: number; id?: string; type?: "function"; function?: { name?: string; arguments?: string } }
+export interface ModelTool { type: "function"; function: { name: string; description: string; parameters: Record<string, unknown> } }
+export interface ModelToolMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  tool_calls?: ModelToolCall[];
+  tool_call_id?: string;
+  reasoning_content?: string;
+}
+export interface WebToolResult { status: string; content: string; info: WebSearchInfo }

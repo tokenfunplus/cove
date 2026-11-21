@@ -24,7 +24,8 @@
     "media_type": {
       "enum": [
         "text/plain",
-        "application/pdf"
+        "application/pdf",
+        "text/html"
       ]
     },
     "size": {
@@ -61,6 +62,42 @@
         },
         "additionalProperties": false
       }
+    },
+    "web": {
+      "type": "object",
+      "required": [
+        "original_url",
+        "final_url",
+        "fetched_at",
+        "content_sha256"
+      ],
+      "properties": {
+        "original_url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "final_url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "fetched_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "kind": {
+          "enum": [
+            "search_result"
+          ]
+        },
+        "published_at": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

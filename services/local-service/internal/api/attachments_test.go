@@ -109,3 +109,34 @@ func TestOriginalDownloadIsLocalAttachmentAndDisappearsWithHistory(t *testing.T)
 		}
 	}
 }
+
+func TestWebSourcePreparationAndReleaseRequireSessionAndCSRF(t *testing.T) {
+	server := NewServer(Config{LaunchToken: "launch-token", Chat: &fakeChat{}})
+	token, csrf := launchBrowserSession(t, server)
+	for _, route := range []struct {
+		method, path string
+		success      int
+	}{
+		{http.MethodPost, "/api/web-sources/prepare", http.StatusOK},
+		{http.MethodDelete, "/api/web-sources/preview-token", http.StatusNoContent},
+	} {
+		for _, authorized := range []bool{false, true} {
+			request := httptest.NewRequest(route.method, "http://127.0.0.1:47123"+route.path, strings.NewReader(`{"url":"https://fixture.example/article"}`))
+			request.Header.Set("Origin", "http://127.0.0.1:47123")
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("X-Cove-Session-Token", token)
+			if authorized {
+				request.Header.Set("X-Cove-CSRF-Token", csrf)
+			}
+			response := httptest.NewRecorder()
+			server.Handler().ServeHTTP(response, request)
+			expected := http.StatusForbidden
+			if authorized {
+				expected = route.success
+			}
+			if response.Code != expected {
+				t.Fatalf("%s status = %d, expected %d", route.path, response.Code, expected)
+			}
+		}
+	}
+}

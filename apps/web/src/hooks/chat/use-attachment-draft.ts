@@ -1,5 +1,5 @@
 import { usePreviewAttachment } from "@/api/hooks/useGenerations";
-import { LocalServiceError } from "@/api";
+import { LocalServiceError, prepareWebSource, releaseWebSource } from "@/api";
 import type { AttachmentInput, AttachmentSnapshot } from "@cove/api-contract";
 import { useEffect, useRef, useState } from "react";
 
@@ -8,6 +8,8 @@ export type DraftAttachment = {
   name: string;
   input?: AttachmentInput;
   snapshot?: AttachmentSnapshot;
+  webSourceToken?: string;
+  sourceUrl?: string;
   error?: string;
 };
 
@@ -17,29 +19,96 @@ export function useAttachmentDraft(conversationId?: string) {
   const epoch = useRef(0);
   const count = useRef(0);
   const preview = usePreviewAttachment().mutateAsync;
+  const webRequests = useRef(new Map<string, AbortController>());
+  const webTokens = useRef(new Map<string, string>());
   useEffect(() => {
     clearAttachments();
   }, [conversationId]);
   useEffect(
     () => () => {
       epoch.current++;
+      for (const request of webRequests.current.values()) request.abort();
+      for (const token of webTokens.current.values()) {
+        void releaseWebSource(token).catch(() => undefined);
+      }
     },
     [],
   );
 
-  function clearAttachments() {
+  function clearAttachments(releaseSources = true) {
     epoch.current++;
+    for (const request of webRequests.current.values()) request.abort();
+    webRequests.current.clear();
+    if (releaseSources) {
+      for (const token of webTokens.current.values()) {
+        void releaseWebSource(token).catch(() => undefined);
+      }
+    }
+    webTokens.current.clear();
     count.current = 0;
     setAttachments([]);
     setSelectionError(undefined);
   }
   function restoreAttachments(items: DraftAttachment[]) {
+    for (const item of items) {
+      if (item.webSourceToken) webTokens.current.set(item.key, item.webSourceToken);
+    }
     count.current = items.length;
     setAttachments(items);
   }
   function removeAttachment(key: string) {
+    webRequests.current.get(key)?.abort();
+    webRequests.current.delete(key);
+    const token = webTokens.current.get(key);
+    if (token) void releaseWebSource(token).catch(() => undefined);
+    webTokens.current.delete(key);
     count.current = Math.max(0, count.current - 1);
     setAttachments((current) => current.filter((item) => item.key !== key));
+  }
+  async function addWebSource(url: string) {
+    if (count.current >= 4) {
+      setSelectionError("Attach at most four files or webpages per message.");
+      return;
+    }
+    const key = crypto.randomUUID();
+    const controller = new AbortController();
+    const currentEpoch = epoch.current;
+    count.current++;
+    setSelectionError(undefined);
+    webRequests.current.set(key, controller);
+    setAttachments((current) => [
+      ...current,
+      { key, name: url, sourceUrl: url },
+    ]);
+    try {
+      const source = await prepareWebSource(url, controller.signal);
+      if (epoch.current !== currentEpoch || controller.signal.aborted) {
+        void releaseWebSource(source.source_token).catch(() => undefined);
+        return;
+      }
+      webTokens.current.set(key, source.source_token);
+      setAttachments((current) => current.map((item) =>
+        item.key === key
+          ? {
+              ...item,
+              name: source.snapshot.name,
+              snapshot: source.snapshot,
+              webSourceToken: source.source_token,
+            }
+          : item,
+      ));
+    } catch (error) {
+      if (epoch.current !== currentEpoch || controller.signal.aborted) return;
+      const message =
+        error instanceof LocalServiceError
+          ? error.envelope.error.message
+          : "The webpage could not be read. Check the URL and try again.";
+      setAttachments((current) => current.map((item) =>
+        item.key === key ? { ...item, error: message } : item,
+      ));
+    } finally {
+      webRequests.current.delete(key);
+    }
   }
   async function addAttachments(files: File[]) {
     setSelectionError(
@@ -103,12 +172,13 @@ export function useAttachmentDraft(conversationId?: string) {
     0,
   );
   const invalid =
-    attachments.some((item) => !item.snapshot || !item.input || item.error) ||
+    attachments.some((item) => !item.snapshot || (!item.input && !item.webSourceToken) || item.error) ||
     totalCharacters > 120000;
   return {
     attachments,
     restoreAttachments,
     addAttachments,
+    addWebSource,
     removeAttachment,
     clearAttachments,
     totalCharacters,

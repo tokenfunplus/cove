@@ -1,6 +1,6 @@
 import { flushSync } from "react-dom";
 import type { ActiveModelSet } from "@/components/providers/model-selection";
-import { LocalServiceError } from "@/api";
+import { LocalServiceError, releaseWebSource } from "@/api";
 import { useConversationCache } from "@/api/hooks/useConversations";
 import {
   useCancelGeneration,
@@ -66,10 +66,12 @@ type Dependencies = Pick<
     catalogs: ModelCatalogs;
     copy: ApplicationCopy;
     attachmentDraft: AttachmentDraft;
+    webSearchEnabled?: boolean;
     setSelectedId?: WorkspaceState["setSelectedId"];
   };
 
 export function useGenerationCommands({
+  webSearchEnabled,
   attachmentDraft,
   setSelectedId,
   pendingSubmissionRef,
@@ -165,8 +167,10 @@ export function useGenerationCommands({
       createLiveTurn(conversationId, body, clientRequestId, selectedTargets),
     );
     let accepted = false;
+    let sourcesRestored = false;
     try {
       const selection = {
+        ...(webSearchEnabled ? { webSearchEnabled: true } : {}),
         ...(override?.editOfBatchId
           ? { editOfBatchId: override.editOfBatchId }
           : {}),
@@ -187,6 +191,9 @@ export function useGenerationCommands({
           ? {
               attachments: originalAttachments.flatMap((item) =>
                 item.input ? [item.input] : [],
+              ),
+              webSourceTokens: originalAttachments.flatMap((item) =>
+                item.webSourceToken ? [item.webSourceToken] : [],
               ),
             }
           : {}),
@@ -273,7 +280,7 @@ export function useGenerationCommands({
         setConversationView(branchView);
       }
       setGenerationBatch(next);
-      attachmentDraft.clearAttachments();
+      attachmentDraft.clearAttachments(false);
       setLiveTurn((current) =>
         current ? hydrateLiveTurnBatch(current, next) : current,
       );
@@ -321,6 +328,7 @@ export function useGenerationCommands({
         setDraft(override?.draftOnFailure ?? body);
       if (!accepted) override?.onFailure?.(generationErrorMessage(error, copy));
       attachmentDraft.restoreAttachments(originalAttachments);
+      sourcesRestored = true;
       setIsSending(false);
       setLiveTurn((current) =>
         current
@@ -336,6 +344,13 @@ export function useGenerationCommands({
       );
       setFeedback(generationErrorMessage(error, copy));
     } finally {
+      if (accepted && !sourcesRestored) {
+        for (const item of originalAttachments) {
+          if (item.webSourceToken) {
+            void releaseWebSource(item.webSourceToken).catch(() => undefined);
+          }
+        }
+      }
       if (pendingSubmissionRef.current === submission)
         pendingSubmissionRef.current = undefined;
     }

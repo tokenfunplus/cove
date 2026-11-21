@@ -11,9 +11,11 @@ import type {
   AttachmentSnapshot,
   GenerationBatch,
   GenerationContextMessage,
+  Message,
 } from "@cove/api-contract";
 import { fetchLocalService } from "@/api/client";
 import { useGenerationCache } from "@/api/hooks/useGenerations";
+import { FrontSelect } from "@/components/ui/front-select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogOverlay } from "@/components/ui/dialog";
 import { englishConversationCopy as copy } from "@/messages";
@@ -21,6 +23,7 @@ import { englishConversationCopy as copy } from "@/messages";
 type SavedSource = { document: AttachmentSnapshot; batchId?: string };
 export type SourceNavigation = {
   resolve: (url: string) => (() => void) | undefined;
+  sources?: SavedSource[];
 };
 const Sources = createContext<SourceNavigation>({ resolve: () => undefined });
 export function useSourceNavigation() {
@@ -29,20 +32,20 @@ export function useSourceNavigation() {
 
 export function SourceDocuments({
   batches,
+  messages = [],
   children,
 }: {
   batches: GenerationBatch[];
+  messages?: Message[];
   children: ReactNode;
 }) {
   const [selected, setSelected] = useState<
     SavedSource & { section?: string }
   >();
-  const sources = batches.flatMap((batch) =>
-    (batch.attachments ?? []).map((document) => ({
-      document,
-      batchId: batch.id,
-    })),
-  );
+  const sources = [
+    ...batches.flatMap(batch => [...(batch.attachments ?? []), ...batch.targets.flatMap(target => target.generation.web_search?.sources ?? [])].map(document => ({ document, batchId: batch.id }))),
+    ...messages.flatMap(message => (message.web_sources ?? []).map(document => ({ document, batchId: message.generation_batch_id }))),
+  ];
   // Source snapshots are immutable; streaming state changes do not invalidate history rendering.
   const identity = sources
     .map(
@@ -52,6 +55,7 @@ export function SourceDocuments({
     .join("|");
   const navigation = useMemo<SourceNavigation>(
     () => ({
+      sources,
       resolve(url: string) {
         const match = /^cove:([a-f0-9]{64}):([LP][1-9]\d*)$/.exec(url);
         if (!match) return undefined;
@@ -133,6 +137,19 @@ export function DocumentPreview({
         <p className="text-sm text-muted-foreground">
           {copy.sourceCitationNotice}
         </p>
+        {document.web && (
+          <div className="space-y-1 text-sm">
+            <a className="break-all text-primary underline" href={document.web.final_url} target="_blank" rel="noopener noreferrer">
+              {copy.openWebpage}
+            </a>
+            <p className="break-all text-xs text-muted-foreground">
+              {document.web.final_url}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {document.web.kind === "search_result" ? "Search excerpt saved" : copy.webpageFetched} {new Date(document.web.fetched_at).toLocaleString()}
+            </p>
+          </div>
+        )}
         <div
           className="min-h-0 overflow-auto rounded-lg border border-border"
           tabIndex={0}
@@ -155,7 +172,8 @@ export function DocumentPreview({
         </div>
         <details className="text-xs text-muted-foreground">
           <summary>{copy.sourceFileDetails}</summary>
-          <p className="mt-2 break-all">SHA-256: {document.id}</p>
+          <p className="mt-2 break-all">{document.web ? "Snapshot ID" : "SHA-256"}: {document.id}</p>
+          {document.web && <p className="break-all">Content SHA-256: {document.web.content_sha256}</p>}
           <p>
             {document.extraction_version} · {document.size.toLocaleString()}{" "}
             bytes
@@ -298,20 +316,14 @@ function ContextSnapshotDialog({
         <p className="text-sm text-muted-foreground">
           {copy.contextSourceNotice}
         </p>
-        <label className="flex flex-wrap items-center gap-2 text-sm">
-          {copy.model}
-          <select
-            className="max-w-full rounded-md border border-border bg-background p-2"
-            value={targetIndex}
-            onChange={(event) => setTargetIndex(Number(event.target.value))}
-          >
-            {batch.targets.map((item, index) => (
-              <option value={index} key={item.id}>
-                {item.model_id}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FrontSelect
+          label={copy.model}
+          ariaLabel={copy.model}
+          className="w-full sm:max-w-sm"
+          value={String(targetIndex)}
+          onValueChange={value => setTargetIndex(Number(value))}
+          options={batch.targets.map((item, index) => ({ value: String(index), label: item.model_id }))}
+        />
         {context ? (
           <p className="text-sm">
             {characters.toLocaleString()} / 240,000 {copy.characters} ·{" "}

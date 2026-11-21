@@ -74,6 +74,7 @@ This section describes the current source tree, including unreleased changes. Pu
 - Expand the reading area with Focus mode and jump between turns using timeline previews and browser-local bookmarks.
 - Pause following by scrolling upward, retain the reading position through layout changes, and return with an updated-answer count.
 - Attach text, Markdown, code, and text-based PDF files; preview extracted text, inspect Provider context, and open cited source lines or pages. File chat supports four files per turn, up to 4 MiB each; scanned PDFs need OCR first.
+- Read a public webpage from the composer, preview its extracted text, and retain cited source snapshots with their URLs and read time. Files and webpages share the four-source limit.
 - Inspect the provider, destination, configuration snapshot, and available verification evidence for each response.
 - Use NearAI's browser-side encryption and attestation flow for supported private models.
 - Search titles and saved message text locally, read matching excerpts, and jump to the relevant turn; pin, archive, and rename conversations.
@@ -142,3 +143,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and [SECURI
 ## License
 
 [MIT](LICENSE). Third-party dependencies retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Web search
+
+Enable the globe icon in a conversation to let compatible models search when needed. Configure Tavily, Linkup, or Exa in Settings → Web search. Each model attempt has its own request limits and saved source evidence. Search queries leave the model transport and go to the selected search service. Continuous Debate does not inherit this toggle. See [the user guide](docs/user-guide.md) for limits and citations.

@@ -4,12 +4,20 @@
 
 ### Added
 
+- Opt-in autonomous Web search for chat and Model Comparison, with Tavily/Linkup/Exa Keychain configuration, per-attempt request limits, verified NearAI tool requests, saved evidence, References, and local research traces.
+
+- Explicit public webpage reading with bounded credential-free retrieval, session-bound previews, and saved source text/provenance shared by ordinary and NearAI inference, retries, branches, citations, and exports.
+
 - Cited Debate stage summaries for new ideas, supported position changes, and open questions, using a selected model seat and the existing service or NearAI verification transport.
 - Cumulative Debate token/cost estimates, optional budget reminders and automatic pause, editable rates, and service-owned turn intervals. Summary calls and reported failed/stopped usage count toward budgets independently of transcript pagination.
 
 ### Changed
 
+- Refine Web search setup into connection, usage limits, and advanced options with shared custom selectors, numeric steppers, and a compact composer toolbar.
+
 - Streamline the Launcher menu, keep login launches quiet, expose direct service recovery and Provider setup, and retain discovered updates under one menu with installed-version release notes in About Cove.
+
+- Migrate automatic research policy, traces, and saved web sources to SQLite schema 22. Older services reject upgraded databases.
 
 - Guard persisted Debate budget and summary controls with schema 21. Existing debates retain disabled summaries and budgets until configured; older services reject upgraded databases.
 

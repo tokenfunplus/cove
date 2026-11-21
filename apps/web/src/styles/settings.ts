@@ -65,6 +65,8 @@ export const settingsStyles = {
     settings-dialog__sections overflow-y-auto min-w-0 p-6.5 [&_>_.settings-dialog\_\_section]:hidden
     [&[data-active-settings-section="general"]_>_[data-settings-section="general"]]:block
     [&[data-active-settings-section="provider"]_>_[data-settings-section="provider"]]:block
+    [&[data-active-settings-section="web-search"]]:scroll-pb-36
+    [&[data-active-settings-section="web-search"]_>_[data-settings-section="web-search"]]:block
     [&[data-active-settings-section="chat-data"]_>_[data-settings-section="chat-data"]]:block
     max-[767px]:py-5 max-[767px]:px-4.5
   `),

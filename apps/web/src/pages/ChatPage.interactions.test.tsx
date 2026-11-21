@@ -57,6 +57,8 @@ vi.mock("@/api", async (importOriginal) => {
     getGenerationBatch: vi.fn(),
     getGenerationBatchContext: vi.fn(),
     previewAttachment: vi.fn(),
+    prepareWebSource: vi.fn(),
+    releaseWebSource: vi.fn(),
     previewGenerationContext: vi.fn(),
     cancelGeneration: vi.fn(),
     cancelGenerationBatch: vi.fn(),
@@ -159,6 +161,7 @@ function configureWorkspace(targetCount = 1) {
     fixture.completedBatch,
   );
   vi.mocked(transport.getGenerationBatchContext).mockResolvedValue([]);
+  vi.mocked(transport.releaseWebSource).mockResolvedValue(undefined);
 }
 
 function configureNearAITarget(
@@ -1731,6 +1734,60 @@ test("files are previewed, sent with an idempotent submission, and cleared after
       screen.queryByRole("button", { name: "Remove attachment: notes.md" }),
     ).toBeNull(),
   );
+});
+
+test.each(["ordinary", "NearAI"])("webpages are previewed, included in context, and submitted through %s inference", async (mode) => {
+  if (mode === "NearAI") {
+    configureNearAITarget(0, "private_tee");
+    fixture.pendingBatch.input_content = "Question plus authoritative saved webpage evidence";
+  }
+  const snapshot = {
+    id: "c".repeat(64), name: "Research article.html", media_type: "text/html" as const,
+    size: 100, characters: 22, extraction_version: "cove-web-readability-v1",
+    sections: [{ id: "L1", text: "Saved webpage evidence" }],
+    web: { original_url: "https://fixture.example/article", final_url: "https://fixture.example/article", fetched_at: "2026-11-20T08:00:00Z", content_sha256: "d".repeat(64) },
+  };
+  vi.mocked(transport.prepareWebSource).mockResolvedValue({ source_token: "web-source-token", snapshot });
+  vi.mocked(transport.previewGenerationContext).mockResolvedValue([{ role: "user", content: "Question and saved webpage evidence" }]);
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Read https://fixture.example/article");
+  await user.click(screen.getByRole("button", { name: "Read webpage" }));
+  const dialog = screen.getByRole("dialog", { name: "Read webpage" });
+  expect((within(dialog).getByRole("textbox", { name: "Webpage URL" }) as HTMLInputElement).value).toBe(snapshot.web.original_url);
+  await user.click(within(dialog).getByRole("button", { name: "Read webpage" }));
+  await user.click(await screen.findByRole("button", { name: /Preview extracted text/ }));
+  expect(screen.getByRole("link", { name: "Open original webpage" }).getAttribute("href")).toBe(snapshot.web.final_url);
+  expect(screen.getByText("Saved webpage evidence")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Close" }));
+  await user.click(screen.getByRole("button", { name: "Review context" }));
+  await screen.findByText("Question and saved webpage evidence");
+  expect(transport.previewGenerationContext).toHaveBeenCalledWith(expect.objectContaining({ webSourceTokens: ["web-source-token"], attachments: [] }));
+  await user.click(screen.getByRole("button", { name: "Close" }));
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(transport.createGenerationBatch).toHaveBeenCalledWith(fixture.conversation.id, expect.objectContaining({ webSourceTokens: ["web-source-token"], attachments: [] })));
+  if (mode === "NearAI") {
+    await waitFor(() => expect(privateInference.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ message: fixture.pendingBatch.input_content }),
+      expect.any(AbortSignal), expect.any(Object),
+    ));
+  }
+});
+
+test("removing a webpage during download aborts the request and discards a late result", async () => {
+  let complete!: (value: Awaited<ReturnType<typeof transport.prepareWebSource>>) => void;
+  vi.mocked(transport.prepareWebSource).mockImplementation(() => new Promise(resolve => { complete = resolve; }));
+  const { user } = await openWorkspace();
+  await user.click(screen.getByRole("button", { name: "Read webpage" }));
+  const dialog = screen.getByRole("dialog", { name: "Read webpage" });
+  await user.type(within(dialog).getByRole("textbox", { name: "Webpage URL" }), "https://fixture.example/slow");
+  await user.click(within(dialog).getByRole("button", { name: "Read webpage" }));
+  await screen.findByText("Reading webpage…");
+  const signal = vi.mocked(transport.prepareWebSource).mock.calls[0]![1];
+  await user.click(screen.getByRole("button", { name: "Remove attachment: https://fixture.example/slow" }));
+  expect(signal.aborted).toBe(true);
+  await act(async () => complete({ source_token: "late-token", snapshot: { id: "a".repeat(64), name: "Late page", media_type: "text/html", size: 1, characters: 1, extraction_version: "test", sections: [{ id: "L1", text: "Late result" }] } }));
+  expect(screen.queryByText("Late page")).toBeNull();
+  expect(transport.releaseWebSource).toHaveBeenCalledWith("late-token");
 });
 
 test("attachment validation blocks sending and a rejected submission retains its files", async () => {

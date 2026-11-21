@@ -2,6 +2,7 @@ import { useState } from "react";
 import { usePreviewGenerationContext } from "@/api/hooks/useGenerations";
 import { LocalServiceError } from "@/api";
 import type { AttachmentDraft } from "@/hooks/chat/use-attachment-draft";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogOverlay } from "@/components/ui/dialog";
 import { englishConversationCopy as copy } from "@/messages";
@@ -30,6 +31,9 @@ export function DraftContext({
       attachments: attachments.attachments.flatMap((item) =>
         item.input ? [item.input] : [],
       ),
+      webSourceTokens: attachments.attachments.flatMap((item) =>
+        item.webSourceToken ? [item.webSourceToken] : [],
+      ),
     });
   }
   const characters = (preview.data ?? []).reduce(
@@ -38,18 +42,19 @@ export function DraftContext({
   );
   return (
     <>
+      <Tooltip content={copy.reviewContext} suppressRestoredFocus>
       <Button
         type="button"
         variant="ghost"
         size={compact ? "icon-sm" : "sm"}
         className={compact ? "rounded-lg text-muted-foreground" : undefined}
-        title={copy.reviewContext}
         disabled={disabled || attachments.invalid}
         onClick={review}
       >
         {compact && <ListFilter aria-hidden="true" size={16} />}
         <span className={compact ? "sr-only" : undefined}>{copy.reviewContext}</span>
       </Button>
+      </Tooltip>
       {open && (
         <Dialog
           open

@@ -9,6 +9,7 @@ import {
   type AttachmentInput,
   type AttachmentSnapshot,
   type GenerationPromptMessage,
+  type PreparedWebSource,
 } from "@cove/api-contract";
 
 export type GenerationSelection = {
@@ -16,6 +17,8 @@ export type GenerationSelection = {
   clientRequestId: string;
   body: string;
   attachments?: AttachmentInput[];
+  webSourceTokens?: string[];
+  webSearchEnabled?: boolean;
   expectedTargets?: GenerationInput["expected_targets"];
 };
 
@@ -28,6 +31,8 @@ export function createGenerationBatch(
     client_request_id: selection.clientRequestId,
     body: selection.body,
     attachments: selection.attachments,
+    web_source_tokens: selection.webSourceTokens,
+    web_search_enabled: selection.webSearchEnabled,
     expected_targets: selection.expectedTargets,
   };
   return request<GenerationBatch>(
@@ -54,6 +59,7 @@ export function previewGenerationContext(input: {
   conversationId: string;
   body: string;
   attachments?: AttachmentInput[];
+  webSourceTokens?: string[];
 }): Promise<GenerationPromptMessage[]> {
   return request(
     `/api/conversations/${encodeURIComponent(input.conversationId)}/context-preview`,
@@ -63,9 +69,23 @@ export function previewGenerationContext(input: {
       body: JSON.stringify({
         body: input.body,
         attachments: input.attachments,
+        web_source_tokens: input.webSourceTokens,
       }),
     },
   );
+}
+
+export function prepareWebSource(url: string, signal: AbortSignal): Promise<PreparedWebSource> {
+  return request<PreparedWebSource>("/api/web-sources/prepare", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+    signal,
+  });
+}
+
+export function releaseWebSource(token: string): Promise<void> {
+  return request<void>(`/api/web-sources/${encodeURIComponent(token)}`, { method: "DELETE" });
 }
 
 export function getGenerationBatch(id: string): Promise<GenerationBatch> {

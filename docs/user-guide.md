@@ -96,6 +96,14 @@ Only the two filter choices are remembered in this browser profile for the Local
 
 Debates show Running, Pausing, Paused, or Stopped and their current round. State labels reconcile with the Local Service while the page is open. Reading or filtering history does not start Provider work. Debate body search remains limited to its title; ordinary Chat search also matches locally saved user/assistant text.
 
+## Read webpages
+
+Click **Read webpage** beside the attachment button. A URL already present in your message is offered in the dialog; you can also enter a public HTTP or HTTPS URL. Click **Read webpage** to contact that website and extract its readable text. Preview the source, enter your question, and send. The preview shows the final URL and read time. Answer citations open the saved source lines, with an option to open the original website.
+
+Webpages and files share the four-source count and character limits below. A webpage response is limited to 4 MiB and fifteen seconds. Previews expire after fifteen minutes; remove an expired source and read it again. Removing a loading source cancels its request. Sources stay with your unsent draft and are discarded on confirmed navigation or reload.
+
+The reader supports HTML and plain text available from a public URL. Pages requiring JavaScript, authentication, or access through a private network can fail. Failure details appear on the source card. Extracted text is sent to the selected Providers when you send the question. Original page bytes, source URLs, and text are saved locally with that turn, and retries and edited branches reuse that saved version. Markdown/JSON exports include the extracted text and webpage provenance.
+
 ## Ask about files
 
 Attach supported files in the composer, preview the extracted text, and inspect the draft Provider context before sending. Previews are local and do not contact a Provider or save a draft. Navigating away or reloading discards draft attachments.
@@ -139,3 +147,13 @@ Deleting a conversation or clearing history removes its saved attachment records
 Start with the [FAQ and troubleshooting guide](faq.md) for installation, Keychain access, unavailable models, and Local Service recovery.
 
 Read the [beta release notes](releases/0.1.0-beta.6.md), use [GitHub Issues](https://github.com/tokenfunplus/cove/issues) for reproducible problems, or join the [Cove Discord community](https://discord.gg/7jdddhG8ZG) for setup discussion. Include the app and macOS versions in bug reports, and remove credentials, launch URLs, and private content from diagnostics.
+
+## Let a model search the web
+
+Click the globe beside Send to turn Web search on or off for the current conversation. New conversations start off. If no default search key is configured, Cove opens Settings → Web search and preserves your draft. Choose Tavily, Linkup, or Exa, enter a key, and use **Test and save**. Key testing makes one search request. The current conversation enables Web search after successful setup; close Settings and send your question.
+
+With the toggle on, models can search, read public HTML pages, or answer directly. Each model attempt defaults to three search requests, five page reads, five results per search, eight total tool calls, and a ninety-second web phase. Settings groups the search connection and per-model request limits separately. Expand **Advanced settings** for search depth, result counts, tool limits, timeout, and domain filters. Four comparison models can use up to twelve searches with defaults. Failed requests count, cached results do not; request limits do not represent a billing-credit cap. Retries start independent budgets. Stop cancels active web requests. The existing overall Generation timeout still applies.
+
+Answers link to saved source sections and list resolvable citations under **References**. Click a title for the saved excerpt or page; **Original** opens the source website. **Web research** shows queries, page reads, cache hits, errors, and usage when the search service reports it. Search excerpts are labelled separately from retrieved pages. If no tools were used, the answer says Web search was available and unused. Sources are retained with history, retries, branches, and local exports.
+
+Web search requires native tool calling support from the chosen model. A rejected or incompatible tool request fails visibly; turn the toggle off or choose another model. Cove does not silently switch search Providers. Search queries go to the selected search service outside NearAI encrypted inference. Dynamic JavaScript rendering, signed-in pages, and private network addresses are not supported. Continuous Debate and answer-tool side conversations do not inherit the main chat toggle. The composer toolbar uses icons for **Attach files**, **Read webpage**, and **Review context**; hover or focus an icon for its label. Manual **Read webpage** remains available through the link icon.

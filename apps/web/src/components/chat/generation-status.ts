@@ -26,6 +26,7 @@ export function generationFailureMessage(
     reason?.startsWith("Verification error:")
   )
     return reason;
+  if (errorCode === "web_research_failed") return "The model could not finish web research. Check tool calling support or turn Web search off, then retry.";
   if (errorCode === "authentication_failed")
     return "The Provider rejected this API key. Update it in Provider settings, then retry.";
   if (errorCode === "rate_limited")

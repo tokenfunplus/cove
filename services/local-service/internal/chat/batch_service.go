@@ -16,6 +16,7 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
+	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
 )
 
 func (service *Service) StartGenerationBatch(ctx context.Context, input SendInput) (GenerationBatchStart, error) {
@@ -30,6 +31,17 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 	service.startMu.Unlock()
 	if err != nil || existing.ID != "" {
 		return GenerationBatchStart{Batch: existing}, err
+	}
+	var searchPolicy *websearch.Policy
+	if input.WebSearchEnabled {
+		if service.searchService == nil {
+			return GenerationBatchStart{}, websearch.ErrUnavailable
+		}
+		policy, err := service.searchService.Policy(ctx)
+		if err != nil {
+			return GenerationBatchStart{}, err
+		}
+		searchPolicy = &policy
 	}
 	activeModelSet, systemPrompt, parameters, err := service.activeModelSet(ctx, input)
 	if err != nil {
@@ -77,6 +89,7 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		return GenerationBatchStart{}, err
 	}
 	batch, err := service.store.BeginGenerationBatch(ctx, persistence.BeginGenerationBatchInput{
+		WebSearch:     searchPolicy,
 		EditOfBatchID: input.EditOfBatchID, ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID, Body: input.Body, InputContent: inputContent, Attachments: attachments, SystemPrompt: systemPrompt, GenerationParameters: parameters, Targets: batchTargets,
 	})
 	if err != nil {
@@ -297,6 +310,7 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 		configuration = persistence.GenerationConfigurationSnapshot{SystemPrompt: settings.SystemPrompt, GenerationParameters: settings.GenerationParameters}
 	}
 	userBody, err := service.batchUserBody(ctx, batch)
+	configuration.WebSearch = batch.WebSearch
 	if err != nil {
 		return GenerationStart{}, err
 	}
@@ -508,16 +522,32 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 		service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationStopped, "stopped", "Generation stopped.")
 		return
 	}
-	stream, err := service.provider.Stream(ctx, provider.CompletionInput{Profile: profile, Secret: secret, Messages: append([]provider.ProviderMessage(nil), messages...), GenerationParameters: providerGenerationParameters(configuration.GenerationParameters)})
+	completion := provider.CompletionInput{Profile: profile, Secret: secret, Messages: append([]provider.ProviderMessage(nil), messages...), GenerationParameters: providerGenerationParameters(configuration.GenerationParameters)}
+	if configuration.WebSearch != nil {
+		completion.Tools = websearch.Tools()
+	}
+	stream, err := service.provider.Stream(ctx, completion)
 	if err != nil {
 		if ctx.Err() != nil {
 			service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationStopped, "stopped", "Generation stopped.")
 		} else {
-			service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationFailed, providerErrorCode(err), "Provider could not start the generation.")
+			message := "Provider could not start the generation."
+			if configuration.WebSearch != nil {
+				message = "The Provider could not start a Web search response. Check tool calling support or turn Web search off."
+			}
+			code := providerErrorCode(err)
+			if configuration.WebSearch != nil && code == "provider_error" {
+				code = "web_research_failed"
+			}
+			service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationFailed, code, message)
 		}
 		return
 	}
 	defer stream.Close()
+	if configuration.WebSearch != nil {
+		stream = &webCompletionStream{service: service, generation: generation, input: completion, stream: stream}
+		defer stream.Close()
+	}
 	var body, reasoning strings.Builder
 	var finishReason string
 	for {
@@ -526,12 +556,27 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 			if ctx.Err() != nil {
 				service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationStopped, "stopped", "Generation stopped.")
 			} else {
-				service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationFailed, "protocol_error", "The Provider stream ended without completion.")
+				message := "The Provider stream ended without completion."
+				if configuration.WebSearch != nil {
+					message = "The Provider could not finish web research. Check tool calling support or turn Web search off."
+				}
+				code := "protocol_error"
+				if configuration.WebSearch != nil {
+					code = "web_research_failed"
+				}
+				service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationFailed, code, message)
 			}
 			return
 		}
 		measurement.observe(event)
 		switch event.Type {
+		case provider.EventWebActivity:
+			if event.Reset {
+				body.Reset()
+				reasoning.Reset()
+				finishReason = ""
+			}
+			service.publishBatch(GenerationEvent{BatchID: batchID, TargetID: targetID, GenerationID: generation.ID, Type: EventWebActivity, WebActivity: event.WebActivity, Reset: event.Reset})
 		case provider.EventStarted:
 			_ = service.store.MarkGenerationStreaming(context.Background(), generation.ID)
 			service.publishBatch(GenerationEvent{BatchID: batchID, TargetID: targetID, GenerationID: generation.ID, Type: EventStarted, Snapshot: &generation.Snapshot})

@@ -4,6 +4,7 @@
   "type": "object",
   "required": ["id", "conversation_id", "client_request_id", "state", "targets", "events_url", "created_at", "updated_at"],
   "properties": {
+    "web_search": { "$ref": "generation.schema.json#/$defs/webSearchPolicy" },
     "id": { "type": "string" },
     "conversation_id": { "type": "string" },
     "client_request_id": { "type": "string" },
@@ -44,6 +45,7 @@
             "type": "object",
             "required": ["id", "state", "snapshot", "configuration_snapshot", "verification"],
             "properties": {
+              "web_search": { "$ref": "generation.schema.json#/$defs/webSearchInfo" },
               "metrics": { "$ref": "generation.schema.json#/$defs/generationMetrics" },
               "created_at": { "type": "string", "format": "date-time" },
               "updated_at": { "type": "string", "format": "date-time" },

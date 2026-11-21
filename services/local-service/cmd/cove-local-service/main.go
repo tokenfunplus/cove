@@ -23,6 +23,7 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 	"github.com/tokenfunplus/cove/services/local-service/internal/providerconfig"
 	localruntime "github.com/tokenfunplus/cove/services/local-service/internal/runtime"
+	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
 )
 
 func main() {
@@ -101,6 +102,8 @@ func run() error {
 		return err
 	}
 	chatService := chat.NewServiceWithSettings(store, providerSetup, provider.NewHTTPAdapter(nil), store)
+	searchService := websearch.NewService(store, secretStore, nil)
+	chatService.SetWebSearchService(searchService)
 	shutdownDone := make(chan struct{})
 	shutdown := func() {
 		shutdownOnce.Do(func() {
@@ -131,7 +134,7 @@ func run() error {
 		handlers.Wait()
 	}()
 	chatService.SetDocumentParser(documents.ProcessParser(executable))
-	localAPI := api.NewServer(api.Config{
+	localAPI := api.NewServer(api.Config{SearchService: searchService,
 		Security:      security,
 		ControlToken:  controlToken,
 		Store:         store,

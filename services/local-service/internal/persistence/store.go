@@ -15,11 +15,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
 
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 21
+const schemaVersion = 22
 
 const defaultConversationTitle = "New conversation"
 
@@ -62,6 +63,8 @@ type ChatStore interface {
 	LoadGenerationBatchContext(ctx context.Context, batchID string) ([]ContextItem, error)
 	LoadBatchAttachments(ctx context.Context, batchID string) ([]documents.Prepared, error)
 	LoadAttachmentData(ctx context.Context, batchID, documentID string) (documents.Input, error)
+	GetWebSearchRun(context.Context, string) (WebSearchRun, error)
+	MutateWebSearchRun(context.Context, string, func(*WebSearchRun, Generation) error) error
 }
 
 // ProviderStore persists only non-secret Provider Profile metadata.
@@ -102,7 +105,8 @@ type GenerationParameters struct {
 // used for one Generation attempt. Nil sampling parameters deliberately retain
 // the Provider defaults, while zero is a configured value.
 type GenerationConfigurationSnapshot struct {
-	SystemPrompt string `json:"system_prompt"`
+	SystemPrompt string            `json:"system_prompt"`
+	WebSearch    *websearch.Policy `json:"web_search,omitempty"`
 	GenerationParameters
 }
 
@@ -124,14 +128,15 @@ type Conversation struct {
 }
 
 type Message struct {
-	Reasoning         string            `json:"reasoning,omitempty"`
-	ID                string            `json:"id"`
-	GenerationBatchID string            `json:"generation_batch_id,omitempty"`
-	ConversationID    string            `json:"conversation_id"`
-	Role              string            `json:"role"`
-	Body              string            `json:"body"`
-	ProviderSnapshot  *ProviderSnapshot `json:"provider_snapshot,omitempty"`
-	CreatedAt         time.Time         `json:"created_at"`
+	WebSources        []documents.Snapshot `json:"web_sources,omitempty"`
+	Reasoning         string               `json:"reasoning,omitempty"`
+	ID                string               `json:"id"`
+	GenerationBatchID string               `json:"generation_batch_id,omitempty"`
+	ConversationID    string               `json:"conversation_id"`
+	Role              string               `json:"role"`
+	Body              string               `json:"body"`
+	ProviderSnapshot  *ProviderSnapshot    `json:"provider_snapshot,omitempty"`
+	CreatedAt         time.Time            `json:"created_at"`
 }
 
 type MessageInput struct {
@@ -244,6 +249,7 @@ type VerificationEvidence struct {
 }
 
 type Generation struct {
+	WebSearch             *WebSearchInfo                  `json:"web_search,omitempty"`
 	Metrics               *GenerationMetrics              `json:"metrics,omitempty"`
 	ID                    string                          `json:"id"`
 	GenerationBatchID     string                          `json:"generation_batch_id,omitempty"`
@@ -274,6 +280,7 @@ const (
 )
 
 type GenerationBatch struct {
+	WebSearch       *websearch.Policy    `json:"web_search,omitempty"`
 	ContextItems    []ContextItem        `json:"-"`
 	ID              string               `json:"id"`
 	ConversationID  string               `json:"conversation_id"`
@@ -320,6 +327,7 @@ type GenerationTargetInput struct {
 }
 
 type BeginGenerationBatchInput struct {
+	WebSearch            *websearch.Policy
 	EditOfBatchID        string
 	ConversationID       string
 	ClientRequestID      string
@@ -709,6 +717,25 @@ PRAGMA user_version = 15;
 			return fmt.Errorf("apply SQLite migration 21: %w", err)
 		}
 	}
+	if version == 20 {
+		version = 21
+	}
+	if version == 21 {
+		if _, err := tx.Exec(`ALTER TABLE generation_batches ADD COLUMN web_search_policy TEXT NOT NULL DEFAULT '';
+ALTER TABLE generations ADD COLUMN web_search_policy TEXT NOT NULL DEFAULT '';
+ALTER TABLE generations ADD COLUMN web_search_run TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE generations ADD COLUMN web_search_info TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE messages ADD COLUMN web_sources TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE messages ADD COLUMN context_body TEXT NOT NULL DEFAULT '';
+CREATE TABLE web_search_settings (id INTEGER PRIMARY KEY CHECK(id=1), configuration TEXT NOT NULL);
+PRAGMA user_version=22;`); err != nil {
+			return fmt.Errorf("apply SQLite migration 22: %w", err)
+		}
+		configuration, _ := json.Marshal(websearch.Defaults())
+		if _, err := tx.Exec(`INSERT INTO web_search_settings(id,configuration) VALUES(1,?)`, string(configuration)); err != nil {
+			return err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit SQLite migration: %w", err)
 	}
@@ -773,7 +800,7 @@ func (store *SQLiteStore) LoadConversation(ctx context.Context, id string) (Conv
 	if err != nil {
 		return ConversationView{}, fmt.Errorf("load conversation: %w", err)
 	}
-	rows, err := store.db.QueryContext(ctx, `SELECT m.id, m.conversation_id, m.role, m.body, m.provider_snapshot, m.created_at, COALESCE(g.generation_batch_id, ''), m.reasoning
+	rows, err := store.db.QueryContext(ctx, `SELECT m.id, m.conversation_id, m.role, m.body, m.provider_snapshot, m.created_at, COALESCE(g.generation_batch_id, ''), m.reasoning, m.web_sources
 FROM messages m LEFT JOIN generations g ON g.assistant_message_id = m.id
 WHERE m.conversation_id = ? ORDER BY m.created_at ASC, m.id ASC`, id)
 	if err != nil {
@@ -784,9 +811,13 @@ WHERE m.conversation_id = ? ORDER BY m.created_at ASC, m.id ASC`, id)
 	for rows.Next() {
 		var message Message
 		var snapshot sql.NullString
+		var webSources string
 		var createdAt int64
-		if err := rows.Scan(&message.ID, &message.ConversationID, &message.Role, &message.Body, &snapshot, &createdAt, &message.GenerationBatchID, &message.Reasoning); err != nil {
+		if err := rows.Scan(&message.ID, &message.ConversationID, &message.Role, &message.Body, &snapshot, &createdAt, &message.GenerationBatchID, &message.Reasoning, &webSources); err != nil {
 			return ConversationView{}, fmt.Errorf("scan message: %w", err)
+		}
+		if err := json.Unmarshal([]byte(webSources), &message.WebSources); err != nil {
+			return ConversationView{}, err
 		}
 		if snapshot.Valid {
 			var value ProviderSnapshot
@@ -1219,6 +1250,11 @@ func (store *SQLiteStore) SettleSecureGeneration(ctx context.Context, input Secu
 			return fmt.Errorf("save secure assistant message: %w", err)
 		}
 	}
+	if assistantID != "" {
+		if err := attachWebSourcesTx(ctx, tx, input.GenerationID, assistantID, input.Body); err != nil {
+			return err
+		}
+	}
 	metrics, _ := json.Marshal(input.Metrics)
 	if _, err := tx.ExecContext(ctx, `UPDATE generations SET state = ?, verification_snapshot = ?, assistant_message_id = NULLIF(?, ''), error_code = NULLIF(?, ''), error_message = NULLIF(?, ''), updated_at = ?, metrics = ? WHERE id = ?`, state, string(verification), assistantID, errorCode, errorMessage, now.UnixNano(), string(metrics), input.GenerationID); err != nil {
 		return fmt.Errorf("settle secure generation: %w", err)
@@ -1289,6 +1325,9 @@ func (store *SQLiteStore) CompleteGeneration(ctx context.Context, input Complete
 	if _, err := tx.ExecContext(ctx, `INSERT INTO messages (id, conversation_id, role, body, provider_snapshot, created_at, reasoning) VALUES (?, ?, 'assistant', ?, ?, ?, ?)`, messageID, generation.ConversationID, input.Body, snapshot, now.UnixNano(), input.Reasoning); err != nil {
 		return fmt.Errorf("save assistant message: %w", err)
 	}
+	if err := attachWebSourcesTx(ctx, tx, input.GenerationID, messageID, input.Body); err != nil {
+		return err
+	}
 	metrics, _ := json.Marshal(input.Metrics)
 	if _, err := tx.ExecContext(ctx, `UPDATE generations SET state = ?, assistant_message_id = ?, updated_at = ?, metrics = ? WHERE id = ?`, GenerationCompleted, messageID, now.UnixNano(), string(metrics), input.GenerationID); err != nil {
 		return fmt.Errorf("complete generation state: %w", err)
@@ -1353,7 +1392,7 @@ func (store *SQLiteStore) RecoverInterruptedGenerations(ctx context.Context) err
 	return tx.Commit()
 }
 
-const generationQuery = `SELECT id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, assistant_message_id, error_code, error_message, created_at, updated_at, generation_batch_id, generation_target_id, metrics FROM generations`
+const generationQuery = `SELECT id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, assistant_message_id, error_code, error_message, created_at, updated_at, generation_batch_id, generation_target_id, metrics, web_search_policy, web_search_info FROM generations`
 
 func getGenerationTx(ctx context.Context, tx *sql.Tx, clientRequestID string) (Generation, error) {
 	return scanGeneration(tx.QueryRowContext(ctx, generationQuery+` WHERE client_request_id = ?`, clientRequestID))
@@ -1365,13 +1404,24 @@ func scanGeneration(row rowScanner) (Generation, error) {
 	var userMessageID string
 	var verificationSnapshot string
 	var metrics string
+	var webPolicy, webInfo string
 	var assistantID, errorCode, errorMessage, batchID, targetID sql.NullString
 	var temperature, topP sql.NullFloat64
 	var maxTokens sql.NullInt64
 	var state string
 	var createdAt, updatedAt int64
-	if err := row.Scan(&generation.ID, &generation.ConversationID, &generation.ClientRequestID, &userMessageID, &state, &snapshot, &generation.ConfigurationSnapshot.SystemPrompt, &temperature, &topP, &maxTokens, &verificationSnapshot, &assistantID, &errorCode, &errorMessage, &createdAt, &updatedAt, &batchID, &targetID, &metrics); err != nil {
+	if err := row.Scan(&generation.ID, &generation.ConversationID, &generation.ClientRequestID, &userMessageID, &state, &snapshot, &generation.ConfigurationSnapshot.SystemPrompt, &temperature, &topP, &maxTokens, &verificationSnapshot, &assistantID, &errorCode, &errorMessage, &createdAt, &updatedAt, &batchID, &targetID, &metrics, &webPolicy, &webInfo); err != nil {
 		return Generation{}, err
+	}
+	if webPolicy != "" {
+		if err := json.Unmarshal([]byte(webPolicy), &generation.ConfigurationSnapshot.WebSearch); err != nil {
+			return Generation{}, err
+		}
+	}
+	if webInfo != "{}" {
+		if err := json.Unmarshal([]byte(webInfo), &generation.WebSearch); err != nil {
+			return Generation{}, err
+		}
 	}
 	if metrics != "{}" && metrics != "null" {
 		if err := json.Unmarshal([]byte(metrics), &generation.Metrics); err != nil {
@@ -1404,6 +1454,14 @@ func scanGeneration(row rowScanner) (Generation, error) {
 		}
 	}
 	generation.State = GenerationState(state)
+	if generation.WebSearch != nil && isTerminalGenerationState(generation.State) {
+		for i := range generation.WebSearch.Steps {
+			if generation.WebSearch.Steps[i].Status == "running" {
+				generation.WebSearch.Steps[i].Status = "stopped"
+				generation.WebSearch.Steps[i].Error = "The Generation ended before this tool completed."
+			}
+		}
+	}
 	generation.UserMessageID = userMessageID
 	generation.AssistantMessageID = assistantID.String
 	generation.GenerationBatchID = batchID.String

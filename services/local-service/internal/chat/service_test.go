@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -369,7 +370,7 @@ func TestServiceSendsTheGlobalSystemPromptBeforeConversationMessages(t *testing.
 	}
 	waitForGeneration(t, store, started.Generation.ID, persistence.GenerationCompleted)
 	messages := upstream.lastMessages()
-	if len(messages) != 2 || messages[0] != (provider.ProviderMessage{Role: "system", Content: "Answer in one sentence."}) || messages[1] != (provider.ProviderMessage{Role: "user", Content: "Hello"}) {
+	if len(messages) != 2 || !reflect.DeepEqual(messages[0], provider.ProviderMessage{Role: "system", Content: "Answer in one sentence."}) || !reflect.DeepEqual(messages[1], provider.ProviderMessage{Role: "user", Content: "Hello"}) {
 		t.Fatalf("provider messages = %#v, want system prompt followed by user message", messages)
 	}
 	if started.Generation.ConfigurationSnapshot.SystemPrompt != "Answer in one sentence." || started.Generation.ConfigurationSnapshot.Temperature == nil || *started.Generation.ConfigurationSnapshot.Temperature != 0 || started.Generation.ConfigurationSnapshot.TopP != nil || started.Generation.ConfigurationSnapshot.MaxTokens == nil || *started.Generation.ConfigurationSnapshot.MaxTokens != maxTokens {
@@ -811,7 +812,7 @@ func TestServiceRequiresAComparisonDispositionBeforeTheNextBatchAndUsesTheSelect
 		t.Fatalf("missing context error = %v", err)
 	}
 	for _, messages := range upstream.messagesFor("model-a") {
-		if messages[len(messages)-1] == (provider.ProviderMessage{Role: "user", Content: "Follow-up"}) {
+		if reflect.DeepEqual(messages[len(messages)-1], provider.ProviderMessage{Role: "user", Content: "Follow-up"}) {
 			if !containsProviderMessage(messages, provider.ProviderMessage{Role: "assistant", Content: "Chosen answer"}) || containsProviderMessage(messages, provider.ProviderMessage{Role: "assistant", Content: "Other answer"}) {
 				t.Fatalf("follow-up context = %#v, want only the selected answer", messages)
 			}
@@ -1061,7 +1062,7 @@ func waitForBatch(t *testing.T, store *persistence.SQLiteStore, id string, state
 
 func containsProviderMessage(messages []provider.ProviderMessage, expected provider.ProviderMessage) bool {
 	for _, message := range messages {
-		if message == expected {
+		if reflect.DeepEqual(message, expected) {
 			return true
 		}
 	}

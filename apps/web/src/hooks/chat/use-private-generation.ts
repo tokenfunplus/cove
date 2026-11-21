@@ -15,6 +15,7 @@ import { type WorkspaceState } from "@/hooks/workspace/use-workspace-state";
 import { type WorkspaceUi } from "@/hooks/workspace/use-workspace-ui";
 import { type LiveTurnPhase } from "@/lib/chat/live-turn";
 import { replaceBatchGeneration } from "@/lib/generation";
+import { generateWithWebSearch } from "@/lib/inference/web-search";
 import { type SecureInferenceVerificationEvent } from "@/lib/inference/secure-inference";
 import {
   failedVerificationForContract,
@@ -321,8 +322,7 @@ export function usePrivateGeneration({
             void refreshCurrentConversation().catch(() => undefined);
           }
         };
-        const stream = transport.generate(
-          {
+        const inferenceInput = {
             target: {
               id: profile.id,
               kind: profile.kind,
@@ -338,14 +338,10 @@ export function usePrivateGeneration({
             },
             context,
             message: next.input_content ?? body,
-          },
-          controller.signal,
-          {
-            onVerification: (event) => {
-              void settleVerification(event);
-            },
-          },
-        );
+          };
+        const stream = configuration.web_search
+          ? generateWithWebSearch(transport, inferenceInput, configuration.web_search, generationID, controller.signal)
+          : transport.generate(inferenceInput, controller.signal, { onVerification: event => { void settleVerification(event); } });
         for await (const event of stream) {
           if (controller.signal.aborted) break;
           if (event.type === "verifying_environment") {
@@ -353,6 +349,9 @@ export function usePrivateGeneration({
           } else if (event.type === "streaming") {
             await markSecureGenerationStreaming(generationID);
             updatePhase("streaming");
+          } else if (event.type === "web_activity") {
+            if (event.reset) { assistantBody = ""; reasoningBody = ""; }
+            setLiveTurn(current => current ? { ...current, targets: (current.targets ?? []).map(candidate => candidate.targetId === target.id ? { ...candidate, webActivity: event.activity, ...(event.reset ? { assistantBody: "", reasoningBody: "" } : {}) } : candidate) } : current);
           } else if (event.type === "usage") {
             if (event.inputTokens !== undefined) inputTokens = event.inputTokens;
             if (event.outputTokens !== undefined) outputTokens = event.outputTokens;

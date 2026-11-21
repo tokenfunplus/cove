@@ -9,11 +9,11 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Database, Settings2, SlidersHorizontal, X } from "lucide-react";
+import { Database, Globe, Settings2, SlidersHorizontal, X } from "lucide-react";
 import { Portal } from "@headlessui/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-type SettingsDialogSection = "general" | "provider" | "chat-data";
+type SettingsDialogSection = "general" | "provider" | "chat-data" | "web-search";
 
 export function SettingsDialog({
   open,
@@ -94,6 +94,7 @@ export function SettingsDialogContent({
   const sections = [
     { id: "general" as const, icon: SlidersHorizontal, label: copy.general },
     { id: "provider" as const, icon: Settings2, label: copy.providerSettings },
+    { id: "web-search" as const, icon: Globe, label: "Web search" },
     { id: "chat-data" as const, icon: Database, label: copy.chatData },
   ];
   return (

@@ -1616,6 +1616,19 @@ func TestFrozenBatchContextRequiresABrowserSession(t *testing.T) {
 	}
 }
 
+func (fake *fakeChat) ExecuteWebTool(context.Context, string, chat.WebToolInput) (chat.WebToolResult, error) {
+	return chat.WebToolResult{}, nil
+}
+func (fake *fakeChat) GetWebSearchRun(context.Context, string) (persistence.WebSearchRun, error) {
+	return persistence.WebSearchRun{}, nil
+}
+
+func (fake *fakeChat) PrepareWebSource(context.Context, string, string) (chat.PreparedWebSource, error) {
+	return chat.PreparedWebSource{}, nil
+}
+
+func (fake *fakeChat) ReleaseWebSource(context.Context, string, string) {}
+
 func (fake *fakeChat) PreviewAttachment(ctx context.Context, input documents.Input) (documents.Snapshot, error) {
 	parsed, err := documents.Parse(ctx, input)
 	return parsed.Snapshot, err

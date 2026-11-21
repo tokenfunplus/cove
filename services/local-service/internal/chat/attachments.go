@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"fmt"
 	"unicode/utf8"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
@@ -62,9 +63,29 @@ func (service *Service) prepareAttachments(ctx context.Context, input SendInput,
 	if input.EditOfBatchID != "" {
 		return service.prepareEditedAttachments(ctx, input, systemPrompt)
 	}
+	if len(input.Attachments)+len(input.WebSourceTokens) > documents.MaxFiles {
+		return nil, "", fmt.Errorf("%w: Attach at most four files or webpages per message.", documents.ErrInvalidDocument)
+	}
 	prepared, err := documents.PrepareWith(ctx, input.Attachments, service.parseAttachment)
 	if err != nil {
 		return nil, "", err
+	}
+	web, err := service.preparedWebSources(input.WebSourceOwner, input.WebSourceTokens)
+	if err != nil {
+		return nil, "", err
+	}
+	prepared = append(prepared, web...)
+	seen := make(map[string]bool)
+	sourceCharacters := 0
+	for _, source := range prepared {
+		if seen[source.ID] {
+			return nil, "", fmt.Errorf("%w: The same source is already attached.", documents.ErrInvalidDocument)
+		}
+		seen[source.ID] = true
+		sourceCharacters += source.Characters
+	}
+	if sourceCharacters > documents.MaxSourceCharacters {
+		return nil, "", fmt.Errorf("%w: Sources may contain at most 120,000 extracted characters in total.", documents.ErrInvalidDocument)
 	}
 	content := documents.Prompt(input.Body, prepared)
 	items, err := service.store.LoadBatchContext(ctx, input.ConversationID)
@@ -86,7 +107,7 @@ func (service *Service) prepareEditedAttachments(ctx context.Context, input Send
 	if err != nil {
 		return nil, "", err
 	}
-	if source.ConversationID != input.ConversationID || source.State == "pending" || source.State == "streaming" || len(input.Attachments) > 0 {
+	if source.ConversationID != input.ConversationID || source.State == "pending" || source.State == "streaming" || len(input.Attachments) > 0 || len(input.WebSourceTokens) > 0 {
 		return nil, "", persistence.ErrInvalidBranch
 	}
 	prepared, err := service.store.LoadBatchAttachments(ctx, source.ID)

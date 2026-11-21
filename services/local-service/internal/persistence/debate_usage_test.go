@@ -75,6 +75,7 @@ func TestSchemaTwentyMigrationPreservesDebatesAndProtectsNewControls(t *testing.
 		t.Fatal(err)
 	}
 	session := storedDebateFixture(t, store)
+	dropWebSearchSchema(t, store)
 	if _, err := store.db.Exec(`PRAGMA user_version=20`); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +88,7 @@ func TestSchemaTwentyMigrationPreservesDebatesAndProtectsNewControls(t *testing.
 	}
 	defer store.Close()
 	version, err := readPragmaInt(store.db, "user_version")
-	if err != nil || version != 21 {
+	if err != nil || version != schemaVersion {
 		t.Fatal("schema guard was not advanced", version, err)
 	}
 	loaded, err := store.GetDebate(ctx, session.ID)

@@ -34,6 +34,7 @@ func (service *Service) finishSecureGeneration(id string) {
 }
 
 func (service *Service) expireSecureGeneration(id string) {
+	service.cancelWebTools(id)
 	service.secureMu.Lock()
 	defer service.secureMu.Unlock()
 	service.activeMu.Lock()

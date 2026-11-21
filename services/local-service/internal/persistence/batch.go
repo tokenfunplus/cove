@@ -24,7 +24,7 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 	if len(input.Targets) == 0 || len(input.Targets) > 4 {
 		return GenerationBatch{}, errors.New("a generation batch requires between one and four targets")
 	}
-	configuration := GenerationConfigurationSnapshot{SystemPrompt: input.SystemPrompt, GenerationParameters: input.GenerationParameters}
+	configuration := GenerationConfigurationSnapshot{SystemPrompt: input.SystemPrompt, GenerationParameters: input.GenerationParameters, WebSearch: input.WebSearch}
 	if err := validateGenerationConfigurationSnapshot(configuration); err != nil {
 		return GenerationBatch{}, err
 	}
@@ -90,6 +90,9 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 	if _, err := tx.ExecContext(ctx, `INSERT INTO generation_batches (id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, batchID, input.ConversationID, input.ClientRequestID, userMessageID, input.SystemPrompt, input.GenerationParameters.Temperature, input.GenerationParameters.TopP, input.GenerationParameters.MaxTokens, GenerationBatchPending, now.UnixNano(), now.UnixNano()); err != nil {
 		return GenerationBatch{}, fmt.Errorf("save generation batch: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE generation_batches SET web_search_policy=? WHERE id=?`, webPolicyJSON(input.WebSearch), batchID); err != nil {
+		return GenerationBatch{}, err
+	}
 	if len(input.Attachments) > 0 {
 		snapshots := make([]documents.Snapshot, 0, len(input.Attachments))
 		data := make([][]byte, 0, len(input.Attachments))
@@ -135,6 +138,9 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 		if _, err := tx.ExecContext(ctx, `INSERT INTO generations (id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, created_at, updated_at, generation_batch_id, generation_target_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, generationID, input.ConversationID, requestID, userMessageID, GenerationPending, snapshot, configuration.SystemPrompt, configuration.Temperature, configuration.TopP, configuration.MaxTokens, now.UnixNano(), now.UnixNano(), batchID, targetID); err != nil {
 			return GenerationBatch{}, fmt.Errorf("save target generation: %w", err)
 		}
+		if _, err := tx.ExecContext(ctx, `UPDATE generations SET web_search_policy=? WHERE id=?`, webPolicyJSON(configuration.WebSearch), generationID); err != nil {
+			return GenerationBatch{}, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE conversations SET updated_at = ? WHERE id = ?`, now.UnixNano(), input.ConversationID); err != nil {
 		return GenerationBatch{}, fmt.Errorf("update generation batch conversation timestamp: %w", err)
@@ -163,7 +169,7 @@ type batchReader interface {
 }
 
 func getGenerationBatch(ctx context.Context, db batchReader, id string) (GenerationBatch, error) {
-	row := db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments FROM generation_batches WHERE id = ?`, id)
+	row := db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments, web_search_policy FROM generation_batches WHERE id = ?`, id)
 	batch, err := scanGenerationBatch(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return GenerationBatch{}, fmt.Errorf("generation batch %q: %w", id, sql.ErrNoRows)
@@ -175,7 +181,7 @@ func getGenerationBatch(ctx context.Context, db batchReader, id string) (Generat
 }
 
 func (store *SQLiteStore) GetGenerationBatchByClientRequestID(ctx context.Context, clientRequestID string) (GenerationBatch, error) {
-	row := store.db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments FROM generation_batches WHERE client_request_id = ?`, strings.TrimSpace(clientRequestID))
+	row := store.db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments, web_search_policy FROM generation_batches WHERE client_request_id = ?`, strings.TrimSpace(clientRequestID))
 	batch, err := scanGenerationBatch(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return GenerationBatch{}, fmt.Errorf("generation batch request %q: %w", clientRequestID, sql.ErrNoRows)
@@ -315,6 +321,9 @@ func (store *SQLiteStore) BeginGenerationAttempt(ctx context.Context, input Begi
 	if _, err := tx.ExecContext(ctx, `UPDATE generation_targets SET latest_generation_id = ? WHERE id = ?`, generation.ID, targetID); err != nil {
 		return Generation{}, fmt.Errorf("update retry generation target: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE generations SET web_search_policy=? WHERE id=?`, webPolicyJSON(generation.ConfigurationSnapshot.WebSearch), generation.ID); err != nil {
+		return Generation{}, err
+	}
 	if err := refreshGenerationBatchTx(ctx, tx, batchID); err != nil {
 		return Generation{}, err
 	}
@@ -388,7 +397,7 @@ func (store *SQLiteStore) SkipGenerationBatchContext(ctx context.Context, batchI
 
 func (store *SQLiteStore) LoadBatchContext(ctx context.Context, conversationID string) ([]ContextItem, error) {
 	rows, err := store.db.QueryContext(ctx, `
-SELECT b.user_message_id, b.selected_generation_id, COALESCE(NULLIF(b.input_content, ''), user_message.body), assistant_message.body
+SELECT b.user_message_id, b.selected_generation_id, COALESCE(NULLIF(b.input_content, ''), user_message.body), COALESCE(NULLIF(assistant_message.context_body,''),assistant_message.body)
 FROM generation_batches b
 JOIN messages user_message ON user_message.id = b.user_message_id
 JOIN generations selected_generation ON selected_generation.id = b.selected_generation_id
@@ -416,7 +425,7 @@ func (store *SQLiteStore) LoadGenerationBatchContext(ctx context.Context, batchI
 
 func loadGenerationBatchContext(ctx context.Context, db batchReader, batchID string) ([]ContextItem, error) {
 	rows, err := db.QueryContext(ctx, `
-SELECT item.user_message_id, item.selected_generation_id, COALESCE(NULLIF(source_batch.input_content, ''), user_message.body), assistant_message.body
+SELECT item.user_message_id, item.selected_generation_id, COALESCE(NULLIF(source_batch.input_content, ''), user_message.body), COALESCE(NULLIF(assistant_message.context_body,''),assistant_message.body)
 FROM batch_context_items item
 JOIN messages user_message ON user_message.id = item.user_message_id
 LEFT JOIN generation_batches source_batch ON source_batch.user_message_id = item.user_message_id
@@ -512,13 +521,19 @@ func isTerminalBatchState(state GenerationBatchState) bool {
 func scanGenerationBatch(row rowScanner) (GenerationBatch, error) {
 	var batch GenerationBatch
 	var attachmentsJSON string
+	var webPolicy string
 	var selected sql.NullString
 	var temperature, topP sql.NullFloat64
 	var maxTokens sql.NullInt64
 	var skipped, frozen int
 	var createdAt, updatedAt int64
-	if err := row.Scan(&batch.ID, &batch.ConversationID, &batch.ClientRequestID, &batch.UserMessageID, &batch.SystemPrompt, &temperature, &topP, &maxTokens, &batch.State, &selected, &skipped, &frozen, &createdAt, &updatedAt, &batch.InputContent, &attachmentsJSON); err != nil {
+	if err := row.Scan(&batch.ID, &batch.ConversationID, &batch.ClientRequestID, &batch.UserMessageID, &batch.SystemPrompt, &temperature, &topP, &maxTokens, &batch.State, &selected, &skipped, &frozen, &createdAt, &updatedAt, &batch.InputContent, &attachmentsJSON, &webPolicy); err != nil {
 		return GenerationBatch{}, err
+	}
+	if webPolicy != "" {
+		if err := json.Unmarshal([]byte(webPolicy), &batch.WebSearch); err != nil {
+			return GenerationBatch{}, err
+		}
 	}
 	if err := json.Unmarshal([]byte(attachmentsJSON), &batch.Attachments); err != nil {
 		return GenerationBatch{}, fmt.Errorf("decode attachments: %w", err)
@@ -542,7 +557,7 @@ func scanGenerationBatch(row rowScanner) (GenerationBatch, error) {
 }
 
 func getGenerationBatchByRequestTx(ctx context.Context, tx *sql.Tx, clientRequestID string) (GenerationBatch, error) {
-	return scanGenerationBatch(tx.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments FROM generation_batches WHERE client_request_id = ?`, clientRequestID))
+	return scanGenerationBatch(tx.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments, web_search_policy FROM generation_batches WHERE client_request_id = ?`, clientRequestID))
 }
 
 func ensureContextDispositionTx(ctx context.Context, tx *sql.Tx, conversationID string) error {

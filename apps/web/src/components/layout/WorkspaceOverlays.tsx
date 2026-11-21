@@ -1,6 +1,7 @@
 import { ConversationDownloadDialog } from "@/components/conversations/ConversationDownloadDialog";
 import { ConversationRenameDialog } from "@/components/conversations/ConversationRenameDialog";
 import { ProviderSettings } from "@/components/providers/ProviderSettings";
+import { WebSearchSettingsPanel } from "@/components/settings/WebSearchSettingsPanel";
 import { ChatDataPanel } from "@/components/settings/ChatDataPanel";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { WorkspaceSettingsPanel } from "@/components/settings/WorkspaceSettingsPanel";
@@ -15,6 +16,7 @@ import { type ChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 type Props = {
   workspace: Pick<
     ChatWorkspace,
+    | "webSearch"
     | "workspaceVerification"
     | "providerProfiles"
     | "activeSelection"
@@ -155,6 +157,9 @@ export function WorkspaceOverlays({ workspace }: Props) {
             onDelete={handleDeleteProvider}
             onDeleteKey={handleDeleteProviderKey}
           />
+        </div>
+        <div aria-labelledby="settings-tab-web-search" className="settings-dialog__section settings-section" data-settings-section="web-search" id="settings-web-search" role="tabpanel">
+          {settingsEntry && <WebSearchSettingsPanel onSaved={workspace.webSearch.configured} />}
         </div>
         <div
           aria-labelledby="settings-tab-chat-data"

@@ -1,5 +1,5 @@
-import { ArrowUp, LockKeyhole, Square } from "lucide-react";
-import { useEffect, type RefObject } from "react";
+import { ArrowUp, Globe, LoaderCircle, LockKeyhole, Square } from "lucide-react";
+import { useEffect, type ReactNode, type RefObject } from "react";
 import {
   type ConversationView,
   type ProviderProfile,
@@ -7,6 +7,7 @@ import {
 import { type ActiveModelSet } from "@/components/providers/model-selection";
 import { shouldSubmitComposerKey } from "@/components/chat/composer-keyboard";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
 import { type ApplicationCopy } from "@/messages";
 import { chatStyles } from "@/styles/chat";
@@ -17,6 +18,7 @@ import { DraftContext } from "@/components/chat/DraftContext";
 import { type AttachmentDraft as AttachmentDraftState } from "@/hooks/chat/use-attachment-draft";
 
 type Props = {
+  webSearch?: { enabled: boolean; busy: boolean; toggle: () => void; budgetLabel?: string };
   composerId?: string;
   compact?: boolean;
   attachmentDraft?: AttachmentDraftState;
@@ -36,6 +38,7 @@ type Props = {
   composerRef: RefObject<HTMLTextAreaElement | null>;
 };
 export function ChatComposer({
+  webSearch,
   composerId = "generation-input",
   compact = false,
   attachmentDraft,
@@ -77,6 +80,88 @@ export function ChatComposer({
     !requiresContextChoice &&
     Boolean(draft.trim());
   const actionLabel = isSending ? copy.stopGeneration : copy.sendMessage;
+  function renderInput(sourceActions?: ReactNode) {
+    return <>
+        <label htmlFor={composerId}>{copy.sendMessage}</label>
+        <Textarea
+          className="focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-transparent"
+          id={composerId}
+          value={draft}
+          disabled={navigationBusy}
+          placeholder={compact ? copy.focusComposerPlaceholder : copy.composerPlaceholder}
+          rows={compact ? 1 : undefined}
+          onChange={(event) => onDraftChange(event.target.value)}
+          ref={composerRef}
+          onKeyDown={(event) => {
+            if (
+              !isSending &&
+              shouldSubmitComposerKey({
+                ...event,
+                isComposing: event.nativeEvent.isComposing,
+              })
+            ) {
+              event.preventDefault();
+              if (canSend) onSend();
+            }
+          }}
+        />
+        <div className={cn(chatStyles.generationComposer_bar, compact && "mt-0 shrink-0 gap-1")}>
+          <div className="flex min-w-0 items-center gap-0.5">
+          {sourceActions}
+          {attachmentDraft ? (
+            <DraftContext
+              compact
+              conversationId={view.id}
+              body={draft}
+              attachments={attachmentDraft}
+              disabled={isSending || navigationBusy}
+            />
+          ) : (
+            <span className={cn(chatStyles.generationComposer_contextNote, compact && "sr-only")}>
+              {copy.contextSnapshot.toUpperCase()} ·{" "}
+              {
+                (view.generation_batches ?? []).filter(
+                  (batch) => batch.context_frozen,
+                ).length
+              }{" "}
+              TURNS
+            </span>
+          )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {webSearch && <Tooltip content={<><span className="block font-medium">Web search {webSearch.enabled ? "on" : "off"}</span><span className="mt-0.5 block text-[11px] text-muted-foreground">{webSearch.enabled ? webSearch.budgetLabel ?? "Models can search when needed." : "Let models search for current information and sources."}</span></>}><Button type="button" variant="ghost" size="icon-sm" aria-label="Web search" aria-pressed={webSearch.enabled} aria-busy={webSearch.busy} disabled={webSearch.busy || isSending || navigationBusy} className={cn("rounded-lg", webSearch.enabled ? "bg-accent text-primary ring-1 ring-primary/15" : "text-muted-foreground")} onClick={webSearch.toggle}>{webSearch.busy ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Globe className="size-4" aria-hidden="true" />}</Button></Tooltip>}
+
+            {privateMode && (
+              <span className={cn(chatStyles.generationComposer_mode, compact && "hidden")} hidden={compact}>
+                <span />
+                {copy.privateMode}
+              </span>
+            )}
+            <Tooltip content={actionLabel}>
+            <Button
+              variant="default"
+              aria-label={actionLabel}
+              className={cn(chatStyles.generationComposer_send, compact && "size-8 rounded-lg")}
+              type={isSending ? "button" : "submit"}
+              onClick={isSending ? onCancel : undefined}
+              disabled={navigationBusy || (isSending ? !onCancel : !canSend)}
+            >
+              {isSending ? (
+                <Square
+                  aria-hidden="true"
+                  className="size-3"
+                  fill="currentColor"
+                  strokeWidth={0}
+                />
+              ) : (
+                <ArrowUp aria-hidden="true" size={16} strokeWidth={2} />
+              )}
+            </Button>
+            </Tooltip>
+          </div>
+        </div>
+    </>;
+  }
   return (
     <form
       onDragOver={(event) => {
@@ -124,81 +209,11 @@ export function ChatComposer({
         ) : null}
       </div>
       <div className={cn(chatStyles.generationComposer_box, compact && chatStyles.focusComposerBox)}>
-        {attachmentDraft && (
-          <AttachmentDraft state={attachmentDraft} disabled={isSending || navigationBusy} compact={compact} />
-        )}
-        <label htmlFor={composerId}>{copy.sendMessage}</label>
-        <Textarea
-          className="focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-transparent"
-          id={composerId}
-          value={draft}
-          disabled={navigationBusy}
-          placeholder={compact ? copy.focusComposerPlaceholder : copy.composerPlaceholder}
-          rows={compact ? 1 : undefined}
-          onChange={(event) => onDraftChange(event.target.value)}
-          ref={composerRef}
-          onKeyDown={(event) => {
-            if (
-              !isSending &&
-              shouldSubmitComposerKey({
-                ...event,
-                isComposing: event.nativeEvent.isComposing,
-              })
-            ) {
-              event.preventDefault();
-              if (canSend) onSend();
-            }
-          }}
-        />
-        <div className={cn(chatStyles.generationComposer_bar, compact && "contents")}>
-          {attachmentDraft ? (
-            <DraftContext
-              compact={compact}
-              conversationId={view.id}
-              body={draft}
-              attachments={attachmentDraft}
-              disabled={isSending || navigationBusy}
-            />
-          ) : (
-            <span className={cn(chatStyles.generationComposer_contextNote, compact && "sr-only")}>
-              {copy.contextSnapshot.toUpperCase()} ·{" "}
-              {
-                (view.generation_batches ?? []).filter(
-                  (batch) => batch.context_frozen,
-                ).length
-              }{" "}
-              TURNS
-            </span>
-          )}
-          <div className="flex shrink-0 items-center gap-2">
-            {privateMode && (
-              <span className={cn(chatStyles.generationComposer_mode, compact && "hidden")} hidden={compact}>
-                <span />
-                {copy.privateMode}
-              </span>
-            )}
-            <Button
-              variant="default"
-              aria-label={actionLabel}
-              title={actionLabel}
-              className={cn(chatStyles.generationComposer_send, compact && "size-8 rounded-lg")}
-              type={isSending ? "button" : "submit"}
-              onClick={isSending ? onCancel : undefined}
-              disabled={navigationBusy || (isSending ? !onCancel : !canSend)}
-            >
-              {isSending ? (
-                <Square
-                  aria-hidden="true"
-                  className="size-3"
-                  fill="currentColor"
-                  strokeWidth={0}
-                />
-              ) : (
-                <ArrowUp aria-hidden="true" size={16} strokeWidth={2} />
-              )}
-            </Button>
-          </div>
-        </div>
+        {attachmentDraft ? (
+          <AttachmentDraft state={attachmentDraft} disabled={isSending || navigationBusy} compact={compact} draft={draft}>
+            {renderInput}
+          </AttachmentDraft>
+        ) : renderInput()}
       </div>
       <p className={cn(chatStyles.generationComposer_foot, compact && "hidden")} hidden={compact}>
         <LockKeyhole aria-hidden="true" size={11} strokeWidth={1.8} />

@@ -1,3 +1,4 @@
+import { WebSearchTrace } from "./WebSearchTrace";
 import { GenerationActivity, FailureActions } from "./ChatExperience";
 import { AnswerActions, type AnswerSource } from "@/components/chat/AnswerActions";
 import { ResponseDetails, VerificationStatus } from "./ResponseDetails";
@@ -31,6 +32,7 @@ export type ModelAnswerPhase =
   | "unknown";
 
 export function ModelAnswerCard({
+  webSearch, webSearchEnabled, webActivity,
   answer,
   metrics,
   targetId,
@@ -50,6 +52,9 @@ export function ModelAnswerCard({
   onVerifyAgain,
   onStop,
 }: {
+  webSearch?: import("@cove/api-contract").WebSearchInfo;
+  webSearchEnabled?: boolean;
+  webActivity?: string;
   answer?: AnswerSource;
   metrics?: Metrics;
   targetId: string;
@@ -125,6 +130,7 @@ export function ModelAnswerCard({
         ) : null}
       </header>
       <div className={comparisonStyles.modelAnswerCard_body}>
+        {waiting && webActivity && <p role="status" className="my-2 text-xs text-muted-foreground">{webActivity}</p>}
         {waiting && <GenerationActivity onStop={onStop} stopWhenStalledOnly phase={phase} body={body} reasoning={reasoning}/>}
         {phase==="failed" && <FailureActions targetId={targetId} code={errorCode ?? verification?.failure_code}/>}
         {body || reasoning ? (
@@ -146,6 +152,7 @@ export function ModelAnswerCard({
           </p>
         ) : null}
       </div>
+      {!waiting && webSearchEnabled && <WebSearchTrace info={webSearch} />}
       <ResponseDetails metrics={metrics} snapshot={snapshot} verification={verification} mode={mode} copy={copy} onVerifyAgain={onVerifyAgain}/>
       {actions ? (
         <footer className={comparisonStyles.modelAnswerCard_actions}>

@@ -34,6 +34,11 @@ _Avoid_: Current provider settings, live provider metadata
 The plain-language statement attached to a Provider Snapshot that tells the user where conversation content is sent and what Cove does and does not claim about transport, computation, or storage security.
 _Avoid_: Security guarantee, Encryption promise
 
+**Web Research**:
+
+An opt-in, model-directed sequence of bounded search and public webpage tools within one Generation attempt. Search excerpts and retrieved pages are separate saved source types; citations navigate to saved sections.
+_Avoid_: Verified internet facts, unlimited browsing
+
 **Generation**:
 One model's attempt to obtain an assistant response to a user message, with its own identifier, lifecycle state, and Provider Snapshot. A Generation belongs to one Generation Target.
 _Avoid_: Message, stream
@@ -55,11 +60,11 @@ The immutable ordered references to Selected Answers that a Generation Batch sup
 _Avoid_: Live conversation history, Provider transcript
 
 **Source Document**:
-A text, code, or text-based PDF file attached to a submitted user message. Cove retains its original bytes locally and sends its extracted text through the selected Provider transport.
+A text, code, or text-based PDF file, or an explicitly retrieved public webpage attached to a submitted user message. Cove retains its original bytes locally and sends its extracted text through the selected Provider transport.
 _Avoid_: Provider upload, Knowledge base
 
 **Attachment Snapshot**:
-The immutable original-file identity, filename, parser version, and extracted line/page sections saved with a Generation Batch. Every Target and retry uses the same saved source input. A source citation navigates to a section; it does not establish factual correctness or cryptographic verification.
+The immutable source identity, filename, parser version, and extracted line/page sections saved with a Generation Batch. Webpage snapshots also record source URLs, read time, and a separate original-content hash. Every Target and retry uses the same saved source input. A source citation navigates to a section; it does not establish factual correctness or cryptographic verification.
 _Avoid_: Live file reference, Verified source
 
 **Context-Skipped Batch**:
