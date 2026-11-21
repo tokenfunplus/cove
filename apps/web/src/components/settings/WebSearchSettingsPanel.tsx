@@ -90,13 +90,19 @@ export function WebSearchSettingsPanel({ onSaved }: { onSaved: (settings: WebSea
   }
 
   async function remove() {
-    if (!policy) return;
+    if (!policy || !settings) return;
     setBusy("remove"); setError(""); setNotice("");
     try {
       await deleteWebSearchKey(policy.provider);
-      const result = await getWebSearchSettings();
-      setSettings(result); setKey(""); setShowKey(false); onSaved(result);
+      const removed = { ...settings, providers: settings.providers.map(item => item.provider === policy.provider ? { ...item, configured: false } : item) };
+      setSettings(removed); setKey(""); setShowKey(false); onSaved(removed);
       setNotice("Search API key removed. Configure a key before the next search.");
+      try {
+        const result = await getWebSearchSettings();
+        setSettings(result); onSaved(result);
+      } catch {
+        setError("The search API key was removed, but settings could not be refreshed. Reopen Settings to try again.");
+      }
     } catch { setError("The search API key could not be removed."); }
     finally { setBusy(undefined); }
   }

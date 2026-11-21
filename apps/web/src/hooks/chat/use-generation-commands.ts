@@ -141,7 +141,7 @@ export function useGenerationCommands({
     );
     if (
       isSending ||
-      attachmentDraft.invalid ||
+      !attachmentDraft.validateAttachments() ||
       !conversationId ||
       !submittedBody ||
       selectionStatus !== "ready" ||

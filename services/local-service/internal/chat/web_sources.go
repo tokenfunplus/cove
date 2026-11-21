@@ -19,6 +19,7 @@ type webSourceReader interface {
 
 type PreparedWebSource struct {
 	SourceToken string             `json:"source_token"`
+	ExpiresAt   string             `json:"expires_at"`
 	Snapshot    documents.Snapshot `json:"snapshot"`
 }
 
@@ -57,8 +58,9 @@ func (service *Service) PrepareWebSource(ctx context.Context, owner, sourceURL s
 	if len(service.webSources) >= maxPreparedWebSources {
 		return PreparedWebSource{}, fmt.Errorf("%w: Too many webpage previews are open. Remove unused sources and try again.", documents.ErrInvalidDocument)
 	}
-	service.webSources[token] = preparedWebSource{owner: owner, expires: time.Now().Add(webSourceTTL), document: document}
-	return PreparedWebSource{SourceToken: token, Snapshot: document.Snapshot}, nil
+	expires := time.Now().Add(webSourceTTL)
+	service.webSources[token] = preparedWebSource{owner: owner, expires: expires, document: document}
+	return PreparedWebSource{SourceToken: token, ExpiresAt: expires.UTC().Format(time.RFC3339), Snapshot: document.Snapshot}, nil
 }
 
 func (service *Service) ReleaseWebSource(_ context.Context, owner, token string) {

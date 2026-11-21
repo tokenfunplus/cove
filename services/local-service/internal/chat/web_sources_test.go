@@ -51,6 +51,9 @@ func TestWebSourcePreviewOwnershipExpiryAndImmutableGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if expires, err := time.Parse(time.RFC3339Nano, prepared.ExpiresAt); err != nil || !expires.After(time.Now()) {
+		t.Fatal("prepared source did not expose a usable expiry")
+	}
 	input := SendInput{ConversationID: conversation.ID, Body: "Read this webpage", ClientRequestID: "web-input", WebSourceOwner: "other", WebSourceTokens: []string{prepared.SourceToken}}
 	if _, err := service.PreviewGenerationContext(ctx, input); err == nil {
 		t.Fatal("another session used the prepared source")

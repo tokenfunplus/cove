@@ -23,3 +23,28 @@ test("unconfigured toggle opens setup and enables only the original conversation
   rerender({ id: "chat-1" }); expect(result.current.enabled).toBe(true);
   await act(() => result.current.toggle()); expect(result.current.enabled).toBe(false);
 });
+
+test("failed settings lookup preserves setup intent for the initiating conversation", async () => {
+  vi.mocked(api.getWebSearchSettings).mockRejectedValue(new Error("Unavailable"));
+  const open = vi.fn(), feedback = vi.fn();
+  const { result } = renderHook(() => useWebSearch("chat-1", open, feedback));
+  await act(() => result.current.toggle());
+  expect(open).toHaveBeenCalledWith("web-search");
+  act(() => result.current.configured({ ...settings, providers: [{ provider: "tavily", configured: true }] }));
+  expect(result.current.enabled).toBe(true);
+});
+
+test.each(["resolve", "reject"])("a late settings %s cannot open setup in another conversation", async outcome => {
+  let resolve!: (value: WebSearchSettings) => void, reject!: (reason: Error) => void;
+  vi.mocked(api.getWebSearchSettings).mockReturnValue(new Promise((yes, no) => { resolve = yes; reject = no; }));
+  const open = vi.fn(), feedback = vi.fn();
+  const { result, rerender } = renderHook(({ id }) => useWebSearch(id, open, feedback), { initialProps: { id: "chat-1" } });
+  let pending!: Promise<void>;
+  act(() => { pending = result.current.toggle(); });
+  rerender({ id: "chat-2" });
+  await act(async () => { if (outcome === "resolve") resolve(settings); else reject(new Error("Unavailable")); await pending; });
+  expect(open).not.toHaveBeenCalled();
+  expect(feedback).not.toHaveBeenCalled();
+  act(() => result.current.configured({ ...settings, providers: [{ provider: "tavily", configured: true }] }));
+  expect(result.current.enabled).toBe(false);
+});

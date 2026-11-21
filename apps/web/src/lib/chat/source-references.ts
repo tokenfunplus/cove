@@ -5,7 +5,12 @@ export function citedSources(content: string, sources: AttachmentSnapshot[]) {
   const text = content.split("\n").filter(line => {
     const match = /^[ \t]*(`{3,}|~{3,})/.exec(line);
     if (!fence && match) { fence = { character: match[1][0], length: match[1].length }; return false; }
-    if (fence) { if (new RegExp(`^[ \\t]*${fence.character}{${fence.length},}[ \\t]*$`).test(line)) fence = undefined; return false; }
+    if (fence) {
+      const closing = line.match(/^[ \t]*(`+|~+)[ \t]*$/)?.[1];
+      if (closing && closing.length >= fence.length && closing[0] === fence.character) fence = undefined;
+      return false;
+    }
+    if (/^( {4}|\t)/.test(line)) return false;
     return true;
   }).join("\n").replace(/(`+)[\s\S]*?\1/g, "");
   const found = new Set<string>();

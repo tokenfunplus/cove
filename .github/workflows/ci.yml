@@ -75,6 +75,8 @@ jobs:
         run: |
           python3 -m venv .artifacts/dmg-tools
           .artifacts/dmg-tools/bin/python -m pip install -r scripts/dmg-requirements.txt
+      - name: Test DMG layout and damaged-app rejection
+        run: make test-dmg
       - name: Build and verify macOS DMG
         env:
           COVE_INSECURE_FILE_SECRET_STORE: "1"

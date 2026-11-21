@@ -8,6 +8,8 @@ This extends ADR-0025's source formats and preview behavior. A webpage shares th
 
 Prepared sources stay in a bounded sixteen-entry memory cache. Tokens become unavailable after fifteen minutes and expired entries are removed on cache access. Removing a draft source, clearing local history, and exiting the service release prepared content. The browser aborts pending retrieval on removal, navigation, and unmount. Late completions are discarded. Generation requests resolve tokens against the Browser Session before saving sources. Repeated accepted `client_request_id` values return the existing Batch even after preview expiry or release.
 
+Preparation responses expose the cache's `expires_at` timestamp. The browser marks expired previews as unavailable and asks the user to remove and read them again, including when restoring a rejected submission's draft. It checks expiry again before submission to account for throttled background-tab timers. File previews retain their existing validation.
+
 The saved `input_content` supplies the same webpage text to ordinary Providers and browser-side NearAI inference. Origin website requests occur during the explicit reading action. Model requests occur when sending the question. The source preview and privacy guide disclose these destinations. NearAI verification continues to describe the inference transport and response evidence.
 
 The API and snapshot additions fit the existing schema-21 JSON storage. Existing file records retain their representation. The frontend exposes webpage provenance in source previews and Markdown/JSON exports. Search discovery and browser rendering can subsequently supply this same source pipeline.

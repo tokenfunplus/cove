@@ -41,6 +41,8 @@ export function useWebSearch(conversationId: string | undefined, openSettings: (
         openSettings("web-search");
       } else setEnabled(conversationId, true);
     } catch {
+      if (current.current !== conversationId) return;
+      pendingSetup.current = conversationId;
       feedback("Web search settings could not be loaded. Open Settings to configure a search Provider.");
       openSettings("web-search");
     } finally { setBusy(false); }

@@ -7,4 +7,6 @@ test("references retain valid citation order and exclude unknown sources, sectio
   const valid = `[Evidence](cove:${source.id}:L1)`;
   expect(citedSources(`${valid} ${valid} [invalid](cove:${source.id}:L2) [invented](cove:${"b".repeat(64)}:L1)`, [source])).toEqual([{ source, section: "L1" }]);
   expect(citedSources(`\`${valid}\`\n\n\`\`\`\n${valid}\n\`\`\``, [source])).toEqual([]);
+  expect(citedSources(`    ${valid}\n\n\t${valid}\n\n~~~markdown\n${valid}\n~~~~\n`, [source])).toEqual([]);
+  expect(citedSources(`\`\`\`\`markdown\n${valid}\n\`\`\`\n${valid}\n\`\`\`\`\n${valid}`, [source])).toEqual([{ source, section: "L1" }]);
 });

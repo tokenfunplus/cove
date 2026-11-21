@@ -24,6 +24,7 @@ For workspace field values, defaults, storage, Local Service flags, and environm
 | `make test-fuzz` | Fuzz text snapshots and Provider SSE parsing; 10 seconds per target by default |
 | `make dmg` | Package an Apple Silicon app and DMG |
 | `make test-package-macos` | Build and launch an isolated acceptance fixture |
+| `make test-dmg` | Verify the DMG layout and reject damaged apps; requires the [pinned DMG tools](releasing.md) |
 | `pnpm audit` | Inspect raw JavaScript dependency advisories |
 | `pnpm run audit:dependencies` | Verify local parser patches and block unpatched moderate-or-higher advisories |
 

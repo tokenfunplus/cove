@@ -675,6 +675,7 @@ export function ConversationPanel({
                 providerName={target.generation.snapshot.provider_name}
                 copy={copy}
               />
+              {target.generation.configuration_snapshot.web_search && <WebSearchTrace info={target.generation.web_search} />}
               <p className={messagesStyles.message_state}>
                 {target.generation.state === "stopped"
                   ? copy.generationStopped

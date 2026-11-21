@@ -58,3 +58,23 @@ test("failed key validation retains the draft and leaves the saved connection un
   expect(saved).not.toHaveBeenCalled();
   expect(screen.getByText("Key saved in macOS Keychain")).toBeTruthy();
 });
+
+test.each([true, false])("key deletion updates connection state even when refresh succeeds: %s", async refreshSucceeds => {
+  const user = userEvent.setup(), saved = vi.fn();
+  const removed = { ...structuredClone(settings), providers: settings.providers.map(item => ({ ...item, configured: false })) };
+  vi.mocked(api.deleteWebSearchKey).mockResolvedValue(undefined);
+  if (refreshSucceeds) vi.mocked(api.getWebSearchSettings).mockResolvedValueOnce(structuredClone(settings)).mockResolvedValueOnce(removed);
+  else vi.mocked(api.getWebSearchSettings).mockResolvedValueOnce(structuredClone(settings)).mockRejectedValueOnce(new Error("Offline"));
+  render(<WebSearchSettingsPanel onSaved={saved} />);
+  await screen.findByLabelText("Replace search API key");
+  await user.click(screen.getByRole("button", { name: "Increase search requests" }));
+  await user.click(screen.getByRole("button", { name: "Advanced settings" }));
+  await user.type(screen.getByLabelText("Include domains"), "docs.example.com");
+  await user.click(screen.getByRole("button", { name: "Remove search key" }));
+  await screen.findByText("Not connected");
+  expect(saved).toHaveBeenCalledWith(removed);
+  expect(screen.queryByRole("button", { name: "Test connection" })).toBeNull();
+  if (!refreshSucceeds) expect((await screen.findByRole("alert")).textContent).toContain("was removed, but settings could not be refreshed");
+  await user.click(screen.getByRole("button", { name: "Save settings" }));
+  await waitFor(() => expect(api.saveWebSearchSettings).toHaveBeenCalledWith(expect.objectContaining({ max_searches: 4, include_domains: ["docs.example.com"] }), ""));
+});

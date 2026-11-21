@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	readability "codeberg.org/readeck/go-readability/v2"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
@@ -91,11 +92,21 @@ func publicAddress(address netip.Addr) bool {
 
 // Resolve and dial the same checked address, preserving HTTP Host and TLS SNI.
 func dialPublic(ctx context.Context, network, destination string) (net.Conn, error) {
+	dialer := net.Dialer{Timeout: 5 * time.Second}
+	return (publicDialer{lookup: net.DefaultResolver.LookupNetIP, dial: dialer.DialContext}).DialContext(ctx, network, destination)
+}
+
+type publicDialer struct {
+	lookup func(context.Context, string, string) ([]netip.Addr, error)
+	dial   func(context.Context, string, string) (net.Conn, error)
+}
+
+func (dialer publicDialer) DialContext(ctx context.Context, network, destination string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(destination)
 	if err != nil {
 		return nil, invalid("The webpage host is invalid.")
 	}
-	addresses, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	addresses, err := dialer.lookup(ctx, "ip", host)
 	if err != nil || len(addresses) == 0 {
 		return nil, invalid("The webpage host could not be resolved.")
 	}
@@ -104,9 +115,8 @@ func dialPublic(ctx context.Context, network, destination string) (net.Conn, err
 			return nil, invalid("Webpage reading requires a public internet address.")
 		}
 	}
-	dialer := net.Dialer{Timeout: 5 * time.Second}
 	for _, address := range addresses {
-		connection, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(address.String(), port))
+		connection, dialErr := dialer.dial(ctx, network, net.JoinHostPort(address.String(), port))
 		if dialErr == nil {
 			return connection, nil
 		}
@@ -159,13 +169,16 @@ func (reader *Reader) Fetch(ctx context.Context, sourceURL string) (documents.Pr
 	if contentType == "" {
 		contentType = http.DetectContentType(data)
 	}
-	mediaType, _, err := mime.ParseMediaType(contentType)
+	mediaType, parameters, err := mime.ParseMediaType(contentType)
 	if err != nil || (mediaType != "text/html" && mediaType != "application/xhtml+xml" && mediaType != "text/plain") {
 		return documents.Prepared{}, invalid("Choose an HTML or plain-text webpage.")
 	}
-	decoded, err := charset.NewReader(bytes.NewReader(data), contentType)
-	if err != nil {
-		return documents.Prepared{}, invalid("The webpage character encoding could not be read.")
+	var decoded io.Reader = bytes.NewReader(data)
+	if mediaType != "text/plain" || parameters["charset"] != "" || !utf8.Valid(data) {
+		decoded, err = charset.NewReader(decoded, contentType)
+		if err != nil {
+			return documents.Prepared{}, invalid("The webpage character encoding could not be read.")
+		}
 	}
 	var text bytes.Buffer
 	title := response.Request.URL.Hostname()

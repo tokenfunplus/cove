@@ -14,13 +14,14 @@ Then build and verify the package:
 ```sh
 pnpm install --frozen-lockfile
 make check test
+make test-dmg
 make dmg
 make test-package-macos
 ```
 
 Packaging builds web assets before Go, builds the Swift Launcher, assembles `Cove.app`, validates architecture and metadata, signs it, and creates a compressed DMG and SHA-256 checksum in `.artifacts/`. Keychain is the default in every build.
 
-The DMG opens in a compact icon view with Cove, an Applications shortcut, and a Retina installation background. Drag Cove to Applications, then open the installed app and look for its menu-bar icon. Both packaging paths use the same layout, generated without Finder automation. The pinned builder uses `hdiutil` for compatibility with macOS 15 CI runners. The app's signature is preserved when copying it into the image; final DMG signing and notarization happen after layout creation.
+The DMG opens in a compact icon view with Cove, an Applications shortcut, and a Retina installation background. Drag Cove to Applications, then open the installed app and look for its menu-bar icon. Both packaging paths use the same layout, generated without Finder automation. The pinned builder uses `hdiutil` for compatibility with macOS 15 CI runners. Each image is mounted read-only and its contained app passes strict signature verification before checksum generation. Final DMG signing and notarization happen after layout creation.
 
 Without a signing identity, packages are ad-hoc signed. Gatekeeper may require explicit Finder approval. Acceptance fixtures use temporary data and explicitly opt into the test file Secret Store.
 

@@ -16,7 +16,7 @@ function run(command, args) {
 }
 
 test("the DMG preserves the signed app and opens with a Retina drag-to-install layout", {
-  skip: process.platform !== "darwin",
+  skip: process.platform !== "darwin" || process.env.COVE_TEST_DMG !== "1",
   timeout: 240_000,
 }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "cove-dmg-layout-"));
@@ -66,6 +66,12 @@ with DSStore.open(os.path.join(sys.argv[1], ".DS_Store"), "r") as store:
     assert.match(retina, /720/);
     assert.match(retina, /1440/);
     run("codesign", ["--verify", "--deep", "--strict", app]);
+    await writeFile(path.join(app, "Contents", "MacOS", "Cove"), "Corrupted signed executable");
+    const corruptImage = path.join(directory, "Corrupt.dmg");
+    const rejected = spawnSync(path.join(root, "scripts/create-macos-dmg.sh"), [app, corruptImage], { cwd: root, encoding: "utf8", timeout: 180_000 });
+    assert.ifError(rejected.error);
+    assert.notEqual(rejected.status, 0, "packaging accepted a damaged app inside the DMG");
+    await assert.rejects(readFile(corruptImage), { code: "ENOENT" });
   } finally {
     if (attached) run("hdiutil", ["detach", mount]);
     await rm(directory, { recursive: true, force: true });

@@ -68,6 +68,11 @@ export function NumberStepper({
           update(draft ? Number(draft) : value);
         }}
         onKeyDown={event => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            update(draft ? Number(draft) : value);
+            return;
+          }
           const next = event.key === "ArrowUp" ? value + step : event.key === "ArrowDown" ? value - step : event.key === "Home" ? min : event.key === "End" ? max : undefined;
           if (next !== undefined) { event.preventDefault(); update(next); }
         }}

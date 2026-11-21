@@ -430,6 +430,7 @@ export interface AttachmentSnapshot {
 
 export interface PreparedWebSource {
   source_token: string;
+  expires_at?: string;
   snapshot: AttachmentSnapshot;
 }
 

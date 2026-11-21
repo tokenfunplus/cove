@@ -9,9 +9,16 @@ export type DraftAttachment = {
   input?: AttachmentInput;
   snapshot?: AttachmentSnapshot;
   webSourceToken?: string;
+  expiresAt?: number;
   sourceUrl?: string;
   error?: string;
 };
+
+function expireAttachments(items: DraftAttachment[]) {
+  return items.map(item => item.webSourceToken && item.expiresAt !== undefined && Date.now() >= item.expiresAt
+    ? { ...item, error: "The webpage preview expired. Remove it and read the webpage again." }
+    : item);
+}
 
 export function useAttachmentDraft(conversationId?: string) {
   const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
@@ -21,6 +28,12 @@ export function useAttachmentDraft(conversationId?: string) {
   const preview = usePreviewAttachment().mutateAsync;
   const webRequests = useRef(new Map<string, AbortController>());
   const webTokens = useRef(new Map<string, string>());
+  useEffect(() => {
+    const next = Math.min(...attachments.filter(item => item.webSourceToken && !item.error && item.expiresAt !== undefined).map(item => item.expiresAt!));
+    if (!Number.isFinite(next)) return;
+    const timer = setTimeout(() => setAttachments(expireAttachments), Math.max(0, next - Date.now()));
+    return () => clearTimeout(timer);
+  }, [attachments]);
   useEffect(() => {
     clearAttachments();
   }, [conversationId]);
@@ -54,7 +67,7 @@ export function useAttachmentDraft(conversationId?: string) {
       if (item.webSourceToken) webTokens.current.set(item.key, item.webSourceToken);
     }
     count.current = items.length;
-    setAttachments(items);
+    setAttachments(expireAttachments(items));
   }
   function removeAttachment(key: string) {
     webRequests.current.get(key)?.abort();
@@ -73,6 +86,7 @@ export function useAttachmentDraft(conversationId?: string) {
     const key = crypto.randomUUID();
     const controller = new AbortController();
     const currentEpoch = epoch.current;
+    const requestedAt = Date.now();
     count.current++;
     setSelectionError(undefined);
     webRequests.current.set(key, controller);
@@ -94,6 +108,7 @@ export function useAttachmentDraft(conversationId?: string) {
               name: source.snapshot.name,
               snapshot: source.snapshot,
               webSourceToken: source.source_token,
+              expiresAt: source.expires_at ? Date.parse(source.expires_at) : requestedAt + 15 * 60 * 1000,
             }
           : item,
       ));
@@ -174,6 +189,14 @@ export function useAttachmentDraft(conversationId?: string) {
   const invalid =
     attachments.some((item) => !item.snapshot || (!item.input && !item.webSourceToken) || item.error) ||
     totalCharacters > 120000;
+  function validateAttachments() {
+    const current = expireAttachments(attachments);
+    if (current.some(item => item.error)) {
+      setAttachments(current);
+      return false;
+    }
+    return !invalid;
+  }
   return {
     attachments,
     restoreAttachments,
@@ -183,6 +206,7 @@ export function useAttachmentDraft(conversationId?: string) {
     clearAttachments,
     totalCharacters,
     invalid,
+    validateAttachments,
     selectionError,
   };
 }

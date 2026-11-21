@@ -3,6 +3,7 @@ package websources
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -12,6 +13,133 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestPublicDialerRejectsDNSAliasesBeforeAnyConnection(t *testing.T) {
+	for _, blocked := range []string{"127.0.0.1", "169.254.169.254", "10.0.0.1", "::ffff:192.168.1.1", "fc00::1", "64:ff9b::a00:1"} {
+		t.Run(blocked, func(t *testing.T) {
+			dials := 0
+			dialer := publicDialer{
+				lookup: func(context.Context, string, string) ([]netip.Addr, error) {
+					return []netip.Addr{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr(blocked)}, nil
+				},
+				dial: func(context.Context, string, string) (net.Conn, error) { dials++; return nil, nil },
+			}
+			if _, err := dialer.DialContext(context.Background(), "tcp", "public-looking.example:443"); err == nil || dials != 0 {
+				t.Fatalf("mixed DNS answer reached the network: error=%v, dials=%d", err, dials)
+			}
+		})
+	}
+}
+
+func TestPublicDialerPinsCheckedAddressesWithoutResolvingAgain(t *testing.T) {
+	lookups := 0
+	var destinations []string
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	dialer := publicDialer{
+		lookup: func(_ context.Context, network, host string) ([]netip.Addr, error) {
+			lookups++
+			if network != "ip" || host != "fixture.example" {
+				t.Fatal("unexpected lookup")
+			}
+			if lookups > 1 {
+				return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
+			}
+			return []netip.Addr{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("2606:4700:4700::1111")}, nil
+		},
+		dial: func(_ context.Context, network, destination string) (net.Conn, error) {
+			if network != "tcp" {
+				t.Fatal("unexpected network")
+			}
+			destinations = append(destinations, destination)
+			if len(destinations) == 1 {
+				return nil, errors.New("try the next checked address")
+			}
+			return client, nil
+		},
+	}
+	connection, err := dialer.DialContext(context.Background(), "tcp", "fixture.example:443")
+	if err != nil || connection != client || lookups != 1 || strings.Join(destinations, ",") != "8.8.8.8:443,[2606:4700:4700::1111]:443" {
+		t.Fatalf("checked DNS addresses were not pinned: %v, lookups=%d, destinations=%v", err, lookups, destinations)
+	}
+}
+
+func TestReaderRechecksRedirectDNSWithoutUsingEnvironmentProxy(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.Host != "fixture.example" {
+			t.Error("HTTP Host was not preserved")
+		}
+		if request.URL.Path == "/redirect" {
+			http.Redirect(writer, request, "http://internal.example/private", http.StatusFound)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = writer.Write([]byte("Legitimate public webpage evidence"))
+	}))
+	defer server.Close()
+	t.Setenv("HTTP_PROXY", server.URL)
+	t.Setenv("HTTPS_PROXY", server.URL)
+	reader := NewReader()
+	transport := reader.client.Transport.(*http.Transport)
+	if transport.Proxy != nil || transport.TLSClientConfig != nil {
+		t.Fatal("reader must not use environment proxies or override normal TLS verification")
+	}
+	lookups := 0
+	dialer := publicDialer{
+		lookup: func(_ context.Context, _, host string) ([]netip.Addr, error) {
+			lookups++
+			if host == "internal.example" {
+				return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
+			}
+			return []netip.Addr{netip.MustParseAddr("8.8.8.8")}, nil
+		},
+		dial: func(ctx context.Context, network, destination string) (net.Conn, error) {
+			if destination != "8.8.8.8:80" {
+				t.Fatalf("unchecked address was dialed: %s", destination)
+			}
+			// Map only the checked synthetic public address to our local fixture.
+			return (&net.Dialer{}).DialContext(ctx, network, strings.TrimPrefix(server.URL, "http://"))
+		},
+	}
+	transport.DialContext = dialer.DialContext
+	if _, err := reader.Fetch(context.Background(), "http://fixture.example/article"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Fetch(context.Background(), "http://fixture.example/redirect"); err == nil {
+		t.Fatal("redirect to a private DNS alias succeeded")
+	}
+	if requests != 2 || lookups != 3 {
+		t.Fatalf("unexpected requests=%d, lookups=%d", requests, lookups)
+	}
+}
+
+func TestReaderPreservesPlainTextUTF8AndExplicitCharsets(t *testing.T) {
+	for _, fixture := range []struct{ name, contentType, body, want string }{
+		{"implicit UTF-8", "text/plain", strings.Repeat("a", 1100) + "\n\u4e2d\u6587 evidence", "\u4e2d\u6587 evidence"},
+		{"explicit legacy charset", "text/plain; charset=windows-1252", "Caf\xe9 evidence", "Caf\u00e9 evidence"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			reader := fixtureReader(t, func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", fixture.contentType)
+				_, _ = writer.Write([]byte(fixture.body))
+			})
+			source, err := reader.Fetch(context.Background(), "http://fixture.example/text")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var text strings.Builder
+			for _, section := range source.Sections {
+				text.WriteString(section.Text)
+			}
+			if !strings.Contains(text.String(), fixture.want) {
+				t.Fatal("plain-text characters were corrupted")
+			}
+		})
+	}
+}
 
 func TestPublicDestinationsAndRedirects(t *testing.T) {
 	for _, input := range []string{"127.0.0.1", "10.0.0.1", "169.254.169.254", "100.64.0.1", "192.168.0.1", "0.0.0.0", "198.18.0.1", "::1", "::ffff:127.0.0.1", "fc00::1", "fe80::1", "2001:db8::1", "64:ff9b::7f00:1", "2002:7f00:1::"} {
