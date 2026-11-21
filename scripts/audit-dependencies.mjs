@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 export const patchedAdvisory = "GHSA-fc5q-39xc-vjpf";
 export const patchedAdvisoryUpdated = "2026-11-17T15:56:44.000Z";
-export const patchedLockSha256 = "3fca93101d3a6e300187a044dadba14fe94963c3ab33704f713e429922fe6434";
+export const patchedLockSha256 = "0276728bb2ab2c1be4dbc836d85c616f0b5d5a4285c7b3bb4e5ebe62c5f38014";
 export const patchedPackages = {
   picomatch: { version: "4.0.7", files: {
     "lib/parse.js": "b75bd0fa8314f1243488fb1344bf3e9971c198c7282a064b112eeeedda1b2324",

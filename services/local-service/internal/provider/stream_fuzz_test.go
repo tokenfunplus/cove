@@ -26,20 +26,20 @@ func FuzzParseSSEData(f *testing.F) {
 		}
 		event, done, err := parseSSEData(data)
 		if err != nil {
-			if !errors.Is(err, ErrProtocol) || done || event != (Event{}) {
+			if !errors.Is(err, ErrProtocol) || done || !reflect.DeepEqual(event, Event{}) {
 				t.Fatal("invalid frame returned data or an unexpected error")
 			}
 			return
 		}
 		if done {
-			if strings.TrimSpace(data) != "[DONE]" || event != (Event{}) {
+			if strings.TrimSpace(data) != "[DONE]" || !reflect.DeepEqual(event, Event{}) {
 				t.Fatal("a non-terminal frame completed the stream")
 			}
 			return
 		}
 		switch event.Type {
 		case EventFailed:
-			if event != (Event{Type: EventFailed, ErrorCode: "provider_error", ErrorMessage: "The Provider rejected the generation request."}) {
+			if !reflect.DeepEqual(event, Event{Type: EventFailed, ErrorCode: "provider_error", ErrorMessage: "The Provider rejected the generation request."}) {
 				t.Fatal("raw Provider error data escaped classification")
 			}
 		case EventDelta:

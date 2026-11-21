@@ -71,6 +71,10 @@ Single-model turns select their completed answers automatically. Comparisons req
 
 Editing and resending a terminal user turn uses the existing submission command with `edit_of_batch_id`. Chat validates its source and selected active targets; persistence atomically copies the immutable context prefix and saved attachments into an independent Conversation before creating its new Batch. The returned Conversation ID owns ordinary streaming and browser inference. Source deletion cannot mutate the copy. See [edited-prompt branches](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
+Public webpage reading uses `internal/websources` through Chat before Generation admission. Session-bound prepared sources become ordinary saved source snapshots on submission, sharing immutable context, branching, and NearAI input construction. See [webpage source snapshots](adr/0042-add-public-webpage-source-snapshots.md).
+
+Automatic research uses `internal/websearch` for fixed-destination search connections and Chat for native tool orchestration. Schema 22 saves attempt policy, traces, and original evidence independently of mutable settings. Browser NearAI inference verifies intermediate tool responses before executing commands. See [model-directed research](adr/0044-add-opt-in-model-directed-web-research.md).
+
 ## Continuous debates
 
 `internal/chat/debate_summary.go` schedules bounded, cited stage analyses through the same service/browser turn lifecycle. `debate_controls.go` owns cumulative estimate policy, budget admission, and persistent pacing; persistence aggregates usage independently of transcript pagination. Generated analyses remain separate from participant context.

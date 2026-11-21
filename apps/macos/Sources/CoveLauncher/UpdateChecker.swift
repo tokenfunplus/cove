@@ -66,9 +66,26 @@ public enum UpdateError: LocalizedError, Equatable {
     }
 }
 
-public enum UpdateChannel: Sendable {
+public enum UpdateChannel: Hashable, Sendable {
     case stable
     case beta
+}
+
+public struct UpdateAvailability {
+    private var updates: [UpdateChannel: AppUpdate] = [:]
+
+    public init() {}
+
+    public var update: AppUpdate? {
+        updates.values.max {
+            guard let left = Version($0.version), let right = Version($1.version) else { return false }
+            return left < right
+        }
+    }
+
+    public mutating func record(_ update: AppUpdate?, channel: UpdateChannel) {
+        updates[channel] = update
+    }
 }
 
 public final class UpdateChecker: @unchecked Sendable {

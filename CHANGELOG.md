@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.1.0-beta.8 - 2026-11-21
+
+### Added
+
+- Opt-in autonomous Web search for chat and Model Comparison, with Tavily/Linkup/Exa Keychain configuration, per-attempt request limits, verified NearAI tool requests, saved evidence, References, and local research traces.
+- Explicit public webpage reading with bounded credential-free retrieval, session-bound previews, and saved source text/provenance shared by ordinary and NearAI inference, retries, branches, citations, and exports.
+
+### Changed
+
+- Refine Web search setup into connection, usage limits, and advanced options with shared custom selectors, numeric steppers, and a compact composer toolbar.
+- Streamline the Launcher menu, keep login launches quiet, expose direct service recovery and Provider setup, and retain discovered updates under one menu with installed-version release notes in About Cove.
+- Migrate automatic research policy, traces, and saved web sources to SQLite schema 22. Older services reject upgraded databases.
+- Provide a consistent drag-to-Applications DMG layout with a Retina installation background and an Applications shortcut.
+
 ## 0.1.0-beta.7 - 2026-11-19
 
 ### Added

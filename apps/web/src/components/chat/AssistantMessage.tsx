@@ -1,3 +1,4 @@
+import { SourceReferences } from "./SourceReferences";
 import { memo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { MarkdownMessage } from "@/components/chat/MarkdownMessage";
@@ -27,6 +28,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         />
       ) : null}
       {answer ? <MarkdownMessage content={answer} /> : null}
+      {!streaming && answer && <SourceReferences content={answer} />}
     </div>
   );
 });

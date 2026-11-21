@@ -24,6 +24,7 @@ For workspace field values, defaults, storage, Local Service flags, and environm
 | `make test-fuzz` | Fuzz text snapshots and Provider SSE parsing; 10 seconds per target by default |
 | `make dmg` | Package an Apple Silicon app and DMG |
 | `make test-package-macos` | Build and launch an isolated acceptance fixture |
+| `make test-dmg` | Verify the DMG layout and reject damaged apps; requires the [pinned DMG tools](releasing.md) |
 | `pnpm audit` | Inspect raw JavaScript dependency advisories |
 | `pnpm run audit:dependencies` | Verify local parser patches and block unpatched moderate-or-higher advisories |
 
@@ -41,7 +42,9 @@ The Launcher resolves image and localization resources from its installed applic
 
 ## Launcher menu
 
-The Launcher uses a native menu. Its version item reads `CoveReleaseVersion` and opens `https://github.com/tokenfunplus/cove/releases/tag/v<version>`, retaining prerelease suffixes. New Chat and Settings use a newly minted, one-time authenticated launch URL with an allowlisted `intent` query parameter. The Local Service includes the intent in the redirect fragment, and the Chat Surface dispatches it after its Browser Session is ready. New Chat calls the existing conversation creation action once. Unknown fragments do not dispatch actions.
+The Launcher uses a native menu, with infrequent options grouped into Launcher Settings, Troubleshooting, and Check for Updates. About Cove reads `CoveReleaseVersion` and includes a Release Notes link to `https://github.com/tokenfunplus/cove/releases/tag/v<version>`, retaining prerelease suffixes. New Chat, Settings, and Set Up Provider use a newly minted, one-time authenticated launch URL with an allowlisted `intent` query parameter. The Local Service includes the intent in the redirect fragment, and the Chat Surface dispatches it after its Browser Session is ready. New Chat calls the existing conversation creation action once; Provider setup selects the Provider settings section. Unknown fragments do not dispatch actions.
+
+Login-item launch detection uses the launch Apple event; automatic login starts the service quietly, while manual launches and reopen actions open Chat. A failed service exposes Retry and Open Chat without requiring a troubleshooting submenu. Onboarding reads the secret-free control status asynchronously, including after service readiness and on a 15-second refresh. See [Launcher actions and onboarding](adr/0043-streamline-launcher-menu-and-onboarding.md).
 
 Launch at Login uses `SMAppService.mainApp` and reports pending system approval. The optional global shortcut uses Carbon hot-key registration for Control-Option-Space, stays off by default, and reports key conflicts without requesting Accessibility access. Troubleshooting diagnostics contain only version/build, macOS, architecture, and bounded service/option statuses; they exclude runtime URLs, tokens, keys, errors, and conversation data. The script tests exercise native icon rendering, authenticated destinations, release-tag mapping, and diagnostic privacy with Command Line Tools; the XCTest suite still requires full Xcode.
 
@@ -55,7 +58,7 @@ Local search uses `GET /api/conversations/search?q=...&archived=...` behind the 
 
 ## Chat storage and rendering compatibility
 
-Current source builds migrate the schema 16 database through schema 21. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Ordinary selected-answer context is unchanged. See [Debate mode](debate.md) and [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md).
+Current source builds migrate the schema 16 database through schema 22. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Selected answers retain cited web source text in later context. See [Debate mode](debate.md) and [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md).
 
 | Schema | Added data | Historical behavior |
 | --- | --- | --- |
@@ -64,6 +67,7 @@ Current source builds migrate the schema 16 database through schema 21. Schema 2
 | 19 | Independent conversation-branch provenance | Edited prompts copy only their immutable selected context, with independent message, Generation, and attachment ownership. |
 | 20 | Separate Debate Sessions, turns, and interventions | Ordinary context is unchanged; interrupted debates recover paused. |
 | 21 | Debate summaries, cumulative usage budgets, and pacing | Existing sessions keep summaries and automatic pause off. Older services reject the schema rather than ignore the controls. |
+| 22 | Web search settings, immutable attempt policy, tool traces, and saved evidence | Existing conversations keep search off unless enabled in this browser. Older services reject the upgraded schema. |
 
 Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
@@ -154,7 +158,7 @@ Integration fixtures configure temporary directories. Never point tests at perso
 
 ## Troubleshooting
 
-For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.6](releases/0.1.0-beta.6.md).
+For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.8](releases/0.1.0-beta.8.md).
 
 - **Expired browser session:** reopen with `make start-local` or the Launcher. Restarting the service invalidates sessions.
 - **Provider unavailable:** verify endpoint, authentication, model catalog, and availability. The NearAI preset uses a fixed staging endpoint.

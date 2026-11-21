@@ -43,6 +43,7 @@ func TestStructuredReasoningSurvivesRestartWithoutEnteringSelectedContext(t *tes
 	if err != nil || len(view.Messages) != 2 || view.Messages[1].Reasoning != "Plan the answer." || view.Messages[1].Body != "Final answer." {
 		t.Fatalf("saved reasoning = %#v, %v", view.Messages, err)
 	}
+	dropWebSearchSchema(t, store)
 	if _, err := store.db.Exec(`DROP TABLE debate_turns; DROP TABLE debate_interventions; DROP TABLE debate_sessions; DROP TABLE conversation_branches; ALTER TABLE messages DROP COLUMN reasoning; PRAGMA user_version = 17;`); err != nil {
 		t.Fatal(err)
 	}

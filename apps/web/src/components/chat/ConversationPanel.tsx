@@ -3,6 +3,7 @@ import { EditPromptDialog } from "./EditPromptDialog";
 import { ChatExperienceContext, GenerationActivity, FailureActions } from "./ChatExperience";
 import { AnswerActions } from "@/components/chat/AnswerActions";
 import { ResponseDetails } from "./ResponseDetails";
+import { WebSearchTrace } from "./WebSearchTrace";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ConversationTimeline } from "@/components/chat/ConversationTimeline";
 import {
@@ -52,6 +53,7 @@ import { useConversationScroll } from "@/hooks/chat/use-conversation-scroll";
 import type { ConversationNavigation } from "@/lib/workspace-types";
 
 export function ConversationPanel({
+  webSearch,
   focusMode = false,
   composerId,
   attachmentDraft,
@@ -84,6 +86,7 @@ export function ConversationPanel({
   onSkipContext,
   onVerifyAgain,
 }: {
+  webSearch?: Parameters<typeof ChatComposer>[0]["webSearch"];
   focusMode?: boolean;
   attachmentDraft?: AttachmentDraft;
   view: ConversationView | undefined;
@@ -344,7 +347,7 @@ export function ConversationPanel({
   const timelineEntries = conversationTimeline(view, liveTurn);
 
   return (
-    <SourceDocuments batches={allGenerationBatches}>
+    <SourceDocuments batches={allGenerationBatches} messages={view.messages}>
     <ChatExperienceContext.Provider value={{chooseModel:onChooseModel,openSettings:onOpenSettings,busy:isSending || navigationBusy,editTarget:onEditPrompt && !draft.trim() && !attachmentDraft?.attachments.length && !view.archived ? targetId=>{const batch=allGenerationBatches.find(item=>item.targets.some(target=>target.id===targetId));const message=view.messages.find(item=>item.id===batch?.user_message_id);if(batch && message)setEditing({batch,body:message.body});}:undefined}}>
       <section
         className={cn(
@@ -505,6 +508,7 @@ export function ConversationPanel({
                         <BatchSources batch={batch} userBody={message.body} />
                       ) : null;
                     })()}
+                  {message.role === "assistant" && generationTarget?.target.generation.configuration_snapshot.web_search && <WebSearchTrace info={generationTarget.target.generation.web_search} />}
                   {message.role === "assistant" && <ResponseDetails metrics={generationTarget?.target.generation.metrics} snapshot={snapshot} verification={historyVerification} mode={inferenceModeForSnapshot(snapshot)} copy={copy} onVerifyAgain={generationTarget && onVerifyAgain ? kind=>onVerifyAgain(generationTarget.target.id,kind) : undefined}/>}
 
                 </article>
@@ -575,6 +579,7 @@ export function ConversationPanel({
                     }
                     mode={inferenceModeForSnapshot(target.snapshot)}
                   />
+                  {liveWaiting && target.webActivity && <p role="status" className="my-2 text-xs text-muted-foreground">{target.webActivity}</p>}
                   {liveWaiting && <GenerationActivity stopWhenStalledOnly={Boolean(canStopFromComposer)} phase={target.phase} body={target.assistantBody} reasoning={target.reasoningBody} onStop={target.generationId && liveBatch && onCancelTarget ? ()=>onCancelTarget(liveBatch.id,target.generationId!) : onCancel}/>}
                   {target.assistantBody || target.reasoningBody ? (
                     <AssistantMessage content={target.assistantBody} reasoning={target.reasoningBody} streaming={target.phase === "streaming"} />
@@ -599,6 +604,7 @@ export function ConversationPanel({
                       {copy.generationDeliveryUnknown}
                     </p>
                   ) : null}
+                  {!liveWaiting && liveGeneration?.configuration_snapshot.web_search && <WebSearchTrace info={liveGeneration.web_search} />}
                   {(target.assistantBody || !liveWaiting) && <ResponseDetails metrics={liveGeneration?.metrics} snapshot={target.snapshot} verification={liveVerification} copy={copy} mode={inferenceModeForSnapshot(target.snapshot)} onVerifyAgain={target.targetId && onVerifyAgain ? kind=>onVerifyAgain(target.targetId!,kind):undefined}/>}
                   {!canStopFromComposer &&
                   liveWaiting &&
@@ -669,6 +675,7 @@ export function ConversationPanel({
                 providerName={target.generation.snapshot.provider_name}
                 copy={copy}
               />
+              {target.generation.configuration_snapshot.web_search && <WebSearchTrace info={target.generation.web_search} />}
               <p className={messagesStyles.message_state}>
                 {target.generation.state === "stopped"
                   ? copy.generationStopped
@@ -763,6 +770,7 @@ export function ConversationPanel({
           ) : null}
           {showComposer ? (
             <ChatComposer
+              webSearch={webSearch}
               composerId={composerId}
               compact={focusMode}
               attachmentDraft={attachmentDraft}

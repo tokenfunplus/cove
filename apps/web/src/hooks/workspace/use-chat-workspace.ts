@@ -22,6 +22,7 @@ import { liveTurnFromBatch } from "@/lib/chat/live-turn";
 import { isTerminalGenerationState } from "@/lib/generation";
 import { applicationMessages } from "@/messages";
 import { useDocumentTheme } from "@/theme/use-document-theme";
+import { useWebSearch } from "@/hooks/chat/use-web-search";
 import { useEffect } from "react";
 
 export function useChatWorkspace() {
@@ -46,6 +47,7 @@ export function useChatWorkspace() {
   const { setFeedback, setMobileSidebarOpen } = workspaceUi;
   const generationState = useGenerationState();
   const attachmentDraft = useAttachmentDraft(selectedId);
+  const webSearch = useWebSearch(selectedId, workspaceUi.setSettingsEntry, workspaceUi.setFeedback);
   const {
     setGenerationBatch,
     setDraft,
@@ -188,6 +190,7 @@ export function useChatWorkspace() {
   });
 
   const generationCommands = useGenerationCommands({
+    webSearchEnabled: webSearch.enabled,
     attachmentDraft,
     ...workspaceState,
     ...workspaceUi,
@@ -239,6 +242,7 @@ export function useChatWorkspace() {
   });
 
   return {
+    webSearch,
     answerTools,
     conversationSearch,
     attachmentDraft,

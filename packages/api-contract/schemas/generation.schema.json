@@ -3,6 +3,8 @@
   "title": "Generation",
   "type": "object",
   "$defs": {
+    "webSearchPolicy": {"type":"object","required":["provider","max_searches","max_pages","max_rounds","max_results","timeout_seconds","depth"],"properties":{"provider":{"enum":["tavily","linkup","exa"]},"depth":{"enum":["standard","deep"]},"max_searches":{"type":"integer","minimum":1,"maximum":20},"max_pages":{"type":"integer","minimum":1,"maximum":20},"max_rounds":{"type":"integer","minimum":1,"maximum":32},"max_results":{"type":"integer","minimum":1,"maximum":10},"timeout_seconds":{"type":"integer","minimum":15,"maximum":180},"include_domains":{"type":"array","maxItems":20,"items":{"type":"string"}},"exclude_domains":{"type":"array","maxItems":20,"items":{"type":"string"}}},"additionalProperties":false},
+    "webSearchInfo": {"type":"object","required":["provider","searches","pages","steps","sources"],"properties":{"provider":{"type":"string"},"searches":{"type":"integer","minimum":0},"pages":{"type":"integer","minimum":0},"steps":{"type":"array","items":{"type":"object","required":["id","name","status","started_at"],"properties":{"id":{"type":"string"},"name":{"type":"string"},"query":{"type":"string"},"url":{"type":"string"},"status":{"type":"string"},"error":{"type":"string"},"started_at":{"type":"string"},"finished_at":{"type":"string"},"cached":{"type":"boolean"},"usage":{}},"additionalProperties":false}},"sources":{"type":"array","items":{"$ref":"attachment.schema.json"}}},"additionalProperties":false},
     "generationMetrics": {"type": "object", "required": ["source", "duration_ms"], "properties": {"source": {"enum": ["service", "browser"]}, "duration_ms": {"type": "integer", "minimum": 0, "maximum": 86400000}, "time_to_first_token_ms": {"type": "integer", "minimum": 0, "maximum": 86400000}, "output_duration_ms": {"type": "integer", "minimum": 0, "maximum": 86400000}, "input_tokens": {"type": "integer", "minimum": 0, "maximum": 1000000000}, "output_tokens": {"type": "integer", "minimum": 0, "maximum": 1000000000}}, "additionalProperties": false},
     "providerSnapshot": {
       "type": "object",
@@ -24,6 +26,7 @@
       "type": "object",
       "required": ["system_prompt", "temperature", "top_p", "max_tokens"],
       "properties": {
+        "web_search": { "$ref": "#/$defs/webSearchPolicy" },
         "system_prompt": { "type": "string", "maxLength": 8192 },
         "temperature": { "type": ["number", "null"], "minimum": 0, "maximum": 2 },
         "top_p": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
@@ -88,6 +91,7 @@
   },
   "required": ["id", "conversation_id", "client_request_id", "state", "snapshot", "configuration_snapshot", "verification", "events_url", "created_at", "updated_at"],
   "properties": {
+    "web_search": { "$ref": "#/$defs/webSearchInfo" },
     "metrics": { "$ref": "#/$defs/generationMetrics" },
     "id": { "type": "string" },
     "conversation_id": { "type": "string" },

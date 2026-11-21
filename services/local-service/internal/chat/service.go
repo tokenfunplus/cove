@@ -15,6 +15,8 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
+	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
+	"github.com/tokenfunplus/cove/services/local-service/internal/websources"
 )
 
 type ProviderSource interface {
@@ -41,6 +43,7 @@ type ExpectedGenerationTarget struct {
 }
 
 type SendInput struct {
+	WebSearchEnabled     bool
 	EditOfBatchID        string
 	ExpectedTargets      []ExpectedGenerationTarget
 	ConversationID       string
@@ -49,6 +52,8 @@ type SendInput struct {
 	ClientRequestID      string
 	Body                 string
 	Attachments          []documents.Input
+	WebSourceTokens      []string
+	WebSourceOwner       string
 	SystemPrompt         string
 	GenerationParameters persistence.GenerationParameters
 }
@@ -75,6 +80,10 @@ func emptyProviderResponseFailure(finishReason string) (string, string) {
 }
 
 type Chat interface {
+	ExecuteWebTool(context.Context, string, WebToolInput) (WebToolResult, error)
+	GetWebSearchRun(context.Context, string) (persistence.WebSearchRun, error)
+	PrepareWebSource(ctx context.Context, owner, sourceURL string) (PreparedWebSource, error)
+	ReleaseWebSource(ctx context.Context, owner, token string)
 	PreviewAttachment(ctx context.Context, input documents.Input) (documents.Snapshot, error)
 	ReadAttachment(ctx context.Context, batchID, documentID string) (documents.Input, error)
 	PreviewGenerationContext(ctx context.Context, input SendInput) ([]provider.ProviderMessage, error)
@@ -118,14 +127,17 @@ func (service *Service) HasActiveGenerationBatch() bool {
 type EventType string
 
 const (
-	EventStarted   EventType = "started"
-	EventDelta     EventType = "delta"
-	EventCompleted EventType = "completed"
-	EventStopped   EventType = "stopped"
-	EventFailed    EventType = "failed"
+	EventStarted     EventType = "started"
+	EventDelta       EventType = "delta"
+	EventCompleted   EventType = "completed"
+	EventStopped     EventType = "stopped"
+	EventFailed      EventType = "failed"
+	EventWebActivity EventType = "web_activity"
 )
 
 type GenerationEvent struct {
+	WebActivity    string                        `json:"web_activity,omitempty"`
+	Reset          bool                          `json:"reset,omitempty"`
 	EventID        string                        `json:"event_id"`
 	BatchID        string                        `json:"batch_id,omitempty"`
 	TargetID       string                        `json:"target_id,omitempty"`
@@ -139,11 +151,17 @@ type GenerationEvent struct {
 }
 
 type Service struct {
+	searchService  *websearch.Service
+	webToolCancels sync.Map
 	debateMu       sync.Mutex
 	debate         *debateRun
 	debateWatchers map[string]map[chan struct{}]bool
 	debateDelay    time.Duration
 	documentParser documents.Parser
+	webReader      webSourceReader
+	webMu          sync.Mutex
+	webSources     map[string]preparedWebSource
+	webEpoch       uint64
 	store          persistence.ChatStore
 	profiles       ProviderSource
 	provider       provider.Provider
@@ -175,6 +193,7 @@ func NewService(store persistence.ChatStore, profiles ProviderSource, upstream p
 
 func NewServiceWithTimeout(store persistence.ChatStore, profiles ProviderSource, upstream provider.Provider, timeout time.Duration) *Service {
 	return &Service{
+		webReader: websources.NewReader(), webSources: make(map[string]preparedWebSource),
 		debateDelay: time.Second,
 		store:       store, profiles: profiles, provider: upstream,
 		hub: newEventHub(), batchHub: newBatchEventHub(),
@@ -412,12 +431,15 @@ func (service *Service) ClearChatData(ctx context.Context) error {
 	if err := service.store.ClearChatData(ctx); err != nil {
 		return err
 	}
+	service.clearPreparedWebSources()
 	service.hub.forgetCompleted("")
 	service.batchHub.forgetCompleted("")
 	return nil
 }
 
 func (service *Service) CancelGeneration(ctx context.Context, generationID string) (persistence.Generation, error) {
+	defer service.cancelWebTools(generationID)
+	service.cancelWebTools(generationID)
 	service.activeMu.Lock()
 	active := service.active[generationID]
 	service.activeMu.Unlock()
@@ -494,6 +516,7 @@ func (service *Service) settleSecureGeneration(ctx context.Context, input persis
 	if err := service.store.SettleSecureGeneration(ctx, input); err != nil {
 		return persistence.Generation{}, err
 	}
+	service.cancelWebTools(input.GenerationID)
 	service.finishSecureGeneration(input.GenerationID)
 	generation, err := service.store.GetGeneration(ctx, input.GenerationID)
 	if err == nil && !isTerminal(previous.State) && generation.GenerationBatchID != "" {

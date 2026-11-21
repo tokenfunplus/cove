@@ -581,6 +581,21 @@ test("conversation workspace explains when a Provider hits the output token limi
   expect(markup).toContain("Increase Max Tokens or leave it blank");
 });
 
+test.each(["failed", "stopped"] as const)("saved single-model %s attempts retain their web research trace after reload", state => {
+  const markup = renderToStaticMarkup(<ConversationPanel view={{ id: "chat-1", title: "Research", created_at: "2026-11-21T00:00:00Z", updated_at: "2026-11-21T00:00:00Z", messages: [{ id: "user-1", conversation_id: "chat-1", role: "user", body: "Research this", created_at: "2026-11-21T00:00:00Z" }] }} generationBatches={[{
+    id: "batch-1", conversation_id: "chat-1", client_request_id: "request-1", user_message_id: "user-1", state, events_url: "/events", created_at: "2026-11-21T00:00:00Z", updated_at: "2026-11-21T00:00:00Z",
+    targets: [{ id: "target-1", provider_id: "provider-1", model_id: "model-1", position: 0, generation: {
+      id: "generation-1", state, snapshot: { provider_id: "provider-1", provider_name: "Fixture", model_id: "model-1", runtime_location: "local", destination: "local", transport_security: "tls", privacy_notice: "Fixture" },
+      configuration_snapshot: { ...fixtureGenerationConfiguration, web_search: { provider: "tavily", max_searches: 3, max_pages: 5, max_rounds: 8, max_results: 5, timeout_seconds: 90, depth: "standard" } },
+      web_search: { provider: "tavily", searches: 1, pages: 0, sources: [], steps: [{ id: "step-1", name: "web_search", query: "saved research query", status: "failed", error: "Search fixture failed", started_at: "2026-11-21T00:00:00Z" }] },
+    } }],
+  }]} />);
+  expect(markup).toContain("Web research");
+  expect(markup).toContain("saved research query");
+  expect(markup).toContain("Search fixture failed");
+  expect(markup).toContain("1 searches");
+});
+
 test("assistant history shows Gateway, model, and response verification lanes", () => {
   const snapshot = {
     provider_id: "nearai",

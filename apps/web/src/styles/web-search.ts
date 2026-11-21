@@ -1,0 +1,40 @@
+import { cn } from "@/lib/utils";
+
+export const webSearchStyles = {
+  panel: "space-y-5",
+  heading: "flex items-start gap-3",
+  headingIcon: "mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-2xl bg-accent text-primary",
+  title: "text-xl font-semibold tracking-tight",
+  description: "mt-1 text-xs leading-relaxed text-muted-foreground",
+  card: "overflow-hidden rounded-2xl border border-border bg-popover/50",
+  cardHeader: "flex items-start justify-between gap-3 border-b border-border/70 px-4 py-3.5",
+  cardTitle: "flex items-center gap-2 text-[13px] font-semibold",
+  cardBody: "grid items-start gap-4 p-4 sm:grid-cols-[minmax(140px,0.7fr)_minmax(0,1.3fr)] [&_label]:text-xs",
+  field: "min-w-0 space-y-2",
+  label: "block text-xs font-medium",
+  hint: "text-[11px] leading-relaxed text-muted-foreground",
+  providerMark: "inline-flex size-6 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-[11px] font-semibold text-foreground",
+  providerOption: "flex min-w-0 items-center gap-2.5",
+  providerSelect: "h-11 w-full justify-between bg-popover px-3 text-[13px]",
+  credential: "relative [&_input]:rounded-xl [&_input]:bg-popover [&_input]:pr-11 [&_input]:pl-10 [&_input]:text-xs",
+  credentialIcon: "pointer-events-none absolute top-3.5 left-3.5 size-3.5 text-muted-foreground",
+  credentialToggle: "absolute top-1.5 right-1.5 size-8 rounded-lg text-muted-foreground",
+  credentialActions: "flex flex-wrap items-center justify-between gap-2",
+  keyStatus: "flex items-center gap-1.5 text-[11px] text-muted-foreground",
+  rows: "grid gap-x-5 px-4 sm:grid-cols-2 max-sm:[&_>_div+div]:border-t max-sm:[&_>_div+div]:border-border/70",
+  row: "flex items-center justify-between gap-4 py-3.5",
+  rowCopy: "min-w-0 flex-1",
+  rowLabel: "block text-xs font-medium",
+  rowHint: "mt-1 text-[11px] leading-relaxed text-muted-foreground",
+  budgetNote: "flex items-start gap-2 border-t border-border/70 bg-muted/40 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground",
+  advancedTrigger: cn(String.raw`
+    group h-auto w-full justify-between gap-3 rounded-none px-4 py-3.5 text-left font-normal
+    [&[data-state="open"]_.advanced-chevron]:rotate-180
+  `),
+  advancedBody: "space-y-5 border-t border-border/70 p-4",
+  advancedRows: "divide-y divide-border/70 [&_>_:first-child]:pt-0 [&_>_:last-child]:pb-0",
+  filters: "grid gap-4 sm:grid-cols-2",
+  privacy: "flex items-start gap-2.5 border-t border-border/70 bg-muted/40 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground",
+  footer: "sticky bottom-0 z-10 space-y-3 border-t border-border bg-card/95 pt-4 pb-1 backdrop-blur-sm",
+  feedback: "flex items-start gap-2 rounded-xl border px-3.5 py-3 text-xs leading-relaxed",
+} as const;

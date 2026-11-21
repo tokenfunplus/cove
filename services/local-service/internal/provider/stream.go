@@ -24,8 +24,36 @@ type Provider interface {
 }
 
 type ProviderMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string     `json:"tool_call_id,omitempty"`
+	ReasoningContent string     `json:"reasoning_content,omitempty"`
+}
+
+type ToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+type Tool struct {
+	Type     string       `json:"type"`
+	Function ToolFunction `json:"function"`
+}
+
+type ToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+type ToolCallDelta struct {
+	Index int `json:"index"`
+	ToolCall
 }
 
 type CompletionInput struct {
@@ -33,6 +61,7 @@ type CompletionInput struct {
 	Secret               credentials.Secret
 	Messages             []ProviderMessage
 	GenerationParameters GenerationParameters
+	Tools                []Tool
 }
 
 // GenerationParameters map to optional OpenAI-compatible chat completion
@@ -46,14 +75,17 @@ type GenerationParameters struct {
 type EventType string
 
 const (
-	EventStarted   EventType = "started"
-	EventDelta     EventType = "delta"
-	EventCompleted EventType = "completed"
-	EventStopped   EventType = "stopped"
-	EventFailed    EventType = "failed"
+	EventStarted     EventType = "started"
+	EventDelta       EventType = "delta"
+	EventCompleted   EventType = "completed"
+	EventStopped     EventType = "stopped"
+	EventFailed      EventType = "failed"
+	EventWebActivity EventType = "web_activity"
 )
 
 type Event struct {
+	WebActivity    string
+	Reset          bool
 	Type           EventType
 	Delta          string
 	ReasoningDelta string
@@ -61,6 +93,7 @@ type Event struct {
 	ErrorCode      string
 	ErrorMessage   string
 	Usage          *TokenUsage
+	ToolCalls      []ToolCallDelta
 }
 
 // TokenUsage is supplied by the Provider, never inferred from text length.
@@ -163,9 +196,10 @@ func parseSSEData(data string) (Event, bool, error) {
 		Usage   *TokenUsage `json:"usage"`
 		Choices []struct {
 			Delta struct {
-				Content          string `json:"content"`
-				ReasoningContent string `json:"reasoning_content"`
-				Reasoning        string `json:"reasoning"`
+				Content          string          `json:"content"`
+				ReasoningContent string          `json:"reasoning_content"`
+				Reasoning        string          `json:"reasoning"`
+				ToolCalls        []ToolCallDelta `json:"tool_calls"`
 			} `json:"delta"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
@@ -193,7 +227,7 @@ func parseSSEData(data string) (Event, bool, error) {
 	if reasoning == "" {
 		reasoning = payload.Choices[0].Delta.Reasoning
 	}
-	return Event{Type: EventDelta, Delta: payload.Choices[0].Delta.Content, ReasoningDelta: reasoning, FinishReason: payload.Choices[0].FinishReason, Usage: payload.Usage}, false, nil
+	return Event{Type: EventDelta, Delta: payload.Choices[0].Delta.Content, ReasoningDelta: reasoning, FinishReason: payload.Choices[0].FinishReason, Usage: payload.Usage, ToolCalls: payload.Choices[0].Delta.ToolCalls}, false, nil
 }
 
 var _ Provider = (*HTTPAdapter)(nil)

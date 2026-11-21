@@ -1,5 +1,7 @@
 # Snapshot local source documents for file chat
 
+[ADR-0042](0042-add-public-webpage-source-snapshots.md) extends source snapshots with explicitly retrieved public webpages, session-bound network previews, and additive webpage provenance.
+
 Cove accepts up to four UTF-8 text, Markdown, code, or text-based PDF attachments with a user message. Each file is at most 4 MiB, with at most 60,000 extracted Unicode characters per file and 120,000 across its attachments. Text files have at most 4,000 lines; PDFs have at most 50 pages. Unsupported, empty, binary, password-protected, scanned-only, and oversized inputs fail explicitly rather than being silently truncated. PDFs with some textless pages retain their original page numbering and include only pages with extractable text.
 
 Chat owns parsing and Provider input construction through `internal/documents`. HTTP handlers only adapt bounded requests. The authenticated, CSRF-protected attachment preview and draft-context preview endpoints do not contact a Provider or persist drafts. The runnable Local Service delegates PDF decoding to a fresh instance of its own executable with a ten-second deadline, bounded output, a two-worker limit, and no inherited environment. That child does not initialize storage, Keychain, or HTTP. Go memory/stack limits reduce decoder pressure; this process boundary is not an OS sandbox or a hard memory limit.

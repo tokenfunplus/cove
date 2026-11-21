@@ -33,7 +33,7 @@ public protocol ServiceFileSystem {
     func isExecutableFile(at url: URL) -> Bool
 }
 
-public final class BundledServiceManager: ServiceManaging, @unchecked Sendable {
+public final class BundledServiceManager: ServiceManaging, ServiceStatusReading, @unchecked Sendable {
     public var onUnexpectedExit: (() -> Void)?
 
     private let executableURL: URL
@@ -141,6 +141,28 @@ public final class BundledServiceManager: ServiceManaging, @unchecked Sendable {
             throw LauncherError.serviceDidNotBecomeReady
         }
         return payload.launchToken
+    }
+
+    public func fetchStatus(completion: @escaping @Sendable (Result<LauncherServiceStatus, Error>) -> Void) {
+        lock.lock()
+        let running = self.running
+        lock.unlock()
+        guard let running, running.process.isRunning,
+              let readiness = running.readiness(),
+              let url = URL(string: "/internal/control/status", relativeTo: readiness.baseURL)?.absoluteURL
+        else {
+            completion(.failure(LauncherError.serviceDidNotBecomeReady))
+            return
+        }
+        controlRequester.post(url: url, controlToken: controlToken) { data, statusCode in
+            guard statusCode == 200, let data,
+                  let status = try? JSONDecoder().decode(LauncherServiceStatus.self, from: data)
+            else {
+                completion(.failure(LauncherError.serviceDidNotBecomeReady))
+                return
+            }
+            completion(.success(status))
+        }
     }
 
     public func stop() {
@@ -253,7 +275,7 @@ public final class URLSessionControlRequester: ControlRequesting {
         controlToken: String,
         completion: @escaping @Sendable (Data?, Int?) -> Void
     ) {
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, timeoutInterval: 2)
         request.httpMethod = "POST"
         request.setValue(controlToken, forHTTPHeaderField: "X-Cove-Control-Token")
         session.dataTask(with: request) { data, response, _ in

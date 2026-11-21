@@ -1377,3 +1377,32 @@ test.each([
     expect(JSON.stringify(events)).not.toContain("private fixture data");
   },
 );
+
+test("Gateway Responses preserves native tool items and emits each completed function call once", async () => {
+  const tool = { type: "function" as const, function: { name: "web_search", description: "Search", parameters: { type: "object" } } };
+  const call = { id: "call-1", type: "function" as const, function: { name: "web_search", arguments: '{"query":"evidence"}' } };
+  const item = { type: "function_call", call_id: "call-2", name: "read_webpage", arguments: '{"url":"https://example.com"}' };
+  const events = [
+    { type: "response.created", response: { id: "resp-tools" } },
+    { type: "response.output_item.done", item },
+    { type: "response.completed", response: { id: "resp-tools", output: [item] } },
+  ];
+  const raw = events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("");
+  const attestation = { nonce: "aa".repeat(32), signer: { signingAlgo: "ed25519" as const, signingAddress: "fixture-signer" }, intelQuote: "quote", eventLog: [], appCompose: "compose", reportedQuoteData: "bb".repeat(64) };
+  const client = new BrowserGatewayResponseClient({ baseUrl: "http://127.0.0.1/api/nearai/nearai/v1/", model: "gateway-model", tools: [tool], messages: [{ role: "user", content: "Research" }, { role: "assistant", content: "", tool_calls: [call] }, { role: "tool", tool_call_id: call.id, content: "Saved source" }] }, {
+    attestationClient: {
+      async fetchGatewayAttestation() { return { attestation, clientBinding: { nonce: attestation.nonce } }; },
+      async fetchCompletionSignature() { throw new Error("Not used in normalization test"); },
+    },
+    async verifyGatewayAttestationImpl() { return { signer: attestation.signer, tcbStatus: "UpToDate", advisoryIds: [], deployment: { appCompose: "compose", runtimeMeasurements: {} }, deploymentProvenance: "not_checked", tlsBinding: { kind: "none" }, report: attestation }; },
+    async fetchImpl(_url, init) {
+      const body = JSON.parse(new TextDecoder().decode(init?.body as Uint8Array));
+      expect(body.tools).toEqual([{ type: "function", ...tool.function }]);
+      expect(body.input).toEqual([{ role: "user", content: "Research" }, { type: "function_call", call_id: call.id, name: call.function.name, arguments: call.function.arguments }, { type: "function_call_output", call_id: call.id, output: "Saved source" }]);
+      return new Response(raw);
+    },
+  });
+  const chunks = [];
+  for await (const chunk of client.stream()) chunks.push(chunk);
+  expect(chunks.flatMap(chunk => chunk.toolCalls ?? [])).toEqual([{ index: 0, id: "call-2", type: "function", function: { name: "read_webpage", arguments: item.arguments } }]);
+});

@@ -211,6 +211,7 @@ export function ChatPage() {
                   inert={workspace.answerTools.open && narrowAnswerTools}
                 >
                   <ConversationPanel
+                    webSearch={{...workspace.webSearch, budgetLabel: workspace.webSearch.budgetLabel(activeModelSet.length)}}
                     focusMode={focusMode}
                     attachmentDraft={workspace.attachmentDraft}
                     view={isLoadingConversation ? undefined : conversationView}

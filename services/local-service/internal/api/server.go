@@ -22,11 +22,13 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 	"github.com/tokenfunplus/cove/services/local-service/internal/providerconfig"
+	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
 )
 
 const maxNvidiaEvidenceBytes = 2 << 20
 
 type Config struct {
+	SearchService   *websearch.Service
 	Security        *localsecurity.Manager
 	LaunchToken     string
 	ControlToken    string
@@ -41,6 +43,7 @@ type Config struct {
 }
 
 type Server struct {
+	searchService   *websearch.Service
 	security        *localsecurity.Manager
 	controlToken    string
 	shutdown        func()
@@ -86,7 +89,7 @@ func NewServer(config Config) *Server {
 	if nvidiaNRASProxy == nil {
 		nvidiaNRASProxy = provider.NewNvidiaNRASProxy(nil)
 	}
-	return &Server{security: security, controlToken: config.ControlToken, shutdown: shutdown, settings: settings, chat: chatService, providerSetup: config.ProviderSetup, nearAIProxy: config.NearAIProxy, nvidiaNRASProxy: nvidiaNRASProxy}
+	return &Server{searchService: config.SearchService, security: security, controlToken: config.ControlToken, shutdown: shutdown, settings: settings, chat: chatService, providerSetup: config.ProviderSetup, nearAIProxy: config.NearAIProxy, nvidiaNRASProxy: nvidiaNRASProxy}
 }
 
 func (server *Server) Handler() http.Handler {
@@ -118,6 +121,14 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("GET /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.getConversationMessages)))
 	mux.Handle("POST /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.createGeneration)))
 	mux.Handle("POST /api/attachments/preview", browserSession(http.HandlerFunc(server.previewAttachment)))
+	mux.Handle("POST /api/web-search/test", browserSession(http.HandlerFunc(server.testWebSearchConnection)))
+	mux.Handle("GET /api/web-search/settings", browserSession(http.HandlerFunc(server.webSearchSettings)))
+	mux.Handle("PUT /api/web-search/settings", browserSession(http.HandlerFunc(server.saveWebSearchSettings)))
+	mux.Handle("DELETE /api/web-search/providers/{provider}", browserSession(http.HandlerFunc(server.deleteWebSearchProvider)))
+	mux.Handle("POST /api/generations/{id}/web-search/tools", browserSession(http.HandlerFunc(server.executeWebTool)))
+	mux.Handle("GET /api/generations/{id}/web-search/tools/{call}", browserSession(http.HandlerFunc(server.getWebTool)))
+	mux.Handle("POST /api/web-sources/prepare", browserSession(http.HandlerFunc(server.prepareWebSource)))
+	mux.Handle("DELETE /api/web-sources/{token}", browserSession(http.HandlerFunc(server.releaseWebSource)))
 	mux.Handle("POST /api/conversations/{id}/context-preview", browserSession(http.HandlerFunc(server.previewGenerationContext)))
 	mux.Handle("GET /api/generation-batches/{id}/attachments/{document}", browserSession(http.HandlerFunc(server.downloadAttachment)))
 	mux.Handle("GET /api/generation-batches/{id}", browserSession(http.HandlerFunc(server.getGenerationBatch)))
@@ -151,6 +162,7 @@ func (server *Server) Handler() http.Handler {
 	control := localsecurity.RequireControlToken(server.controlToken, server.writeSecurityError)
 	mux.Handle("POST /internal/control/shutdown", control(http.HandlerFunc(server.controlShutdown)))
 	mux.Handle("POST /internal/control/launch-token", control(http.HandlerFunc(server.controlLaunchToken)))
+	mux.Handle("POST /internal/control/status", control(http.HandlerFunc(server.launcherStatus)))
 	mux.HandleFunc("/api/", server.apiNotFound)
 	mux.HandleFunc("GET /assets/{path...}", server.assets)
 	mux.HandleFunc("GET /{$}", server.shell)
@@ -231,7 +243,7 @@ func (server *Server) launch(writer http.ResponseWriter, request *http.Request) 
 	// The browser consumes the fragment locally. Other loopback ports never
 	// receive an ambient credential from loading this page.
 	fragment := url.Values{"cove-session": {session.ID}}
-	if intent := request.URL.Query().Get("intent"); intent == "settings" || intent == "new-chat" {
+	if intent := request.URL.Query().Get("intent"); intent == "settings" || intent == "new-chat" || intent == "provider-setup" {
 		fragment.Set("intent", intent)
 	}
 	writer.Header().Set("Location", "/#"+fragment.Encode())
@@ -480,18 +492,21 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		return
 	}
 	var input struct {
-		EditOfBatchID   string                          `json:"edit_of_batch_id,omitempty"`
-		ClientRequestID string                          `json:"client_request_id"`
-		Body            string                          `json:"body"`
-		Attachments     []documents.Input               `json:"attachments"`
-		ExpectedTargets []chat.ExpectedGenerationTarget `json:"expected_targets"`
+		EditOfBatchID    string                          `json:"edit_of_batch_id,omitempty"`
+		ClientRequestID  string                          `json:"client_request_id"`
+		Body             string                          `json:"body"`
+		Attachments      []documents.Input               `json:"attachments"`
+		WebSearchEnabled bool                            `json:"web_search_enabled"`
+		WebSourceTokens  []string                        `json:"web_source_tokens"`
+		ExpectedTargets  []chat.ExpectedGenerationTarget `json:"expected_targets"`
 	}
 	request.Body = http.MaxBytesReader(writer, request.Body, documents.MaxRequestBytes)
 	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" || strings.TrimSpace(input.Body) == "" {
 		writeError(writer, http.StatusBadRequest, "validation", "The generation request is invalid.")
 		return
 	}
-	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, ExpectedTargets: input.ExpectedTargets})
+	session, _ := localsecurity.SessionFromRequest(request)
+	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, WebSearchEnabled: input.WebSearchEnabled, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID, ExpectedTargets: input.ExpectedTargets})
 	if err != nil {
 		writeGenerationError(writer, err)
 		return
@@ -738,10 +753,11 @@ type providerSnapshotEnvelope struct {
 }
 
 type generationConfigurationSnapshotEnvelope struct {
-	SystemPrompt string   `json:"system_prompt"`
-	Temperature  *float64 `json:"temperature"`
-	TopP         *float64 `json:"top_p"`
-	MaxTokens    *int     `json:"max_tokens"`
+	WebSearch    *websearch.Policy `json:"web_search,omitempty"`
+	SystemPrompt string            `json:"system_prompt"`
+	Temperature  *float64          `json:"temperature"`
+	TopP         *float64          `json:"top_p"`
+	MaxTokens    *int              `json:"max_tokens"`
 }
 
 type generationVerificationEnvelope struct {
@@ -761,6 +777,7 @@ type generationVerificationEnvelope struct {
 }
 
 type generationEnvelope struct {
+	WebSearch             *persistence.WebSearchInfo              `json:"web_search,omitempty"`
 	Metrics               *persistence.GenerationMetrics          `json:"metrics,omitempty"`
 	ID                    string                                  `json:"id"`
 	ConversationID        string                                  `json:"conversation_id"`
@@ -779,6 +796,8 @@ type generationEnvelope struct {
 }
 
 type generationEventEnvelope struct {
+	WebActivity    string                    `json:"web_activity,omitempty"`
+	Reset          bool                      `json:"reset,omitempty"`
 	EventID        string                    `json:"event_id"`
 	BatchID        string                    `json:"batch_id,omitempty"`
 	TargetID       string                    `json:"target_id,omitempty"`
@@ -792,6 +811,7 @@ type generationEventEnvelope struct {
 }
 
 type generationTargetAttemptEnvelope struct {
+	WebSearch             *persistence.WebSearchInfo              `json:"web_search,omitempty"`
 	Metrics               *persistence.GenerationMetrics          `json:"metrics,omitempty"`
 	CreatedAt             time.Time                               `json:"created_at"`
 	UpdatedAt             time.Time                               `json:"updated_at"`
@@ -822,6 +842,7 @@ type generationTargetEnvelope struct {
 }
 
 type generationBatchEnvelope struct {
+	WebSearch            *websearch.Policy                `json:"web_search,omitempty"`
 	ID                   string                           `json:"id"`
 	ConversationID       string                           `json:"conversation_id"`
 	ClientRequestID      string                           `json:"client_request_id"`
@@ -843,7 +864,7 @@ func generationEnvelopeFor(generation persistence.Generation) generationEnvelope
 	return generationEnvelope{
 		ID: generation.ID, ConversationID: generation.ConversationID, ClientRequestID: generation.ClientRequestID,
 		UserMessageID: generation.UserMessageID, State: generation.State, Snapshot: providerSnapshotEnvelopeFor(generation.Snapshot), ConfigurationSnapshot: generationConfigurationSnapshotEnvelopeFor(generation.ConfigurationSnapshot),
-		Metrics: generation.Metrics, Verification: generationVerificationEnvelopeFor(generation.Verification),
+		WebSearch: generation.WebSearch, Metrics: generation.Metrics, Verification: generationVerificationEnvelopeFor(generation.Verification),
 		AssistantMessageID: generation.AssistantMessageID, ErrorCode: generation.ErrorCode, ErrorMessage: generation.ErrorMessage,
 		EventsURL: "/api/generations/" + generation.ID + "/events", CreatedAt: generation.CreatedAt, UpdatedAt: generation.UpdatedAt,
 	}
@@ -870,13 +891,13 @@ func generationBatchEnvelopeFor(batch persistence.GenerationBatch) generationBat
 			Generation: generationTargetAttemptEnvelope{
 				CreatedAt: generation.CreatedAt, UpdatedAt: generation.UpdatedAt,
 				ID: generation.ID, State: generation.State, Snapshot: providerSnapshotEnvelopeFor(generation.Snapshot), ConfigurationSnapshot: generationConfigurationSnapshotEnvelopeFor(generation.ConfigurationSnapshot),
-				Metrics: generation.Metrics, Verification: generationVerificationEnvelopeFor(generation.Verification),
+				WebSearch: generation.WebSearch, Metrics: generation.Metrics, Verification: generationVerificationEnvelopeFor(generation.Verification),
 				AssistantMessageID: generation.AssistantMessageID, ErrorCode: generation.ErrorCode, ErrorMessage: generation.ErrorMessage,
 			},
 		})
 	}
 	return generationBatchEnvelope{
-		InputContent: batch.InputContent, Attachments: batch.Attachments,
+		InputContent: batch.InputContent, Attachments: batch.Attachments, WebSearch: batch.WebSearch,
 		ID: batch.ID, ConversationID: batch.ConversationID, ClientRequestID: batch.ClientRequestID, UserMessageID: batch.UserMessageID,
 		State: batch.State, Targets: targets, EventsURL: "/api/generation-batches/" + batch.ID + "/events",
 		SelectedGenerationID: batch.SelectedGenerationID, SelectedAnswer: batch.SelectedAnswer, ContextSkipped: batch.ContextSkipped, ContextFrozen: batch.ContextFrozen, CreatedAt: batch.CreatedAt, UpdatedAt: batch.UpdatedAt,
@@ -893,7 +914,7 @@ func generationVerificationEnvelopeFor(verification persistence.GenerationVerifi
 func generationEventEnvelopeFor(event chat.GenerationEvent) generationEventEnvelope {
 	result := generationEventEnvelope{
 		EventID: event.EventID, BatchID: event.BatchID, TargetID: event.TargetID, GenerationID: event.GenerationID, Type: event.Type,
-		Delta: event.Delta, ReasoningDelta: event.ReasoningDelta, ErrorCode: event.ErrorCode, ErrorMessage: event.ErrorMessage,
+		WebActivity: event.WebActivity, Reset: event.Reset, Delta: event.Delta, ReasoningDelta: event.ReasoningDelta, ErrorCode: event.ErrorCode, ErrorMessage: event.ErrorMessage,
 	}
 	if event.Snapshot != nil {
 		snapshot := providerSnapshotEnvelopeFor(*event.Snapshot)
@@ -913,7 +934,7 @@ func providerSnapshotEnvelopeFor(snapshot persistence.ProviderSnapshot) provider
 
 func generationConfigurationSnapshotEnvelopeFor(snapshot persistence.GenerationConfigurationSnapshot) generationConfigurationSnapshotEnvelope {
 	return generationConfigurationSnapshotEnvelope{
-		SystemPrompt: snapshot.SystemPrompt, Temperature: snapshot.Temperature, TopP: snapshot.TopP, MaxTokens: snapshot.MaxTokens,
+		WebSearch: snapshot.WebSearch, SystemPrompt: snapshot.SystemPrompt, Temperature: snapshot.Temperature, TopP: snapshot.TopP, MaxTokens: snapshot.MaxTokens,
 	}
 }
 
@@ -1052,6 +1073,8 @@ func writeConversationError(writer http.ResponseWriter, err error) {
 
 func writeGenerationError(writer http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, websearch.ErrUnavailable):
+		writeError(writer, http.StatusConflict, "web_search_unconfigured", "Configure a search Provider in Settings before enabling Web search.")
 	case errors.Is(err, chat.ErrDebateConversation):
 		writeError(writer, http.StatusConflict, "debate_conversation", "Use the debate controls for this conversation.")
 	case errors.Is(err, documents.ErrInvalidDocument), errors.Is(err, documents.ErrContextLimit):

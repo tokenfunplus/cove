@@ -10,6 +10,9 @@
 | Provider Keys | macOS Keychain by default |
 | Prompt, System Prompt, selected context, generation parameters | Configured model provider |
 | Attached source text | Selected Providers, as part of the prompt and later selected context; original file bytes stay local |
+| Explicit webpage reading | The supplied website and its public redirects receive a credential-free HTTP request from your Mac |
+| Prepared webpage text and metadata | Bounded Local Service memory until release or service exit; preview tokens become unavailable after fifteen minutes |
+| Submitted webpage bytes, source URLs, read time, and extracted text | Local SQLite source snapshots; extracted text and metadata also enter model input and exports |
 | NearAI encrypted protocol traffic | Fixed NearAI staging service, through the Local Service |
 | Intel TDX verification collateral | `https://pccs.phala.network` |
 | NVIDIA attestation evidence | `https://nras.attestation.nvidia.com`, through a fixed local proxy |
@@ -63,3 +66,9 @@ Review `pnpm audit` and the resolved dependency graph before releases. Do not re
 ## Reporting problems
 
 Follow [SECURITY.md](../SECURITY.md). Use synthetic content and remove credentials, launch URLs, tokens, and personal information from reports and screenshots.
+
+## Automatic Web search
+
+The globe toggle authorizes compatible models to choose search queries and public page URLs during an answer. Queries go to the configured Tavily, Linkup, or Exa service; page requests contact the source website. These requests occur outside NearAI encrypted inference. Excerpts then enter the selected model transport. Model verification does not establish the accuracy of external evidence.
+
+Search keys stay in macOS Keychain and are absent from browser responses and exports. Testing a key sends one search request. Per-attempt limits count admitted requests, including failures, and do not cap provider billing credits. Successful duplicate queries reuse local evidence. Queries, source text, timestamps, tool transcripts, and intermediate NearAI proofs remain in local conversation storage; deleting history removes those records. Search settings and keys remain until explicitly changed or removed. The browser remembers per-conversation toggle choices using identifiers and booleans only.

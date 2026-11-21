@@ -12,4 +12,6 @@ Model brand SVGs are selected assets from [LobeHub Icons](https://github.com/lob
 
 Local PDF text extraction uses `github.com/ledongthuc/pdf` (BSD-3-Clause), derived from `rsc/pdf`. Its pinned revision is recorded in `go.mod` and its license is included by the macOS package's Go notice collector.
 
+Webpage text extraction uses `codeberg.org/readeck/go-readability/v2` (MIT), with HTML and character-encoding support from `golang.org/x/net` and `golang.org/x/text` (BSD-3-Clause). Resolved versions and transitive dependencies are recorded in the Go module files and included by the Go notice collector.
+
 Cove continues the supplied Secure Chat / TBD codebase. Historical architecture decisions retain references to the TeamPulse architecture that informed the original Launcher design.

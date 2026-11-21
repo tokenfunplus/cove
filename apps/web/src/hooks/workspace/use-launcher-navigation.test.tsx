@@ -44,6 +44,22 @@ test("launcher New Chat creates one conversation under Strict Mode", async () =>
   expect(window.location.hash).toBe("");
 });
 
+test("Provider setup waits for authorization and opens the Provider section once", () => {
+  window.history.replaceState(null, "", "/#provider-setup");
+  const onNewChat = vi.fn(async () => {});
+  const onOpenSettings = vi.fn();
+  const { rerender } = renderHook(({ ready }) => useLauncherNavigation({
+    connection: ready ? "ready" : "loading", onNewChat, onOpenSettings,
+  }), { initialProps: { ready: false }, wrapper: StrictMode });
+  expect(onOpenSettings).not.toHaveBeenCalled();
+  rerender({ ready: true });
+  expect(onOpenSettings).toHaveBeenCalledExactlyOnceWith("provider");
+  expect(onNewChat).not.toHaveBeenCalled();
+  expect(window.location.hash).toBe("");
+  rerender({ ready: true });
+  expect(onOpenSettings).toHaveBeenCalledTimes(1);
+});
+
 test("unrecognized fragments never dispatch launcher commands", () => {
   window.history.replaceState(null, "", "/#delete-history");
   const onNewChat = vi.fn(async () => {});

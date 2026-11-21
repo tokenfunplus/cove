@@ -156,6 +156,12 @@ function markdownExport(view: ConversationView): string {
       const target = batch.targets.find(
         (item) => item.generation.assistant_message_id === message.id,
       );
+      if (target?.generation.configuration_snapshot.web_search) {
+        const info = target.generation.web_search;
+        lines.push(`> Web research: ${info?.provider ?? target.generation.configuration_snapshot.web_search.provider}; ${info?.searches ?? 0} searches; ${info?.pages ?? 0} page reads`, "");
+        for (const step of info?.steps ?? []) lines.push(`- ${step.name}: ${JSON.stringify(step.query ?? step.url)} (${step.cached ? "cached" : step.status})${step.error ? ` — ${step.error}` : ""}${step.usage == null ? "" : `; reported usage: ${JSON.stringify(step.usage)}`}`);
+        lines.push("");
+      }
       if ((target && target.generation.id === batch.selected_generation_id) || batch.selected_answer?.assistant_message_id === message.id) {
         lines.push("> Selected Answer at export", "");
       }
@@ -186,9 +192,7 @@ function markdownExport(view: ConversationView): string {
     }
   }
   const sources = new Map(
-    (view.generation_batches ?? []).flatMap((batch) =>
-      (batch.attachments ?? []).map((source) => [source.id, source] as const),
-    ),
+    [...(view.generation_batches ?? []).flatMap(batch => [...(batch.attachments ?? []), ...batch.targets.flatMap(target => target.generation.web_search?.sources ?? [])]), ...view.messages.flatMap(message => message.web_sources ?? [])].map(source => [source.id, source] as const),
   );
   if (sources.size > 0)
     lines.push(
@@ -201,8 +205,17 @@ function markdownExport(view: ConversationView): string {
     lines.push(
       `### ${source.name.replace(/[\r\n]/g, " ")}`,
       "",
-      `SHA-256: ${source.id}`,
+      `${source.web ? "Snapshot ID" : "SHA-256"}: ${source.id}`,
       `Extraction: ${source.extraction_version}`,
+      "",
+    );
+    if (source.web) lines.push(
+      `Original URL: ${source.web.original_url}`,
+      `Final URL: ${source.web.final_url}`,
+      `Capture type: ${source.web.kind === "search_result" ? "Search excerpt" : "Retrieved webpage"}`,
+      `Saved at: ${source.web.fetched_at}`,
+      ...(source.web.published_at ? [`Published at: ${source.web.published_at}`] : []),
+      `Content SHA-256: ${source.web.content_sha256}`,
       "",
     );
     for (const section of source.sections) {

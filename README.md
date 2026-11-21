@@ -21,14 +21,14 @@ Requires an Apple Silicon Mac running macOS 13 or later.
 
 > 🎁 **NEAR AI starter key** · [Sign in to Cove Web](https://www.hicove.io/account) to claim an API key with a $1 spending limit. One key per verified account, while supplies last.
 
-1. Download [Cove 0.1.0-beta.7 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.7/Cove-0.1.0-beta.7-arm64.dmg).
+1. Download [Cove 0.1.0-beta.8 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.8/Cove-0.1.0-beta.8-arm64.dmg).
 2. Quit an earlier Cove instance, open the DMG, and drag **Cove.app** to **Applications**.
 3. Launch Cove, open **Settings → Provider settings**, enter your Provider key, click **Test connection**, choose a model for your initial Active Model Set, then click **Save Provider**.
 4. Confirm the Provider/model target in the workspace, then send your first message. Use **Model comparison** to select up to four targets.
 
 Provider Profiles describe connections; model targets belong to the Active Model Set. Initial setup adds the chosen target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; change its targets through the workspace's model controls.
 
-The package is Developer ID signed and Apple notarized. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.7) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English; messages, titles, and prompts support Unicode content.
+Check the release page for Apple signing and notarization status. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.8) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English; messages, titles, and prompts support Unicode content.
 
 See the [user guide](docs/user-guide.md) for file chat, Focus mode, and timeline bookmarks, or the [configuration reference](docs/configuration.md) for Provider and generation settings.
 
@@ -57,11 +57,11 @@ Building the native Launcher requires Swift 5.10+; its XCTest suite requires ful
 
 The actual Cove interface with synthetic conversation content and simulated Atlas/Lumen replies. [View Focus and timeline bookmarks](docs/images/focus-mode.webp), explore [more workspace previews](https://tokenfunplus.github.io/cove/#preview), or read the [capture notes](docs/images/README.md).
 
-Additional captures: [Local math rendering](docs/images/chat-math.png) · [Reviewed workbench revisions](docs/images/answer-workbench.png) · [Model filters](docs/images/model-filters.png) · [Response details](docs/images/response-details.png). These use the same isolated synthetic browser fixtures.
+Additional captures: [Local math rendering](docs/images/chat-math.png) · [Reviewed workbench revisions](docs/images/answer-workbench.png) · [Model filters](docs/images/model-filters.png) · [Response details](docs/images/response-details.png). [Web search settings](docs/images/web-search-settings.png), [the composer toolbar](docs/images/web-search-composer.png), and [mobile dark mode](docs/images/web-search-mobile-dark.png) show the Beta 8 research flow. These use the same isolated synthetic browser fixtures.
 
 ## Features
 
-This section describes the current source tree, including unreleased changes. Published downloads follow their [release notes](docs/releases/0.1.0-beta.7.md); see the [unreleased changelog](CHANGELOG.md#unreleased) for newer work.
+This section describes the current source tree, including unreleased changes. Published downloads follow their [release notes](docs/releases/0.1.0-beta.8.md); see the [unreleased changelog](CHANGELOG.md#unreleased) for newer work.
 
 - Stream responses from OpenAI-compatible providers or the built-in NearAI preset.
 - Compare up to four models in one turn; select the answer used in later context.
@@ -76,6 +76,8 @@ This section describes the current source tree, including unreleased changes. Pu
 - Expand the reading area with Focus mode and jump between turns using timeline previews and browser-local bookmarks.
 - Pause following by scrolling upward, retain the reading position through layout changes, and return with an updated-answer count.
 - Attach text, Markdown, code, and text-based PDF files; preview extracted text, inspect Provider context, and open cited source lines or pages. File chat supports four files per turn, up to 4 MiB each; scanned PDFs need OCR first.
+- Read a public webpage from the composer, preview its extracted text, and retain cited source snapshots with their URLs and read time. Files and webpages share the four-source limit.
+- Enable per-conversation Web search through Tavily, Linkup, or Exa with per-model request budgets, saved citations and References, and verified NearAI tool requests.
 - Inspect the provider, destination, configuration snapshot, and available verification evidence for each response.
 - Use NearAI's browser-side encryption and attestation flow for supported private models.
 - Search titles and saved message text locally, read matching excerpts, and jump to the relevant turn; pin, archive, and rename conversations.
@@ -111,7 +113,7 @@ Browse the [full FAQ](docs/faq.md) for language and support questions. For build
 make dmg
 ```
 
-The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.7-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
+The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.8-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
 
 ## Community
 
@@ -144,3 +146,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and [SECURI
 ## License
 
 [MIT](LICENSE). Third-party dependencies retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Web search
+
+Enable the globe icon in a conversation to let compatible models search when needed. Configure Tavily, Linkup, or Exa in Settings → Web search. Each model attempt has its own request limits and saved source evidence. Search queries leave the model transport and go to the selected search service. Continuous Debate does not inherit this toggle. See [the user guide](docs/user-guide.md) for limits and citations.

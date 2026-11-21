@@ -4,7 +4,7 @@ import type { ConnectionState } from "@/lib/workspace-types";
 type Dependencies = {
   connection: ConnectionState;
   onNewChat: () => Promise<void>;
-  onOpenSettings: (entry: "general") => void;
+  onOpenSettings: (entry: "general" | "provider") => void;
 };
 
 export function useLauncherNavigation({
@@ -16,7 +16,7 @@ export function useLauncherNavigation({
     if (connection !== "ready") return;
     const navigate = () => {
       const destination = window.location.hash;
-      if (destination !== "#new-chat" && destination !== "#settings") return;
+      if (destination !== "#new-chat" && destination !== "#settings" && destination !== "#provider-setup") return;
       // Consume the presentation intent before dispatch so rerenders cannot repeat it.
       window.history.replaceState(
         window.history.state,
@@ -24,6 +24,7 @@ export function useLauncherNavigation({
         window.location.pathname + window.location.search,
       );
       if (destination === "#settings") onOpenSettings("general");
+      else if (destination === "#provider-setup") onOpenSettings("provider");
       else void onNewChat();
     };
     navigate();

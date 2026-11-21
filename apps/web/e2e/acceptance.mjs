@@ -19,6 +19,8 @@ import assert from "node:assert/strict";
 import { runDebateFocusAcceptance } from "./debate-focus.mjs";
 import { runHistoryAcceptance } from "./history.mjs";
 import { runDebateControlsAcceptance } from "./debate-controls.mjs";
+import { runWebSearchAcceptance } from "./web-search.mjs";
+import { runWebSourcesAcceptance } from "./web-sources.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -105,6 +107,12 @@ const provider = http.createServer(async (request, response) => {
   }
 
   response.writeHead(200, { "Content-Type": "text/event-stream" });
+  if (prompt.startsWith("Webpage source fixture")) {
+    const sourceId = prompt.match(/"id":"([a-f0-9]{64})"/)?.[1];
+    const answer = `The saved page supplies this evidence. [View evidence](cove:${sourceId}:L1)`;
+    response.end("data: " + JSON.stringify({choices:[{delta:{content:answer}}]}) + "\n\ndata: [DONE]\n\n");
+    return;
+  }
   if (input.messages[0]?.content?.startsWith("Create a stage summary")) {
     const matches = [...prompt.matchAll(/\[Turn (\d+),/g)];
     const first = Number(matches[0][1]);
@@ -573,7 +581,18 @@ try {
     );
     await cdp("Input.insertText", { text: value });
   }
-  if (process.env.COVE_BROWSER_SCENARIO === "debate-controls") {
+  if (process.env.COVE_BROWSER_SCENARIO === "web-search") {
+    const axeSource = await readFile(require.resolve("axe-core/axe.min.js"), "utf8");
+    await runWebSearchAcceptance({ api, cdp, evaluate, until, click, snapshot, reloadPage, dataDir: temp, requests, axeSource });
+    assert.equal(exceptions.length, 0);
+    socket.close();
+    console.log("Web search browser acceptance passed: configuration guidance, preserved draft, limits, per-conversation toggle, native tools, source references, and responsive previews.");
+  } else if (process.env.COVE_BROWSER_SCENARIO === "web-sources") {
+    await runWebSourcesAcceptance({ api, cdp, evaluate, until, click, snapshot, reloadPage, dataDir: temp });
+    assert.equal(exceptions.length, 0);
+    socket.close();
+    console.log("Webpage browser acceptance passed: explicit reading, public-address rejection, saved citations, reload, and responsive source previews.");
+  } else if (process.env.COVE_BROWSER_SCENARIO === "debate-controls") {
     const axeSource = await readFile(require.resolve("axe-core/axe.min.js"), "utf8");
     await runDebateControlsAcceptance({api,cdp,evaluate,until,click,snapshot,reloadPage,profile,axeSource,requestCount:()=>requests.length});
     assert.equal(exceptions.length,0);

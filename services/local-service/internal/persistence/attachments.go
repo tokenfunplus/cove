@@ -27,6 +27,29 @@ func (store *SQLiteStore) LoadAttachmentData(ctx context.Context, batchID, docum
 			return documents.Input{Name: snapshot.Name, Data: data[index]}, nil
 		}
 	}
+	rows, err := store.db.QueryContext(ctx, `SELECT web_search_run FROM generations WHERE generation_batch_id=?`, batchID)
+	if err != nil {
+		return documents.Input{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var encoded string
+		if err := rows.Scan(&encoded); err != nil {
+			return documents.Input{}, err
+		}
+		var run WebSearchRun
+		if err := json.Unmarshal([]byte(encoded), &run); err != nil {
+			return documents.Input{}, err
+		}
+		for _, source := range run.Sources {
+			if source.ID == documentID {
+				return documents.Input{Name: source.Name, Data: source.Data}, nil
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return documents.Input{}, err
+	}
 	return documents.Input{}, sql.ErrNoRows
 }
 

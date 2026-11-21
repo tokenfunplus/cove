@@ -174,6 +174,7 @@ func TestDebateMigrationFromVersion19PreservesExistingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dropWebSearchSchema(t, store)
 	_, err = store.db.Exec(`DROP TABLE debate_turns;DROP TABLE debate_interventions;DROP TABLE debate_sessions;PRAGMA user_version=19;`)
 	if err != nil {
 		t.Fatal(err)

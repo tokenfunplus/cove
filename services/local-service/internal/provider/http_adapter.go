@@ -182,10 +182,12 @@ func (adapter *HTTPAdapter) stream(ctx context.Context, input CompletionInput, i
 		TopP          *float64          `json:"top_p,omitempty"`
 		MaxTokens     *int              `json:"max_tokens,omitempty"`
 		Stream        bool              `json:"stream"`
+		Tools         []Tool            `json:"tools,omitempty"`
 		StreamOptions *struct {
 			IncludeUsage bool `json:"include_usage"`
 		} `json:"stream_options,omitempty"`
 	}{Model: profile.Model, Messages: input.Messages, Temperature: input.GenerationParameters.Temperature, TopP: input.GenerationParameters.TopP, MaxTokens: input.GenerationParameters.MaxTokens, Stream: true}
+	payload.Tools = input.Tools
 	if includeUsage {
 		payload.StreamOptions = &struct {
 			IncludeUsage bool `json:"include_usage"`

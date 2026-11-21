@@ -48,6 +48,25 @@ Provider/model support may be narrower than Cove's accepted parameter ranges. Co
 
 See the [settings schema](../packages/api-contract/schemas/settings.schema.json), [shared types](../packages/api-contract/src/index.ts), and [settings validation](../services/local-service/internal/persistence/store.go) for implementation details.
 
+## Web search
+
+Open **Settings → Web search** to configure Tavily, Linkup, or Exa. Search keys are independent of model Provider Keys and use macOS Keychain. Multiple search keys can be saved; the selected service is the default for new research attempts. New or replacement keys are tested with one standard search before saving. Failed validation preserves the prior usable key.
+
+| Setting / contract field | Default | Accepted values and behavior |
+| --- | --- | --- |
+| Search provider / `provider` | `tavily` | `tavily`, `linkup`, or `exa`; requires a saved key before enabling search. |
+| Search requests / `max_searches` | `3` | `1`–`20` admitted search requests per model attempt. |
+| Page reads / `max_pages` | `5` | `1`–`20` public page reads per model attempt. |
+| Results per search / `max_results` | `5` | `1`–`10` saved search excerpts per request. |
+| Total tool calls / `max_rounds` | `8` | `1`–`32` search and page-read calls per model attempt. |
+| Web phase timeout / `timeout_seconds` | `90` | `15`–`180` seconds from the first tool call; the overall Generation deadline still applies. |
+| Search depth / `depth` | `standard` | `standard` or `deep`, mapped to the selected service's API. |
+| Domain filters / `include_domains`, `exclude_domains` | Empty | Up to twenty plain domain names per filter; search discovery only. |
+
+The globe toggles search for each conversation; new conversations start off. Ordinary chat and Model Comparison use native model tool calling. Four models can make twelve search requests with default limits. Failed requests consume admission counts; successful duplicate requests can reuse saved results. Request limits do not represent a Provider billing-credit cap. Retries have independent budgets under the original Batch policy, and active attempts keep their saved settings.
+
+Search queries go to the search service, page reads contact source websites, and extracted text enters the selected model transport. These requests occur outside NearAI encrypted inference. Search and source accuracy are separate from model receipt verification. Continuous Debate and side conversations do not inherit the main chat toggle. See the [research guide](user-guide.md#let-a-model-search-the-web) and [privacy model](privacy.md#automatic-web-search).
+
 ## Appearance, Focus, and Launcher preferences
 
 | Preference | Where to change it | Persistence |
@@ -70,13 +89,13 @@ Browser preferences, manual rates, combinations, and bookmarks are not part of a
 | Data | Default location |
 | --- | --- |
 | History, structured reasoning, Generation Metrics, conversation branches, settings, original attachments, and extracted source snapshots | `~/Library/Application Support/cove/cove.sqlite` |
-| Provider Keys | macOS Keychain, service `io.github.tokenfunplus.cove.provider` |
+| Model and search API keys | macOS Keychain, service `io.github.tokenfunplus.cove.provider` |
 | Source-build process state and logs | `.artifacts/` in the checkout; treat these files as sensitive. |
 | Skins, timeline bookmarks, favorite/recent models, saved model combinations, and manual cost rates | Browser storage for the Local Service address. |
 
 Quit Cove before backing up its data directory. The database and exported conversations are not encrypted by Cove, and a database backup does not include Keychain credentials or browser bookmarks.
 
-Current source builds migrate schema 16 through 19 on startup. Existing history is retained; missing historical metrics stay unavailable, and unmarked historical reasoning is not inferred. An older build rejects a newer schema. To return to an older build, restore a compatible backup rather than modifying the database schema number. See [storage compatibility](development.md#chat-storage-and-rendering-compatibility).
+Current source builds migrate schema 16 through 22 on startup. Existing history is retained; missing historical metrics stay unavailable, and unmarked historical reasoning is not inferred. An older build rejects a newer schema. To return to an older build, restore a compatible backup rather than modifying the database schema number. See [storage compatibility](development.md#chat-storage-and-rendering-compatibility).
 
 ## Development environment variables
 

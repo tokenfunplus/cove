@@ -49,6 +49,7 @@ public enum ChatLaunchDestination: String {
     case chat
     case newChat = "new-chat"
     case settings
+    case providerSetup = "provider-setup"
 }
 
 @MainActor
@@ -74,14 +75,35 @@ public final class LauncherStateMachine: ObservableObject {
     }
 
     public func startIfNeededAndOpenChat() {
+        startAtLaunch(isLoginItem: false)
+    }
+
+    public func startAtLaunch(isLoginItem: Bool) {
         guard case .stopped = state else {
             return
         }
         do {
             try start()
-            openChat()
+            if !isLoginItem { openChat() }
         } catch {
             return
+        }
+    }
+
+    public func openChatOrRecover(destination: ChatLaunchDestination = .chat) {
+        switch state {
+        case .starting:
+            return
+        case .ready:
+            openChat(destination: destination)
+        case .stopped, .failed:
+            do {
+                stop()
+                try start()
+                openChat(destination: destination)
+            } catch {
+                return
+            }
         }
     }
 

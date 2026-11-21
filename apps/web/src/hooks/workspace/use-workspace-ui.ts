@@ -40,7 +40,7 @@ export function useWorkspaceUi() {
 
   const [isClearingChatData, setIsClearingChatData] = useState(false);
 
-  const [settingsEntry, setSettingsEntry] = useState<"general" | "provider">();
+  const [settingsEntry, setSettingsEntry] = useState<"general" | "provider" | "web-search">();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 

@@ -69,6 +69,26 @@ test.each(["selected", "skipped", "unresolved"] as const)("Markdown preserves %s
   expect(JSON.stringify(conversation)).toBe(original);
 });
 
+test("webpage exports retain saved text and source provenance", () => {
+  const fixture = createWorkspaceFixture();
+  const batch = structuredClone(fixture.completedBatch);
+  batch.attachments = [{
+    id: "a".repeat(64), name: "Research page.html", media_type: "text/html",
+    size: 100, characters: 22, extraction_version: "cove-web-readability-v1",
+    sections: [{ id: "L1", text: "Saved webpage evidence" }],
+    web: { original_url: "https://fixture.example/start", final_url: "https://fixture.example/article", fetched_at: "2026-11-20T08:00:00Z", content_sha256: "b".repeat(64) },
+  }];
+  const view = { ...fixture.completedView, generation_batches: [batch] };
+  for (const format of ["markdown", "json"] as const) {
+    const exported = buildConversationExport(view, format).content;
+    expect(exported).toContain("Saved webpage evidence");
+    expect(exported).toContain("https://fixture.example/start");
+    expect(exported).toContain("https://fixture.example/article");
+    expect(exported).toContain("2026-11-20T08:00:00Z");
+    expect(exported).toContain("b".repeat(64));
+  }
+});
+
 test("late comparison answers stay grouped with their originating prompt", () => {
   const fixture = createWorkspaceFixture(2);
   const batch = { ...fixture.completedBatch, selected_generation_id: fixture.completedBatch.targets[1]!.generation.id };

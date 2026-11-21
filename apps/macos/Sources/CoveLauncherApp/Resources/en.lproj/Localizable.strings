@@ -37,3 +37,15 @@
 "No release metadata is available for this channel. You can browse official releases." = "No release metadata is available for this channel. You can browse official releases.";
 "Check your connection or browse official releases to find an update." = "Check your connection or browse official releases to find an update.";
 "Open Releases" = "Open Releases";
+"Launcher Settings" = "Launcher Settings";
+"Retry and Open Chat" = "Retry and Open Chat";
+"Set Up Provider…" = "Set Up Provider…";
+"Stopped" = "Stopped";
+"Starting…" = "Starting…";
+"Ready" = "Ready";
+"Set Up Required" = "Set Up Required";
+"Unavailable" = "Unavailable";
+"Update Available…" = "Update Available…";
+"Check Stable Releases…" = "Check Stable Releases…";
+"Check Beta Releases…" = "Check Beta Releases…";
+"Release Notes" = "Release Notes";

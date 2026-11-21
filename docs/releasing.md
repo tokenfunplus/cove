@@ -2,16 +2,26 @@
 
 ## Local packages
 
-On an Apple Silicon Mac:
+On an Apple Silicon Mac with Python 3.11 or later, install the pinned DMG build tools once:
+
+```sh
+python3 -m venv .artifacts/dmg-tools
+.artifacts/dmg-tools/bin/python -m pip install -r scripts/dmg-requirements.txt
+```
+
+Then build and verify the package:
 
 ```sh
 pnpm install --frozen-lockfile
 make check test
+make test-dmg
 make dmg
 make test-package-macos
 ```
 
 Packaging builds web assets before Go, builds the Swift Launcher, assembles `Cove.app`, validates architecture and metadata, signs it, and creates a compressed DMG and SHA-256 checksum in `.artifacts/`. Keychain is the default in every build.
+
+The DMG opens in a compact icon view with Cove, an Applications shortcut, and a Retina installation background. Drag Cove to Applications, then open the installed app and look for its menu-bar icon. Both packaging paths use the same layout, generated without Finder automation. The pinned builder uses `hdiutil` for compatibility with macOS 15 CI runners. Each image is mounted read-only and its contained app passes strict signature verification before checksum generation. Final DMG signing and notarization happen after layout creation.
 
 Without a signing identity, packages are ad-hoc signed. Gatekeeper may require explicit Finder approval. Acceptance fixtures use temporary data and explicitly opt into the test file Secret Store.
 
@@ -32,9 +42,9 @@ Without notarization, the workflow still uses Keychain and produces ad-hoc signe
 
 ## Versioning and releases
 
-The current test release is `0.1.0-beta.7`, build `7`, with marketing version `0.1.0`. Use `make version VERSION=0.1.0-beta.8` to prepare the next beta. The command synchronizes the root and workspace package versions, `CoveReleaseVersion`, `CFBundleShortVersionString`, and `CFBundleVersion`. Omitting `BUILD` increments the existing build number; `BUILD=n` overrides it. Keep build numbers increasing for subsequent published packages.
+The current test release is `0.1.0-beta.8`, build `8`, with marketing version `0.1.0`. Use `make version VERSION=0.1.0-beta.9` to prepare the next beta. The command synchronizes the root and workspace package versions, `CoveReleaseVersion`, `CFBundleShortVersionString`, and `CFBundleVersion`. Omitting `BUILD` increments the existing build number; `BUILD=n` overrides it. Keep build numbers increasing for subsequent published packages.
 
-Use `alpha.N`, `beta.N`, and `rc.N` suffixes for test releases, then the plain version for stable releases. Git tags add a `v` prefix, for example `v0.1.0-beta.7`. A prerelease is published with GitHub's prerelease flag and does not enter the stable `releases/latest` update feed. Updated Launchers offer explicit beta discovery from published GitHub releases, without changing the stable manifest or automatically installing updates. Beta and release-candidate versions are eligible for that action; alpha and draft releases are excluded. Older builds can use the Releases page.
+Use `alpha.N`, `beta.N`, and `rc.N` suffixes for test releases, then the plain version for stable releases. Git tags add a `v` prefix, for example `v0.1.0-beta.8`. A prerelease is published with GitHub's prerelease flag and does not enter the stable `releases/latest` update feed. Updated Launchers offer explicit beta discovery from published GitHub releases, without changing the stable manifest or automatically installing updates. Beta and release-candidate versions are eligible for that action; alpha and draft releases are excluded. Older builds can use the Releases page.
 
 1. Run the version command. `CoveReleaseVersion` is the full version; `CFBundleShortVersionString` is its numeric base.
 2. Move the relevant `CHANGELOG.md` entries into a dated release section.
@@ -57,10 +67,10 @@ Download the asset and its matching bundle, then verify with Cosign 3:
 
 ```sh
 cosign verify-blob \
-  --bundle Cove-0.1.0-beta.7-arm64.dmg.sigstore.json \
-  --certificate-identity-regexp '^https://github\.com/tokenfunplus/cove/\.github/workflows/release-signatures\.yml@refs/(heads/main|tags/v0\.1\.0-beta\.7)$' \
+  --bundle Cove-0.1.0-beta.8-arm64.dmg.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/tokenfunplus/cove/\.github/workflows/release-signatures\.yml@refs/(heads/main|tags/v0\.1\.0-beta\.8)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  Cove-0.1.0-beta.7-arm64.dmg
+  Cove-0.1.0-beta.8-arm64.dmg
 ```
 
 For another release, update both filenames and the exact tag in the expected identity. Verification checks the artifact digest, signing identity, certificate, and transparency proof.

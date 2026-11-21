@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help version build build-web build-service build-macos package-macos dmg test-package-macos start-local stop-local check check-go test test-contract test-web test-service test-fuzz test-macos test-lifecycle test-scripts test-web-browser
+.PHONY: help version build build-web build-service build-macos package-macos dmg test-package-macos test-dmg start-local stop-local check check-go test test-contract test-web test-service test-fuzz test-macos test-lifecycle test-scripts test-web-browser
 
 FUZZ_TIME ?= 10s
 FUZZ_WORKERS ?= 2
@@ -42,6 +42,9 @@ test: test-scripts test-contract test-web test-service test-macos
 
 test-scripts:
 	node --test scripts/*.test.mjs
+
+test-dmg:
+	COVE_TEST_DMG=1 node --test scripts/create-macos-dmg.test.mjs
 
 test-contract:
 	pnpm run check:contract

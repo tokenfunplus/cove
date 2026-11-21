@@ -201,12 +201,7 @@ case "${COVE_NOTARIZE:-0}" in
 esac
 
 rm -f "$cove_dmg" "$cove_dmg_checksum"
-hdiutil create \
-  -volname "Cove $cove_version" \
-  -srcfolder "$cove_app" \
-  -ov \
-  -format UDZO \
-  "$cove_dmg" >/dev/null
+"$cove_root/scripts/create-macos-dmg.sh" "$cove_app" "$cove_dmg"
 (cd "$cove_package_dir" && shasum -a 256 "$(basename "$cove_dmg")" > "$(basename "$cove_dmg_checksum")")
 
 printf '%s\n' "package-macos: created $cove_app"
