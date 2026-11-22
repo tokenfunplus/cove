@@ -465,6 +465,7 @@ export interface SpeechJob {
   total_chunks: number; characters: number; playback_rate: number; volume: number; error?: string;
 }
 export interface SpeechPreview {text: string; model_id: string; profile: SpeechProfile}
+export interface DebateSpeechInput {debate_id: string; turn_id: string}
 export interface LocalDocument {
   id: string; name: string; characters: number; chunks: number; model_sha256: string; index_version: string; indexed_at: string;
 }

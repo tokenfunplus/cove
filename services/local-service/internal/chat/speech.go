@@ -33,6 +33,10 @@ type SpeechPreview struct {
 	ModelID string                    `json:"model_id"`
 	Profile persistence.SpeechProfile `json:"profile"`
 }
+type DebateSpeechInput struct {
+	DebateID string `json:"debate_id"`
+	TurnID   string `json:"turn_id"`
+}
 
 func (service *Service) SetSpeech(manager *speech.Manager) { service.speech = manager }
 func (service *Service) SpeechSettings(ctx context.Context) (SpeechConfiguration, error) {
@@ -99,6 +103,26 @@ func (service *Service) PreviewSpeech(ctx context.Context, owner string, input S
 		return speech.JobStatus{}, errors.New("Use up to 400 characters for a voice preview.")
 	}
 	return service.speech.Start(ctx, owner, speech.Request{Text: input.Text, ModelID: input.ModelID, Profile: &input.Profile})
+}
+func (service *Service) ReadDebateAloud(ctx context.Context, owner string, input DebateSpeechInput) (speech.JobStatus, error) {
+	if service.speech == nil {
+		return speech.JobStatus{}, errors.New("Local speech is unavailable.")
+	}
+	service.startMu.Lock()
+	defer service.startMu.Unlock()
+	store, err := service.debateStore()
+	if err != nil {
+		return speech.JobStatus{}, err
+	}
+	// Resolve the settled original, never browser-supplied text or live reasoning.
+	turn, err := store.ReadDebateTurn(ctx, input.DebateID, input.TurnID)
+	if err != nil {
+		return speech.JobStatus{}, err
+	}
+	if turn.State != "completed" || turn.Kind == "summary" {
+		return speech.JobStatus{}, errors.New("Only completed participant turns can be read aloud.")
+	}
+	return service.speech.Start(ctx, owner, speech.Request{Text: turn.Body, ConversationID: input.DebateID})
 }
 func (service *Service) SpeechStatus(owner, id string) (speech.JobStatus, error) {
 	if service.speech == nil {

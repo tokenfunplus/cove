@@ -20,6 +20,12 @@ Playback supports Pause, Resume, Stop, and Download audio. Starting another read
 
 Text and audio stay on this Mac during synthesis. Only installation contacts public model sources. Workers receive no Provider Keys or model-hub credentials. Temporary audio is private to the browser session, expires after 30 minutes without access, and is removed on service startup. Exported files remain wherever the user saves them. Removing a model keeps answers and preferences.
 
+## Debate read aloud
+
+Debate's sound toggle beside Pause and Stop automatically reads new completed participant turns. It starts Off for each opened Debate view. Turning it on includes turns currently streaming and future turns, while settled history, failed attempts, reasoning, and stage summaries stay silent. Concurrent openings play in turn order; only one voice plays at a time. The player identifies the round, model, and role and uses your saved speech preferences.
+
+Pause in the audio player holds playback; Debate Pause controls model generation separately. Generation can get ahead of listening, so a queued count appears beside the sound toggle. Turning it off, stopping Debate, leaving the view, or stopping/replacing the reading discards the pending queue. Re-enable to listen from the current live boundary. Missing voices lead to Discover or Speech settings; installation never silently turns on audio. A browser autoplay restriction offers Resume. Reading errors disable automatic playback until you enable it again. See [ADR 0056](adr/0056-read-debate-turns-with-local-speech.md).
+
 ## Development and verification
 
 `make build-service` builds web assets and prepares both inference and speech workers. `node scripts/prepare-speech-runtime.mjs` pins all downloads and builds the adapter/Kitten ARM64 phonemizer under ignored `.artifacts/speech`. This needs Apple's command line tools and initial network access. Both sherpa adapters use ONNX Runtime 1.28.2; preparation rejects worker/library deployment targets above macOS 13.3. `COVE_SPEECH_RUNTIME` can override this directory in development. Distributed services resolve `speech` next to their executable.

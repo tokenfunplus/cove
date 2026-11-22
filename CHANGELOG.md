@@ -4,6 +4,8 @@
 
 ### Added
 
+- Add opt-in Debate read aloud with ordered local speech playback for new participant turns, installation/settings guidance, queue status, and explicit stop/navigation cleanup.
+
 - Added five managed local speech downloads, per-model voice/speed preferences, English/Chinese routing, voice preview, and answer read aloud with pause/stop and WAV export. Speech remains independent of chat Providers and works offline after installation.
 
 - Add independently selectable Qwen3 0.6B Abliterated Q5_K_M (444.4 MB) with verified installation, non-thinking local inference, model-specific history provenance, and local-only execution alongside the existing Qwen2.5 model.

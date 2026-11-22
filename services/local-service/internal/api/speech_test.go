@@ -13,8 +13,9 @@ import (
 
 type speechAPIChat struct {
 	chat.Chat
-	owner string
-	calls int
+	owner       string
+	calls       int
+	debateInput chat.DebateSpeechInput
 }
 
 func (s *speechAPIChat) SpeechSettings(context.Context) (chat.SpeechConfiguration, error) {
@@ -26,6 +27,12 @@ func (s *speechAPIChat) SaveSpeechSettings(ctx context.Context, v persistence.Sp
 }
 func (s *speechAPIChat) ReadAloud(ctx context.Context, owner string, input chat.SpeechInput) (speech.JobStatus, error) {
 	return speech.JobStatus{}, &speech.ModelRequiredError{Language: "en"}
+}
+func (s *speechAPIChat) ReadDebateAloud(ctx context.Context, owner string, input chat.DebateSpeechInput) (speech.JobStatus, error) {
+	s.calls++
+	s.owner = owner
+	s.debateInput = input
+	return speech.JobStatus{ID: "debate-reading", State: "preparing"}, nil
 }
 func (s *speechAPIChat) PreviewSpeech(ctx context.Context, owner string, input chat.SpeechPreview) (speech.JobStatus, error) {
 	s.calls++
@@ -88,6 +95,16 @@ func TestSpeechAPIEnforcesSessionCSRFAndAudioOwnership(t *testing.T) {
 	}
 	if got := call("POST", "/api/speech/preview", `{"text":"Read","unexpected":true}`, token, csrf); got.Code != 400 {
 		t.Fatal("invalid preview accepted", got.Code)
+	}
+	before := service.calls
+	if got := call("POST", "/api/speech/debate", `{"debate_id":"debate","turn_id":"turn"}`, token, ""); got.Code != 403 || service.calls != before {
+		t.Fatal("CSRF-free debate reading allowed", got.Code)
+	}
+	if got := call("POST", "/api/speech/debate", `{"debate_id":"debate","turn_id":"turn","text":"untrusted"}`, token, csrf); got.Code != 400 || service.calls != before {
+		t.Fatal("caller-supplied debate text accepted", got.Code)
+	}
+	if got := call("POST", "/api/speech/debate", `{"debate_id":"debate","turn_id":"turn"}`, token, csrf); got.Code != 200 || service.owner == "" || service.debateInput.DebateID != "debate" || service.debateInput.TurnID != "turn" {
+		t.Fatal("debate reading lost source or session", got.Code)
 	}
 	if got := call("GET", "/api/speech/job/chunks/999", "", token, ""); got.Code != 404 {
 		t.Fatal("invalid chunk accepted", got.Code)

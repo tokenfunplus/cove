@@ -13,6 +13,8 @@ Speech owns installation coordination, validated preferences, temporary synthesi
 
 Schema 27 adds an independent speech settings row. Automatic selection supports English and Chinese preferences; manual selection and per-model voice/speed controls are also available. Only options supported by the fixed adapters are exposed. Existing chat history and model selection are preserved.
 
+[ADR 0056](0056-read-debate-turns-with-local-speech.md) extends saved-body reading to completed Debate participant turns with an opt-in, sequential browser playback queue.
+
 Use pinned sherpa-onnx 1.12.40 for Kokoro/Melo, 2.0.3 with a source-built ARM64 eSpeak NG 1.52.0 phonemizer for Kitten 0.8, and the official Pocket TTS 4.0.1 ARM64 CLI. Both sherpa adapters use pinned ONNX Runtime 1.28.2: the older bundled ONNX binary requires macOS 15.5. The build checks the deployment target of every shipped worker/library. Keep workers in separate processes with local paths, private pipes, sanitized environments, and no cloud fallback. macOS 13.3+ on Apple Silicon is the initial supported platform. The IPC adapter and combined eSpeak worker retain GPL-3.0-or-later notices and source/build information; other components retain their licenses.
 
 ## Lifecycle and limits

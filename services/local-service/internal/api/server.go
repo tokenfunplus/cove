@@ -138,6 +138,7 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("GET /api/speech/settings", browserSession(http.HandlerFunc(server.speechCommand)))
 	mux.Handle("PUT /api/speech/settings", browserSession(http.HandlerFunc(server.speechCommand)))
 	mux.Handle("POST /api/speech", browserSession(http.HandlerFunc(server.speechCommand)))
+	mux.Handle("POST /api/speech/debate", browserSession(http.HandlerFunc(server.speechCommand)))
 	mux.Handle("POST /api/speech/preview", browserSession(http.HandlerFunc(server.speechCommand)))
 	mux.Handle("GET /api/speech/{speech}", browserSession(http.HandlerFunc(server.speechCommand)))
 	mux.Handle("DELETE /api/speech/{speech}", browserSession(http.HandlerFunc(server.speechCommand)))

@@ -5,6 +5,7 @@ import { getDebateExport, getDebateTurn } from "@/api/debates";
 import type { DebateControls, DebateRules, DebateTurn } from "@cove/api-contract";
 import { DebateControlsFields, DebateUsageStrip, debateControls, debateControlsError } from "./DebateControlsFields";
 import { DebateSummaryCard } from "./DebateSummaryCard";
+import { DebateSpeechControl } from "./DebateSpeechControl";
 import { debateMarkdown } from "@/lib/debate-export";
 import { summarize } from "@/lib/chat/timeline";
 import { Button } from "@/components/ui/button";
@@ -390,7 +391,8 @@ export function DebateWorkspace({
             {session.total_turns} turns · <span>Rules v{session.rules.version}{session.pending_rules ? ` · v${session.pending_rules.version} queued` : ""}</span>
           </p>
         </div>
-        <div className="flex shrink-0 gap-1">
+        <div className="flex flex-wrap items-center gap-1">
+          <DebateSpeechControl view={debate.liveData ?? view} stopping={debate.control.isPending && debate.control.variables === "stop"} />
           {session.status === "paused" && (
             <Button
               size="xs"

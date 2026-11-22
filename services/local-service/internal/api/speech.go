@@ -19,6 +19,7 @@ type speechChat interface {
 	SpeechSettings(context.Context) (chat.SpeechConfiguration, error)
 	SaveSpeechSettings(context.Context, persistence.SpeechSettings) (chat.SpeechConfiguration, error)
 	ReadAloud(context.Context, string, chat.SpeechInput) (speech.JobStatus, error)
+	ReadDebateAloud(context.Context, string, chat.DebateSpeechInput) (speech.JobStatus, error)
 	PreviewSpeech(context.Context, string, chat.SpeechPreview) (speech.JobStatus, error)
 	SpeechStatus(string, string) (speech.JobStatus, error)
 	SpeechAudio(string, string, int) ([]byte, error)
@@ -64,6 +65,13 @@ func (server *Server) speechCommand(writer http.ResponseWriter, request *http.Re
 			return
 		}
 		result, err = service.ReadAloud(request.Context(), session.ID, input)
+	case request.URL.Path == "/api/speech/debate" && request.Method == http.MethodPost:
+		var input chat.DebateSpeechInput
+		if decode(&input) != nil || input.DebateID == "" || input.TurnID == "" {
+			writeError(writer, 400, "validation", "Choose a completed debate turn to read aloud.")
+			return
+		}
+		result, err = service.ReadDebateAloud(request.Context(), session.ID, input)
 	case request.URL.Path == "/api/speech/preview" && request.Method == http.MethodPost:
 		var input chat.SpeechPreview
 		if decode(&input) != nil {
