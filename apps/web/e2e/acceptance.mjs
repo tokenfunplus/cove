@@ -1884,6 +1884,15 @@ try {
   await until(`!!document.querySelector('.conversation-welcome')`);
   const audits = [];
   async function auditSurface(surface, skin, theme) {
+    // Theme attributes update before controls finish their color transitions.
+    // Audit the rendered surface after finite transitions, retaining WCAG rules.
+    await evaluate(`(async()=>{
+      await document.fonts.ready;
+      await new Promise(requestAnimationFrame);
+      const animations=document.getAnimations().filter(animation=>animation.playState==='running'&&Number.isFinite(animation.effect?.getComputedTiming().endTime));
+      await Promise.all(animations.map(animation=>animation.finished.catch(()=>{})));
+      await new Promise(requestAnimationFrame);
+    })()`);
     const violations = await evaluate(
       `axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}).then(r=>r.violations.map(v=>({id:v.id,impact:v.impact,count:v.nodes.length,nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))})))`,
     );
