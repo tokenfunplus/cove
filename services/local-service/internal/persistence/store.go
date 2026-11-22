@@ -20,7 +20,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 22
+const schemaVersion = 24
 
 const defaultConversationTitle = "New conversation"
 
@@ -116,15 +116,18 @@ type ActiveModelTarget struct {
 }
 
 type Conversation struct {
-	DebateID     string    `json:"debate_id,omitempty"`
-	DebateStatus string    `json:"debate_status,omitempty"`
-	DebateRound  int       `json:"debate_round,omitempty"`
-	ID           string    `json:"id"`
-	Title        string    `json:"title"`
-	Pinned       bool      `json:"pinned"`
-	Archived     bool      `json:"archived"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ProjectID          string    `json:"project_id,omitempty"`
+	MembershipRevision int64     `json:"membership_revision"`
+	ProjectRevision    int64     `json:"project_revision"`
+	DebateID           string    `json:"debate_id,omitempty"`
+	DebateStatus       string    `json:"debate_status,omitempty"`
+	DebateRound        int       `json:"debate_round,omitempty"`
+	ID                 string    `json:"id"`
+	Title              string    `json:"title"`
+	Pinned             bool      `json:"pinned"`
+	Archived           bool      `json:"archived"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 type Message struct {
@@ -280,6 +283,7 @@ const (
 )
 
 type GenerationBatch struct {
+	ProjectContext  *ProjectContext      `json:"project_context,omitempty"`
 	WebSearch       *websearch.Policy    `json:"web_search,omitempty"`
 	ContextItems    []ContextItem        `json:"-"`
 	ID              string               `json:"id"`
@@ -327,6 +331,7 @@ type GenerationTargetInput struct {
 }
 
 type BeginGenerationBatchInput struct {
+	ExpectedProject      *ProjectExpectation
 	WebSearch            *websearch.Policy
 	EditOfBatchID        string
 	ConversationID       string
@@ -736,6 +741,22 @@ PRAGMA user_version=22;`); err != nil {
 			return err
 		}
 	}
+	if version == 21 {
+		version = 22
+	}
+	if version == 22 {
+		if _, err := tx.Exec(projectMigration); err != nil {
+			return fmt.Errorf("apply SQLite migration 23: %w", err)
+		}
+	}
+	if version == 22 {
+		version = 23
+	}
+	if version == 23 {
+		if _, err := tx.Exec(`CREATE INDEX project_context_project_idx ON generation_project_contexts(json_extract(payload,'$.project_id')); CREATE INDEX project_sources_blob_idx ON project_sources(blob_hash); CREATE INDEX batch_project_sources_blob_idx ON batch_project_sources(blob_hash); PRAGMA user_version=24;`); err != nil {
+			return fmt.Errorf("apply SQLite migration 24: %w", err)
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit SQLite migration: %w", err)
 	}
@@ -838,10 +859,11 @@ WHERE m.conversation_id = ? ORDER BY m.created_at ASC, m.id ASC`, id)
 	} else if !errors.Is(activeErr, sql.ErrNoRows) {
 		return ConversationView{}, fmt.Errorf("load active generation: %w", activeErr)
 	}
+	projectCache := make(map[string]*ProjectContext)
 	var activeBatchID string
 	activeBatchErr := store.db.QueryRowContext(ctx, `SELECT id FROM generation_batches WHERE conversation_id = ? AND state IN (?, ?) ORDER BY created_at DESC, id DESC LIMIT 1`, id, GenerationBatchPending, GenerationBatchStreaming).Scan(&activeBatchID)
 	if activeBatchErr == nil {
-		batch, err := store.GetGenerationBatch(ctx, activeBatchID)
+		batch, err := getGenerationBatch(ctx, store.db, activeBatchID, projectCache)
 		if err != nil {
 			return ConversationView{}, fmt.Errorf("load active generation batch: %w", err)
 		}
@@ -849,7 +871,7 @@ WHERE m.conversation_id = ? ORDER BY m.created_at ASC, m.id ASC`, id)
 	} else if !errors.Is(activeBatchErr, sql.ErrNoRows) {
 		return ConversationView{}, fmt.Errorf("find active generation batch: %w", activeBatchErr)
 	}
-	batches, err := store.listConversationGenerationBatches(ctx, id)
+	batches, err := store.listConversationGenerationBatches(ctx, id, projectCache)
 	if err != nil {
 		return ConversationView{}, err
 	}
@@ -861,7 +883,7 @@ WHERE m.conversation_id = ? ORDER BY m.created_at ASC, m.id ASC`, id)
 	return view, nil
 }
 
-func (store *SQLiteStore) listConversationGenerationBatches(ctx context.Context, conversationID string) ([]GenerationBatch, error) {
+func (store *SQLiteStore) listConversationGenerationBatches(ctx context.Context, conversationID string, caches ...map[string]*ProjectContext) ([]GenerationBatch, error) {
 	rows, err := store.db.QueryContext(ctx, `SELECT id FROM generation_batches WHERE conversation_id = ? ORDER BY created_at ASC, id ASC`, conversationID)
 	if err != nil {
 		return nil, fmt.Errorf("list conversation generation batches: %w", err)
@@ -880,7 +902,7 @@ func (store *SQLiteStore) listConversationGenerationBatches(ctx context.Context,
 	}
 	batches := make([]GenerationBatch, 0, len(ids))
 	for _, id := range ids {
-		batch, err := store.GetGenerationBatch(ctx, id)
+		batch, err := getGenerationBatch(ctx, store.db, id, caches...)
 		if err != nil {
 			return nil, fmt.Errorf("load conversation generation batch: %w", err)
 		}
@@ -1747,13 +1769,13 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
-const conversationSelect = `SELECT id, title, CASE WHEN pinned_at IS NULL THEN 0 ELSE 1 END, CASE WHEN archived_at IS NULL THEN 0 ELSE 1 END, created_at, updated_at, COALESCE((SELECT id FROM debate_sessions WHERE id=conversations.id),''), COALESCE((SELECT status FROM debate_sessions WHERE id=conversations.id),''), COALESCE((SELECT json_extract(record,'$.round') FROM debate_sessions WHERE id=conversations.id),0) FROM conversations`
+const conversationSelect = `SELECT id, title, CASE WHEN pinned_at IS NULL THEN 0 ELSE 1 END, CASE WHEN archived_at IS NULL THEN 0 ELSE 1 END, created_at, updated_at, COALESCE((SELECT id FROM debate_sessions WHERE id=conversations.id),''), COALESCE((SELECT status FROM debate_sessions WHERE id=conversations.id),''), COALESCE((SELECT json_extract(record,'$.round') FROM debate_sessions WHERE id=conversations.id),0), COALESCE(project_id,''), membership_revision, COALESCE((SELECT revision FROM projects WHERE id=conversations.project_id),0) FROM conversations`
 
 func scanConversation(row rowScanner) (Conversation, error) {
 	var conversation Conversation
 	var pinned, archived int
 	var createdAt, updatedAt int64
-	if err := row.Scan(&conversation.ID, &conversation.Title, &pinned, &archived, &createdAt, &updatedAt, &conversation.DebateID, &conversation.DebateStatus, &conversation.DebateRound); err != nil {
+	if err := row.Scan(&conversation.ID, &conversation.Title, &pinned, &archived, &createdAt, &updatedAt, &conversation.DebateID, &conversation.DebateStatus, &conversation.DebateRound, &conversation.ProjectID, &conversation.MembershipRevision, &conversation.ProjectRevision); err != nil {
 		return Conversation{}, err
 	}
 	conversation.Pinned = pinned != 0

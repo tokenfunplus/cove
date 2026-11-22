@@ -9,6 +9,8 @@ export function generationErrorMessage(
   if (error instanceof LocalServiceError) {
     if (
       error.envelope.error.code === "invalid_attachment" ||
+      error.envelope.error.code === "project_context_changed" ||
+      error.envelope.error.code === "context_limit" ||
       error.envelope.error.code === "generation_selection_changed"
     )
       return error.envelope.error.message;

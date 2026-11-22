@@ -34,6 +34,8 @@ The Go wrapper sets a macOS 13 deployment target and matching cgo compiler/linke
 
 See [local dependency patches](dependency-patches.md) before updating picomatch, Rollup, or the lockfile inventory.
 
+For project-specific browser acceptance, use `COVE_BROWSER_SCENARIO=projects make test-web-browser`. The scenario checks creation, fixed-file upload, conversation moves, comparison inputs, immutable snapshots, preserved revision-conflict drafts, and reference-safe deletion with disposable data.
+
 ## Brand assets
 
 The editable wave mark is `apps/web/public/assets/cove-mark.svg`. Run `node scripts/generate-brand-assets.mjs` on macOS after editing it to refresh the SVG/PNG favicon, the macOS application icon source, and the monochrome menu-bar templates. The Chat Surface uses the same mark across the sidebar, welcome surface, empty state, and settings. Packaging derives the application icon's resolution variants from `apps/macos/Resources/AppIcon.svg`.
@@ -58,7 +60,7 @@ Local search uses `GET /api/conversations/search?q=...&archived=...` behind the 
 
 ## Chat storage and rendering compatibility
 
-Current source builds migrate the schema 16 database through schema 22. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Selected answers retain cited web source text in later context. See [Debate mode](debate.md) and [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md).
+Current source builds migrate the schema 16 database through schema 24. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Schema 23 adds Projects, independent project context snapshots, fixed-source blobs and owning references. Schema 24 indexes project provenance and blob ownership lookups. Selected answers retain cited web source text in later context. See [Debate mode](debate.md) and [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md).
 
 | Schema | Added data | Historical behavior |
 | --- | --- | --- |
@@ -68,6 +70,8 @@ Current source builds migrate the schema 16 database through schema 22. Schema 2
 | 20 | Separate Debate Sessions, turns, and interventions | Ordinary context is unchanged; interrupted debates recover paused. |
 | 21 | Debate summaries, cumulative usage budgets, and pacing | Existing sessions keep summaries and automatic pause off. Older services reject the schema rather than ignore the controls. |
 | 22 | Web search settings, immutable attempt policy, tool traces, and saved evidence | Existing conversations keep search off unless enabled in this browser. Older services reject the upgraded schema. |
+| 23 | Projects, fixed-source ownership and independent Batch payloads | Existing Conversations stay ungrouped. |
+| 24 | Indexed project provenance and blob references | Existing payloads remain byte-for-byte unchanged. |
 
 Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 

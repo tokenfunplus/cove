@@ -24,5 +24,6 @@ export const debateKeys = {
 export const generationKeys = {
   all: ["generations"] as const,
   context: (id: string) => [...generationKeys.all, "context", id] as const,
+  projectContext: (id: string) => [...generationKeys.all, "project-context", id] as const,
   batch: (id: string) => [...generationKeys.all, "batch", id] as const,
 };

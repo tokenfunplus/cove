@@ -84,13 +84,31 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		snapshot := snapshotFor(connection.profile, connection.metadata.PrivacyMode)
 		batchTargets = append(batchTargets, persistence.GenerationTargetInput{ProviderID: target.ProviderID, ModelID: target.ModelID, Snapshot: snapshot})
 	}
+	project, expectedProject, err := service.PreviewProjectContext(ctx, input.ConversationID)
+	if err != nil {
+		return GenerationBatchStart{}, err
+	}
+	if input.ExpectedProject == nil {
+		if expectedProject.ProjectID != "" || expectedProject.MembershipRevision != 0 {
+			return GenerationBatchStart{}, persistence.ErrProjectChanged
+		}
+	} else if *input.ExpectedProject != expectedProject {
+		return GenerationBatchStart{}, persistence.ErrProjectChanged
+	}
+	// Validate quotas against this captured revision; persistence rechecks it atomically on admission.
+	input.previewProject = project
+	input.previewProjectSet = true
 	attachments, inputContent, err := service.prepareAttachments(ctx, input, systemPrompt)
 	if err != nil {
 		return GenerationBatchStart{}, err
 	}
+	if _, err := service.projectForInput(ctx, input, attachments, inputContent, systemPrompt); err != nil {
+		return GenerationBatchStart{}, err
+	}
 	batch, err := service.store.BeginGenerationBatch(ctx, persistence.BeginGenerationBatchInput{
-		WebSearch:     searchPolicy,
-		EditOfBatchID: input.EditOfBatchID, ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID, Body: input.Body, InputContent: inputContent, Attachments: attachments, SystemPrompt: systemPrompt, GenerationParameters: parameters, Targets: batchTargets,
+		ExpectedProject: input.ExpectedProject,
+		WebSearch:       searchPolicy,
+		EditOfBatchID:   input.EditOfBatchID, ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID, Body: input.Body, InputContent: inputContent, Attachments: attachments, SystemPrompt: systemPrompt, GenerationParameters: parameters, Targets: batchTargets,
 	})
 	if err != nil {
 		return GenerationBatchStart{}, err
@@ -465,13 +483,13 @@ func messagesFromBatchContext(batch persistence.GenerationBatch, currentBody str
 		currentBody = batch.InputContent
 	}
 	messages := make([]provider.ProviderMessage, 0, 1+len(contextItems)*2+1)
-	if strings.TrimSpace(configuration.SystemPrompt) != "" {
-		messages = append(messages, provider.ProviderMessage{Role: "system", Content: configuration.SystemPrompt})
+	if prompt := projectInstructions(configuration.SystemPrompt, batch.ProjectContext); strings.TrimSpace(prompt) != "" {
+		messages = append(messages, provider.ProviderMessage{Role: "system", Content: prompt})
 	}
 	for _, item := range contextItems {
 		messages = append(messages, provider.ProviderMessage{Role: "user", Content: item.UserBody}, provider.ProviderMessage{Role: "assistant", Content: item.AssistantBody})
 	}
-	messages = append(messages, provider.ProviderMessage{Role: "user", Content: currentBody})
+	messages = append(messages, provider.ProviderMessage{Role: "user", Content: projectUserContent(currentBody, batch.ProjectContext)})
 	return messages
 }
 

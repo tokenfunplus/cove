@@ -63,6 +63,28 @@ _Avoid_: Live conversation history, Provider transcript
 A text, code, or text-based PDF file, or an explicitly retrieved public webpage attached to a submitted user message. Cove retains its original bytes locally and sends its extracted text through the selected Provider transport.
 _Avoid_: Provider upload, Knowledge base
 
+**Project**:
+A local grouping of Conversations with shared Project Instructions, editable Project Background, and fixed Project Sources. Project membership controls future context selection, not access permissions in this single-user application. See [ADR-0045](docs/adr/0045-add-projects-and-independent-context-snapshots.md).
+_Avoid_: Cloud workspace, tenant, Knowledge base
+
+Projects are entered explicitly through the Projects directory. Global New chat creates an ungrouped Conversation; New chat inside a Project home opts into its shared context. See [project navigation](docs/adr/0046-keep-project-navigation-separate-from-chat.md).
+
+**Project Instructions**:
+User-authored guidance shared by Conversations in a Project. Each Generation Batch saves the exact instruction text and project revision it uses, separately from ordinary turn input and historical messages.
+_Avoid_: Provider configuration, source instructions
+
+**Project Background**:
+A single user-edited reference text shared by Conversations in a Project. Each new Batch captures its current content as reference data. It is not automatically extracted from history, does not establish factual correctness, and is never promoted to system instructions.
+_Avoid_: Automatic memory, verified fact, accumulated chat history
+
+**Project Source**:
+A fixed file or webpage snapshot saved for reuse across Conversations in a Project. It retains the existing source identity, parser version and sections, with original bytes held in content-addressed storage. Each Batch captures the current fixed source metadata and text sections plus references to those original bytes.
+_Avoid_: Live file reference, Knowledge base, automatically retrieved material
+
+**Project Context Snapshot**:
+A Batch-owned record of the exact rendered Project Instructions, Project Background and fixed source inputs, their rendering version, originating Project revision, and source identities. It is injected once for that Batch, outside historical turn replay, and reused by every Target and retry. Later project edits or source removal do not change it.
+_Avoid_: Live project state, augmented user message, project history transcript
+
 **Attachment Snapshot**:
 The immutable source identity, filename, parser version, and extracted line/page sections saved with a Generation Batch. Webpage snapshots also record source URLs, read time, and a separate original-content hash. Every Target and retry uses the same saved source input. A source citation navigates to a section; it does not establish factual correctness or cryptographic verification.
 _Avoid_: Live file reference, Verified source

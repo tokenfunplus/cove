@@ -48,7 +48,7 @@ export function useWorkspaceState(showingArchived: boolean) {
     )
       return;
     initialized.current = true;
-    setSelectedId(list.data[0]?.id);
+    setSelectedId(list.data.find(conversation => !conversation.project_id)?.id);
     setActiveModelSet(
       activeModelSetFromWorkspaceSettings(preferences.data, providers.data),
     );

@@ -1,22 +1,23 @@
 import * as api from "@/api";
+import { projectKeys } from "@/api/projects";
 import { conversationKeys, debateKeys, generationKeys } from "@/api/queryKeys";
 import type { ConversationUpdateInput } from "@cove/api-contract";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
-function conversationListOptions(archived = false) {
+function conversationListOptions(archived = false, projectId?: string) {
   return {
-    queryKey: conversationKeys.list(archived),
-    queryFn: () => api.getConversations({ archived }),
+    queryKey: projectId === undefined ? conversationKeys.list(archived) : [...conversationKeys.list(archived),projectId],
+    queryFn: () => api.getConversations({ archived, projectId }),
     retry: false as const,
   };
 }
 
-export function useConversations(archived = false) {
+export function useConversations(archived = false, projectId?: string) {
   const cache = useQueryClient();
   const previousDebateMetadata = useRef<string | undefined>(undefined);
   const query = useQuery({
-    ...conversationListOptions(archived),
+    ...conversationListOptions(archived, projectId),
     refetchOnWindowFocus: true,
     refetchInterval: query => query.state.data?.some(item => item.debate_status === "running" || item.debate_status === "pausing") ? 3000 : query.state.data?.some(item => item.debate_id) ? 15000 : false,
   });
@@ -45,7 +46,7 @@ export function useConversation(id: string | undefined) {
 export function useCreateConversation() {
   const cache = useQueryClient();
   return useMutation({
-    mutationFn: (title?: string) => api.createConversation(title),
+    mutationFn: (input?: string | {title?:string;project_id?:string;source_conversation_id?:string}) => typeof input === "object" ? api.createConversation(input.title,input) : api.createConversation(input),
     retry: false,
     onSuccess: () =>
       cache.invalidateQueries({ queryKey: conversationKeys.lists }),
@@ -116,6 +117,7 @@ export function useClearChatData() {
       cache.removeQueries({ queryKey: debateKeys.all });
       cache.setQueryData(conversationKeys.list(false), []);
       cache.setQueryData(conversationKeys.list(true), []);
+      await cache.invalidateQueries({ queryKey: projectKeys });
     },
   });
 }

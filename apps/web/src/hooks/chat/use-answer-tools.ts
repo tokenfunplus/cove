@@ -1,3 +1,4 @@
+import type { ProjectExpectation } from "@cove/api-contract";
 import { answerToolsCopy as toolCopy } from "@/messages/answer-tools";
 import { secureInferenceTargetSelected } from "@/components/providers/model-selection";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -246,11 +247,14 @@ export function useAnswerTools({
     setCreating(true);
     setFeedback(undefined);
     let id = fresh ? undefined : sideIdRef.current;
+    let expectedProject:ProjectExpectation|undefined;
     const run = (async () => {
       try {
         if (!id) {
-          const conversation = await createConversation(title);
+          const origin = revision ? documentSource?.conversationId : source?.conversationId;
+          const conversation = await createConversation(origin ? { title, source_conversation_id: origin } : title);
           if (cancelledRef.current) return;
+          expectedProject={project_id:conversation.project_id??"",project_revision:conversation.project_revision??0,membership_revision:conversation.membership_revision??0};
           id = conversation.id;
           sideIdRef.current = id;
           setSideId(id);
@@ -266,6 +270,7 @@ export function useAnswerTools({
         await commands.handleSend({
           body,
           conversationId: id,
+          expectedProject,
           preserveDraft: Boolean(revision),
           draftOnFailure: state.draft,
         });

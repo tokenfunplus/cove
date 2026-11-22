@@ -48,3 +48,15 @@ test("fragmented native tool arguments have a bounded accumulator", () => {
   expect(calls.values()[0].function.arguments).toBe('{"query":"fresh facts"}');
   expect(() => calls.add([{ index: 8 }])).toThrow();
 });
+
+
+test("research counts assembled Unicode input without serializing the project prefix twice", async () => {
+  const generate = vi.fn(async function* () {});
+  const transport = {generate} as unknown as import("./secure-inference").SecureInferenceTransport;
+  const projectInput = { ...input, message: '"\\\n'.repeat(50000) + "\u{1f680}".repeat(60000) };
+  for await (const _ of generateWithWebSearch(transport, projectInput, policy, "bounded")) { /* No response needed. */ }
+  expect(generate).toHaveBeenCalledTimes(1);
+  const tooLarge = {...input, message:"\u{1f680}".repeat(240001)};
+  await expect(async () => { for await (const _ of generateWithWebSearch(transport, tooLarge, policy, "too-large")) { /* No response needed. */ } }).rejects.toThrow("context limit");
+  expect(generate).toHaveBeenCalledTimes(1);
+});

@@ -43,6 +43,10 @@ type ExpectedGenerationTarget struct {
 }
 
 type SendInput struct {
+	previewProject       *persistence.ProjectContext
+	previewProjectSet    bool
+	PreviewOnly          bool
+	ExpectedProject      *persistence.ProjectExpectation
 	WebSearchEnabled     bool
 	EditOfBatchID        string
 	ExpectedTargets      []ExpectedGenerationTarget
@@ -378,6 +382,14 @@ func (service *Service) SetConversationArchived(ctx context.Context, conversatio
 func (service *Service) DeleteConversation(ctx context.Context, conversationID string) error {
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
+	if err := service.stopConversationWork(ctx, conversationID); err != nil {
+		return err
+	}
+	return service.store.DeleteConversation(ctx, conversationID)
+}
+
+// The caller holds startMu while affected work settles.
+func (service *Service) stopConversationWork(ctx context.Context, conversationID string) error {
 	if err := service.stopDebateForDataChange(ctx, conversationID); err != nil {
 		return err
 	}
@@ -402,7 +414,7 @@ func (service *Service) DeleteConversation(ctx context.Context, conversationID s
 			return err
 		}
 	}
-	return service.store.DeleteConversation(ctx, conversationID)
+	return nil
 }
 
 func (service *Service) ClearChatData(ctx context.Context) error {

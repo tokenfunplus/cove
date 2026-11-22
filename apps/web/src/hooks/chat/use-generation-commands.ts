@@ -1,3 +1,5 @@
+import { useQueryClient } from "@tanstack/react-query";
+import type { ProjectExpectation } from "@cove/api-contract";
 import { flushSync } from "react-dom";
 import type { ActiveModelSet } from "@/components/providers/model-selection";
 import { LocalServiceError, releaseWebSource } from "@/api";
@@ -101,6 +103,7 @@ export function useGenerationCommands({
   conversationView,
   refreshCurrentConversation,
 }: Dependencies) {
+  const projectCache = useQueryClient();
   const cancelGeneration = useCancelGeneration().mutateAsync;
   const cancelGenerationBatch = useCancelGenerationBatch().mutateAsync;
   const createGenerationBatch = useCreateGenerationBatch().mutateAsync;
@@ -116,6 +119,7 @@ export function useGenerationCommands({
 
   async function handleSend(override?: {
     body: string;
+    expectedProject?:ProjectExpectation;
     editOfBatchId?: string;
     onAccepted?: () => void;
     onFailure?: (message: string) => void;
@@ -170,6 +174,7 @@ export function useGenerationCommands({
     let sourcesRestored = false;
     try {
       const selection = {
+ ...(override?.expectedProject ? {expectedProject:override.expectedProject} : conversationView?.project_id || conversationView?.membership_revision ? {expectedProject:{project_id:conversationView.project_id??"",project_revision:conversationView.project_revision??0,membership_revision:conversationView.membership_revision??0}} : {}),
         ...(webSearchEnabled ? { webSearchEnabled: true } : {}),
         ...(override?.editOfBatchId
           ? { editOfBatchId: override.editOfBatchId }
@@ -343,6 +348,16 @@ export function useGenerationCommands({
           : current,
       );
       setFeedback(generationErrorMessage(error, copy));
+      if (error instanceof LocalServiceError && error.envelope.error.code === "project_context_changed") {
+        // Recovery of local input must not depend on a subsequent network read.
+        const refreshed = await Promise.allSettled([
+          refreshCurrentConversation(),
+          projectCache.invalidateQueries({ queryKey: ["projects"] }),
+        ]);
+        if (selectedIdRef.current === conversationId && refreshed.some(result => result.status === "rejected")) {
+          setFeedback("Project context changed, but refreshed context could not be loaded. Your draft and attachments are preserved. Review context before sending again.");
+        }
+      }
     } finally {
       if (accepted && !sourcesRestored) {
         for (const item of originalAttachments) {

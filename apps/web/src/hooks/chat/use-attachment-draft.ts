@@ -23,6 +23,7 @@ function expireAttachments(items: DraftAttachment[]) {
 export function useAttachmentDraft(conversationId?: string) {
   const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
   const [selectionError, setSelectionError] = useState<string>();
+  const transfer=useRef<{id:string;items:DraftAttachment[]}|undefined>(undefined);
   const epoch = useRef(0);
   const count = useRef(0);
   const preview = usePreviewAttachment().mutateAsync;
@@ -35,7 +36,7 @@ export function useAttachmentDraft(conversationId?: string) {
     return () => clearTimeout(timer);
   }, [attachments]);
   useEffect(() => {
-    clearAttachments();
+    if(transfer.current && transfer.current.id===conversationId){const items=transfer.current.items;transfer.current=undefined;clearAttachments(false);restoreAttachments(items);}else{clearAttachments();}
   }, [conversationId]);
   useEffect(
     () => () => {
@@ -198,6 +199,7 @@ export function useAttachmentDraft(conversationId?: string) {
     return !invalid;
   }
   return {
+    transferToConversation:(id:string,items:DraftAttachment[])=>{transfer.current={id,items};},
     attachments,
     restoreAttachments,
     addAttachments,

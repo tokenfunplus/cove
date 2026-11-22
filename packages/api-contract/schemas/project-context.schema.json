@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Saved Project Context",
+  "type": "object",
+  "required": [
+    "project_id",
+    "project_revision",
+    "membership_revision",
+    "project_name",
+    "rendering_version",
+    "instructions",
+    "background",
+    "background_characters",
+    "reference_prefix",
+    "sources"
+  ],
+  "properties": {
+    "project_id": {
+      "type": "string"
+    },
+    "project_name": {
+      "type": "string"
+    },
+    "instructions": {
+      "type": "string"
+    },
+    "background": {
+      "type": "string"
+    },
+    "reference_prefix": {
+      "type": "string"
+    },
+    "project_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "membership_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "background_characters": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rendering_version": {
+      "const": 1
+    },
+    "sources": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "snapshot",
+          "blob_hash"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "attachment.schema.json"
+          },
+          "blob_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

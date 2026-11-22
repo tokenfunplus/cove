@@ -124,6 +124,7 @@ test("quoted follow-ups use a separate conversation and send only the chosen pas
     await result.current.sendQuestion();
   });
   await waitFor(() => expect(result.current.busy).toBe(false));
+  expect(api.createConversation).toHaveBeenCalledWith(expect.any(String), { title: expect.any(String), source_conversation_id: source.conversationId });
   expect(api.createGenerationBatch).toHaveBeenCalledWith(
     view.id,
     expect.objectContaining({
@@ -150,6 +151,7 @@ test("selection revisions are reviewed before applying and can be undone without
     await result.current.requestRevision();
   });
   await waitFor(() => expect(result.current.busy).toBe(false));
+  expect(api.createConversation).toHaveBeenCalledWith(expect.any(String), { title: expect.any(String), source_conversation_id: source.conversationId });
   expect(result.current.history.content).toBe(source.body);
   act(() => result.current.setCandidate("clear wording"));
   act(() => result.current.applyCandidate());

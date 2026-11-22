@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project-aware Generation Context",
+  "type": "object",
+  "required": [
+    "history",
+    "project_context"
+  ],
+  "properties": {
+    "history": {
+      "$ref": "generation-context.schema.json"
+    },
+    "project_context": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "project-context.schema.json"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- Local Projects with reusable instructions/background, fixed file/webpage sources, conversation moves, scoped history, and context usage inspection.
+- Independent project input snapshots shared by ordinary and NearAI targets/retries, content-addressed originals, preserved revision-conflict drafts, and same-project continuation for oversized conversations.
+
+### Changed
+
+- Move Projects into a dedicated directory and project home. Ordinary chat keeps a compact navigation entry; global New chat stays ungrouped, and conversation menus own project moves.
+
+- Upgrade SQLite to schema 24. Older services reject upgraded databases; retain a compatible backup before upgrading if downgrade is needed.
+- Clear-history retains live Project settings and fixed sources. Project dissolution preserves Conversations; project deletion previews retained historical copies outside its current members.
+
 ## 0.1.0-beta.8 - 2026-11-21
 
 ### Added

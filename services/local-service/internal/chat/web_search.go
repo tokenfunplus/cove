@@ -50,6 +50,24 @@ func (service *Service) ExecuteWebTool(ctx context.Context, id string, input Web
 		return WebToolResult{}, errors.New("The web tool request is invalid.")
 	}
 	characters := 0
+	// Browser tool messages contain only the continuation; ordinary requests already include the base input.
+	if generation.Snapshot.IsNearAI() && generation.GenerationBatchID != "" {
+		batch, e := service.store.GetGenerationBatch(ctx, generation.GenerationBatchID)
+		if e != nil {
+			return WebToolResult{}, e
+		}
+		body, e := service.batchUserBody(ctx, batch)
+		if e != nil {
+			return WebToolResult{}, e
+		}
+		messages, e := service.messagesForBatch(ctx, batch, body, generation.ConfigurationSnapshot)
+		if e != nil {
+			return WebToolResult{}, e
+		}
+		for _, m := range messages {
+			characters += utf8.RuneCountInString(m.Content)
+		}
+	}
 	for _, message := range input.Messages {
 		characters += utf8.RuneCountInString(message.Content) + utf8.RuneCountInString(message.ReasoningContent) + len(message.ToolCallID)
 		for _, call := range message.ToolCalls {

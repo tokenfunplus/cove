@@ -38,7 +38,11 @@ export async function* generateWithWebSearch(transport: SecureInferenceTransport
     const finish = callsUsed >= policy.max_rounds;
     const tools = finish ? undefined : webTools;
     const messages = finish ? [...continuation, { role: "system" as const, content: "The web tool budget has been reached. Finish using existing evidence, cite supporting saved sections, and state information gaps." }] : continuation;
-    if (JSON.stringify([input.context, input.message, messages, input.configuration.systemPrompt]).length > 240000) throw new Error("The web tool context limit has been reached.");
+    const count = (text: string | undefined) => Array.from(text ?? "").length;
+    const characters = count(input.message) + count(input.configuration.systemPrompt) + [...input.context, ...messages].reduce((total, message) =>
+      total + count(message.content) + count(message.reasoning_content) + count(message.tool_call_id) +
+      (message.tool_calls ?? []).reduce((n, call) => n + count(call.id) + count(call.function.name) + count(call.function.arguments), 0), 0);
+    if (characters > 240000) throw new Error("The web tool context limit has been reached.");
     let body = "", reasoning = "", verification: SecureInferenceVerification | undefined;
     let inputTokens: number | undefined, outputTokens: number | undefined;
     const calls = new ToolCalls();

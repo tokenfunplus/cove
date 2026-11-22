@@ -4,6 +4,8 @@ import { type ConversationNavigation } from "@/lib/workspace-types";
 import {
   type Conversation,
   type ConversationView,
+  type Project,
+  type ProjectContextPreview,
   type VerificationEvidence,
 } from "@cove/api-contract";
 import { useCallback, useEffect, useState } from "react";
@@ -39,6 +41,13 @@ export function useWorkspaceUi() {
   const [privacyStatusOpen, setPrivacyStatusOpen] = useState(false);
 
   const [isClearingChatData, setIsClearingChatData] = useState(false);
+
+  const [projectDrafts, setProjectDrafts] = useState<Record<string, string>>({});
+  const [projectPage, setProjectPage] = useState<{ projectId?: string }>();
+  const [projectMoveTarget, setProjectMoveTarget] = useState<Conversation>();
+  const [projectEditor, setProjectEditor] = useState<Project | null>();
+  const [projectRemoval, setProjectRemoval] = useState<{ project: Project; deleteConversations: boolean }>();
+  const [projectContextPreview, setProjectContextPreview] = useState<ProjectContextPreview>();
 
   const [settingsEntry, setSettingsEntry] = useState<"general" | "provider" | "web-search">();
 
@@ -112,6 +121,18 @@ export function useWorkspaceUi() {
     setPrivacyStatusOpen,
     isClearingChatData,
     setIsClearingChatData,
+    projectPage,
+    setProjectPage,
+    projectDrafts,
+    setProjectDrafts,
+    projectMoveTarget,
+    setProjectMoveTarget,
+    projectEditor,
+    setProjectEditor,
+    projectRemoval,
+    setProjectRemoval,
+    projectContextPreview,
+    setProjectContextPreview,
     settingsEntry,
     setSettingsEntry,
     sidebarCollapsed,

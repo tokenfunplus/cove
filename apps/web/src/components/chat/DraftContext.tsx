@@ -1,3 +1,4 @@
+import { ProjectContextUsage } from "./ProjectContextUsage";
 import { useState } from "react";
 import { usePreviewGenerationContext } from "@/api/hooks/useGenerations";
 import { LocalServiceError } from "@/api";
@@ -14,12 +15,14 @@ export function DraftContext({
   attachments,
   disabled,
   compact = false,
+  destinations = [],
 }: {
   conversationId: string;
   body: string;
   attachments: AttachmentDraft;
   disabled: boolean;
   compact?: boolean;
+  destinations?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const preview = usePreviewGenerationContext();
@@ -36,7 +39,9 @@ export function DraftContext({
       ),
     });
   }
-  const characters = (preview.data ?? []).reduce(
+  const messages=Array.isArray(preview.data)?preview.data:preview.data?.messages??[];
+  const projectPreview=preview.data&&!Array.isArray(preview.data)?preview.data:undefined;
+  const characters = messages.reduce(
     (sum, item) => sum + Array.from(item.content).length,
     0,
   );
@@ -73,6 +78,8 @@ export function DraftContext({
             <p className="text-sm text-muted-foreground">
               {copy.draftContextNotice}
             </p>
+            {destinations.length>0&&<p className="text-xs text-muted-foreground">Selected destinations: {destinations.join("; ")}</p>}
+            {projectPreview && <ProjectContextUsage project={projectPreview.project_context} usage={projectPreview.usage} preview/>}
             {preview.isPending && <p role="status">{copy.loading}</p>}
             {preview.isError && (
               <p role="alert">
@@ -92,7 +99,7 @@ export function DraftContext({
                   tabIndex={0}
                   aria-label={copy.reviewContext}
                 >
-                  {preview.data.map((item, index) => (
+                  {messages.map((item, index) => (
                     <div key={index}>
                       <p className="mb-1 text-sm font-semibold capitalize">
                         {item.role}

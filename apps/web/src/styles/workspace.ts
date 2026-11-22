@@ -1,5 +1,11 @@
 import { cn } from "@/lib/utils";
 
+const sidebarRow = String.raw`
+  flex justify-start w-full min-h-[43px] text-left py-2.5 pr-[35px] pl-[11px] border
+  border-transparent rounded-[calc(var(--radius)*0.8125)] bg-transparent
+  font-normal h-auto shadow-none
+`;
+
 // Tailwind recipes for workspace presentation. Semantic colors come from theme/tokens.css.
 export const workspaceStyles = {
   focusSurface: "surface h-[100dvh] bg-background",
@@ -99,10 +105,9 @@ export const workspaceStyles = {
   conversationRow: cn(String.raw`
     conversation-row relative mb-[3px]
   `),
-  conversation: cn(String.raw`
-    conversation flex justify-start w-full min-h-[43px] text-left py-2.5 pr-[35px] pl-[11px] border
-    border-transparent rounded-[calc(var(--radius)*0.8125)] bg-transparent
-    font-normal [&.conversation--selected]:bg-accent [&.conversation--selected]:text-primary [&.conversation--selected]:font-semibold h-auto shadow-none
+  projectNavigation: cn("project-navigation", sidebarRow, "mb-2 gap-2 aria-[current=page]:bg-accent aria-[current=page]:text-primary aria-[current=page]:font-semibold"),
+  conversation: cn("conversation", sidebarRow, String.raw`
+    [&.conversation--selected]:bg-accent [&.conversation--selected]:text-primary [&.conversation--selected]:font-semibold
   `),
   conversation_title: cn(String.raw`
     conversation__title text-[13px] overflow-hidden text-ellipsis whitespace-nowrap

@@ -95,7 +95,7 @@ Browser preferences, manual rates, combinations, and bookmarks are not part of a
 
 Quit Cove before backing up its data directory. The database and exported conversations are not encrypted by Cove, and a database backup does not include Keychain credentials or browser bookmarks.
 
-Current source builds migrate schema 16 through 22 on startup. Existing history is retained; missing historical metrics stay unavailable, and unmarked historical reasoning is not inferred. An older build rejects a newer schema. To return to an older build, restore a compatible backup rather than modifying the database schema number. See [storage compatibility](development.md#chat-storage-and-rendering-compatibility).
+Current source builds migrate schema 16 through 24 on startup. Existing history is retained; missing historical metrics stay unavailable, and unmarked historical reasoning is not inferred. An older build rejects a newer schema. To return to an older build, restore a compatible backup rather than modifying the database schema number. See [storage compatibility](development.md#chat-storage-and-rendering-compatibility).
 
 ## Development environment variables
 
@@ -155,3 +155,11 @@ The Chat Surface keeps its Browser Session in per-tab, origin-scoped storage and
 - [API route registration](../services/local-service/internal/api/server.go): supported HTTP methods and paths.
 - [Browser HTTP client](../apps/web/src/api/client.ts): session handling and request/error adaptation.
 - [Architecture](architecture.md): ownership and lifecycle boundaries.
+
+## Projects
+
+Projects hold current instructions, one editable background text, and up to three fixed file/webpage sources with 60,000 extracted characters in total. Fixed sources and turn attachments together retain the four-source/120,000-character limit; every source retains the existing 4 MiB limit. Complete model input remains limited to 240,000 Unicode characters. See [project background reuse](adr/0045-add-projects-and-independent-context-snapshots.md).
+
+Project input is saved separately from replayable user-turn text. Each accepted Batch freezes exact project text, source sections and original-byte references. Every target and retry uses those saved project inputs. Base System Prompt and generation parameters retain the existing per-attempt retry behavior. Editing live project settings affects new Batches. Original bytes are stored once per SHA-256 with references from fixed sources and historical Batches.
+
+`Clear chat history` retains Projects and their current fixed sources. Dissolving a Project keeps its Conversations and historical snapshots; deleting a Project and its Conversations removes its current members. Historical copies in moved/branched Conversations outside the Project remain until those Conversations are deleted. The confirmation shows that scope.

@@ -1,3 +1,4 @@
+import { ProjectInputSummary } from "@/components/projects/ProjectInputSummary";
 import { ArrowUp, Globe, LoaderCircle, LockKeyhole, Square } from "lucide-react";
 import { useEffect, type ReactNode, type RefObject } from "react";
 import {
@@ -82,6 +83,7 @@ export function ChatComposer({
   const actionLabel = isSending ? copy.stopGeneration : copy.sendMessage;
   function renderInput(sourceActions?: ReactNode) {
     return <>
+        {view.project_id&&<ProjectInputSummary id={view.project_id} attachments={attachmentDraft}/>}
         <label htmlFor={composerId}>{copy.sendMessage}</label>
         <Textarea
           className="focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-transparent"
@@ -111,6 +113,7 @@ export function ChatComposer({
           {attachmentDraft ? (
             <DraftContext
               compact
+              destinations={activeModelSet.map(t=>{const p=profiles.find(p=>p.id===t.providerId);return `${p?.name??t.providerId} / ${t.modelId}: ${p?.endpoint??"unavailable"}`;})}
               conversationId={view.id}
               body={draft}
               attachments={attachmentDraft}

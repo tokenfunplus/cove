@@ -1,9 +1,10 @@
 import * as api from "@/api";
-import { generationKeys } from "@/api/queryKeys";
+import { conversationKeys, generationKeys } from "@/api/queryKeys";
 import type {
   GenerationVerification,
   GenerationMetrics,
   AttachmentInput,
+  ConversationView,
 } from "@cove/api-contract";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -32,9 +33,34 @@ export function usePreviewAttachment() {
 }
 
 export function usePreviewGenerationContext() {
+  const cache = useQueryClient();
   return useMutation({
     mutationFn: (input: Parameters<typeof api.previewGenerationContext>[0]) =>
       api.previewGenerationContext(input),
+    onSuccess: (preview, input) => {
+      if (Array.isArray(preview)) return;
+      const expected = preview.expected_project;
+      cache.setQueryData<ConversationView>(
+        conversationKeys.detail(input.conversationId),
+        (view) => {
+          if (
+            !view ||
+            expected.membership_revision < (view.membership_revision ?? 0)
+          ) return view;
+          if (
+            expected.membership_revision === (view.membership_revision ?? 0) &&
+            expected.project_id === (view.project_id ?? "") &&
+            expected.project_revision < (view.project_revision ?? 0)
+          ) return view;
+          return {
+            ...view,
+            project_id: expected.project_id || undefined,
+            project_revision: expected.project_revision,
+            membership_revision: expected.membership_revision,
+          };
+        },
+      );
+    },
     retry: false,
   });
 }
@@ -137,6 +163,9 @@ export function useSettleSecureGeneration() {
 export function useGenerationCache() {
   const cache = useQueryClient();
   return {
+    loadProjectContext: (id:string) => cache.fetchQuery({
+      queryKey:generationKeys.projectContext(id),queryFn:()=>api.getProjectBatchContext(id),staleTime:Infinity,retry:false,
+    }),
     loadContext: (id: string) =>
       cache.fetchQuery({
         queryKey: generationKeys.context(id),

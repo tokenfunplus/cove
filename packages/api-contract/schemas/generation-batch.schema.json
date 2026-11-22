@@ -4,6 +4,8 @@
   "type": "object",
   "required": ["id", "conversation_id", "client_request_id", "state", "targets", "events_url", "created_at", "updated_at"],
   "properties": {
+    "project_context_id": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "project_context": { "$ref": "project-context.schema.json" },
     "web_search": { "$ref": "generation.schema.json#/$defs/webSearchPolicy" },
     "id": { "type": "string" },
     "conversation_id": { "type": "string" },

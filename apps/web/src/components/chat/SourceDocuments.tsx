@@ -1,3 +1,5 @@
+import { ProjectContextUsage } from "@/components/chat/ProjectContextUsage";
+import { projectSystemPrompt, projectUserInput } from "@/lib/chat/project-context";
 import {
   createContext,
   useContext,
@@ -43,7 +45,7 @@ export function SourceDocuments({
     SavedSource & { section?: string }
   >();
   const sources = [
-    ...batches.flatMap(batch => [...(batch.attachments ?? []), ...batch.targets.flatMap(target => target.generation.web_search?.sources ?? [])].map(document => ({ document, batchId: batch.id }))),
+    ...batches.flatMap(batch => [...(batch.attachments ?? []), ...(batch.project_context?.sources.map(source=>source.snapshot) ?? []), ...batch.targets.flatMap(target => target.generation.web_search?.sources ?? [])].map(document => ({ document, batchId: batch.id }))),
     ...messages.flatMap(message => (message.web_sources ?? []).map(document => ({ document, batchId: message.generation_batch_id }))),
   ];
   // Source snapshots are immutable; streaming state changes do not invalidate history rendering.
@@ -276,8 +278,8 @@ function ContextSnapshotDialog({
   const [targetIndex, setTargetIndex] = useState(0);
   const { loadContext } = useGenerationCache();
   const target = batch.targets[targetIndex] ?? batch.targets[0];
-  const prompt = target?.generation.configuration_snapshot.system_prompt ?? "";
-  const current = batch.input_content ?? userBody;
+  const prompt = projectSystemPrompt(target?.generation.configuration_snapshot.system_prompt ?? "",batch.project_context);
+  const current = projectUserInput(batch.input_content ?? userBody,batch.project_context);
   const characters = [
     prompt,
     current,
@@ -324,6 +326,7 @@ function ContextSnapshotDialog({
           onValueChange={value => setTargetIndex(Number(value))}
           options={batch.targets.map((item, index) => ({ value: String(index), label: item.model_id }))}
         />
+        {context && batch.project_context && <ProjectContextUsage project={batch.project_context} base={target?.generation.configuration_snapshot.system_prompt??""} body={batch.input_content??userBody} history={context}/>}
         {context ? (
           <p className="text-sm">
             {characters.toLocaleString()} / 240,000 {copy.characters} ·{" "}

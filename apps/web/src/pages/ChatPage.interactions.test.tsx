@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import * as transport from "@/api";
+import * as conversationApi from "@/api/conversations";
+import * as projectApi from "@/api/projects";
 import * as debateApi from "@/api/debates";
 import { runDebateBrowserTurn } from "@/lib/inference/debate-browser-turn";
 import { defaultDebateRules } from "@/components/debate/DebateSetupDialog";
@@ -8,6 +10,7 @@ import { historyFiltersStorageKey, historyQueryFilter } from "@/components/conve
 import { conversationKeys } from "@/api/queryKeys";
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 import { App } from "@/App";
+import { ProjectsPage } from "@/components/projects/ProjectsPage";
 import { WorkspaceToast } from "@/components/layout/WorkspaceToast";
 import type { SecureInferenceEvent } from "@/lib/inference/secure-inference";
 import {
@@ -56,6 +59,7 @@ vi.mock("@/api", async (importOriginal) => {
     subscribeGenerationBatch: vi.fn(),
     getGenerationBatch: vi.fn(),
     getGenerationBatchContext: vi.fn(),
+    getProjectBatchContext: vi.fn(),
     previewAttachment: vi.fn(),
     prepareWebSource: vi.fn(),
     releaseWebSource: vi.fn(),
@@ -123,6 +127,7 @@ afterEach(() => {
   cleanup();
   feed.close();
   queryClient.clear();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   window.localStorage.removeItem(historyFiltersStorageKey);
   for (const name of historyBrowserMethods.splice(0)) Reflect.deleteProperty(Element.prototype, name);
@@ -442,7 +447,7 @@ test("history filters compose with local search and preserve the open conversati
   expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft while filtering.");
   await user.type(screen.getByRole("textbox", { name: "Search conversations" }), "needle");
   await screen.findByText(/needle in the matching history/);
-  expect(transport.searchConversations).toHaveBeenCalledWith("needle", false, expect.any(AbortSignal), historyQueryFilter({ activity: "7d", kind: "debate" }));
+  expect(transport.searchConversations).toHaveBeenCalledWith("needle", false, expect.any(AbortSignal), { ...historyQueryFilter({ activity: "7d", kind: "debate" }), projectId: "" });
   expect(JSON.parse(window.localStorage.getItem(historyFiltersStorageKey)!)).toEqual({ activity: "7d", kind: "debate" });
   expect(transport.createGenerationBatch).not.toHaveBeenCalled();
   expect(transport.getConversation).not.toHaveBeenCalledWith(fixture.secondConversation.id);
@@ -471,7 +476,7 @@ test("an empty draft switches immediately, and body search opens its matching co
   await user.click(result);
   await waitFor(() => expect(transport.getConversation).toHaveBeenCalledWith(fixture.secondConversation.id));
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(transport.searchConversations).toHaveBeenCalledWith("SQLite migration checklist", false, expect.any(AbortSignal));
+  expect(transport.searchConversations).toHaveBeenCalledWith("SQLite migration checklist", false, expect.any(AbortSignal), { projectId: "" });
   expect(transport.createGenerationBatch).not.toHaveBeenCalled();
 });
 
@@ -2115,4 +2120,281 @@ test("clearing chat data blocks new answer tools requests while deletion is pend
   expect(transport.createGenerationBatch).not.toHaveBeenCalled();
   await act(async () => { finishClear(); await clearing; });
   expect(result.current.answerTools.open).toBe(false);
+});
+
+
+test("a side conversation keeps the quoted answer's project origin after navigating elsewhere", async () => {
+  const { result } = renderHook(() => useChatWorkspace(), {
+    wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
+  });
+  await waitFor(() => expect(result.current.conversationView?.id).toBe(fixture.conversation.id));
+  const source = {messageId:"source-answer", conversationId: fixture.conversation.id, body:"Original project excerpt"};
+  act(() => result.current.answerTools.openAsk(source,"Original project excerpt","Explain"));
+  act(() => result.current.setSelectedId(fixture.secondConversation.id));
+  await waitFor(() => expect(result.current.conversationView?.id).toBe(fixture.secondConversation.id));
+  feed.close();
+  await act(async () => { await result.current.answerTools.sendQuestion(); });
+  expect(transport.createConversation).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({source_conversation_id: source.conversationId}));
+  expect(transport.createConversation).not.toHaveBeenCalledWith(expect.any(String), expect.objectContaining({source_conversation_id: fixture.secondConversation.id}));
+});
+
+test.each(["private_tee", "incognito"] as const)("%s inference uses the server's frozen project fragments once", async mode => {
+  configureNearAITarget(0, mode);
+  const project = {project_id:"project-original",project_revision:2,membership_revision:1,project_name:"Saved project",rendering_version:1,instructions:"Saved project rule",background:"Saved project facts",reference_prefix:'Project reference data: {"background":"Saved project facts"}\nCurrent user question:\n',sources:[]};
+  fixture.pendingBatch.project_context = {...project, instructions:"Stale local fragment",reference_prefix:"Stale local prefix"};
+  fixture.pendingBatch.input_content = "Question with frozen turn attachment";
+  const history = [{role:"user" as const,content:"Prior question without project input"},{role:"assistant" as const,content:"Prior selected answer"}];
+  const read = vi.mocked(transport.getProjectBatchContext).mockResolvedValue({history,project_context:project});
+  const {composer,user} = await openWorkspace();
+  await user.type(composer,"Visible question");
+  await user.click(screen.getByRole("button",{name:"Send message"}));
+  await waitFor(() => expect(privateInference.generate).toHaveBeenCalled());
+  const input = privateInference.generate.mock.calls[0]?.[0];
+  expect(read).toHaveBeenCalledWith(fixture.pendingBatch.id);
+  expect(input.context).toEqual(history);
+  const base = fixture.pendingBatch.targets[0]!.generation.configuration_snapshot.system_prompt;
+  expect(input.configuration.systemPrompt).toBe(base ? base+"\n\nProject instructions:\n"+project.instructions : project.instructions);
+  expect(input.message).toBe(project.reference_prefix + fixture.pendingBatch.input_content);
+  expect(input.message).not.toContain("Stale local prefix");
+  expect(transport.getGenerationBatchContext).not.toHaveBeenCalled();
+});
+
+test("a missing required project snapshot prevents NearAI inference", async () => {
+  configureNearAITarget(0,"private_tee");
+  fixture.pendingBatch.project_context = {project_id:"project",project_revision:1,membership_revision:0,project_name:"Project",rendering_version:1,instructions:"Saved rule",background:"",reference_prefix:"",sources:[]};
+  vi.mocked(transport.getProjectBatchContext).mockResolvedValue({history:[],project_context:null});
+  const {composer,user} = await openWorkspace();
+  await user.type(composer,"Question");
+  await user.click(screen.getByRole("button",{name:"Send message"}));
+  await waitFor(() => expect(transport.settleSecureGeneration).toHaveBeenCalled());
+  expect(privateInference.generate).not.toHaveBeenCalled();
+});
+
+test("a project conflict preserves the draft and files even when refreshing context fails", async () => {
+  vi.mocked(transport.previewAttachment).mockResolvedValue({
+    id: "f".repeat(64), name: "draft.md", media_type: "text/plain", size: 6, characters: 6,
+    extraction_version: "cove-text-v1", sections: [{ id: "L1", text: "Source" }],
+  });
+  const { composer, user } = await openWorkspace();
+  await user.type(composer, "Keep the project draft");
+  await user.upload(screen.getByLabelText("Attach files"), new File(["Source"], "draft.md"));
+  await screen.findByRole("button", { name: /Preview extracted text/ });
+  vi.mocked(transport.createGenerationBatch).mockRejectedValue(new transport.LocalServiceError({error:{code:"project_context_changed",message:"Project context changed. Review before sending again.",details:null,request_id:"local"}}));
+  vi.mocked(transport.getConversation).mockRejectedValueOnce(new Error("Context refresh failed"));
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Stop generation" })).toBeNull());
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep the project draft");
+  expect(screen.getByRole("button", { name: "Remove attachment: draft.md" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Send message" }).hasAttribute("disabled")).toBe(false);
+  await screen.findByText("Project context changed, but refreshed context could not be loaded. Your draft and attachments are preserved. Review context before sending again.");
+  expect(transport.createGenerationBatch).toHaveBeenCalledTimes(1);
+});
+
+
+function projectNavigationFixture() {
+  const p:import("@cove/api-contract").Project={id:"research-project",name:"Research project",description:"Reusable background",instructions:"Project instruction",background:"Project background",revision:1,sources:[],membership_token: "a".repeat(64), conversation_count:1,historical_copies:0,created_at:"2026-01-01T00:00:00Z",updated_at:"2026-01-01T00:00:00Z"};
+  Object.assign(fixture.conversation,{project_id:p.id,project_revision:1,membership_revision:1});
+  vi.spyOn(projectApi,"getProjects").mockResolvedValue([p]);
+  vi.spyOn(projectApi,"getProject").mockResolvedValue(p);
+  vi.mocked(transport.getConversations).mockImplementation(async options=>options?.archived?[]:options?.projectId?[fixture.conversation]:[fixture.conversation,fixture.secondConversation]);
+  const created={...fixture.secondConversation,id:"created-conversation"};
+  vi.mocked(transport.getConversation).mockImplementation(async id=>id===created.id?created:id===fixture.secondConversation.id?fixture.secondConversation:fixture.conversation);
+  return {p,created};
+}
+
+test("Projects is a separate page, preserves a draft, and global New chat stays ungrouped", async()=>{
+  const {p}=projectNavigationFixture();
+  const {composer,user}=await openWorkspace();
+  expect(screen.queryByRole("combobox",{name:"History project"})).toBeNull();
+  expect(screen.queryByRole("combobox",{name:"Move conversation to project"})).toBeNull();
+  expect(projectApi.getProjects).not.toHaveBeenCalled();
+  await user.type(composer,"Keep the ordinary draft");
+  await user.click(screen.getByRole("button",{name:"Projects"}));
+  expect(await screen.findByRole("heading",{name:"Projects"})).toBeTruthy();
+  expect(await screen.findByRole("button",{name:`Open project ${p.name}`})).toBeTruthy();
+  await user.click(screen.getByRole("button",{name:"Back to chat"}));
+  expect((screen.getByRole("textbox",{name:"Send message"}) as HTMLTextAreaElement).value).toBe("Keep the ordinary draft");
+  await user.clear(screen.getByRole("textbox",{name:"Send message"}));
+  await user.click(screen.getByRole("button",{name:"Projects"}));
+  await user.click(screen.getByRole("button",{name:"New conversation"}));
+  await waitFor(()=>expect(transport.createConversation).toHaveBeenCalledWith(undefined));
+  await waitFor(()=>expect(screen.queryByRole("heading",{name:"Projects"})).toBeNull());
+});
+
+test("project-page New chat opts into its project and retains that choice through draft confirmation",async()=>{
+  const {p,created}=projectNavigationFixture();
+  Object.assign(created,{project_id:p.id,project_revision:1,membership_revision:0});
+  vi.mocked(transport.createConversation).mockResolvedValue(created);
+  const {composer,user}=await openWorkspace();
+  await user.type(composer,"Keep until confirmed");
+  await user.click(screen.getByRole("button",{name:"Projects"}));
+  await user.click(await screen.findByRole("button",{name:`Open project ${p.name}`}));
+  expect(await screen.findByRole("complementary",{name:"Project background and materials"})).toBeTruthy();
+  await user.type(screen.getByRole("textbox", {name:"New project chat draft"}), "A new project question");
+  await user.click(screen.getByRole("button",{name:"New chat in project"}));
+  const first=await screen.findByRole("dialog");
+  await user.click(within(first).getByRole("button",{name:"Stay"}));
+  expect(transport.createConversation).not.toHaveBeenCalled();
+  expect((screen.getByRole("textbox", {name:"New project chat draft"}) as HTMLTextAreaElement).value).toBe("A new project question");
+  await user.click(screen.getByRole("button",{name:"New chat in project"}));
+  const second=await screen.findByRole("dialog");
+  await user.click(within(second).getByRole("button",{name:"Discard and continue"}));
+  await waitFor(()=>expect(transport.createConversation).toHaveBeenCalledWith(undefined,{project_id:p.id}));
+  await waitFor(()=>expect(screen.queryByRole("complementary",{name:"Project background and materials"})).toBeNull());
+  await waitFor(()=>expect((screen.getByRole("textbox",{name:"Send message"}) as HTMLTextAreaElement).value).toBe("A new project question"));
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+
+test("project cards expose deletion directly and cancel keeps the project", async () => {
+  const {p} = projectNavigationFixture();
+  const remove = vi.spyOn(projectApi, "deleteProject").mockResolvedValue(undefined);
+  const {user} = await openWorkspace();
+  await user.click(screen.getByRole("button", {name: "Projects"}));
+  await user.click(await screen.findByRole("button", {name: `Project actions: ${p.name}`}));
+  await user.click(screen.getByRole("menuitem", {name: "Delete project"}));
+  expect(await screen.findByRole("dialog", {name: "Delete project"})).toBeTruthy();
+  expect(screen.queryByRole("textbox", {name: "Project name"})).toBeNull();
+  expect(remove).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", {name: "Cancel removal"}));
+  expect(screen.getByRole("button", {name: `Open project ${p.name}`})).toBeTruthy();
+  expect(remove).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", {name: `Project actions: ${p.name}`}));
+  await user.click(screen.getByRole("menuitem", {name: "Delete project"}));
+  vi.mocked(projectApi.getProjects).mockResolvedValue([]);
+  await user.click(screen.getByRole("button", {name: "Confirm deletion"}));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith(p.id, p.revision, true, p.membership_token));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("button", {name: `Open project ${p.name}`})).toBeNull());
+});
+
+test("ordinary history and search exclude project chats while project home retains them", async () => {
+  const {p} = projectNavigationFixture();
+  const {user} = await openWorkspace();
+  const sidebar = document.querySelector("#conversation-sidebar")! as HTMLElement;
+  expect(within(sidebar).queryByRole("button", {name: fixture.conversation.title})).toBeNull();
+  expect(within(sidebar).getByRole("button", {name: fixture.secondConversation.title})).toBeTruthy();
+  vi.mocked(transport.searchConversations).mockResolvedValue([
+    {...fixture.conversation, message_id:"match-project",role:"user",excerpt:"Matching project text"},
+    {...fixture.secondConversation, message_id:"match-ordinary",role:"user",excerpt:"Matching ordinary text"},
+  ]);
+  await user.type(within(sidebar).getByRole("textbox", {name:"Search conversations"}), "Matching");
+  await waitFor(() => expect(transport.searchConversations).toHaveBeenLastCalledWith("Matching", false, expect.any(AbortSignal), expect.objectContaining({projectId:""})));
+  await waitFor(() => expect(within(sidebar).queryByText("Matching project text", {exact:false})).toBeNull());
+  expect(await within(sidebar).findByText(/Matching ordinary text/)).toBeTruthy();
+  await user.click(screen.getByRole("button", {name: "Projects"}));
+  await user.click(await screen.findByRole("button", {name: `Open project ${p.name}`}));
+  const chats = await screen.findByRole("region", {name:"Project chats"});
+  expect(await within(chats).findByTitle(fixture.conversation.title)).toBeTruthy();
+});
+
+
+test.each(["delete", "archive"] as const)("%s of the selected project chat keeps its project home open", async action => {
+  const {p} = projectNavigationFixture();
+  const {result} = mountWorkspaceController();
+  await waitFor(() => expect(result.current.selectedId).toBe(fixture.secondConversation.id));
+  expect(transport.getConversation).not.toHaveBeenCalledWith(fixture.conversation.id);
+  await act(async () => { await result.current.handleSelectConversation(fixture.conversation.id); });
+  await waitFor(() => expect(result.current.conversationView?.id).toBe(fixture.conversation.id));
+  act(() => result.current.setProjectPage({projectId:p.id}));
+  const hidden = {...fixture.conversation,id:"other-project-chat",project_id:"other-project"};
+  vi.mocked(transport.getConversations).mockResolvedValue([hidden,fixture.secondConversation]);
+  vi.spyOn(transport, "deleteConversation").mockResolvedValue(undefined);
+  vi.mocked(transport.updateConversation).mockResolvedValue(undefined);
+  if (action === "archive") {
+    await act(async () => { await result.current.handleUpdateConversation(fixture.conversation.id,{archived:true}); });
+  } else {
+    act(() => result.current.handleDeleteConversation(fixture.conversation.id));
+    await act(async () => { await result.current.confirmRequestedAction(); });
+  }
+  await waitFor(() => expect(result.current.selectedId).toBe(fixture.secondConversation.id));
+  expect(result.current.projectPage).toEqual({projectId:p.id});
+  expect(transport.getConversation).not.toHaveBeenCalledWith(hidden.id);
+  await act(async () => { await result.current.handleSelectConversation(fixture.secondConversation.id); });
+  expect(result.current.projectPage).toBeUndefined();
+});
+
+test.each(["startup", "delete", "archive", "archived view"] as const)("%s selects no chat when only project chats are available", async action => {
+  projectNavigationFixture();
+  if (action === "startup") vi.mocked(transport.getConversations).mockResolvedValue([fixture.conversation]);
+  const {result} = mountWorkspaceController();
+  await waitFor(() => expect(result.current.connection).toBe("ready"));
+  if (action !== "startup") {
+    await waitFor(() => expect(result.current.selectedId).toBe(fixture.secondConversation.id));
+    vi.mocked(transport.getConversations).mockResolvedValue([fixture.conversation]);
+    if (action === "archived view") await act(async () => { await result.current.handleConversationListMode(true); });
+    if (action === "archive") {
+      vi.mocked(transport.updateConversation).mockResolvedValue(undefined);
+      await act(async () => { await result.current.handleUpdateConversation(fixture.secondConversation.id,{archived:true}); });
+    }
+    if (action === "delete") {
+      vi.spyOn(transport,"deleteConversation").mockResolvedValue(undefined);
+      act(() => result.current.handleDeleteConversation(fixture.secondConversation.id));
+      await act(async () => { await result.current.confirmRequestedAction(); });
+    }
+  }
+  await waitFor(() => expect(result.current.selectedId).toBeUndefined());
+  expect(transport.getConversation).not.toHaveBeenCalledWith(fixture.conversation.id);
+});
+
+
+test("project chat pinning moves an older chat first and unpinning restores recency order", async () => {
+  const {p} = projectNavigationFixture();
+  let pinned = false;
+  const older = {...fixture.secondConversation,id:"older-project-chat",project_id:p.id,updated_at:"2020-01-01T00:00:00Z"};
+  vi.mocked(transport.getConversations).mockImplementation(async options => options?.archived ? [] : options?.projectId ? [fixture.conversation,{...older,pinned}] : [fixture.conversation,fixture.secondConversation]);
+  vi.mocked(transport.updateConversation).mockImplementation(async (_id,input) => { pinned = !!input.pinned; });
+  const {user} = await openWorkspace();
+  await user.click(screen.getByRole("button",{name:"Projects"}));
+  await user.click(await screen.findByRole("button",{name:`Open project ${p.name}`}));
+  const chats = await screen.findByRole("region",{name:"Project chats"});
+  await within(chats).findByTitle(older.title);
+  const titles = () => [...chats.querySelectorAll("button[title]")].map(row => row.getAttribute("title"));
+  expect(titles()).toEqual([fixture.conversation.title,older.title]);
+  await user.click(within(chats).getByRole("button",{name:`Conversation actions: ${older.title}`}));
+  await user.click(screen.getByRole("menuitem",{name:"Pin"}));
+  await waitFor(() => expect(titles()[0]).toBe(older.title));
+  expect(within(chats).getByLabelText("Pinned conversation")).toBeTruthy();
+  await user.click(within(chats).getByRole("button",{name:`Conversation actions: ${older.title}`}));
+  await user.click(screen.getByRole("menuitem",{name:"Unpin"}));
+  await waitFor(() => expect(titles()).toEqual([fixture.conversation.title,older.title]));
+});
+
+test.each(["success", "failure"])("project draft continuation locks edits and preserves attachments on %s", async outcome => {
+ const {created} = projectNavigationFixture();
+ let settle!: (value: typeof created) => void;
+ let reject!: (error: Error) => void;
+ vi.mocked(transport.createConversation).mockReturnValue(new Promise((resolve, r)=>{settle=resolve;reject=r;}));
+ const {result}=mountWorkspaceController();
+ await waitFor(()=>expect(result.current.conversationView).toBeTruthy());
+ act(()=>result.current.setDraft("Preserved continuation draft"));
+ const attachment: import("@/hooks/chat/use-attachment-draft").DraftAttachment={key:"local-file",name:"draft.md",input:{name:"draft.md",data:"Zml4dHVyZQ=="},snapshot:{id:"source",name:"draft.md",media_type:"text/plain",size:7,characters:7,extraction_version:"fixture-v1",sections:[{id:"L1",text:"fixture"}]}};
+ act(()=>result.current.attachmentDraft.restoreAttachments([attachment]));
+ let continuing!: Promise<string | undefined>;
+ act(()=>{continuing=result.current.continueProjectDraft();});
+ await waitFor(()=>expect(result.current.isNavigating).toBe(true));
+ await act(async()=>{await result.current.continueProjectDraft();});
+ expect(transport.createConversation).toHaveBeenCalledOnce();
+ expect(result.current.draft).toBe("Preserved continuation draft");
+ expect(result.current.attachmentDraft.attachments).toHaveLength(1);
+ await act(async()=>{if(outcome==="success")settle(created);else reject(new Error("Creation failed"));await continuing;});
+ await waitFor(()=>expect(result.current.isNavigating).toBe(false));
+ expect(result.current.draft).toBe("Preserved continuation draft");
+ expect(result.current.attachmentDraft.attachments).toEqual([attachment]);
+ if(outcome==="success")expect(result.current.selectedId).toBe(created.id);
+ expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+test("project search opens the matching historical turn", async()=>{
+ const {p}=projectNavigationFixture();
+ vi.spyOn(conversationApi,"searchConversations").mockImplementation(async(_query,archived)=>archived?[]:[{...fixture.conversation,message_id:"older-answer",turn_message_id:"older-user",excerpt:"Matching historical answer",role:"assistant" as const}]);
+ const {result}=mountWorkspaceController();
+ await waitFor(()=>expect(result.current.conversationView).toBeTruthy());
+ act(()=>result.current.setProjectPage({projectId:p.id}));
+ render(<QueryClientProvider client={queryClient}><ProjectsPage workspace={result.current}/></QueryClientProvider>);
+ const user=userEvent.setup();
+ await screen.findByRole("complementary",{name:"Project background and materials"});
+ await user.type(screen.getByRole("textbox",{name:"Search project chats"}),"historical");
+ await user.click(await screen.findByText("Matching historical answer"));
+ await waitFor(()=>expect(result.current.conversationNavigation).toMatchObject({conversationId:fixture.conversation.id,messageId:"older-user"}));
 });
