@@ -412,3 +412,77 @@ func projectDeletionToken(t *testing.T, store *persistence.SQLiteStore, id strin
 	}
 	return p.MembershipToken
 }
+
+func TestProjectDeletionRechecksMembershipAfterStoppingWork(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	store, err := persistence.OpenSQLite(filepath.Join(t.TempDir(), "membership-during-stop.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := NewService(store, nil, nil)
+	p, err := store.SaveProject(ctx, "", persistence.ProjectInput{Name: "Confirmed project"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := store.CreateProjectConversation(ctx, "Confirmed member", p.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, expected, err := store.PreviewProjectContext(ctx, c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := store.BeginGenerationBatch(ctx, persistence.BeginGenerationBatchInput{
+		ConversationID: c.ID, ClientRequestID: "membership-during-stop", Body: "Question", ExpectedProject: &expected,
+		Targets: []persistence.GenerationTargetInput{{ProviderID: "fixture", ModelID: "model", Snapshot: persistence.ProviderSnapshot{ProviderID: "fixture", ModelID: "model"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmed, err := store.GetProject(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	generationID := b.Targets[0].Generation.ID
+	done := make(chan struct{})
+	var added persistence.Conversation
+	var stopErr error
+	service.active[generationID] = &activeGeneration{done: done, cancel: func() {
+		// Interleave membership creation after the initial check, while cancellation settles.
+		added, stopErr = store.CreateProjectConversation(ctx, "Unconfirmed member", p.ID, "")
+		if stopErr == nil {
+			stopErr = store.TerminateGeneration(ctx, persistence.TerminateGenerationInput{GenerationID: generationID, State: persistence.GenerationStopped})
+		}
+		service.activeMu.Lock()
+		delete(service.active, generationID)
+		service.activeMu.Unlock()
+		close(done)
+	}}
+	err = service.DeleteProject(ctx, p.ID, confirmed.Revision, true, confirmed.MembershipToken)
+	if stopErr != nil {
+		t.Fatal(stopErr)
+	}
+	if !errors.Is(err, persistence.ErrProjectChanged) {
+		t.Fatalf("membership change during cancellation was accepted: %v", err)
+	}
+	for _, id := range []string{c.ID, added.ID} {
+		if _, err = store.LoadConversation(ctx, id); err != nil {
+			t.Fatalf("conflict removed a conversation: %v", err)
+		}
+	}
+	if _, err = store.GetGenerationBatch(ctx, b.ID); err != nil {
+		t.Fatalf("conflict removed the saved batch: %v", err)
+	}
+	latest, err := store.GetProject(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.ConversationCount != 2 || latest.Revision != confirmed.Revision {
+		t.Fatal("fixture did not change only the member set")
+	}
+	if err = service.DeleteProject(ctx, p.ID, latest.Revision, true, latest.MembershipToken); err != nil {
+		t.Fatal(err)
+	}
+}
