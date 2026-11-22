@@ -64,6 +64,12 @@ cove_app="$cove_stage/Cove.app"
 cove_dmg="$cove_output/Cove-$cove_version-arm64.dmg"
 ditto "$cove_source" "$cove_app"
 
+if [ -d "$cove_app/Contents/Resources/inference" ]; then
+  find "$cove_app/Contents/Resources/inference" -type f ! -name LICENSE -exec codesign --force --options runtime --timestamp --sign "$cove_identity" {} +
+fi
+if [ -d "$cove_app/Contents/Resources/speech" ]; then
+  find "$cove_app/Contents/Resources/speech" -type f \( -name '*.dylib' -o -name cove-speech-worker -o -name pocket-tts \) -exec codesign --force --options runtime --timestamp --sign "$cove_identity" {} +
+fi
 codesign --force --options runtime --timestamp \
   --identifier io.github.tokenfunplus.cove.local-service \
   --sign "$cove_identity" "$cove_app/Contents/Resources/cove-local-service"

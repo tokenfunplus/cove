@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-beta.9 - 2026-11-23
+
 ### Added
 
 - Add opt-in Debate read aloud with ordered local speech playback for new participant turns, installation/settings guidance, queue status, and explicit stop/navigation cleanup.
@@ -38,6 +40,8 @@
 - macOS packages include a signed, pinned llama.cpp runtime. Optional native inference requires Apple Silicon and macOS 13.3 or later; unsupported catalog entries remain discovery-only.
 
 ### Fixed
+
+- Sign bundled inference and speech workers and libraries before the enclosing app when notarizing a CI-built package locally.
 
 - Cancel pending document operations when their dialog closes, release late source previews, and process library imports beyond four files without silently discarding the remaining selection.
 - Keep cleared libraries empty during concurrent document parsing and late cache refreshes, while preserving installed model weights.

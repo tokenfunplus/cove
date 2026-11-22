@@ -21,14 +21,14 @@ Requires an Apple Silicon Mac running macOS 13 or later.
 
 > 🎁 **NEAR AI starter key** · [Sign in to Cove Web](https://www.hicove.io/account) to claim an API key with a $1 spending limit. One key per verified account, while supplies last.
 
-1. Download [Cove 0.1.0-beta.8 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.8/Cove-0.1.0-beta.8-arm64.dmg).
+1. Download [Cove 0.1.0-beta.9 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.9/Cove-0.1.0-beta.9-arm64.dmg).
 2. Quit an earlier Cove instance, open the DMG, and drag **Cove.app** to **Applications**.
 3. Launch Cove, open **Settings → Provider settings**, enter your Provider key, click **Test connection**, choose a model for your initial Active Model Set, then click **Save Provider**.
 4. Confirm the Provider/model target in the workspace, then send your first message. Use **Model comparison** to select up to four targets.
 
 Provider Profiles describe connections; model targets belong to the Active Model Set. Initial setup adds the chosen target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; change its targets through the workspace's model controls.
 
-Check the release page for Apple signing and notarization status. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.8) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English; messages, titles, and prompts support Unicode content.
+Check the release page for Apple signing and notarization status. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.9) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English; messages, titles, and prompts support Unicode content.
 
 See the [user guide](docs/user-guide.md) for file chat, Focus mode, and timeline bookmarks, or the [configuration reference](docs/configuration.md) for Provider and generation settings.
 
@@ -61,7 +61,7 @@ Additional captures: [Local math rendering](docs/images/chat-math.png) · [Revie
 
 ## Features
 
-This section describes the current source tree, including unreleased changes. Published downloads follow their [release notes](docs/releases/0.1.0-beta.8.md); see the [unreleased changelog](CHANGELOG.md#unreleased) for newer work.
+This section describes the current source tree, including unreleased changes. Published downloads follow their [release notes](docs/releases/0.1.0-beta.9.md); see the [unreleased changelog](CHANGELOG.md#unreleased) for newer work.
 
 - Stream responses from OpenAI-compatible providers or the built-in NearAI preset.
 - Compare up to four models in one turn; select the answer used in later context.
@@ -113,7 +113,7 @@ Browse the [full FAQ](docs/faq.md) for language and support questions. For build
 make dmg
 ```
 
-The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.8-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
+The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.9-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials; see [releasing](docs/releasing.md), including how to sign a CI-built app without full Xcode locally.
 
 ## Community
 
