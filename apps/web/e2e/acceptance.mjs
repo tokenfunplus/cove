@@ -687,7 +687,7 @@ try {
   await snapshot("empty-dark-1440");
   async function chooseSkin(id) {
     await click('button[aria-label="Settings"]');
-    await click(`label:has(input[name="workspace-skin"][value="${id}"])`);
+    await click(`[role="radio"]:has([data-skin="${id}"])`);
     await until(
       `document.documentElement.dataset.skin === ${JSON.stringify(id)}`,
     );
@@ -981,8 +981,22 @@ try {
     await assertLayout("Focus " + width);
     assert.equal(await evaluate(`getComputedStyle(document.querySelector('.model-comparison-grid__cards')).gridTemplateColumns.trim().split(/\\s+/).length`), width >= 768 ? 2 : 1, "Focus comparisons must use available width");
     assert(await evaluate(`document.querySelector('.workspace__focus-exit').getBoundingClientRect().right<=innerWidth`), "Focus exit must stay on screen");
-    assert(await evaluate(`document.querySelector('.generation-composer').getBoundingClientRect().height<=90`), "Focus input must stay compact on narrow screens");
+    const composerHeight = await evaluate(`document.querySelector('.generation-composer').getBoundingClientRect().height`);
+    if (composerHeight > 90) await snapshot("focus-composer-overflow-" + width);
+    assert(composerHeight <= 90, `Focus input must stay compact at ${width}px (height: ${composerHeight}px)`);
     if (width === 390) await snapshot("focus-comparison-light-390");
+  }
+  await click('.generation-composer button[aria-label="Tools"]');
+  await until(`!!document.querySelector('[aria-label="Chat tools"]')`);
+  assert(await evaluate(`['Attach files','Read webpage','Review context'].every(label=>[...document.querySelectorAll('[aria-label="Chat tools"] button')].some(button=>button.textContent.trim()===label))`), "Focus must retain attachment and context actions in Tools");
+  await evaluate(`[...document.querySelectorAll('[aria-label="Chat tools"] button')].find(button=>button.textContent.trim()==='Review context').click()`);
+  await until(`!!document.querySelector('[data-slot="dialog-content"]') && document.querySelector('[data-slot="dialog-content"]').textContent.includes('Review context')`);
+  assert.equal(await evaluate(`document.querySelector('#generation-input').value`), "Keep this Focus draft", "Reviewing context from Tools must preserve the draft");
+  await evaluate(`[...document.querySelectorAll('[data-slot="dialog-content"] button')].find(button=>button.textContent.trim()==='Close').click()`);
+  await until(`!document.querySelector('[data-slot="dialog-content"]')`);
+  if (await evaluate(`!!document.querySelector('[aria-label="Chat tools"]')`)) {
+    await click('.generation-composer button[aria-label="Tools"]');
+    await until(`!document.querySelector('[aria-label="Chat tools"]')`);
   }
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await fill("#generation-input", "Focus line one\nFocus line two\nFocus line three");

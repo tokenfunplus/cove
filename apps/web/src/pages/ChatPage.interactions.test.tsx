@@ -631,10 +631,16 @@ test("Escape closes a Focus context dialog before exiting Focus", async () => {
   ]);
   const { user } = await openWorkspace();
   await user.click(screen.getByRole("button", { name: "Enter Focus mode" }));
+  await user.click(screen.getByRole("button", { name: "Tools" }));
+  expect(screen.getByRole("button", { name: "Attach files" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Read webpage" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Review context" }));
   await screen.findByText("Synthetic Focus context");
   await user.keyboard("{Escape}");
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Review context" })).toBeNull());
+  expect(screen.getByRole("main").getAttribute("data-focus-mode")).toBe("true");
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Chat tools" })).toBeNull());
   expect(screen.getByRole("main").getAttribute("data-focus-mode")).toBe("true");
   await user.keyboard("{Escape}");
   expect(screen.getByRole("main").hasAttribute("data-focus-mode")).toBe(false);

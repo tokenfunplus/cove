@@ -14,7 +14,9 @@ import (
 )
 
 var citationText = regexp.MustCompile(`\[(?:S\d+|\d+)(?:[-, ]+(?:S\d+|\d+))*\]`)
-var leadingReasoning = regexp.MustCompile(`(?i)^\s*<(think|reasoning|analysis)>`)
+
+// ECMAScript whitespace matches the Chat Surface, including NBSP and BOM.
+var leadingReasoning = regexp.MustCompile(`(?i)^[\t\n\v\f\r \x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}\x{feff}]*<(think|reasoning|analysis)>`)
 
 // Match the Chat Surface's presentation-only leading-block projection.
 func answerText(value string) string {

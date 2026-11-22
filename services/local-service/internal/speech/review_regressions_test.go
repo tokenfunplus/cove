@@ -34,6 +34,20 @@ func TestReadingProjectsLegacyReasoningAndPreservesRenderedSelections(t *testing
 	}
 }
 
+func TestReadingReasoningUsesChatSurfaceWhitespace(t *testing.T) {
+	for _, prefix := range "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff" {
+		input := string(prefix) + "<think>Hidden plan</think>" + string(prefix) + "<analysis>More hidden</analysis>Visible answer."
+		value, err := PlainText(input, false)
+		if err != nil || value != "Visible answer." {
+			t.Fatalf("reasoning after whitespace U+%04X entered speech: %q, %v", prefix, value, err)
+		}
+	}
+	input := "\u0085<think>Literal text</think>Visible answer."
+	if answerText(input) != input {
+		t.Fatal("non-ECMAScript whitespace changed the answer projection")
+	}
+}
+
 func TestPocketPipeCopyCannotBypassItsOutputBound(t *testing.T) {
 	reader, writer, err := os.Pipe()
 	if err != nil {
