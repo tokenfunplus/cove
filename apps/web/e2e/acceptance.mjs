@@ -197,10 +197,13 @@ const provider = http.createServer(async (request, response) => {
         }) +
         "\n\n",
     );
-  setTimeout(
+  // Lifecycle assertions must observe active work regardless of UI speed.
+  if (prompt.includes("Project lifecycle fixture")) return;
+  const completionTimer = setTimeout(
     () => response.end('data: {"choices":[],"usage":{"prompt_tokens":128,"completion_tokens":32}}\n\ndata: [DONE]\n\n'),
-    prompt.includes("Project lifecycle fixture") ? 10000 : prompt.includes("Slow fixture") ? 3500 : 150,
+    prompt.includes("Slow fixture") ? 3500 : 150,
   );
+  response.on("close", () => clearTimeout(completionTimer));
 });
 await new Promise((resolve) => provider.listen(0, "127.0.0.1", resolve));
 try {

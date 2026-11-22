@@ -33,11 +33,34 @@ export function usePreviewAttachment() {
 }
 
 export function usePreviewGenerationContext() {
-  const cache=useQueryClient();
+  const cache = useQueryClient();
   return useMutation({
     mutationFn: (input: Parameters<typeof api.previewGenerationContext>[0]) =>
       api.previewGenerationContext(input),
-    onSuccess:(preview,input)=>{if(!Array.isArray(preview)){const x=preview.expected_project;cache.setQueryData<ConversationView>(conversationKeys.detail(input.conversationId),view=>view?{...view,project_id:x.project_id||undefined,project_revision:x.project_revision,membership_revision:x.membership_revision}:view);}},
+    onSuccess: (preview, input) => {
+      if (Array.isArray(preview)) return;
+      const expected = preview.expected_project;
+      cache.setQueryData<ConversationView>(
+        conversationKeys.detail(input.conversationId),
+        (view) => {
+          if (
+            !view ||
+            expected.membership_revision < (view.membership_revision ?? 0)
+          ) return view;
+          if (
+            expected.membership_revision === (view.membership_revision ?? 0) &&
+            expected.project_id === (view.project_id ?? "") &&
+            expected.project_revision < (view.project_revision ?? 0)
+          ) return view;
+          return {
+            ...view,
+            project_id: expected.project_id || undefined,
+            project_revision: expected.project_revision,
+            membership_revision: expected.membership_revision,
+          };
+        },
+      );
+    },
     retry: false,
   });
 }

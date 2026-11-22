@@ -54,6 +54,7 @@ type Project struct {
 	Revision          int64           `json:"revision"`
 	Sources           []ProjectSource `json:"sources"`
 	ConversationCount int             `json:"conversation_count"`
+	MembershipToken   string          `json:"membership_token"`
 	HistoricalCopies  int             `json:"historical_copies"`
 	CreatedAt         time.Time       `json:"created_at"`
 	UpdatedAt         time.Time       `json:"updated_at"`
@@ -85,7 +86,7 @@ type ProjectStore interface {
 	RemoveProjectSource(context.Context, string, string, int64) (Project, error)
 	CreateProjectConversation(context.Context, string, string, string) (Conversation, error)
 	MoveConversation(context.Context, string, string, int64) error
-	DeleteProject(context.Context, string, int64, bool) error
+	DeleteProject(context.Context, string, int64, bool, string) error
 	PreviewProjectContext(context.Context, string) (*ProjectContext, ProjectExpectation, error)
 }
 
@@ -123,12 +124,50 @@ func readProject(ctx context.Context, db projectReader, id string) (Project, err
 	return p, rows.Err()
 }
 func (s *SQLiteStore) GetProject(ctx context.Context, id string) (Project, error) {
-	p, err := readProject(ctx, s.db, id)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return Project{}, err
+	}
+	defer tx.Rollback()
+	p, err := readProject(ctx, tx, id)
 	if err != nil {
 		return p, err
 	}
-	err = s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM conversations WHERE project_id=?),(SELECT COUNT(*) FROM generation_project_contexts pc INDEXED BY project_context_project_idx JOIN generation_batches b ON b.id=pc.batch_id JOIN conversations c ON c.id=b.conversation_id WHERE json_extract(pc.payload,'$.project_id')=? AND COALESCE(c.project_id,'')!=?)`, id, id, id).Scan(&p.ConversationCount, &p.HistoricalCopies)
-	return p, err
+	err = tx.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM conversations WHERE project_id=?),(SELECT COUNT(*) FROM generation_project_contexts pc INDEXED BY project_context_project_idx JOIN generation_batches b ON b.id=pc.batch_id JOIN conversations c ON c.id=b.conversation_id WHERE json_extract(pc.payload,'$.project_id')=? AND COALESCE(c.project_id,'')!=?)`, id, id, id).Scan(&p.ConversationCount, &p.HistoricalCopies)
+	if err != nil {
+		return p, err
+	}
+	p.MembershipToken, err = projectMembershipToken(ctx, tx, id)
+	if err != nil {
+		return p, err
+	}
+	return p, tx.Commit()
+}
+
+// The deletion confirmation covers this exact member set, including archived chats.
+func projectMembershipToken(ctx context.Context, db projectReader, id string) (string, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id FROM conversations WHERE project_id=? ORDER BY id`, id)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var member string
+		if err = rows.Scan(&member); err != nil {
+			return "", err
+		}
+		ids = append(ids, member)
+	}
+	if err = rows.Err(); err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(ids)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(raw)
+	return hex.EncodeToString(hash[:]), nil
 }
 func (s *SQLiteStore) ListProjectConversations(ctx context.Context, archived bool, projectID string) ([]Conversation, error) {
 	rows, e := s.db.QueryContext(ctx, conversationSelect+` WHERE COALESCE(project_id,'')=? AND (archived_at IS NOT NULL)=? ORDER BY CASE WHEN pinned_at IS NULL THEN 1 ELSE 0 END, pinned_at DESC, CASE WHEN archived_at IS NULL THEN updated_at ELSE archived_at END DESC,id DESC`, projectID, archived)
@@ -350,7 +389,7 @@ func (s *SQLiteStore) MoveConversation(ctx context.Context, id, projectID string
 	}
 	return tx.Commit()
 }
-func (s *SQLiteStore) DeleteProject(ctx context.Context, id string, rev int64, deleteConversations bool) error {
+func (s *SQLiteStore) DeleteProject(ctx context.Context, id string, rev int64, deleteConversations bool, membershipToken string) error {
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
 		return e
@@ -360,6 +399,13 @@ func (s *SQLiteStore) DeleteProject(ctx context.Context, id string, rev int64, d
 		return e
 	}
 	if deleteConversations {
+		current, err := projectMembershipToken(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if membershipToken != current {
+			return ErrProjectChanged
+		}
 		_, e = tx.ExecContext(ctx, `DELETE FROM conversations WHERE project_id=?`, id)
 	} else {
 		_, e = tx.ExecContext(ctx, `UPDATE conversations SET project_id=NULL,membership_revision=membership_revision+1 WHERE project_id=?`, id)

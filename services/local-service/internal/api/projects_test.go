@@ -52,6 +52,15 @@ func TestProjectHTTPContextScopeAndSideConversation(t *testing.T) {
 	if e = json.Unmarshal(w.Body.Bytes(), &p); e != nil {
 		t.Fatal(e)
 	}
+	for _, path := range []string{"/api/projects", "/api/projects/" + p.ID} {
+		if head := call("HEAD", path, map[string]any{"name": "Must not be saved"}, true); head.Code != 200 {
+			t.Fatal("HEAD did not read", head.Code)
+		}
+	}
+	projects, err := store.ListProjects(ctx)
+	if err != nil || len(projects) != 1 || projects[0].Name != p.Name {
+		t.Fatal("HEAD mutated projects", err)
+	}
 	w = call("POST", "/api/projects/"+p.ID+"/sources", map[string]any{"revision": p.Revision, "file": map[string]any{"name": "evidence.md", "data": []byte("Saved project source")}}, true)
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &p) != nil {
 		t.Fatal("fixed project source was not saved", w.Code, w.Body.String())
@@ -213,5 +222,39 @@ func TestProjectConflictDoesNotFabricateMetadataWhenConversationReadFails(t *tes
 	server.Handler().ServeHTTP(w, r)
 	if w.Code != 404 || strings.Contains(w.Body.String(), "project_revision") {
 		t.Fatalf("failed refresh returned fabricated membership: %d %s", w.Code, w.Body.String())
+	}
+}
+
+type scopedProjectChat struct {
+	*chat.Service
+	unscopedReads int
+}
+
+func (s *scopedProjectChat) ListConversations(context.Context, bool) ([]persistence.Conversation, error) {
+	s.unscopedReads++
+	return nil, fmt.Errorf("unscoped read must not run")
+}
+func TestScopedConversationListSkipsUnscopedRead(t *testing.T) {
+	store, err := persistence.OpenSQLite(filepath.Join(t.TempDir(), "scope.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := &scopedProjectChat{Service: chat.NewService(store, nil, nil)}
+	server := NewServer(Config{Chat: service})
+	for _, query := range []string{"project_id=", "project_id=project"} {
+		w := httptest.NewRecorder()
+		server.listConversations(w, httptest.NewRequest("GET", "/api/conversations?"+query, nil))
+		if w.Code != 200 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	if service.unscopedReads != 0 {
+		t.Fatal("scoped read loaded unscoped history")
+	}
+	w := httptest.NewRecorder()
+	server.listConversations(w, httptest.NewRequest("GET", "/api/conversations", nil))
+	if w.Code != 500 || service.unscopedReads != 1 {
+		t.Fatal("unscoped path no longer reads ordinary history")
 	}
 }

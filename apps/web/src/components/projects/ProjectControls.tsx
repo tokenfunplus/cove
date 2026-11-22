@@ -135,7 +135,7 @@ export function ProjectControls({
         <Button
           size="xs"
           variant="outline"
-          disabled={busy || w.isSending || w.attachmentDraft.invalid}
+          disabled={busy || w.isNavigating || w.isSending || w.attachmentDraft.invalid}
           onClick={() =>
             void w.continueProjectDraft().then((id) => {
               if (id) void review(id);
@@ -393,6 +393,7 @@ export function ProjectEditor({
             Name
             <Input
               aria-label="Project name"
+              disabled={busy}
               value={name}
               maxLength={120}
               required
@@ -403,6 +404,7 @@ export function ProjectEditor({
             Description
             <Input
               aria-label="Project description"
+              disabled={busy}
               value={description}
               maxLength={2000}
               onChange={(e) => setDescription(e.target.value)}
@@ -412,6 +414,7 @@ export function ProjectEditor({
             Project instructions
             <textarea
               aria-label="Project instructions"
+              disabled={busy}
               className="mt-1 min-h-24 w-full rounded-lg border border-input bg-background p-2"
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
@@ -421,6 +424,7 @@ export function ProjectEditor({
             Project background
             <textarea
               aria-label="Project background"
+              disabled={busy}
               className="mt-1 min-h-32 w-full rounded-lg border border-input bg-background p-2"
               value={background}
               onChange={(e) => setBackground(e.target.value)}
@@ -513,6 +517,7 @@ export function ProjectEditor({
               <Input
                 type="url"
                 aria-label="Fixed webpage URL"
+                disabled={busy}
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
               />
@@ -679,6 +684,7 @@ export function ProjectRemovalDialog({
                   value.id,
                   value.revision,
                   deleteConversations,
+                  value.membership_token,
                 );
                 await removed(deleteConversations);
               })
@@ -747,6 +753,17 @@ function ProjectMoveDialog({ workspace: w }: { workspace: ChatWorkspace }) {
       ]);
       w.setProjectMoveTarget(undefined);
     } catch (e) {
+      // A failed response may follow a committed move. Reconcile before retrying.
+      const [, , refreshed] = await Promise.allSettled([
+        cache.invalidateQueries({ queryKey: conversationKeys.all }),
+        cache.invalidateQueries({ queryKey: projectKeys }),
+        cache.fetchQuery({
+          queryKey: conversationKeys.detail(target.id),
+          queryFn: () => getConversation(target.id),
+          staleTime: 0,
+        }),
+      ]);
+      if (refreshed.status === "fulfilled") setTarget(refreshed.value);
       if (
         e instanceof LocalServiceError &&
         e.envelope.error.code === "project_context_changed"

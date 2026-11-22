@@ -55,12 +55,14 @@ export function deleteProject(
   id: string,
   revision: number,
   deleteConversations: boolean,
+  membershipToken: string,
 ): Promise<void> {
   return request(`/api/projects/${encodeURIComponent(id)}`, {
     method: "DELETE",
     body: JSON.stringify({
       revision,
       delete_conversations: deleteConversations,
+      membership_token: membershipToken,
     }),
     headers: { "Content-Type": "application/json" },
   });

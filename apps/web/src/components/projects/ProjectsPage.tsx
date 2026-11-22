@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
-import type { Project } from "@cove/api-contract";
+import type {
+  Project,
+  Conversation,
+  ConversationSearchResult,
+} from "@cove/api-contract";
 import {
   ArrowLeft,
   Archive,
@@ -217,7 +221,7 @@ function ProjectHome({
     enabled: !!search,
     retry: false,
   });
-  const chats = search
+  const chats: (Conversation | ConversationSearchResult)[] = search
     ? (results.data ?? [])
     : [...(active.data ?? []), ...(archived.data ?? [])].sort(
         (a, b) =>
@@ -229,8 +233,8 @@ function ProjectHome({
     : active.isPending || archived.isPending;
   const failed = search ? results.isError : active.isError || archived.isError;
   const p = project.data;
-  function openChat(chatId: string) {
-    void w.handleSelectConversation(chatId);
+  function openChat(chatId: string, messageId?: string) {
+    void w.handleSelectConversation(chatId, messageId);
   }
   return (
     <>
@@ -369,7 +373,12 @@ function ProjectHome({
                     <div key={chat.id} className="relative">
                       <button
                         className="flex w-full items-center gap-4 py-5 pl-1 pr-12 text-left hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                        onClick={() => openChat(chat.id)}
+                        onClick={() => openChat(
+                          chat.id,
+                          "excerpt" in chat
+                            ? chat.turn_message_id ?? chat.message_id
+                            : undefined,
+                        )}
                         title={chat.title}
                       >
                         <span className="min-w-0 flex-1">

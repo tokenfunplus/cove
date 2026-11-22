@@ -83,7 +83,7 @@ export function AnswerToolsPanel({ tools }: { tools: AnswerTools }) {
   }
   return (
     <AnswerToolsContext.Provider value={undefined}>
-      <aside aria-label={toolCopy.title} className={styles.panel}>
+      <aside aria-label={toolCopy.title} aria-busy={busy} className={styles.panel}>
         <header className={styles.header}>
           <div className="flex items-center gap-2 text-sm font-semibold">
             <SquarePen size={16} aria-hidden="true" />

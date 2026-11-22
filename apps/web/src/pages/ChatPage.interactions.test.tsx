@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import * as transport from "@/api";
+import * as conversationApi from "@/api/conversations";
 import * as projectApi from "@/api/projects";
 import * as debateApi from "@/api/debates";
 import { runDebateBrowserTurn } from "@/lib/inference/debate-browser-turn";
@@ -9,6 +10,7 @@ import { historyFiltersStorageKey, historyQueryFilter } from "@/components/conve
 import { conversationKeys } from "@/api/queryKeys";
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 import { App } from "@/App";
+import { ProjectsPage } from "@/components/projects/ProjectsPage";
 import { WorkspaceToast } from "@/components/layout/WorkspaceToast";
 import type { SecureInferenceEvent } from "@/lib/inference/secure-inference";
 import {
@@ -2190,7 +2192,7 @@ test("a project conflict preserves the draft and files even when refreshing cont
 
 
 function projectNavigationFixture() {
-  const p:import("@cove/api-contract").Project={id:"research-project",name:"Research project",description:"Reusable background",instructions:"Project instruction",background:"Project background",revision:1,sources:[],conversation_count:1,historical_copies:0,created_at:"2026-01-01T00:00:00Z",updated_at:"2026-01-01T00:00:00Z"};
+  const p:import("@cove/api-contract").Project={id:"research-project",name:"Research project",description:"Reusable background",instructions:"Project instruction",background:"Project background",revision:1,sources:[],membership_token: "a".repeat(64), conversation_count:1,historical_copies:0,created_at:"2026-01-01T00:00:00Z",updated_at:"2026-01-01T00:00:00Z"};
   Object.assign(fixture.conversation,{project_id:p.id,project_revision:1,membership_revision:1});
   vi.spyOn(projectApi,"getProjects").mockResolvedValue([p]);
   vi.spyOn(projectApi,"getProject").mockResolvedValue(p);
@@ -2261,7 +2263,7 @@ test("project cards expose deletion directly and cancel keeps the project", asyn
   await user.click(screen.getByRole("menuitem", {name: "Delete project"}));
   vi.mocked(projectApi.getProjects).mockResolvedValue([]);
   await user.click(screen.getByRole("button", {name: "Confirm deletion"}));
-  await waitFor(() => expect(remove).toHaveBeenCalledWith(p.id, p.revision, true));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith(p.id, p.revision, true, p.membership_token));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await waitFor(() => expect(screen.queryByRole("button", {name: `Open project ${p.name}`})).toBeNull());
 });
@@ -2356,4 +2358,43 @@ test("project chat pinning moves an older chat first and unpinning restores rece
   await user.click(within(chats).getByRole("button",{name:`Conversation actions: ${older.title}`}));
   await user.click(screen.getByRole("menuitem",{name:"Unpin"}));
   await waitFor(() => expect(titles()).toEqual([fixture.conversation.title,older.title]));
+});
+
+test.each(["success", "failure"])("project draft continuation locks edits and preserves attachments on %s", async outcome => {
+ const {created} = projectNavigationFixture();
+ let settle!: (value: typeof created) => void;
+ let reject!: (error: Error) => void;
+ vi.mocked(transport.createConversation).mockReturnValue(new Promise((resolve, r)=>{settle=resolve;reject=r;}));
+ const {result}=mountWorkspaceController();
+ await waitFor(()=>expect(result.current.conversationView).toBeTruthy());
+ act(()=>result.current.setDraft("Preserved continuation draft"));
+ const attachment: import("@/hooks/chat/use-attachment-draft").DraftAttachment={key:"local-file",name:"draft.md",input:{name:"draft.md",data:"Zml4dHVyZQ=="},snapshot:{id:"source",name:"draft.md",media_type:"text/plain",size:7,characters:7,extraction_version:"fixture-v1",sections:[{id:"L1",text:"fixture"}]}};
+ act(()=>result.current.attachmentDraft.restoreAttachments([attachment]));
+ let continuing!: Promise<string | undefined>;
+ act(()=>{continuing=result.current.continueProjectDraft();});
+ await waitFor(()=>expect(result.current.isNavigating).toBe(true));
+ await act(async()=>{await result.current.continueProjectDraft();});
+ expect(transport.createConversation).toHaveBeenCalledOnce();
+ expect(result.current.draft).toBe("Preserved continuation draft");
+ expect(result.current.attachmentDraft.attachments).toHaveLength(1);
+ await act(async()=>{if(outcome==="success")settle(created);else reject(new Error("Creation failed"));await continuing;});
+ await waitFor(()=>expect(result.current.isNavigating).toBe(false));
+ expect(result.current.draft).toBe("Preserved continuation draft");
+ expect(result.current.attachmentDraft.attachments).toEqual([attachment]);
+ if(outcome==="success")expect(result.current.selectedId).toBe(created.id);
+ expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+test("project search opens the matching historical turn", async()=>{
+ const {p}=projectNavigationFixture();
+ vi.spyOn(conversationApi,"searchConversations").mockImplementation(async(_query,archived)=>archived?[]:[{...fixture.conversation,message_id:"older-answer",turn_message_id:"older-user",excerpt:"Matching historical answer",role:"assistant" as const}]);
+ const {result}=mountWorkspaceController();
+ await waitFor(()=>expect(result.current.conversationView).toBeTruthy());
+ act(()=>result.current.setProjectPage({projectId:p.id}));
+ render(<QueryClientProvider client={queryClient}><ProjectsPage workspace={result.current}/></QueryClientProvider>);
+ const user=userEvent.setup();
+ await screen.findByRole("complementary",{name:"Project background and materials"});
+ await user.type(screen.getByRole("textbox",{name:"Search project chats"}),"historical");
+ await user.click(await screen.findByText("Matching historical answer"));
+ await waitFor(()=>expect(result.current.conversationNavigation).toMatchObject({conversationId:fixture.conversation.id,messageId:"older-user"}));
 });

@@ -63,6 +63,7 @@ export function useChatWorkspace() {
   } = generationState;
 
   const pendingDraftTransfer = useRef<{ id: string; body: string } | undefined>(undefined);
+  const continuingProjectDraft = useRef(false);
   const narrowLayout = useNarrowLayout();
 
   const copy = applicationMessages(settings.locale);
@@ -262,7 +263,12 @@ export function useChatWorkspace() {
   });
 
   async function continueProjectDraft() {
-    if (generationState.isSending || attachmentDraft.invalid) return;
+    if (
+      continuingProjectDraft.current || workspaceUi.isNavigating ||
+      generationState.isSending || attachmentDraft.invalid
+    ) return;
+    continuingProjectDraft.current = true;
+    workspaceUi.setIsNavigating(true);
     const body = generationState.draft;
     const items = [...attachmentDraft.attachments];
     try {
@@ -275,6 +281,9 @@ export function useChatWorkspace() {
       return next.id;
     } catch {
       setFeedback("The new conversation could not be created. Your draft is preserved.");
+    } finally {
+      continuingProjectDraft.current = false;
+      workspaceUi.setIsNavigating(false);
     }
   }
   return {

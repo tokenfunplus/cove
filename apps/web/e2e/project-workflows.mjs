@@ -136,6 +136,22 @@ export async function runProjectWorkflows({
     )),
     "Reload opened a project chat implicitly",
   );
+  const confirmationProject = await api("/api/projects", "POST", {name:"Deletion confirmation fixture"});
+  await navigation.openProject(confirmationProject.name);
+  await click('button[aria-label="Project actions: Deletion confirmation fixture"]');
+  await button("Delete project", '[role="menu"] button');
+  await until("!!document.querySelector('[role=dialog]')");
+  const addedAfterConfirmation = await api("/api/conversations", "POST", {title:"Unconfirmed member",project_id:confirmationProject.id});
+  await button("Confirm deletion", '[role="dialog"] button');
+  await until("document.querySelector('[role=dialog] [role=alert]')?.textContent.includes('changed')");
+  assert((await api("/api/conversations")).some(c=>c.id===addedAfterConfirmation.id),"Stale confirmation deleted a new member");
+  await button("Refresh project details", '[role="dialog"] button');
+  await until("document.querySelector('[role=dialog]')?.textContent.includes('1 current conversations')");
+  await button("Confirm deletion", '[role="dialog"] button');
+  await until("!document.querySelector('[role=dialog]')");
+  assert(!(await api("/api/conversations")).some(c=>c.id===addedAfterConfirmation.id));
+  await navigation.returnToChat();
+  console.log("Project workflow passed: changed deletion membership requires refreshed explicit confirmation.");
   const lifecycle = await api("/api/conversations", "POST", {
     title: "Project selection fixture",
     project_id: projectA.id,
@@ -342,7 +358,10 @@ export async function runProjectWorkflows({
   await open("Workflow separate A");
   const beforeSide = requests.length;
   await button("Send question", 'aside[aria-label="Answer tools"] button');
-  await sentAfter(beforeSide);
+  for (let i = 0; i < 100 && requests.length < beforeSide + 2; i++)
+    await new Promise((r) => setTimeout(r, 50));
+  assert.equal(requests.length, beforeSide + 2);
+  await until("document.querySelector('aside[aria-label=\"Answer tools\"]')?.getAttribute('aria-busy') === 'false' && !!document.querySelector('#side-generation-input')");
   const side = (await api("/api/conversations")).find(
     (c) => c.id !== original.id && c.project_id === projectB.id,
   );

@@ -21,6 +21,7 @@ vi.mock("@/api/projects", async (original) => ({
   getProjects: vi.fn(),
   getProject: vi.fn(),
   saveProject: vi.fn(),
+  addProjectSource: vi.fn(),
   removeProjectSource: vi.fn(),
   deleteProject: vi.fn(),
   moveProjectConversation: vi.fn(),
@@ -42,7 +43,7 @@ test("a rejected project edit retains the edited background and chat draft", asy
     background: "Old background",
     revision: 1,
     sources: [],
-    conversation_count: 1,
+    membership_token: "a".repeat(64), conversation_count: 1,
     historical_copies: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
@@ -138,7 +139,7 @@ test("reviewing current project input updates the admission revision without rep
     background: "Background",
     revision: 2,
     sources: [],
-    conversation_count: 1,
+    membership_token: "a".repeat(64), conversation_count: 1,
     historical_copies: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
@@ -211,7 +212,7 @@ const savedProject: Project = {
   background: "",
   revision: 1,
   sources: [],
-  conversation_count: 0,
+  membership_token: "a".repeat(64), conversation_count: 0,
   historical_copies: 0,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -339,7 +340,7 @@ test("a changed project must be reviewed and explicitly confirmed again before d
   vi.mocked(api.getProject).mockResolvedValue({
     ...savedProject,
     revision: 2,
-    conversation_count: 3,
+    membership_token: "b".repeat(64), conversation_count: 3,
   });
   const removed = vi.fn().mockResolvedValue(undefined);
   render(
@@ -372,6 +373,7 @@ test("a changed project must be reviewed and explicitly confirmed again before d
       savedProject.id,
       2,
       true,
+      "b".repeat(64),
     ),
   );
   await waitFor(() => expect(removed).toHaveBeenCalledWith(true));
@@ -478,4 +480,48 @@ test("moving to the current project is disabled and conflicts require a fresh ex
     ),
   );
   await waitFor(() => expect(close).toHaveBeenCalledWith(undefined));
+});
+
+test("source requests lock project text until they settle", async () => {
+ let reject!: (error: Error) => void;
+ vi.mocked(api.addProjectSource).mockReturnValue(new Promise((_, r) => {reject = r;}));
+ const saved = vi.fn();
+ render(<ProjectEditor value={savedProject} close={vi.fn()} saved={saved} remove={vi.fn()} />);
+ const user = userEvent.setup();
+ await user.upload(screen.getByLabelText("Choose fixed project file"),new File(["Fixture"],"fixture.txt",{type:"text/plain"}));
+ await waitFor(()=>expect(api.addProjectSource).toHaveBeenCalledOnce());
+ for (const label of ["Project name","Project description","Project instructions","Project background"]) {
+  expect((screen.getByRole("textbox",{name:label}) as HTMLInputElement).disabled).toBe(true);
+ }
+ reject(new Error("Source request failed"));
+ await screen.findByRole("alert");
+ expect((screen.getByRole("textbox",{name:"Project background"}) as HTMLTextAreaElement).disabled).toBe(false);
+ expect(saved).not.toHaveBeenCalled();
+});
+
+test("a failed move response reconciles membership that already committed", async()=>{
+ for(const name of ["hasPointerCapture","setPointerCapture","releasePointerCapture","scrollIntoView"]){
+  if(Reflect.get(Element.prototype,name)!==undefined)continue;
+  Object.defineProperty(Element.prototype,name,{configurable:true,value:name==="hasPointerCapture"?()=>false:()=>{}});
+  browserMethods.push(name);
+ }
+ vi.stubGlobal("ResizeObserver",class{observe(){}unobserve(){}disconnect(){}});
+ const target={id:"moved-chat",title:"Moved chat",project_id:savedProject.id,membership_revision:1,created_at:savedProject.created_at,updated_at:savedProject.updated_at,messages:[]};
+ const latest={...target,project_id:undefined,membership_revision:2};
+ vi.mocked(api.getProjects).mockResolvedValue([savedProject]);
+ vi.mocked(api.moveProjectConversation).mockRejectedValue(new Error("Response read failed"));
+ vi.spyOn(transport,"getConversation").mockResolvedValue(latest);
+ const cache=new QueryClient({defaultOptions:{queries:{retry:false}}});
+ cache.setQueryData(conversationKeys.detail(target.id),target);
+ render(<QueryClientProvider client={cache}><ProjectDialogs workspace={{projectMoveTarget:target,setProjectMoveTarget:vi.fn()} as unknown as ChatWorkspace}/></QueryClientProvider>);
+ const user=userEvent.setup();
+ await screen.findByText("Current project: Research");
+ await user.click(screen.getByRole("combobox",{name:"Move conversation to project"}));
+ await user.click(await screen.findByRole("option",{name:"No project"}));
+ await user.click(screen.getByRole("button",{name:"Move conversation"}));
+ await screen.findByRole("alert");
+ expect(cache.getQueryData(conversationKeys.detail(target.id))).toMatchObject({membership_revision:2});
+ expect(screen.getByText("Current project: No project")).toBeTruthy();
+ expect((screen.getByRole("button",{name:"Move conversation"}) as HTMLButtonElement).disabled).toBe(true);
+ cache.clear();
 });

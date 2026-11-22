@@ -577,6 +577,7 @@ export interface Project {
   revision: number;
   sources: ProjectSource[];
   conversation_count: number;
+  membership_token: string;
   historical_copies: number;
   created_at: string;
   updated_at: string;

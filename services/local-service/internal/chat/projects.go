@@ -40,7 +40,7 @@ type ProjectChat interface {
 	RemoveProjectSource(context.Context, string, string, int64) (persistence.Project, error)
 	CreateProjectConversation(context.Context, string, string, string) (persistence.Conversation, error)
 	MoveProjectConversation(context.Context, string, string, int64) error
-	DeleteProject(context.Context, string, int64, bool) error
+	DeleteProject(context.Context, string, int64, bool, string) error
 	PreviewProjectContext(context.Context, string) (*persistence.ProjectContext, persistence.ProjectExpectation, error)
 }
 
@@ -139,7 +139,7 @@ func (s *Service) MoveProjectConversation(ctx context.Context, id, project strin
 	}
 	return p.MoveConversation(ctx, id, project, rev)
 }
-func (s *Service) DeleteProject(ctx context.Context, id string, rev int64, removeConversations bool) error {
+func (s *Service) DeleteProject(ctx context.Context, id string, rev int64, removeConversations bool, membershipToken string) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 	p, e := s.projectStore()
@@ -150,7 +150,7 @@ func (s *Service) DeleteProject(ctx context.Context, id string, rev int64, remov
 	if e != nil {
 		return e
 	}
-	if current.Revision != rev {
+	if current.Revision != rev || (removeConversations && current.MembershipToken != membershipToken) {
 		return persistence.ErrProjectChanged
 	}
 	if !removeConversations {
@@ -170,7 +170,7 @@ func (s *Service) DeleteProject(ctx context.Context, id string, rev int64, remov
 			}
 		}
 	}
-	return p.DeleteProject(ctx, id, rev, removeConversations)
+	return p.DeleteProject(ctx, id, rev, removeConversations, membershipToken)
 }
 func projectInstructions(base string, p *persistence.ProjectContext) string {
 	if p == nil || p.Instructions == "" {

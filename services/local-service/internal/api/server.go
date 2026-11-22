@@ -331,11 +331,8 @@ func (server *Server) listConversations(writer http.ResponseWriter, request *htt
 		}
 		archived = parsed
 	}
-	conversations, err := server.chat.ListConversations(request.Context(), archived)
-	if err != nil {
-		writeError(writer, http.StatusInternalServerError, "internal_error", "Local history is unavailable.")
-		return
-	}
+	var conversations []persistence.Conversation
+	var err error
 	if request.URL.Query().Has("project_id") {
 		p, ok := server.chat.(chat.ProjectChat)
 		if !ok {
@@ -345,6 +342,12 @@ func (server *Server) listConversations(writer http.ResponseWriter, request *htt
 		conversations, err = p.ListProjectConversations(request.Context(), archived, request.URL.Query().Get("project_id"))
 		if err != nil {
 			writeProjectError(writer, err)
+			return
+		}
+	} else {
+		conversations, err = server.chat.ListConversations(request.Context(), archived)
+		if err != nil {
+			writeError(writer, http.StatusInternalServerError, "internal_error", "Local history is unavailable.")
 			return
 		}
 	}

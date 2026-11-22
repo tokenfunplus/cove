@@ -88,7 +88,7 @@ func TestProjectSourcesDeduplicateAndSurviveMovesBranchesAndDissolution(t *testi
 	if e = s.DeleteConversation(ctx, first.ID); e != nil {
 		t.Fatal(e)
 	}
-	if e = s.DeleteProject(ctx, p.ID, p.Revision, false); e != nil {
+	if e = s.DeleteProject(ctx, p.ID, p.Revision, false, ""); e != nil {
 		t.Fatal(e)
 	}
 	view, e := s.LoadConversation(ctx, branch.ConversationID)
@@ -181,7 +181,7 @@ func TestProjectSourceSaveQuotasAndClearHistoryOwnership(t *testing.T) {
 	if e == nil || side.ID != "" {
 		t.Fatal("side conversation accepted missing origin")
 	}
-	if e = s.DeleteProject(ctx, p.ID, p.Revision, true); e != nil {
+	if e = s.DeleteProject(ctx, p.ID, p.Revision, true, p.MembershipToken); e != nil {
 		t.Fatal(e)
 	}
 	s.db.QueryRow(`SELECT COUNT(*) FROM project_source_blobs`).Scan(&n)
@@ -330,5 +330,105 @@ func TestProjectSourceCharacterQuotaIsAtomicAndCountsUnicode(t *testing.T) {
 	var blobs int
 	if e = store.db.QueryRow(`SELECT COUNT(*) FROM project_source_blobs`).Scan(&blobs); e != nil || blobs != 1 {
 		t.Fatal("failed source save left an orphan blob")
+	}
+}
+
+func TestProjectDeletionRejectsChangedMembers(t *testing.T) {
+	for _, change := range []string{"create", "move", "replace", "branch"} {
+		t.Run(change, func(t *testing.T) {
+			ctx := context.Background()
+			s := projectTestStore(t)
+			p, err := s.SaveProject(ctx, "", ProjectInput{Name: "Confirmed project"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			first, err := s.CreateProjectConversation(ctx, "Original member", p.ID, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			confirmed, err := s.GetProject(ctx, p.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch change {
+			case "create":
+				_, err = s.CreateProjectConversation(ctx, "New member", p.ID, "")
+			case "move", "replace":
+				var next Conversation
+				next, err = s.CreateConversation(ctx, "Moved member")
+				if err == nil {
+					err = s.MoveConversation(ctx, next.ID, p.ID, 0)
+				}
+				if err == nil && change == "replace" {
+					err = s.MoveConversation(ctx, first.ID, "", 0)
+				}
+			case "branch":
+				_, err = s.CreateProjectConversation(ctx, "Side member", "", first.ID)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			latest, err := s.GetProject(ctx, p.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if latest.Revision != confirmed.Revision {
+				t.Fatal("fixture changed project content")
+			}
+			for _, token := range []string{confirmed.MembershipToken, ""} {
+				if err = s.DeleteProject(ctx, p.ID, confirmed.Revision, true, token); !errors.Is(err, ErrProjectChanged) {
+					t.Fatalf("stale deletion accepted: %v", err)
+				}
+				members, e := s.ListProjectConversations(ctx, false, p.ID)
+				if e != nil || len(members) != latest.ConversationCount {
+					t.Fatal("conflict removed members", e)
+				}
+			}
+			if err = s.DeleteProject(ctx, p.ID, latest.Revision, true, latest.MembershipToken); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestProjectReadKeepsSourceRevisionConsistent(t *testing.T) {
+	ctx := context.Background()
+	s := projectTestStore(t)
+	p, err := s.SaveProject(ctx, "", ProjectInput{Name: "Consistent project"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := documents.Parse(ctx, documents.Input{Name: "fixture.txt", Data: []byte("Source")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		current := p
+		for i := 0; i < 50; i++ {
+			current, err = s.AddProjectSource(ctx, p.ID, current.Revision, source)
+			if err != nil {
+				done <- err
+				return
+			}
+			current, err = s.RemoveProjectSource(ctx, p.ID, current.Sources[0].ID, current.Revision)
+			if err != nil {
+				done <- err
+				return
+			}
+		}
+		done <- nil
+	}()
+	for i := 0; i < 100; i++ {
+		current, e := s.GetProject(ctx, p.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if int(current.Revision%2) != 1-len(current.Sources) {
+			t.Errorf("mixed revision %d and sources %d", current.Revision, len(current.Sources))
+		}
+	}
+	if e := <-done; e != nil {
+		t.Fatal(e)
 	}
 }

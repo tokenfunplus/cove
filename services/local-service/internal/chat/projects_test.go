@@ -187,14 +187,14 @@ func TestProjectDeletionStopsBrowserRetryWithoutActiveBatchProjection(t *testing
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = service.DeleteProject(ctx, p.ID, p.Revision, false); !errors.Is(e, ErrGenerationBatchInProgress) {
+	if e = service.DeleteProject(ctx, p.ID, p.Revision, false, ""); !errors.Is(e, ErrGenerationBatchInProgress) {
 		t.Fatalf("dissolve did not reject active work: %v", e)
 	}
 	g, e := store.GetGeneration(ctx, retry.Generation.ID)
 	if e != nil || g.State != persistence.GenerationVerifyingResponse {
 		t.Fatal("dissolve stopped active work")
 	}
-	if e = service.DeleteProject(ctx, p.ID, p.Revision, true); e != nil {
+	if e = service.DeleteProject(ctx, p.ID, p.Revision, true, projectDeletionToken(t, store, p.ID)); e != nil {
 		t.Fatal(e)
 	}
 	stopped := 0
@@ -242,7 +242,7 @@ func TestProjectDeletionPreservesRecordsWhenCancellationCannotSettle(t *testing.
 	service.active[b.Targets[0].Generation.ID] = &activeGeneration{cancel: func() {}, done: make(chan struct{})}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	if e = service.DeleteProject(ctx, p.ID, p.Revision, true); !errors.Is(e, context.DeadlineExceeded) {
+	if e = service.DeleteProject(ctx, p.ID, p.Revision, true, projectDeletionToken(t, store, p.ID)); !errors.Is(e, context.DeadlineExceeded) {
 		t.Fatalf("unsettled work was deleted: %v", e)
 	}
 	if _, e = store.GetProject(context.Background(), p.ID); e != nil {
@@ -291,7 +291,7 @@ func TestProjectDeletionStopsOrdinaryArchivedRetry(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = service.DeleteProject(ctx, p.ID, p.Revision, true); e != nil {
+	if e = service.DeleteProject(ctx, p.ID, p.Revision, true, projectDeletionToken(t, store, p.ID)); e != nil {
 		t.Fatal(e)
 	}
 	stopped := 0
@@ -380,7 +380,7 @@ func TestProjectWebSourceOwnershipRemovalAndFrozenRetry(t *testing.T) {
 		t.Fatal(e)
 	}
 	waitFileBatch(t, service, follow.Batch.ID)
-	if e = service.DeleteProject(ctx, p.ID, p.Revision, false); e != nil {
+	if e = service.DeleteProject(ctx, p.ID, p.Revision, false, ""); e != nil {
 		t.Fatal(e)
 	}
 	retry, e := service.RetryGenerationTarget(ctx, first.Batch.Targets[0].ID, "web-project-retry")
@@ -402,4 +402,13 @@ func TestProjectWebSourceOwnershipRemovalAndFrozenRetry(t *testing.T) {
 	if e != nil || string(original.Data) != string(document.Data) {
 		t.Fatal("historical webpage original was lost")
 	}
+}
+
+func projectDeletionToken(t *testing.T, store *persistence.SQLiteStore, id string) string {
+	t.Helper()
+	p, err := store.GetProject(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.MembershipToken
 }

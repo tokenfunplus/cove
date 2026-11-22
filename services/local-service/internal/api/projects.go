@@ -25,9 +25,9 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 	var err error
 	status := http.StatusOK
 	switch {
-	case r.Method == "GET" && id == "":
+	case (r.Method == http.MethodGet || r.Method == http.MethodHead) && id == "":
 		result, err = p.ListProjects(r.Context())
-	case r.Method == "GET":
+	case r.Method == http.MethodGet || r.Method == http.MethodHead:
 		result, err = p.GetProject(r.Context(), id)
 	case r.Method == "POST" && r.PathValue("source") != "":
 		var input struct {
@@ -53,16 +53,17 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 		result, err = p.AddProjectSource(r.Context(), id, input.Revision, input.File, session.ID, input.WebSourceToken)
 	case r.Method == "DELETE":
 		var input struct {
-			Revision            int64 `json:"revision"`
-			DeleteConversations bool  `json:"delete_conversations"`
+			Revision            int64  `json:"revision"`
+			DeleteConversations bool   `json:"delete_conversations"`
+			MembershipToken     string `json:"membership_token"`
 		}
 		if decodeJSON(r, &input) != nil {
 			writeProjectError(w, persistence.ErrInvalidProject)
 			return
 		}
-		err = p.DeleteProject(r.Context(), id, input.Revision, input.DeleteConversations)
+		err = p.DeleteProject(r.Context(), id, input.Revision, input.DeleteConversations, input.MembershipToken)
 		result = map[string]bool{"deleted": true}
-	default:
+	case r.Method == http.MethodPost || r.Method == http.MethodPatch:
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		var input persistence.ProjectInput
 		if decodeJSON(r, &input) != nil {
@@ -73,6 +74,9 @@ func (s *Server) projects(w http.ResponseWriter, r *http.Request) {
 		if id == "" {
 			status = 201
 		}
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "The project request method is not supported.")
+		return
 	}
 	if err != nil {
 		writeProjectError(w, err)

@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test, vi } from "vitest";
-import { renderHook, cleanup } from "@testing-library/react";
+import { renderHook, cleanup, act, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { hydrateConversation } from "./conversations";
-import { useGenerationCache } from "./hooks/useGenerations";
-import { generationKeys } from "./queryKeys";
+import { useGenerationCache, usePreviewGenerationContext } from "./hooks/useGenerations";
+import { generationKeys, conversationKeys } from "./queryKeys";
 import * as api from "@/api";
 import { createWorkspaceFixture } from "@/test/workspace-fixture";
 import type { ProjectContext } from "@cove/api-contract";
@@ -76,4 +76,23 @@ test("project-aware targets share one immutable query read independently of lega
   await result.current.loadProjectContext("batch");
   expect(read).toHaveBeenCalledTimes(2);
   client.clear();
+});
+
+test.each(["membership", "project"])("a delayed preview cannot roll back a newer %s revision", async change => {
+ const fixture = createWorkspaceFixture();
+ let resolve!: (preview: import("@cove/api-contract").ProjectContextPreview) => void;
+ vi.spyOn(api, "previewGenerationContext").mockReturnValue(new Promise(r => {resolve = r;}));
+ const client = new QueryClient({defaultOptions:{queries:{retry:false}}});
+ const view = {...fixture.completedView, project_id:"original", project_revision:1, membership_revision:1};
+ client.setQueryData(conversationKeys.detail(view.id), view);
+ const {result} = renderHook(() => usePreviewGenerationContext(), {wrapper:({children})=>createElement(QueryClientProvider,{client},children)});
+ let pending!: Promise<unknown>;
+ act(() => {pending = result.current.mutateAsync({conversationId:view.id,body:"Draft"});});
+ await waitFor(()=>expect(api.previewGenerationContext).toHaveBeenCalled());
+ const newer = {...view, project_id:change === "membership" ? "destination" : view.project_id,
+   membership_revision:change === "membership" ? 2 : 1, project_revision:change === "project" ? 3 : 1};
+ client.setQueryData(conversationKeys.detail(view.id),newer);
+ await act(async()=>{resolve({messages:[],project_context:null,expected_project:{project_id:"original",project_revision:2,membership_revision:1},usage:{instructions:0,background:0,sources:0,history:0,question:0,total:0,limit:240000}});await pending;});
+ expect(client.getQueryData(conversationKeys.detail(view.id))).toEqual(newer);
+ client.clear();
 });
