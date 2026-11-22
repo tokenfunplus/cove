@@ -197,6 +197,9 @@ func (service *Service) Configure(ctx context.Context, input ProfileInput) (Prof
 	if err != nil {
 		return Profile{}, err
 	}
+	if profile.ID == localProviderID || profile.Kind == provider.KindLocal {
+		return Profile{}, provider.ErrInvalidProfile
+	}
 	if profile.ID == "" {
 		profile.ID, err = newID()
 		if err != nil {
@@ -305,10 +308,12 @@ func (service *Service) deleteCredential(ctx context.Context, saved persistence.
 
 func (service *Service) CheckResolvedProfile(ctx context.Context, profile Profile) error {
 	if profile.ID == localProviderID && service.local != nil {
-		if !service.local.Profile().Configured {
-			return ErrUnconfigured
+		for _, model := range service.local.Metadata() {
+			if model.ID == profile.Model {
+				return nil
+			}
 		}
-		return nil
+		return provider.ErrModelUnavailable
 	}
 	current, err := service.profiles.GetProviderProfile(ctx, profile.ID)
 	if err != nil {

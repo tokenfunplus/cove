@@ -113,10 +113,13 @@ func (s *Service) RemoveProjectSource(ctx context.Context, id, source string, re
 	}
 	var result persistence.Project
 	change := func() error {
-		var err error
+		snapshot, err := s.projectSourceSnapshot(ctx, id, source)
+		if err != nil {
+			return err
+		}
 		result, err = p.RemoveProjectSource(ctx, id, source, rev)
-		if err == nil {
-			s.invalidateLocalSources("")
+		if result.ID != "" {
+			s.invalidateProjectSource(id, snapshot)
 		}
 		return err
 	}
@@ -227,7 +230,7 @@ func (s *Service) projectForInput(ctx context.Context, input SendInput, attachme
 	if p != nil {
 		for _, a := range p.Sources {
 			for _, attachment := range attachments {
-				if a.Snapshot.ID == attachment.ID {
+				if input.EditOfBatchID == "" && attachment.Retrieval != nil && a.Snapshot.ID == attachment.ID {
 					return nil, fmt.Errorf("%w: This source is already included by the project. Change its use to Search when needed before attaching selected passages.", documents.ErrInvalidDocument)
 				}
 			}

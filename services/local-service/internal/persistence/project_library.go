@@ -55,7 +55,11 @@ func (s *SQLiteStore) SetProjectSourceUsage(ctx context.Context, project, source
 	if err = tx.Commit(); err != nil {
 		return Project{}, err
 	}
-	return s.GetProject(ctx, project)
+	resultProject, readErr := s.GetProject(ctx, project)
+	if readErr != nil {
+		return Project{ID: project, Revision: revision + 1}, readErr
+	}
+	return resultProject, nil
 }
 
 func (library *ProjectLibrary) ListLocalDocuments(ctx context.Context) ([]LocalDocument, error) {

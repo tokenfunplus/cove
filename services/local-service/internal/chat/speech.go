@@ -5,6 +5,7 @@ import (
 	"errors"
 	"unicode/utf8"
 
+	"github.com/tokenfunplus/cove/services/local-service/internal/localmodels"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/speech"
 )
@@ -38,7 +39,28 @@ type DebateSpeechInput struct {
 	TurnID   string `json:"turn_id"`
 }
 
-func (service *Service) SetSpeech(manager *speech.Manager) { service.speech = manager }
+type localSpeech interface {
+	Settings(context.Context) (persistence.SpeechSettings, error)
+	SaveSettings(context.Context, persistence.SpeechSettings) error
+	Statuses() []localmodels.Status
+	Start(context.Context, string, speech.Request) (speech.JobStatus, error)
+	Status(string, string) (speech.JobStatus, error)
+	Audio(string, string, int) ([]byte, error)
+	Download(string, string) ([]byte, error)
+	Stop(context.Context, string, string) error
+	CancelConversation(context.Context, string) error
+	Install(string) error
+	CancelDownload(context.Context, string) error
+	Remove(context.Context, string) error
+}
+
+func (service *Service) SetSpeech(manager *speech.Manager) {
+	if manager == nil {
+		service.speech = nil
+	} else {
+		service.speech = manager
+	}
+}
 func (service *Service) SpeechSettings(ctx context.Context) (SpeechConfiguration, error) {
 	if service.speech == nil {
 		return SpeechConfiguration{}, errors.New("Local speech is unavailable.")
@@ -90,7 +112,7 @@ func (service *Service) ReadAloud(ctx context.Context, owner string, input Speec
 				}
 				body = input.Selection
 			}
-			return service.speech.Start(ctx, owner, speech.Request{Text: body, ConversationID: input.ConversationID})
+			return service.speech.Start(ctx, owner, speech.Request{Text: body, RenderedText: input.Selection != "", ConversationID: input.ConversationID})
 		}
 	}
 	return speech.JobStatus{}, errors.New("This saved answer is no longer available for reading.")
@@ -102,7 +124,7 @@ func (service *Service) PreviewSpeech(ctx context.Context, owner string, input S
 	if utf8.RuneCountInString(input.Text) > 400 {
 		return speech.JobStatus{}, errors.New("Use up to 400 characters for a voice preview.")
 	}
-	return service.speech.Start(ctx, owner, speech.Request{Text: input.Text, ModelID: input.ModelID, Profile: &input.Profile})
+	return service.speech.Start(ctx, owner, speech.Request{Text: input.Text, RenderedText: true, ModelID: input.ModelID, Profile: &input.Profile})
 }
 func (service *Service) ReadDebateAloud(ctx context.Context, owner string, input DebateSpeechInput) (speech.JobStatus, error) {
 	if service.speech == nil {

@@ -19,12 +19,14 @@ type SettingsDialogSection = "general" | "provider" | "chat-data" | "web-search"
 export function SettingsDialog({
   open,
   initialSection,
+  onSectionChange,
   onClose,
   children,
   copy = englishConversationCopy,
 }: {
   open: boolean;
   initialSection?: SettingsDialogSection;
+  onSectionChange?: (section: SettingsDialogSection) => void;
   onClose: () => void;
   children: ReactNode;
   copy?: ApplicationCopy;
@@ -57,6 +59,7 @@ export function SettingsDialog({
             <div className={settingsStyles.settingsDialog_panel}>
               <SettingsDialogContent
                 initialSection={initialSection}
+                onSectionChange={onSectionChange}
                 copy={copy}
                 onClose={onClose}
                 title={<DialogTitle as="h2">{copy.settings}</DialogTitle>}
@@ -77,12 +80,14 @@ export function SettingsDialogContent({
   copy = englishConversationCopy,
   title,
   initialSection = "general",
+  onSectionChange,
 }: {
   children: ReactNode;
   onClose?: () => void;
   copy?: ApplicationCopy;
   title?: ReactNode;
   initialSection?: SettingsDialogSection;
+  onSectionChange?: (section: SettingsDialogSection) => void;
 }) {
   const heading = title ?? <h2>{copy.settings}</h2>;
   const [activeSection, setActiveSection] =
@@ -147,13 +152,14 @@ export function SettingsDialogContent({
                       ? sections.length - 1
                       : (index + offset + sections.length) % sections.length;
                 setActiveSection(sections[next].id);
+                onSectionChange?.(sections[next].id);
                 tabRefs.current[next]?.focus();
               }}
               id={`settings-tab-${section.id}`}
               aria-controls={`settings-${section.id}`}
               aria-selected={activeSection === section.id}
               key={section.id}
-              onClick={() => setActiveSection(section.id)}
+              onClick={() => { setActiveSection(section.id); onSectionChange?.(section.id); }}
               role="tab"
               aria-label={section.label}
               type="button"

@@ -462,12 +462,19 @@ export function useGenerationCommands({
 
   async function handleRetry(batchID: string, targetID: string) {
     if (isSending) return;
+    const target = [generationBatch, ...(conversationView?.generation_batches ?? [])]
+      .find(batch => batch?.id === batchID)?.targets.find(target => target.id === targetID);
+    if (localOnly && (!target || target.provider_id !== "cove-local")) {
+      setFeedback("Only on this Mac cannot retry a remote model. Turn off the restriction to retry this answer.");
+      return;
+    }
     setFeedback(undefined);
     const clientRequestId = crypto.randomUUID();
     setIsSending(true);
     try {
       const next = await retryGenerationTarget({
         targetId: targetID,
+        ...(localOnly ? {localOnly:true} : {}),
         clientRequestId: clientRequestId,
       });
       const batch = await getGenerationBatch(batchID);

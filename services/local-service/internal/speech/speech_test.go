@@ -99,20 +99,22 @@ func TestSpeechRequiresInstalledModelAndOwnsTemporaryAudio(t *testing.T) {
 	id := strings.Repeat("a", 32)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	manager.jobs[id] = &Job{JobStatus: JobStatus{ID: id, State: "generating", ReadyChunks: 1}, owner: "owner", conversationID: "conversation", cancel: cancel, done: done, accessed: time.Now()}
 	if err = manager.audio.Create(id); err != nil {
 		t.Fatal(err)
 	}
 	if err = manager.audio.Write(id, 0, []byte("private audio")); err != nil {
 		t.Fatal(err)
 	}
+	go func() { <-ctx.Done(); close(done) }()
+	manager.mu.Lock()
+	manager.jobs[id] = &Job{JobStatus: JobStatus{ID: id, State: "generating", ReadyChunks: 1}, owner: "owner", conversationID: "conversation", cancel: cancel, done: done, accessed: time.Now()}
+	manager.mu.Unlock()
 	if _, err = manager.Status("other", id); !errors.Is(err, ErrNotFound) {
 		t.Fatal("job crossed session")
 	}
 	if _, err = manager.Audio("other", id, 0); !errors.Is(err, ErrNotFound) {
 		t.Fatal("audio crossed session")
 	}
-	go func() { <-ctx.Done(); close(done) }()
 	if err = manager.CancelConversation(context.Background(), "conversation"); err != nil {
 		t.Fatal(err)
 	}

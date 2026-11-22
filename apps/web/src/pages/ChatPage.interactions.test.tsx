@@ -2523,3 +2523,28 @@ test("document search installs in place while preserving the chat draft",async()
  expect((composer as HTMLTextAreaElement).value).toBe("Retain this draft during installation");
  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
 });
+
+ test("document search cannot send the composer's draft through portal submit bubbling",async()=>{
+  vi.spyOn(localApi,"getLocalModels").mockResolvedValue([{id:"bge-small-zh",state:"installed",runtime_ready:true}] as never);
+  vi.spyOn(localApi,"getLocalDocuments").mockResolvedValue([{id:"doc",name:"guide.txt",characters:30,chunks:1}] as never);
+  vi.spyOn(localApi,"searchLocalDocuments").mockResolvedValue({hits:[],elapsed_ms:1,model_sha256:"a".repeat(64),index_version:"fixture"});
+  const {user,composer}=await openWorkspace();await user.type(composer,"Only send when I explicitly choose Send");
+  await user.click(screen.getByRole("button",{name:"Tools"}));await user.click(screen.getByRole("button",{name:"Search local documents"}));
+  await user.click(await screen.findByRole("checkbox",{name:/guide.txt/}));await user.type(screen.getByRole("textbox",{name:"What are you looking for?"}),"backup");
+  await user.click(screen.getByRole("button",{name:"Search selected documents"}));await waitFor(()=>expect(localApi.searchLocalDocuments).toHaveBeenCalled());
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();await user.click(screen.getByRole("button",{name:"Close"}));expect((composer as HTMLTextAreaElement).value).toBe("Only send when I explicitly choose Send");
+  await user.click(screen.getByRole("button",{name:"Send message"}));await waitFor(()=>expect(transport.createGenerationBatch).toHaveBeenCalledOnce());
+ });
+
+ test("local-only suppresses each conversation's Web search preference without erasing it",async()=>{
+  localStorage.setItem("cove.web-search-conversations.v1",JSON.stringify({[fixture.conversation.id]:true,[fixture.secondConversation.id]:true}));
+  const {result}=mountWorkspaceController();await waitFor(()=>expect(result.current.conversationView?.id).toBe(fixture.conversation.id));
+  expect(result.current.webSearch.enabled).toBe(true);act(()=>result.current.setLocalOnly(true));expect(result.current.webSearch.enabled).toBe(false);
+  await act(async()=>{await result.current.handleSelectConversation(fixture.secondConversation.id);});await waitFor(()=>expect(result.current.conversationView?.id).toBe(fixture.secondConversation.id));
+  expect(result.current.webSearch.enabled).toBe(false);expect(JSON.parse(localStorage.getItem("cove.web-search-conversations.v1")!)[fixture.secondConversation.id]).toBe(true);
+  act(()=>result.current.setLocalOnly(false));expect(result.current.webSearch.enabled).toBe(true);
+ });
+ test("current local-only mode disables retrying a historical remote target",async()=>{
+  const batch=structuredClone(fixture.completedBatch);batch.state="failed";batch.targets[0].generation.state="failed";delete batch.targets[0].generation.assistant_message_id;fixture.conversation.generation_batches=[batch];fixture.conversation.messages=fixture.completedView.messages.slice(0,1);
+  const {user}=await openWorkspace();await user.click(screen.getByRole("checkbox",{name:"Only on this Mac"}));expect(screen.getByRole<HTMLButtonElement>("button",{name:"Retry generation"}).disabled).toBe(true);expect(transport.retryGenerationTarget).not.toHaveBeenCalled();
+ });

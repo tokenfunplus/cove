@@ -45,12 +45,14 @@ type Job struct {
 	done                  chan struct{}
 	accessed              time.Time
 	bytes                 int64
+	cleanupPending        bool
 }
 type Request struct {
 	Text           string
 	ConversationID string
 	ModelID        string
 	Profile        *persistence.SpeechProfile
+	RenderedText   bool
 }
 
 func (manager *Manager) choose(settings persistence.SpeechSettings, language, override string) (Model, error) {
@@ -104,6 +106,9 @@ func (manager *Manager) Start(ctx context.Context, owner string, input Request) 
 		return JobStatus{}, err
 	}
 	text, err := PlainText(input.Text, settings.IncludeCode)
+	if input.RenderedText {
+		text, err = selectionText(input.Text)
+	}
 	if err != nil {
 		return JobStatus{}, err
 	}
@@ -188,9 +193,11 @@ func (manager *Manager) Start(ctx context.Context, owner string, input Request) 
 		if err != nil {
 			job.State = "failed"
 			job.Error = err.Error()
-			if jobCtx.Err() != nil {
+			if errors.Is(jobCtx.Err(), context.Canceled) {
 				job.State = "stopped"
 				job.Error = ""
+			} else if errors.Is(jobCtx.Err(), context.DeadlineExceeded) {
+				job.Error = "Local speech timed out. Try a shorter passage."
 			}
 		}
 		if manager.active == job {
@@ -203,7 +210,7 @@ func (manager *Manager) Status(owner, id string) (JobStatus, error) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	job := manager.jobs[id]
-	if job == nil || job.owner != owner {
+	if job == nil || job.owner != owner || job.cleanupPending {
 		return JobStatus{}, ErrNotFound
 	}
 	job.accessed = time.Now()
@@ -212,7 +219,7 @@ func (manager *Manager) Status(owner, id string) (JobStatus, error) {
 func (manager *Manager) Audio(owner, id string, index int) ([]byte, error) {
 	manager.mu.Lock()
 	job := manager.jobs[id]
-	if job == nil || job.owner != owner || index < 0 || index >= job.ReadyChunks {
+	if job == nil || job.owner != owner || job.cleanupPending || index < 0 || index >= job.ReadyChunks {
 		manager.mu.Unlock()
 		return nil, ErrNotFound
 	}
@@ -241,8 +248,12 @@ func (manager *Manager) Download(owner, id string) ([]byte, error) {
 func (manager *Manager) Stop(ctx context.Context, owner, id string) error {
 	manager.operations.Lock()
 	defer manager.operations.Unlock()
-	if _, err := manager.Status(owner, id); err != nil {
-		return err
+	manager.mu.Lock()
+	job := manager.jobs[id]
+	owned := job != nil && job.owner == owner
+	manager.mu.Unlock()
+	if !owned {
+		return ErrNotFound
 	}
 	return manager.cancelMatching(ctx, func(job *Job) bool { return job.ID == id && job.owner == owner })
 }
@@ -256,6 +267,7 @@ func (manager *Manager) cancelMatching(ctx context.Context, match func(*Job) boo
 	var jobs []*Job
 	for _, job := range manager.jobs {
 		if match(job) {
+			job.cleanupPending = true
 			job.cancel()
 			jobs = append(jobs, job)
 		}
@@ -267,12 +279,12 @@ func (manager *Manager) cancelMatching(ctx context.Context, match func(*Job) boo
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		manager.mu.Lock()
-		delete(manager.jobs, job.ID)
-		manager.mu.Unlock()
 		if err := manager.audio.Remove(job.ID); err != nil {
 			return err
 		}
+		manager.mu.Lock()
+		delete(manager.jobs, job.ID)
+		manager.mu.Unlock()
 	}
 	return nil
 }
@@ -285,7 +297,7 @@ func (manager *Manager) reap() {
 			return
 		case <-timer.C:
 			manager.operations.Lock()
-			_ = manager.cancelMatching(manager.ctx, func(job *Job) bool { return time.Since(job.accessed) > 30*time.Minute })
+			_ = manager.cancelMatching(manager.ctx, func(job *Job) bool { return job.cleanupPending || time.Since(job.accessed) > 30*time.Minute })
 			manager.operations.Unlock()
 		}
 	}

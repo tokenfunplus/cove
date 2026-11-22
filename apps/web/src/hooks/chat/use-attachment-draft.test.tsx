@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { AttachmentSnapshot } from "@cove/api-contract";
 import * as api from "@/api";
@@ -94,3 +94,13 @@ test("submission rechecks expiry when background timers have not run, while file
   expect(result.current.validateAttachments()).toBe(true);
   expect(result.current.attachments[0].input?.name).toBe("notes.txt");
 });
+
+ test("a retained retrieval callback checks the file snapshot that finished afterward",async()=>{
+  let finish!:(value:AttachmentSnapshot)=>void;preview.mockReturnValue(new Promise(resolve=>{finish=resolve;}));vi.mocked(api.releaseWebSource).mockResolvedValue(undefined);
+  const {result}=renderHook(()=>useAttachmentDraft("chat"));let pending!:Promise<void>;
+  act(()=>{pending=result.current.addAttachments([new File(["Evidence"],"notes.txt")]);});
+  await waitFor(()=>expect(preview).toHaveBeenCalled());const retained=result.current.addRetrievedSources;
+  await act(async()=>{finish(snapshot);await pending;});
+  act(()=>{expect(retained([{source_token:"retrieved-duplicate",snapshot}])).toBe(false);});
+  expect(result.current.attachments).toHaveLength(1);expect(result.current.attachments[0].input).toBeTruthy();expect(api.releaseWebSource).toHaveBeenCalledWith("retrieved-duplicate");
+ });

@@ -54,7 +54,7 @@ export function LocalSpeechProvider({children,conversationId,onDiscover,onSettin
       const job=await start();
       if(version!==epoch.current){void api.stopSpeech(job.id).catch(()=>{});return "stopped";}
       jobId.current=job.id;const abort=new AbortController();controller.current=abort;
-      const player=new Audio();audio.current=player;player.volume=job.volume??0.9;player.playbackRate=job.playback_rate;
+      const player=new Audio();audio.current=player;player.volume=job.volume??0.9;player.defaultPlaybackRate=job.playback_rate;player.playbackRate=job.playback_rate;
       let downloaded=0;
       setPlayback({phase:"preparing",kind,sourceId,label,job});
       while(version===epoch.current){
@@ -140,8 +140,9 @@ export function SpeechPlaybackControls(){
 
 export function ReadAloudButton({source,selection}:{source:AnswerSource;selection?:string}){
   const speech=useLocalSpeech();if(!speech||!source.body.trim())return null;
-  const active=speech.playback?.sourceId===source.messageId&&!['finished','failed'].includes(speech.playback.phase);
+  const tooLong=Boolean(selection && Array.from(selection).length>6000);
+  const active=!selection && speech.playback?.sourceId===source.messageId&&!['finished','failed'].includes(speech.playback.phase);
   const preparing=active&&['preparing','buffering'].includes(speech.playback!.phase);
-  const label=selection?"Read selected text aloud":active?"Stop reading this answer":"Read aloud on this Mac";
-  return <Tooltip content={label} suppressRestoredFocus><Button size="icon-xs" variant="ghost" aria-label={label} aria-pressed={active} onClick={()=>active?speech.stop():speech.read(source,selection)} className={active?"text-primary":""}>{preparing?<Loader2 className="animate-spin" aria-hidden="true"/>:active?<Square aria-hidden="true"/>:<Volume2 aria-hidden="true"/>}</Button></Tooltip>;
+  const label=tooLong?"Select up to 6,000 characters to read aloud":selection?"Read selected text aloud":active?"Stop reading this answer":"Read aloud on this Mac";
+  return <Tooltip content={label} suppressRestoredFocus><Button size="icon-xs" variant="ghost" aria-label={label} aria-pressed={active} disabled={tooLong} onClick={()=>active?speech.stop():speech.read(source,selection)} className={active?"text-primary":""}>{preparing?<Loader2 className="animate-spin" aria-hidden="true"/>:active?<Square aria-hidden="true"/>:<Volume2 aria-hidden="true"/>}</Button></Tooltip>;
 }

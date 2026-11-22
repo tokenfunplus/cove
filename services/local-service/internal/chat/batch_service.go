@@ -308,13 +308,17 @@ func (service *Service) CancelGenerationBatch(ctx context.Context, batchID strin
 	return service.store.GetGenerationBatch(ctx, batchID)
 }
 
-func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, clientRequestID string) (GenerationStart, error) {
+func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, clientRequestID string, requestedLocalOnly ...bool) (GenerationStart, error) {
 	if service.store == nil || service.profiles == nil || service.provider == nil {
 		return GenerationStart{}, errors.New("chat service dependencies are required")
 	}
+	localOnly := len(requestedLocalOnly) > 0 && requestedLocalOnly[0]
 	service.startMu.Lock()
 	target, existing, err := service.checkRetry(ctx, targetID, clientRequestID)
 	service.startMu.Unlock()
+	if err == nil && localOnly && (target.ProviderID != localmodels.ProviderID || !localmodels.IsChatModel(target.ModelID)) {
+		return GenerationStart{}, ErrLocalOnly
+	}
 	if err != nil || existing.ID != "" {
 		return GenerationStart{Generation: existing}, err
 	}
@@ -322,7 +326,7 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 	if err != nil {
 		return GenerationStart{}, err
 	}
-	if priorBatch.LocalOnly && (target.ProviderID != localmodels.ProviderID || !localmodels.IsChatModel(target.ModelID)) {
+	if (localOnly || priorBatch.LocalOnly) && (target.ProviderID != localmodels.ProviderID || !localmodels.IsChatModel(target.ModelID) || priorBatch.WebSearch != nil) {
 		return GenerationStart{}, ErrLocalOnly
 	}
 	resolved, resolveErr := service.resolveTargets(ctx, []persistence.ActiveModelTarget{{ProviderID: target.ProviderID, ModelID: target.ModelID}})
@@ -360,10 +364,13 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 	var connection resolvedTarget
 	if resolveErr == nil {
 		connection = resolved[0]
-		if batch.LocalOnly && connection.profile.Kind != provider.KindLocal {
+		if (localOnly || batch.LocalOnly) && connection.profile.Kind != provider.KindLocal {
 			return GenerationStart{}, ErrLocalOnly
 		}
 		resolveErr = service.checkResolvedProfile(ctx, connection.profile)
+		if connection.profile.Kind == provider.KindLocal && resolveErr != nil {
+			return GenerationStart{}, resolveErr
+		}
 		if resolveErr == nil && snapshot.IsNearAI() && snapshot.PrivacyMode == provider.PrivacyModePrivateTEE && !connection.isPrivateTEE() {
 			resolveErr = ErrPrivateTEEUnavailable
 		}

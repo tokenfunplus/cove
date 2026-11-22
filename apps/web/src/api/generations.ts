@@ -111,13 +111,14 @@ export function cancelGenerationBatch(id: string): Promise<GenerationBatch> {
 export function retryGenerationTarget(
   id: string,
   clientRequestId: string,
+  localOnly = false,
 ): Promise<Generation> {
   return request<Generation>(
     `/api/generation-targets/${encodeURIComponent(id)}/retry`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_request_id: clientRequestId }),
+      body: JSON.stringify({ client_request_id: clientRequestId, ...(localOnly ? {local_only:true} : {}) }),
     },
   );
 }

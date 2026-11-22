@@ -26,7 +26,7 @@ func TestRealOfflineChatAcceptance(t *testing.T) {
 	if root == "" {
 		root = t.TempDir()
 	}
-	if !strings.HasPrefix(root, "/private/tmp/") && !strings.HasPrefix(root, os.TempDir()) {
+	if !temporaryDescendant(root, "/private/tmp") && !temporaryDescendant(root, os.TempDir()) {
 		t.Fatal("acceptance requires a temporary COVE_DATA_DIR")
 	}
 	modelID := os.Getenv("COVE_TEST_CHAT_MODEL")
@@ -194,4 +194,43 @@ func TestRealOfflineChatAcceptance(t *testing.T) {
 		t.Fatal("saved answer lost the selected model artifact provenance")
 	}
 	t.Logf("REAL OFFLINE ACCEPTANCE: Chinese smoke=%d/%d; deltas=%d; download_ms=%d; cold_load_ms=%d; first_text_including_load_ms=%d; stop_ms=%d; peak_process_rss_bytes=%d; saved Chat lifecycle passed", quality, len(cases), deltaCount, downloadMS, coldMS, firstTokenMS, stopMS, peak)
+}
+
+func temporaryDescendant(path, base string) bool {
+	absolute, err := canonicalAcceptancePath(path)
+	if err != nil {
+		return false
+	}
+	basePath, err := canonicalAcceptancePath(base)
+	if err != nil {
+		return false
+	}
+	relative, err := filepath.Rel(basePath, absolute)
+	return err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+func canonicalAcceptancePath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	var tail []string
+	for {
+		resolved, err := filepath.EvalSymlinks(absolute)
+		if err == nil {
+			for i := len(tail) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, tail[i])
+			}
+			return resolved, nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(absolute)
+		if parent == absolute {
+			return "", err
+		}
+		tail = append(tail, filepath.Base(absolute))
+		absolute = parent
+	}
 }

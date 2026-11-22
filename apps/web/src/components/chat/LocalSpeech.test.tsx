@@ -10,7 +10,7 @@ vi.mock("@/api/speech",()=>({readAnswer:vi.fn(),previewSpeech:vi.fn(),getSpeechJ
 const job:SpeechJob={id:"fixture",state:"completed",model_id:"kokoro-en",model_name:"Kokoro English",voice_name:"Heart",language:"en",ready_chunks:1,total_chunks:1,characters:20,playback_rate:1,volume:.9};
 const players:FakeAudio[]=[];
 class FakeAudio {
- volume=1;playbackRate=1;src="";onended:(()=>void)|null=null;onerror:(()=>void)|null=null;
+ volume=1;playbackRate=1;defaultPlaybackRate=1;private source="";get src(){return this.source;}set src(value:string){this.source=value;this.playbackRate=this.defaultPlaybackRate;}onended:(()=>void)|null=null;onerror:(()=>void)|null=null;
  play=vi.fn().mockResolvedValue(undefined);pause=vi.fn();load=vi.fn();removeAttribute=vi.fn();
  constructor(){players.push(this);}
 }
@@ -33,3 +33,18 @@ test("changing conversation cancels a late accepted job",async()=>{
  let resolve!:(job:SpeechJob)=>void;vi.mocked(api.readAnswer).mockReturnValue(new Promise(value=>{resolve=value;}));const user=userEvent.setup();const rendered=render(view());await user.click(screen.getByRole("button",{name:"Read aloud on this Mac"}));rendered.rerender(view("other-chat"));
  await act(async()=>resolve(job));await waitFor(()=>expect(api.stopSpeech).toHaveBeenCalledWith("fixture"));expect(players).toHaveLength(0);
 });
+
+ test("Pocket speed survives media loads across multiple passages",async()=>{
+  vi.mocked(api.readAnswer).mockResolvedValue({...job,playback_rate:1.5});
+  vi.mocked(api.getSpeechJob).mockResolvedValue({...job,ready_chunks:2,total_chunks:2,playback_rate:1.5});
+  const user=userEvent.setup();render(view());await user.click(screen.getByRole("button",{name:"Read aloud on this Mac"}));await screen.findByText("Reading on this Mac");
+  expect(players[0].defaultPlaybackRate).toBe(1.5);expect(players[0].playbackRate).toBe(1.5);
+  await act(async()=>players[0].onended?.());expect(players[0].play).toHaveBeenCalledTimes(2);expect(players[0].playbackRate).toBe(1.5);
+ });
+ test("selected reading replaces a whole-answer reading and bounds the selected action",async()=>{
+  const user=userEvent.setup();render(<LocalSpeechProvider conversationId="chat" onDiscover={vi.fn()} onSettings={vi.fn()}><ReadAloudButton source={source}/><ReadAloudButton source={source} selection="New selection"/><ReadAloudButton source={source} selection={"x".repeat(6001)}/></LocalSpeechProvider>);
+  expect(screen.getByRole<HTMLButtonElement>("button",{name:"Select up to 6,000 characters to read aloud"}).disabled).toBe(true);
+  await user.click(screen.getByRole("button",{name:"Read aloud on this Mac"}));await screen.findByText("Reading on this Mac");
+  await user.click(screen.getByRole("button",{name:"Read selected text aloud"}));
+  expect(api.readAnswer).toHaveBeenLastCalledWith("chat","answer","New selection");expect(players).toHaveLength(2);
+ });

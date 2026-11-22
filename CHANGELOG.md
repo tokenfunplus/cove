@@ -23,17 +23,19 @@
 
 ### Changed
 
+- Fix local-search submit isolation, local-only retry enforcement, private inference worker transport/deadlines, scoped Project source invalidation, and local speech text, playback, and cleanup regressions found during review. Preserve in-flight settings edits and repeated settings navigation.
+
 - Replace remaining native form controls and disclosure widgets with shared custom components across Discover, speech settings, Projects, Chat, Debate, and verification. Preserve keyboard navigation, focus restoration, form values, and streaming reasoning state.
 
 - Streamline On this Mac discovery with separate integrated/explore-only groups, compact filters, file-size sorting, progressive candidate browsing, and preserved filters across Installed/Discover switching.
 
 - Move Projects into a dedicated directory and project home. Ordinary chat keeps a compact navigation entry; global New chat stays ungrouped, and conversation menus own project moves.
 
-- Upgrade SQLite to schema 26. Older services reject upgraded databases; retain a compatible backup before upgrading if downgrade is needed.
+- Upgrade SQLite to schema 27. Older services reject upgraded databases; retain a compatible backup before upgrading if downgrade is needed.
 - Clear-history retains live Project settings and fixed sources. Project dissolution preserves Conversations; project deletion previews retained historical copies outside its current members.
 
 - SQLite schema 25 adds local document originals and versioned embedding indexes. Older services reject upgraded databases; clearing chat data also clears the document library while keeping installed weights.
-- macOS packages include a signed, pinned llama.cpp runtime. Optional native inference requires Apple Silicon and macOS 13.3 or later; other catalog entries remain discovery-only.
+- macOS packages include a signed, pinned llama.cpp runtime. Optional native inference requires Apple Silicon and macOS 13.3 or later; unsupported catalog entries remain discovery-only.
 
 ### Fixed
 

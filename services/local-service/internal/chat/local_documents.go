@@ -170,7 +170,7 @@ func (service *Service) invalidateLocalSources(id string) {
 	service.webMu.Lock()
 	defer service.webMu.Unlock()
 	for token, item := range service.webSources {
-		if item.document.Retrieval != nil && (id == "" || item.document.ID == id) {
+		if item.document.Retrieval != nil && (id == "" || item.document.Retrieval.ProjectID == "" && item.document.ID == id) {
 			delete(service.webSources, token)
 		}
 	}

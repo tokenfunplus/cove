@@ -674,12 +674,13 @@ func (server *Server) retryGenerationTarget(writer http.ResponseWriter, request 
 	}
 	var input struct {
 		ClientRequestID string `json:"client_request_id"`
+		LocalOnly       bool   `json:"local_only,omitempty"`
 	}
 	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" {
 		writeError(writer, http.StatusBadRequest, "validation", "The retry request is invalid.")
 		return
 	}
-	started, err := server.chat.RetryGenerationTarget(request.Context(), request.PathValue("id"), input.ClientRequestID)
+	started, err := server.chat.RetryGenerationTarget(request.Context(), request.PathValue("id"), input.ClientRequestID, input.LocalOnly)
 	if err != nil {
 		writeGenerationError(writer, err)
 		return

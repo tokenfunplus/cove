@@ -4,6 +4,8 @@ Date: 2026-11-21
 
 Status: Accepted
 
+[ADR 0057](0057-close-local-capability-review-boundaries.md) replaces the original loopback worker handoff with private Unix sockets and extends admission and lifecycle checks.
+
 This decision extends [local model discovery](0047-add-curated-local-model-discovery.md) and [source document snapshots](0025-snapshot-local-source-documents-for-file-chat.md). Two catalog entries now support installation: BGE Small Chinese v1.5 Q8_0 (26,472,640 bytes) for retrieval, followed by Qwen2.5 0.5B Instruct Q4_K_M (491,400,032 bytes) for offline chat. Other entries remain discovery metadata.
 
 The Local Service owns an allowlisted model registry with immutable Hugging Face revisions, exact byte lengths, and SHA-256 digests. Persistence writes private temporary files, verifies complete downloads, and atomically installs weights under the local data directory. Downloads have progress and cancellation; partial files are removed rather than resumed. Arbitrary URLs, executables, and filesystem paths are not browser inputs.

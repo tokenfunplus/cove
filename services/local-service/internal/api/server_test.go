@@ -642,7 +642,7 @@ func (fake *fakeChat) CancelGenerationBatch(context.Context, string) (persistenc
 	return fake.GetGenerationBatch(context.Background(), "")
 }
 
-func (fake *fakeChat) RetryGenerationTarget(context.Context, string, string) (chat.GenerationStart, error) {
+func (fake *fakeChat) RetryGenerationTarget(context.Context, string, string, ...bool) (chat.GenerationStart, error) {
 	return chat.GenerationStart{Generation: fake.generation}, nil
 }
 

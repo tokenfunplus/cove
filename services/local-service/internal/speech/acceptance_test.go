@@ -143,9 +143,34 @@ func TestRealLocalSpeechAcceptance(t *testing.T) {
 				}
 			}
 			t.Logf("model=%s first_audio_ms=%d elapsed_ms=%d chunks=%d audio_bytes=%d", model.ID, first.Milliseconds(), time.Since(started).Milliseconds(), final.ReadyChunks, len(wave))
+			immediate, err := manager.Start(ctx, "native-acceptance", Request{Text: text})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := manager.Stop(ctx, "native-acceptance", immediate.ID); err != nil {
+				t.Fatal(err)
+			}
 			long, err := manager.Start(ctx, "native-acceptance", Request{Text: strings.Repeat(text+" ", 8)})
 			if err != nil {
 				t.Fatal(err)
+			}
+			// Observe output from a started worker while more passages remain.
+			for {
+				status, err := manager.Status("native-acceptance", long.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if status.ReadyChunks > 0 && status.ReadyChunks < status.TotalChunks {
+					break
+				}
+				if status.State == "failed" || status.State == "completed" {
+					t.Fatal("did not observe in-flight synthesis", status.State, status.Error)
+				}
+				select {
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				case <-time.After(5 * time.Millisecond):
+				}
 			}
 			stop := time.Now()
 			if err := manager.Stop(ctx, "native-acceptance", long.ID); err != nil {

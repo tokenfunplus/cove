@@ -96,7 +96,7 @@ func (manager *Manager) runPocket(ctx context.Context, model Model, profile pers
 		if err := command.Run(); err != nil {
 			return errors.New("Pocket TTS could not prepare this reading. Try another voice or a shorter passage.")
 		}
-		wave, err := normalizeWave(output.Bytes())
+		wave, err := normalizePocketWave(output.buffer.Bytes())
 		if err != nil {
 			return err
 		}
@@ -107,13 +107,24 @@ func (manager *Manager) runPocket(ctx context.Context, model Model, profile pers
 	return nil
 }
 
-type boundedAudio struct{ bytes.Buffer }
+type boundedAudio struct{ buffer bytes.Buffer }
 
 func (buffer *boundedAudio) Write(value []byte) (int, error) {
-	if buffer.Len()+len(value) > 12<<20 {
+	if buffer.buffer.Len()+len(value) > 12<<20 {
 		return 0, errors.New("Local speech exceeded the audio limit.")
 	}
-	return buffer.Buffer.Write(value)
+	return buffer.buffer.Write(value)
+}
+
+// Pocket's successful stdout uses a fixed placeholder for the unknown data
+// length. Only that exact format is repaired; framed/stored WAVs stay strict.
+func normalizePocketWave(wave []byte) ([]byte, error) {
+	if len(wave) >= 44 && string(wave[36:40]) == "data" && binary.LittleEndian.Uint32(wave[40:44]) == 2000000000 {
+		wave = bytes.Clone(wave)
+		binary.LittleEndian.PutUint32(wave[40:44], uint32(len(wave)-44))
+		binary.LittleEndian.PutUint32(wave[4:8], uint32(len(wave)-8))
+	}
+	return normalizeWave(wave)
 }
 
 func normalizeWave(wave []byte) ([]byte, error) {
@@ -130,7 +141,7 @@ func normalizeWave(wave []byte) ([]byte, error) {
 		offset += 8
 		if kind == "data" {
 			if size > uint64(len(wave)-offset) {
-				size = uint64(len(wave) - offset)
+				return nil, invalid
 			}
 			samples = wave[offset : offset+int(size)]
 			break

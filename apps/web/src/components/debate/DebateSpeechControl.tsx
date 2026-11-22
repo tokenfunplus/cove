@@ -46,7 +46,7 @@ export function DebateSpeechControl({ view, stopping = false }: { view: DebateVi
     previousPlayback.current = speech?.playback;
     // Manual reading, voice preview, settings, and the shared player's Stop
     // take ownership. They must not be replaced by the next automatic turn.
-    if (enabled && previous?.kind === "debate" && speech?.playback?.kind !== "debate") {
+    if (enabled && (speech?.playback?.kind === "answer" || speech?.playback?.kind === "preview" || previous?.kind === "debate" && !speech?.playback)) {
       setEnabled(false);
     }
   }, [enabled, speech?.playback]);

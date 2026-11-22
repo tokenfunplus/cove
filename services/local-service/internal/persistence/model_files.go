@@ -9,13 +9,21 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
 // ModelFiles owns downloaded weights. Callers supply only registry identities.
 type ModelFiles struct{ Root string }
 
+var modelIdentity = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+var modelDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var errModelIdentity = errors.New("invalid local model identity")
+
 func (files ModelFiles) Path(id, digest string) string {
+	if !filepath.IsLocal(id) || !modelIdentity.MatchString(id) || !modelDigest.MatchString(digest) {
+		return ""
+	}
 	return filepath.Join(files.Root, id, digest+".gguf")
 }
 
@@ -26,6 +34,9 @@ func (files ModelFiles) Installed(id, digest string, size int64) bool {
 
 func (files ModelFiles) Verify(ctx context.Context, id, digest string, size int64) (string, error) {
 	path := files.Path(id, digest)
+	if path == "" {
+		return "", errModelIdentity
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return "", errors.New("Download and install this model first.")
@@ -43,6 +54,9 @@ func (files ModelFiles) Verify(ctx context.Context, id, digest string, size int6
 }
 
 func (files ModelFiles) Install(ctx context.Context, id, digest string, size int64, reader io.Reader, progress func(int64)) error {
+	if files.Path(id, digest) == "" {
+		return errModelIdentity
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -100,6 +114,9 @@ func (files ModelFiles) Install(ctx context.Context, id, digest string, size int
 }
 
 func (files ModelFiles) Remove(id, digest string) error {
+	if files.Path(id, digest) == "" {
+		return errModelIdentity
+	}
 	err := os.Remove(files.Path(id, digest))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -110,6 +127,9 @@ func (files ModelFiles) Remove(id, digest string) error {
 // The manager serializes downloads and removal for each model. Only Cove's
 // private temporary weights are removed; unrelated entries remain untouched.
 func (files ModelFiles) cleanPartialDownloads(id, digest string) error {
+	if files.Path(id, digest) == "" {
+		return errModelIdentity
+	}
 	directory := filepath.Dir(files.Path(id, digest))
 	entries, err := os.ReadDir(directory)
 	if errors.Is(err, os.ErrNotExist) {

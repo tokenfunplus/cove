@@ -125,6 +125,7 @@ export function ConversationPanel({
   activeModelSet?: ActiveModelSet;
   profiles?: ProviderProfile[];
 }) {
+  const retryLocalOnly = Boolean(execution?.localOnly || attachmentDraft?.localOnly);
   const [editing,setEditing]=useState<{batch:GenerationBatch;body:string}>();
   const [editError,setEditError]=useState<string>();
   const {
@@ -412,6 +413,7 @@ export function ConversationPanel({
                   return null;
                 return (
                   <ModelComparisonResultGrid
+                    localOnly={retryLocalOnly}
                     busy={isSending}
                     batch={generationTarget.batch}
                     copy={copy}
@@ -539,6 +541,7 @@ export function ConversationPanel({
           liveComparison &&
           !liveComparisonAlreadyInHistory ? (
             <LiveModelComparisonGrid
+              localOnly={retryLocalOnly}
               busy={isSending}
               batch={liveBatch}
               copy={copy}
@@ -624,7 +627,7 @@ export function ConversationPanel({
                   {(target.phase === "failed" || target.phase === "stopped") &&
                   (target.targetId || target.generationId) &&
                   onRetry ? (
-                    <Button
+                    <Button disabled={isSending || (retryLocalOnly && target.providerId !== "cove-local")}
                       variant="outline"
                       type="button"
                       onClick={() =>
@@ -693,7 +696,7 @@ export function ConversationPanel({
                 <Button
                   variant="outline"
                   type="button"
-                  disabled={isSending}
+                  disabled={isSending || (retryLocalOnly && target.provider_id !== "cove-local")}
                   onClick={() => onRetry(batch.id, target.id)}
                 >
                   {copy.retryGeneration}
@@ -703,6 +706,7 @@ export function ConversationPanel({
           ))}
           {terminalFailedBatches.map((batch) => (
             <ModelComparisonResultGrid
+              localOnly={retryLocalOnly}
               busy={isSending}
               batch={batch}
               copy={copy}

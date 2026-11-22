@@ -17,7 +17,6 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 	"github.com/tokenfunplus/cove/services/local-service/internal/retrieval"
-	"github.com/tokenfunplus/cove/services/local-service/internal/speech"
 	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
 	"github.com/tokenfunplus/cove/services/local-service/internal/websources"
 )
@@ -118,7 +117,7 @@ type Chat interface {
 	GetGenerationBatchContext(ctx context.Context, batchID string) ([]provider.ProviderMessage, error)
 	SubscribeGenerationBatch(ctx context.Context, batchID, afterEventID string) (<-chan GenerationEvent, error)
 	CancelGenerationBatch(ctx context.Context, batchID string) (persistence.GenerationBatch, error)
-	RetryGenerationTarget(ctx context.Context, targetID, clientRequestID string) (GenerationStart, error)
+	RetryGenerationTarget(ctx context.Context, targetID, clientRequestID string, localOnly ...bool) (GenerationStart, error)
 	SelectGenerationAnswer(ctx context.Context, generationID string) error
 	SkipGenerationBatchContext(ctx context.Context, batchID string) error
 	HasActiveGenerationBatch() bool
@@ -160,7 +159,7 @@ type GenerationEvent struct {
 }
 
 type Service struct {
-	speech         *speech.Manager
+	speech         localSpeech
 	localModels    *localmodels.Manager
 	localDocuments retrieval.Store
 	retrieval      *retrieval.Service
@@ -395,16 +394,16 @@ func (service *Service) DeleteConversation(ctx context.Context, conversationID s
 	if err := service.stopConversationWork(ctx, conversationID); err != nil {
 		return err
 	}
-	if service.speech != nil {
-		if err := service.speech.CancelConversation(ctx, conversationID); err != nil {
-			return err
-		}
-	}
 	return service.store.DeleteConversation(ctx, conversationID)
 }
 
 // The caller holds startMu while affected work settles.
 func (service *Service) stopConversationWork(ctx context.Context, conversationID string) error {
+	if service.speech != nil {
+		if err := service.speech.CancelConversation(ctx, conversationID); err != nil {
+			return err
+		}
+	}
 	if err := service.stopDebateForDataChange(ctx, conversationID); err != nil {
 		return err
 	}

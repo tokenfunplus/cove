@@ -157,9 +157,12 @@ func (manager *Manager) Install(id string) error {
 		if err != nil {
 			job.status.State = "failed"
 			job.status.Error = err.Error()
-			if ctx.Err() != nil {
+			if errors.Is(ctx.Err(), context.Canceled) {
 				job.status.State = "not_installed"
 				job.status.Error = ""
+				job.status.Downloaded = 0
+			} else if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				job.status.Error = "Speech model download timed out. Try again."
 			}
 		}
 	}()

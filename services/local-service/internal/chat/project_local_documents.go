@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/localmodels"
@@ -88,10 +89,13 @@ func (service *Service) SetProjectSourceUsage(ctx context.Context, project, sour
 	}
 	var result persistence.Project
 	change := func() error {
-		var e error
+		snapshot, e := service.projectSourceSnapshot(ctx, project, source)
+		if e != nil {
+			return e
+		}
 		result, e = store.SetProjectSourceUsage(ctx, project, source, revision, usage)
-		if e == nil {
-			service.invalidateLocalSources("")
+		if result.ID != "" {
+			service.invalidateProjectSource(project, snapshot)
 		}
 		return e
 	}
@@ -102,4 +106,31 @@ func (service *Service) SetProjectSourceUsage(ctx context.Context, project, sour
 		err = change()
 	}
 	return result, err
+}
+
+// Source row identities and original snapshot identities are intentionally distinct.
+func (service *Service) projectSourceSnapshot(ctx context.Context, project, source string) (string, error) {
+	store, err := service.projectStore()
+	if err != nil {
+		return "", err
+	}
+	value, err := store.GetProject(ctx, project)
+	if err != nil {
+		return "", err
+	}
+	for _, item := range value.Sources {
+		if item.ID == source {
+			return item.Snapshot.ID, nil
+		}
+	}
+	return "", sql.ErrNoRows
+}
+func (service *Service) invalidateProjectSource(project, snapshot string) {
+	service.webMu.Lock()
+	defer service.webMu.Unlock()
+	for token, item := range service.webSources {
+		if r := item.document.Retrieval; r != nil && r.ProjectID == project && item.document.ID == snapshot {
+			delete(service.webSources, token)
+		}
+	}
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { setupControlTests, chooseOption } from "@/test/control-helpers";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, test, vi } from "vitest";
@@ -8,7 +8,7 @@ import type { SpeechConfiguration } from "@cove/api-contract";
 import { SpeechSettingsPanel } from "./SpeechSettingsPanel";
 import { saveSpeechSettings } from "@/api/speech";
 const mocks=vi.hoisted(()=>({preview:vi.fn(),stop:vi.fn()}));
-const configuration:SpeechConfiguration={settings:{mode:"auto",model_id:"",english_model_id:"",chinese_model_id:"",include_code:false,volume:.9,threads:2,profiles:{"english":{voice_id:"heart",speed:1,noise_scale:.667,temperature:.3},"chinese":{voice_id:"mandarin",speed:1,noise_scale:.667,temperature:.3}}},models:[{id:"english",name:"English voice",engine:"kokoro",languages:["en"],default_voice:"heart",installed:true,runtime_ready:true,voices:[{id:"heart",name:"Heart",speaker:0,language:"en"},{id:"bella",name:"Bella",speaker:1,language:"en"}]},{id:"chinese",name:"Chinese voice",engine:"melo",languages:["zh","en"],default_voice:"mandarin",installed:false,runtime_ready:true,voices:[{id:"mandarin",name:"Mandarin",speaker:0,language:"zh"}]}]};
+let configuration:SpeechConfiguration={settings:{mode:"auto",model_id:"",english_model_id:"",chinese_model_id:"",include_code:false,volume:.9,threads:2,profiles:{"english":{voice_id:"heart",speed:1,noise_scale:.667,temperature:.3},"chinese":{voice_id:"mandarin",speed:1,noise_scale:.667,temperature:.3}}},models:[{id:"english",name:"English voice",engine:"kokoro",languages:["en"],default_voice:"heart",installed:true,runtime_ready:true,voices:[{id:"heart",name:"Heart",speaker:0,language:"en"},{id:"bella",name:"Bella",speaker:1,language:"en"}]},{id:"chinese",name:"Chinese voice",engine:"melo",languages:["zh","en"],default_voice:"mandarin",installed:false,runtime_ready:true,voices:[{id:"mandarin",name:"Mandarin",speaker:0,language:"zh"}]}]};
 vi.mock("@/api/hooks/useSpeech",()=>({useSpeechConfiguration:()=>({data:configuration,isLoading:false,isError:false})}));
 vi.mock("@/api/speech",()=>({saveSpeechSettings:vi.fn()}));
 vi.mock("@/components/chat/LocalSpeech",()=>({useLocalSpeech:()=>mocks,SpeechPlaybackControls:()=>null}));
@@ -35,3 +35,18 @@ test("a long voice list can be searched before previewing an unsaved choice",asy
   expect(mocks.preview).toHaveBeenCalledWith(expect.objectContaining({profile:expect.objectContaining({voice_id:"voice-9"})}));
  } finally { configuration.models[0].voices=original; }
 });
+
+ test("a settings refresh updates an untouched cached draft",async()=>{
+  const original=configuration;const cache=new QueryClient();const element=()=> <QueryClientProvider client={cache}><SpeechSettingsPanel onDiscover={()=>{}}/></QueryClientProvider>;
+  try{const rendered=render(element());await screen.findByRole("combobox",{name:"Speech CPU usage"});
+   configuration={...configuration,settings:{...configuration.settings,threads:4}};rendered.rerender(element());
+   await waitFor(()=>expect(screen.getByRole("combobox",{name:"Speech CPU usage"}).textContent).toContain("Faster"));expect(screen.getByRole<HTMLButtonElement>("button",{name:"Save speech settings"}).disabled).toBe(true);
+  }finally{configuration=original;cache.clear();}
+ });
+ test("edits made during an in-flight save remain dirty afterward",async()=>{
+  let finish!:(value:SpeechConfiguration)=>void;vi.mocked(saveSpeechSettings).mockReturnValue(new Promise(resolve=>{finish=resolve;}));const user=userEvent.setup();renderSettings();
+  await chooseOption(user,screen.getByRole("combobox",{name:"Speech voice"}),"Bella");await user.click(screen.getByRole("button",{name:"Save speech settings"}));
+  const submitted=structuredClone(vi.mocked(saveSpeechSettings).mock.calls[0][0]);await chooseOption(user,screen.getByRole("combobox",{name:"Speech CPU usage"}),"Faster · 4 threads");
+  await act(async()=>finish({...configuration,settings:submitted}));await screen.findByText("Speech settings saved. Your newer changes are not saved yet.");
+  expect(screen.getByRole("combobox",{name:"Speech CPU usage"}).textContent).toContain("Faster");expect(screen.getByRole<HTMLButtonElement>("button",{name:"Save speech settings"}).disabled).toBe(false);
+ });

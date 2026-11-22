@@ -212,7 +212,7 @@ export function useChatWorkspace() {
   });
 
   const generationCommands = useGenerationCommands({
-    webSearchEnabled: webSearch.enabled,
+    webSearchEnabled: webSearch.enabled && !workspaceUi.localOnly,
     attachmentDraft,
     ...workspaceState,
     ...workspaceUi,
@@ -289,7 +289,7 @@ export function useChatWorkspace() {
   }
   return {
     continueProjectDraft,
-    webSearch,
+    webSearch: {...webSearch, enabled:webSearch.enabled && !workspaceUi.localOnly},
     answerTools,
     conversationSearch,
     attachmentDraft,

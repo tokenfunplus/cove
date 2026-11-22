@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"time"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
-	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 )
 
 const EmbeddingID = "bge-small-zh"
@@ -58,19 +58,18 @@ type download struct {
 	status Status
 }
 type Manager struct {
-	files      persistence.ModelFiles
-	executable string
-	client     *http.Client
-	workerHTTP *http.Client
-	adapter    *provider.HTTPAdapter
-	mu         sync.Mutex
-	mutations  sync.Mutex
-	jobs       map[string]*download
-	gate       chan struct{}
-	workers    map[string]*worker
-	lifetime   context.Context
-	cancel     context.CancelFunc
-	metrics    map[string]Measurement
+	files            persistence.ModelFiles
+	executable       string
+	client           *http.Client
+	embeddingTimeout time.Duration
+	mu               sync.Mutex
+	mutations        sync.Mutex
+	jobs             map[string]*download
+	gate             chan struct{}
+	workers          map[string]*worker
+	lifetime         context.Context
+	cancel           context.CancelFunc
+	metrics          map[string]Measurement
 }
 
 func Lookup(id string) (Model, error) {
@@ -93,8 +92,7 @@ func New(root, executable string) *Manager {
 		return nil
 	}}
 	manager := &Manager{files: persistence.ModelFiles{Root: filepath.Join(root, "models")}, executable: executable, client: client, jobs: map[string]*download{}, gate: make(chan struct{}, 1), workers: map[string]*worker{}, lifetime: ctx, cancel: cancel, metrics: map[string]Measurement{}}
-	manager.workerHTTP = workerClient()
-	manager.adapter = provider.NewHTTPAdapter(manager.workerHTTP)
+	manager.embeddingTimeout = 2 * time.Minute
 	go manager.reapIdle()
 	return manager
 }
@@ -187,9 +185,12 @@ func (manager *Manager) Install(id string) error {
 				cause = remote.Err
 			}
 			job.status.Error = "Model download failed: " + cause.Error()
-			if ctx.Err() != nil {
+			if errors.Is(ctx.Err(), context.Canceled) {
 				job.status.State = "not_installed"
 				job.status.Error = ""
+				job.status.Downloaded = 0
+			} else if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				job.status.Error = "Model download timed out. Try again."
 			}
 		}
 	}()
@@ -262,7 +263,6 @@ func (manager *Manager) acquire(ctx context.Context) error {
 }
 func (manager *Manager) release() { <-manager.gate }
 func (manager *Manager) Close() {
-	defer manager.workerHTTP.CloseIdleConnections()
 	defer manager.client.CloseIdleConnections()
 	manager.cancel()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -322,9 +322,21 @@ func (manager *Manager) Unload(ctx context.Context, id string) error {
 }
 
 // Internal workers bypass environment proxy settings and never follow redirects.
-func workerClient() *http.Client {
-	return &http.Client{Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+func workerClient(socketPath string) *http.Client {
+	dialer := &net.Dialer{}
+	return &http.Client{Transport: &workerTransport{base: &http.Transport{Proxy: nil, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return dialer.DialContext(ctx, "unix", socketPath)
+	}}}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
+
+// Keep private socket dialing intact when the general Provider adapter
+// constructs its ordinary loopback transport.
+type workerTransport struct{ base *http.Transport }
+
+func (transport *workerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return transport.base.RoundTrip(request)
+}
+func (transport *workerTransport) CloseIdleConnections() { transport.base.CloseIdleConnections() }
 func safeLoopback(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && u.Scheme == "http" && u.Hostname() == "127.0.0.1"

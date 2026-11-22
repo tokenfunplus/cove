@@ -49,10 +49,10 @@ func (router RoutedProvider) Validate(ctx context.Context, input provider.Valida
 	if input.Profile.Kind != provider.KindLocal {
 		return router.Remote.Validate(ctx, input)
 	}
-	if !router.Local.Profile().Configured {
+	metadata := router.Local.Metadata()
+	if len(metadata) == 0 {
 		return provider.ValidationResult{}, provider.ErrModelUnavailable
 	}
-	metadata := router.Local.Metadata()
 	models := make([]string, len(metadata))
 	for index, model := range metadata {
 		models[index] = model.ID
@@ -86,7 +86,7 @@ func (router RoutedProvider) Stream(ctx context.Context, input provider.Completi
 	if input.GenerationParameters.MaxTokens == nil || *input.GenerationParameters.MaxTokens > maxOutput {
 		input.GenerationParameters.MaxTokens = &maxOutput
 	}
-	stream, err := manager.adapter.Stream(ctx, input)
+	stream, err := provider.NewHTTPAdapter(w.client).Stream(ctx, input)
 	if err != nil {
 		if ctx.Err() != nil {
 			manager.stopWorker(modelID)

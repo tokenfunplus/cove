@@ -81,12 +81,11 @@ func testCancelBeforeResponseHeaders(t *testing.T, modelID string) {
 	go func() { _ = command.Wait(); close(w.done) }()
 	manager.workers[modelID] = w
 	requested := make(chan struct{})
-	manager.workerHTTP = &http.Client{Transport: downloadTransport(func(request *http.Request) (*http.Response, error) {
+	w.client = &http.Client{Transport: downloadTransport(func(request *http.Request) (*http.Response, error) {
 		close(requested)
 		<-request.Context().Done()
 		return nil, request.Context().Err()
 	})}
-	manager.adapter = provider.NewHTTPAdapter(manager.workerHTTP)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	result := make(chan error, 1)

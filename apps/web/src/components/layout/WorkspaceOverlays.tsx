@@ -129,6 +129,7 @@ export function WorkspaceOverlays({ workspace }: Props) {
       <SettingsDialog
         open={Boolean(settingsEntry)}
         initialSection={settingsEntry}
+        onSectionChange={setSettingsEntry}
         onClose={() => setSettingsEntry(undefined)}
         copy={copy}
       >

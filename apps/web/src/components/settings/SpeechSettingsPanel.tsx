@@ -18,8 +18,9 @@ export function SpeechSettingsPanel({onDiscover,initialModelId}:{onDiscover:()=>
   const [draft,setDraft]=useState<SpeechSettings>();const speechRef=useRef(speech);speechRef.current=speech;
   const [editing,setEditing]=useState(initialModelId??"");const [preview,setPreview]=useState("");
   const [saving,setSaving]=useState(false);const [feedback,setFeedback]=useState<{error:boolean;text:string}>();
-  const dirty=Boolean(draft&&JSON.stringify(draft)!==JSON.stringify(configuration.data?.settings));const dirtyRef=useRef(dirty);dirtyRef.current=dirty;
-  useEffect(()=>{if(configuration.data&&!dirtyRef.current)setDraft(structuredClone(configuration.data.settings));},[configuration.data]);
+  const baseline=useRef<SpeechSettings | undefined>(undefined);const draftRef=useRef(draft);draftRef.current=draft;
+  const dirty=Boolean(draft&&JSON.stringify(draft)!==JSON.stringify(baseline.current));const dirtyRef=useRef(dirty);dirtyRef.current=dirty;
+  useEffect(()=>{if(configuration.data&&!dirtyRef.current){baseline.current=structuredClone(configuration.data.settings);setDraft(structuredClone(configuration.data.settings));}},[configuration.data]);
   useEffect(()=>()=>{if(speechRef.current?.playback?.kind==="preview")speechRef.current.stop();},[]);
   if(configuration.isLoading)return <p role="status">Loading speech settings…</p>;
   if(configuration.isError)return <div role="alert" className="grid justify-items-start gap-3"><p>Speech settings could not be loaded.</p><Button variant="outline" onClick={()=>void configuration.refetch()}>Try again</Button></div>;
@@ -31,7 +32,7 @@ export function SpeechSettingsPanel({onDiscover,initialModelId}:{onDiscover:()=>
   const sample=preview||(model?.languages.includes("zh")?"\u4f60\u597d\uff0c\u8fd9\u662f Cove \u7684\u672c\u5730\u6717\u8bfb\u3002\u4f60\u53ef\u4ee5\u9009\u62e9\u559c\u6b22\u7684\u58f0\u97f3\uff0c\u8c03\u6574\u8bed\u901f\u3002":"Hello, this is Cove reading on your Mac. Choose a voice and a comfortable reading pace.");
   function update(patch:Partial<SpeechSettings>){setFeedback(undefined);setDraft(value=>value?{...value,...patch}:value);}
   function updateProfile(patch:Partial<SpeechProfile>){if(!model||!profile)return;update({profiles:{...draft!.profiles,[model.id]:{...profile,...patch}}});}
-  async function save(){if(!draft)return;setSaving(true);setFeedback(undefined);speech?.stop();try{const result=await saveSpeechSettings(draft);cache.setQueryData<SpeechConfiguration>(speechKey,result);setDraft(structuredClone(result.settings));setFeedback({error:false,text:"Speech settings saved."});}catch(error){setFeedback({error:true,text:error instanceof Error?error.message:"Speech settings could not be saved."});}finally{setSaving(false);}}
+  async function save(){if(!draft)return;setSaving(true);setFeedback(undefined);speech?.stop();try{const submitted=structuredClone(draft);const result=await saveSpeechSettings(submitted);baseline.current=structuredClone(result.settings);const unchanged=JSON.stringify(draftRef.current)===JSON.stringify(submitted);cache.setQueryData<SpeechConfiguration>(speechKey,result);if(unchanged)setDraft(structuredClone(result.settings));setFeedback({error:false,text:unchanged?"Speech settings saved.":"Speech settings saved. Your newer changes are not saved yet."});}catch(error){setFeedback({error:true,text:error instanceof Error?error.message:"Speech settings could not be saved."});}finally{setSaving(false);}}
   const modelOption=(id:string,name:string,installed:boolean)=>({value:id,label:name+(installed?"":" · Not installed")});
   return <section aria-label="Local speech settings" className="grid gap-5">
     <header><h4 className="flex items-center gap-2 text-base font-semibold"><Volume2 className="size-4 text-primary" aria-hidden="true"/>Read aloud on this Mac</h4><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Use the sound button below an answer to listen. Speech stays on this Mac and works offline after installation.</p></header>

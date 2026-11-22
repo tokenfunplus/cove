@@ -120,7 +120,9 @@ func TestManagedDownloadCancellationRetryAndRemoval(t *testing.T) {
 	if !manager.Installed(EmbeddingID) || manager.Statuses()[0].State != "installed" {
 		t.Fatal("verified retry was not installed")
 	}
-	if err := manager.Remove(ctx, EmbeddingID); err != nil {
+	removeCtx, removeCancel := context.WithTimeout(context.Background(), time.Second)
+	defer removeCancel()
+	if err := manager.Remove(removeCtx, EmbeddingID); err != nil {
 		t.Fatal(err)
 	}
 	if manager.Installed(EmbeddingID) || manager.Statuses()[0].State != "not_installed" {

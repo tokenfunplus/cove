@@ -318,7 +318,11 @@ func (s *SQLiteStore) RemoveProjectSource(ctx context.Context, id, sid string, r
 	if e = tx.Commit(); e != nil {
 		return Project{}, e
 	}
-	return s.GetProject(ctx, id)
+	project, err := s.GetProject(ctx, id)
+	if err != nil {
+		return Project{ID: id, Revision: rev + 1}, err
+	}
+	return project, nil
 }
 func liveProject(ctx context.Context, tx *sql.Tx, id string) error {
 	if id == "" {

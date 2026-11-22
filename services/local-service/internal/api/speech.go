@@ -35,7 +35,11 @@ func (server *Server) speechCommand(writer http.ResponseWriter, request *http.Re
 	}
 	session, _ := localsecurity.SessionFromRequest(request)
 	decode := func(target any) error {
-		request.Body = http.MaxBytesReader(writer, request.Body, 16<<10)
+		limit := int64(16 << 10)
+		if request.URL.Path == "/api/speech" {
+			limit = 80 << 10
+		}
+		request.Body = http.MaxBytesReader(writer, request.Body, limit)
 		decoder := json.NewDecoder(request.Body)
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(target); err != nil {

@@ -6,12 +6,12 @@ import type { DebateTurn, DebateView, SpeechConfiguration, SpeechJob } from "@co
 import * as api from "@/api/speech";
 import { getDebate } from "@/api/debates";
 import { LocalServiceError } from "@/api/client";
-import { LocalSpeechProvider } from "@/components/chat/LocalSpeech";
+import { LocalSpeechProvider, useLocalSpeech } from "@/components/chat/LocalSpeech";
 import { createWorkspaceFixture } from "@/test/workspace-fixture";
 import { defaultDebateRules } from "./DebateSetupDialog";
 import { DebateSpeechControl, pendingSpeechTurns } from "./DebateSpeechControl";
 
-vi.mock("@/api/speech", () => ({ getSpeechConfiguration: vi.fn(), readDebateTurn: vi.fn(), getSpeechJob: vi.fn(), speechAudio: vi.fn(), stopSpeech: vi.fn() }));
+vi.mock("@/api/speech", () => ({ previewSpeech: vi.fn(), getSpeechConfiguration: vi.fn(), readDebateTurn: vi.fn(), getSpeechJob: vi.fn(), speechAudio: vi.fn(), stopSpeech: vi.fn() }));
 vi.mock("@/api/debates", () => ({ getDebate: vi.fn() }));
 const fixture = createWorkspaceFixture(2);
 const job: SpeechJob = { id: "speech", state: "completed", model_id: "voice", model_name: "Local voice", voice_name: "Voice", language: "en", ready_chunks: 1, total_chunks: 1, characters: 24, playback_rate: 1, volume: .9 };
@@ -176,3 +176,13 @@ test("a queued streaming turn that settles during playback is read without anoth
   await waitFor(() => expect(api.readDebateTurn).toHaveBeenCalledTimes(2), { timeout: 2500 });
   expect(vi.mocked(api.readDebateTurn).mock.calls[1][0].turn_id).toBe("turn-2");
 });
+
+ test("a preview owns playback even before the first automatic debate turn",async()=>{
+  vi.mocked(api.previewSpeech).mockResolvedValue(job);
+  function Preview(){const speech=useLocalSpeech();return <button onClick={()=>speech?.preview({text:"Preview",model_id:"voice",profile:{voice_id:"heart",speed:1,noise_scale:.6,temperature:.3}})}>Preview fixture</button>;}
+  function fixtureSurface(data:DebateView){return <LocalSpeechProvider conversationId="debate" onDiscover={onDiscover} onSettings={onSettings}><DebateSpeechControl view={data}/><Preview/></LocalSpeechProvider>;}
+  const user=userEvent.setup();const rendered=render(fixtureSurface(view([])));
+  await user.click(screen.getByRole("button",{name:"Turn on debate read aloud"}));await screen.findByText(/Waiting for the next turn/);
+  await user.click(screen.getByRole("button",{name:"Preview fixture"}));await waitFor(()=>expect(screen.getByRole("button",{name:"Turn on debate read aloud"})).toBeTruthy());
+  rendered.rerender(fixtureSurface(view([turn(1)])));expect(api.readDebateTurn).not.toHaveBeenCalled();expect(api.stopSpeech).not.toHaveBeenCalled();
+ });

@@ -193,7 +193,7 @@ export function ChatComposer({
       data-compact={compact ? "true" : undefined}
       onSubmit={(event) => {
         event.preventDefault();
-        if (canSend) onSend();
+        if (event.target === event.currentTarget && canSend) onSend();
       }}
     >
       <div className={cn(chatStyles.generationComposer_models, compact && "hidden")} hidden={compact}>
@@ -229,7 +229,7 @@ export function ChatComposer({
         ) : renderInput()}
       </div>
       {execution&&<div className="mt-2 grid gap-2 text-xs" aria-label="Execution locations">
-        <div className="flex flex-wrap items-center justify-between gap-2"><span>{retrieved?"Search: On this Mac → ":""}Answer: {destinations.join(" + ")||"Choose a model"}</span><label className="flex items-center gap-2"><Checkbox  checked={execution.localOnly} disabled={isSending||navigationBusy||webSearch?.busy} onCheckedChange={checked=>{if((checked === true)&&webSearch?.enabled)webSearch.toggle();execution.setLocalOnly((checked === true));}}/>Only on this Mac</label></div>
+        <div className="flex flex-wrap items-center justify-between gap-2"><span>{retrieved?"Search: On this Mac → ":""}Answer: {destinations.join(" + ")||"Choose a model"}</span><label className="flex items-center gap-2"><Checkbox  checked={execution.localOnly} disabled={isSending||navigationBusy||webSearch?.busy} onCheckedChange={checked=>execution.setLocalOnly(checked === true)}/>Only on this Mac</label></div>
         {localMismatch?<p role="alert" className="text-destructive">Choose an installed local chat model to send in this mode. <Button variant="link" size="xs" onClick={execution.openLocalModels}>Choose local model</Button></p>:<p className="text-muted-foreground">{allLocal?"The selected models process your question and context on this Mac.":"Your question, selected history, project context, and attached source text go to the listed Providers."}</p>}
         {allLocal&&<p className="text-muted-foreground">Experimental local model: check facts, code, and citations.</p>}
       </div>}

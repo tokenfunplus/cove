@@ -25,7 +25,7 @@ func TestRealLocalRetrievalAcceptance(t *testing.T) {
 	if root == "" {
 		root = t.TempDir()
 	}
-	if !strings.HasPrefix(filepath.Clean(root), filepath.Clean(os.TempDir())) && !strings.HasPrefix(root, "/private/tmp/") {
+	if !temporaryDescendant(root, os.TempDir()) && !temporaryDescendant(root, "/private/tmp") {
 		t.Fatal("acceptance requires a temporary COVE_DATA_DIR")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -159,4 +159,53 @@ func TestRealLocalRetrievalAcceptance(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("REAL ACCEPTANCE: recall@3=%d/%d; citation fidelity=%d/%d; download_ms=%d; cold_embedding_ms=%d; index_ms=%d; mean_query_ms=%d; peak_process_rss_bytes=%d; scope and deletion passed", hits, len(cases), validCitations, citations, downloadMS, coldMS, indexMS, totalLatency/int64(len(cases)), manager.Measurement(localmodels.EmbeddingID).PeakResidentBytes)
+}
+
+func temporaryDescendant(path, base string) bool {
+	absolute, err := canonicalAcceptancePath(path)
+	if err != nil {
+		return false
+	}
+	basePath, err := canonicalAcceptancePath(base)
+	if err != nil {
+		return false
+	}
+	relative, err := filepath.Rel(basePath, absolute)
+	return err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+func TestTemporaryAcceptanceContainment(t *testing.T) {
+	for _, path := range []string{"/tmp-backup/cove", "/tmp/../cove-outside/cove", "/tmp"} {
+		if temporaryDescendant(path, "/tmp") {
+			t.Fatalf("accepted outside temporary descendant: %s", path)
+		}
+	}
+	if !temporaryDescendant("/tmp/cove-test", "/tmp") {
+		t.Fatal("rejected a temporary descendant")
+	}
+}
+
+func canonicalAcceptancePath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	var tail []string
+	for {
+		resolved, err := filepath.EvalSymlinks(absolute)
+		if err == nil {
+			for i := len(tail) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, tail[i])
+			}
+			return resolved, nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(absolute)
+		if parent == absolute {
+			return "", err
+		}
+		tail = append(tail, filepath.Base(absolute))
+		absolute = parent
+	}
 }

@@ -1,7 +1,7 @@
 import { usePreviewAttachment } from "@/api/hooks/useGenerations";
 import { LocalServiceError, prepareWebSource, releaseWebSource } from "@/api";
 import type { AttachmentInput, AttachmentSnapshot, PreparedWebSource } from "@cove/api-contract";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type SetStateAction } from "react";
 
 export type DraftAttachment = {
   key: string;
@@ -21,7 +21,13 @@ function expireAttachments(items: DraftAttachment[]) {
 }
 
 export function useAttachmentDraft(conversationId?: string, localOnly = false) {
-  const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
+  const [attachments, setAttachmentState] = useState<DraftAttachment[]>([]);
+  const attachmentsRef = useRef(attachments);
+  function setAttachments(update: SetStateAction<DraftAttachment[]>) {
+    const next = typeof update === "function" ? update(attachmentsRef.current) : update;
+    attachmentsRef.current = next;
+    setAttachmentState(next);
+  }
   const [selectionError, setSelectionError] = useState<string>();
   const transfer=useRef<{id:string;items:DraftAttachment[]}|undefined>(undefined);
   const epoch = useRef(0);
@@ -80,7 +86,7 @@ export function useAttachmentDraft(conversationId?: string, localOnly = false) {
       for (const source of sources) void releaseWebSource(source.source_token).catch(()=>undefined);
       return false;
     }
-    if (count.current+sources.length>4 || sources.some(source=>attachments.some(item=>item.snapshot?.id===source.snapshot.id))) {
+    if (count.current+sources.length>4 || new Set(sources.map(source=>source.snapshot.id)).size !== sources.length || sources.some(source=>attachmentsRef.current.some(item=>item.snapshot?.id===source.snapshot.id))) {
       for (const source of sources) void releaseWebSource(source.source_token).catch(()=>undefined);
       setSelectionError("Attach at most four distinct sources. Remove an existing copy before adding retrieved sections from the same document.");
       return false;

@@ -7,14 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"math"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
-	"strconv"
+	"path/filepath"
 	"time"
 )
 
@@ -22,7 +20,8 @@ type worker struct {
 	command       *exec.Cmd
 	done          chan struct{}
 	endpoint, key string
-	keyFile       string
+	directory     string
+	client        *http.Client
 	lastUsed      time.Time
 }
 
@@ -35,7 +34,8 @@ func (manager *Manager) stopWorker(id string) {
 		measurement.PeakResidentBytes = peakResidentBytes(w.command.ProcessState)
 		manager.metrics[id] = measurement
 		manager.mu.Unlock()
-		_ = os.Remove(w.keyFile)
+		w.client.CloseIdleConnections()
+		_ = os.RemoveAll(w.directory)
 		delete(manager.workers, id)
 	}
 }
@@ -68,28 +68,29 @@ func (manager *Manager) startWorker(ctx context.Context, id string) (*worker, er
 	if err != nil {
 		return nil, err
 	}
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	// A private Unix socket removes TCP port handoff and peer-impersonation races.
+	// Keep the path short enough for Darwin's sockaddr_un limit.
+	directory, err := os.MkdirTemp("/tmp", "cove-infer-")
 	if err != nil {
 		return nil, err
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.RemoveAll(directory)
+		}
+	}()
+	socketPath := filepath.Join(directory, "worker.sock")
 	var random [32]byte
 	if _, err = rand.Read(random[:]); err != nil {
 		return nil, err
 	}
 	key := hex.EncodeToString(random[:])
-	keyFile, err := os.CreateTemp("", "cove-inference-key-*")
-	if err != nil {
+	keyPath := filepath.Join(directory, "auth")
+	if err = os.WriteFile(keyPath, []byte(key), 0600); err != nil {
 		return nil, err
 	}
-	if _, err = keyFile.WriteString(key); err != nil {
-		keyFile.Close()
-		os.Remove(keyFile.Name())
-		return nil, err
-	}
-	keyFile.Close()
-	args := []string{"--model", path, "--alias", id, "--host", "127.0.0.1", "--port", strconv.Itoa(port), "--api-key-file", keyFile.Name(), "--parallel", "1", "--no-webui", "--no-warmup", "--ctx-size", "512", "--batch-size", "512", "--ubatch-size", "512", "--gpu-layers", "0"}
+	args := []string{"--model", path, "--alias", id, "--host", socketPath, "--api-key-file", keyPath, "--parallel", "1", "--no-webui", "--no-warmup", "--ctx-size", "512", "--batch-size", "512", "--ubatch-size", "512", "--gpu-layers", "0"}
 	if m.Role == "embedding" {
 		args = append(args, "--embeddings", "--pooling", "cls")
 	} else {
@@ -103,17 +104,17 @@ func (manager *Manager) startWorker(ctx context.Context, id string) (*worker, er
 	command.Stdout = io.Discard
 	command.Stderr = io.Discard
 	if err = command.Start(); err != nil {
-		os.Remove(keyFile.Name())
 		return nil, errors.New("The local inference worker could not start.")
 	}
-	w := &worker{command: command, done: make(chan struct{}), endpoint: fmt.Sprintf("http://127.0.0.1:%d", port), key: key, keyFile: keyFile.Name(), lastUsed: time.Now()}
-	go func() { _ = command.Wait(); _ = os.Remove(w.keyFile); close(w.done) }()
+	w := &worker{command: command, done: make(chan struct{}), endpoint: "http://127.0.0.1", key: key, directory: directory, client: workerClient(socketPath), lastUsed: time.Now()}
+	cleanup = false
+	go func() { _ = command.Wait(); close(w.done) }()
 	manager.workers[id] = w
 	ready, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
-	client := manager.workerHTTP
+	client := w.client
 	for {
 		select {
 		case <-ready.Done():
@@ -144,6 +145,8 @@ func (manager *Manager) startWorker(ctx context.Context, id string) (*worker, er
 }
 
 func (manager *Manager) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	ctx, cancel := context.WithTimeout(ctx, manager.embeddingTimeout)
+	defer cancel()
 	if len(texts) == 0 || len(texts) > 16 {
 		return nil, errors.New("Embedding batches must contain one to sixteen texts.")
 	}
@@ -151,6 +154,11 @@ func (manager *Manager) Embed(ctx context.Context, texts []string) ([][]float32,
 		return nil, err
 	}
 	defer manager.release()
+	defer func() {
+		if ctx.Err() != nil {
+			manager.stopWorker(EmbeddingID)
+		}
+	}()
 	w, err := manager.startWorker(ctx, EmbeddingID)
 	if err != nil {
 		return nil, err
@@ -162,7 +170,7 @@ func (manager *Manager) Embed(ctx context.Context, texts []string) ([][]float32,
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Authorization", "Bearer "+w.key)
-	response, err := manager.workerHTTP.Do(request)
+	response, err := w.client.Do(request)
 	if err != nil {
 		return nil, errors.New("Local embedding inference failed or was stopped.")
 	}

@@ -2,7 +2,7 @@
 
 Reviewed: 2026-11-22
 
-The discovery list contains 28 selected artifact sets across eleven uses, all within 500 MB. It is bundled metadata and works without contacting a model hub. BGE Small Chinese, Qwen2.5 0.5B, and Qwen3 0.6B Abliterated Q5_K_M are integrated in Cove. Other entries are candidates to inspect, not installed capabilities or verified recommendations.
+The discovery list contains 31 selected artifact sets across eleven uses, all within 500 MB. It is bundled metadata and works without contacting a model hub. BGE Small Chinese, Qwen2.5 0.5B, Qwen3 0.6B Abliterated Q5_K_M, and the five managed speech bundles are integrated in Cove. Explore-only entries are candidates to inspect, not installed capabilities or verified recommendations.
 
 Source sizes were checked against model-hub file metadata or maintainer download pages. Hugging Face source links pin the reviewed revision. Standalone maintainer pages remain live references. Sizes exclude supporting runtimes, tokenizers/dictionaries, and working memory; compressed archives need additional space after extraction.
 

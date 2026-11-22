@@ -104,7 +104,7 @@ export function LocalDocumentsDialog({onClose,onUseSources,projectId}:{onClose:(
               {remove===item.id && <div className="basis-full rounded-lg bg-muted p-3 text-sm"><p>Delete this library copy and its index? Snapshots already saved in chats are kept.</p><div className="mt-2 flex gap-2"><Button variant="destructive" size="sm" disabled={!!busy} onClick={()=>void work("Deleting document…",async({signal,isCurrent})=>{await removeLocalDocument(item.id,signal);if(!isCurrent())return;setResults(undefined);setChosen([]);setSelected(current=>current.filter(id=>id!==item.id));setRemove(undefined);})}>Delete library copy</Button><Button variant="ghost" size="sm" disabled={!!busy} onClick={()=>setRemove(undefined)}>Keep document</Button></div></div>}
             </li>)}</ul>
           </section>
-          <form className="grid gap-3 border-t border-border pt-4" onSubmit={event=>{event.preventDefault();void search();}}>
+          <form className="grid gap-3 border-t border-border pt-4" onSubmit={event=>{event.preventDefault();event.stopPropagation();void search();}}>
             <label className="grid gap-2 text-sm font-medium">What are you looking for?<Input disabled={!!busy && busy!=="Searching selected documents locally…"} value={query} maxLength={400} onChange={event=>{reset();setQuery(event.target.value);}} placeholder="Ask a question about the selected documents"/></label>
             <div className="flex flex-wrap items-center gap-3"><Button type="submit" disabled={!!busy || !installed || !selected.length || !query.trim()}>Search selected documents</Button><span className="text-sm text-muted-foreground">{selected.length} / 4 selected · Chinese-focused retrieval</span></div>
           </form>

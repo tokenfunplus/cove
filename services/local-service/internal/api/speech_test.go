@@ -93,6 +93,12 @@ func TestSpeechAPIEnforcesSessionCSRFAndAudioOwnership(t *testing.T) {
 	if got := call("POST", "/api/speech", `{"conversation_id":"chat","message_id":"answer"}`, token, csrf); got.Code != 409 || !strings.Contains(got.Body.String(), "speech_model_required") {
 		t.Fatal("missing-model guidance not returned", got.Code)
 	}
+	for _, selection := range []string{strings.Repeat("\u4e2d", 5500), strings.Repeat(`\ud83d\ude00`, 6000)} {
+		body := `{"conversation_id":"chat","message_id":"answer","selection":"` + selection + `"}`
+		if got := call("POST", "/api/speech", body, token, csrf); got.Code != 409 {
+			t.Fatal("valid multibyte/escaped selection did not reach Chat", got.Code)
+		}
+	}
 	if got := call("POST", "/api/speech/preview", `{"text":"Read","unexpected":true}`, token, csrf); got.Code != 400 {
 		t.Fatal("invalid preview accepted", got.Code)
 	}
