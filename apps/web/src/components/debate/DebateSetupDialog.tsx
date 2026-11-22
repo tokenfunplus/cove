@@ -1,3 +1,4 @@
+import { Checkbox } from "@/components/ui/checkbox";
 import { useEffect, useRef, useState } from "react";
 import type {
   DebateRole,
@@ -131,12 +132,12 @@ export function DebateRulesFields({
         </div>
       </div>
       <label className="flex items-center gap-3 text-sm">
-        <input
-          type="checkbox"
-          className="size-4 accent-primary"
+        <Checkbox
+
+          className="size-4 "
           checked={rules.rotate}
-          onChange={(event) =>
-            onChange({ ...rules, rotate: event.target.checked })
+          onCheckedChange={(checked) =>
+            onChange({ ...rules, rotate: (checked === true) })
           }
         />
         Rotate the first speaker each round

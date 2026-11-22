@@ -1,3 +1,5 @@
+import { FrontSelect } from "@/components/ui/front-select";
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { useEffect, useState } from "react";
 import { ChevronDown, Search, SlidersHorizontal, X } from "lucide-react";
 import type { PreparedWebSource } from "@cove/api-contract";
@@ -59,30 +61,14 @@ export function LocalModelDiscovery({ manage = false, onUseSources, onUseChat, o
           <Input type="search" aria-label={copy.search} placeholder={copy.searchPlaceholder} value={filters.query} onChange={event => updateFilters({ query: event.target.value })} />
           {filters.query && <Button variant="ghost" size="icon-sm" className={styles.clearSearch} aria-label="Clear search" onClick={() => updateFilters({ query: "" })}><X className="size-3.5" aria-hidden="true" /></Button>}
         </div>
-          <span className={styles.select}>
-            <select aria-label={copy.purpose} value={filters.purpose} onChange={event => updateFilters({ purpose: event.target.value as typeof filters.purpose })}>
-              {["all", ...localModelPurposes].map(value => <option key={value} value={value}>{copy.purposes[value as keyof typeof copy.purposes]}</option>)}
-            </select><ChevronDown aria-hidden="true" />
-          </span>
+          <FrontSelect ariaLabel={copy.purpose} value={filters.purpose} onValueChange={value => updateFilters({ purpose: value as typeof filters.purpose })} options={["all", ...localModelPurposes].map(value => ({value, label:copy.purposes[value as keyof typeof copy.purposes]}))} className={styles.selectTrigger} />
           <Button size="sm" variant="outline" className="h-10" aria-label="Filters" aria-expanded={filtersOpen} aria-controls="local-model-filters" onClick={() => setFiltersOpen(current => !current)}><SlidersHorizontal className="size-3.5" aria-hidden="true" /><span className="max-[440px]:sr-only">Filters</span>{additionalFilters > 0 && <span className={styles.filterCount}>{additionalFilters}</span>}</Button>
         </div>
         <div id="local-model-filters" hidden={!filtersOpen}>
         <div className={styles.filters}>
-          <label>{copy.language}<span className={styles.select}>
-            <select aria-label={copy.language} value={filters.language} onChange={event => updateFilters({ language: event.target.value as typeof filters.language })}>
-              {languages.map(value => <option key={value} value={value}>{copy.languages[value]}</option>)}
-            </select><ChevronDown aria-hidden="true" />
-          </span></label>
-          <label>{copy.size}<span className={styles.select}>
-            <select aria-label={copy.size} value={filters.maxWeightMB} onChange={event => updateFilters({ maxWeightMB: Number(event.target.value) })}>
-              {sizes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select><ChevronDown aria-hidden="true" />
-          </span></label>
-          <label>Sort<span className={styles.select}>
-            <select aria-label="Sort models" value={sort} onChange={event => { setSort(event.target.value); setExploreLimit(pageSize); }}>
-              <option value="featured">Catalog order</option><option value="size">Smallest files first</option>
-            </select><ChevronDown aria-hidden="true" />
-          </span></label>
+          <FrontSelect label={copy.language} ariaLabel={copy.language} value={filters.language} onValueChange={value => updateFilters({language:value as typeof filters.language})} options={languages.map(value=>({value,label:copy.languages[value]}))} className={styles.selectTrigger} />
+          <FrontSelect label={copy.size} ariaLabel={copy.size} value={String(filters.maxWeightMB)} onValueChange={value=>updateFilters({maxWeightMB:Number(value)})} options={sizes.map(([value,label])=>({value:String(value),label}))} className={styles.selectTrigger} />
+          <FrontSelect label="Sort" ariaLabel="Sort models" value={sort} onValueChange={value=>{setSort(value);setExploreLimit(pageSize);}} options={[{value:"featured",label:"Catalog order"},{value:"size",label:"Smallest files first"}]} className={styles.selectTrigger} />
         </div>
         </div>
         <div className={styles.integrationRow}>
@@ -109,12 +95,12 @@ export function LocalModelDiscovery({ manage = false, onUseSources, onUseChat, o
         {explore.length > exploreLimit && <div className={styles.loadMore}><p>Showing {Math.min(exploreLimit, explore.length)} of {explore.length} explore-only models</p><Button variant="outline" size="sm" onClick={() => setExploreLimit(current => current + pageSize)}>Show {Math.min(pageSize, explore.length - exploreLimit)} more models<ChevronDown className="size-3.5" aria-hidden="true" /></Button></div>}
       </section>}
       {!models.length && <div className={styles.empty}><Search className="mx-auto size-6 text-muted-foreground" aria-hidden="true" /><h4>{copy.empty}</h4><p>{copy.emptyHint}</p><Button variant="outline" onClick={() => reset()}>{copy.reset}</Button></div>}
-      <details className={styles.sources}>
-        <summary>{copy.sourcesTitle}</summary>
+      <Disclosure className={styles.sources}>
+        <DisclosureTrigger>{copy.sourcesTitle}</DisclosureTrigger><DisclosureContent>
         <p>{copy.sourcesDescription}</p><p>{copy.alternativeSource} <a href="https://modelscope.cn/models" target="_blank" rel="noopener noreferrer">{copy.sourceLink}</a></p>
         <p>{copy.sizeNotice}</p><p>{copy.privacyNotice}</p>
         <p>{copy.reviewed}: <time dateTime={localModelCatalogReviewed}>{localModelCatalogReviewed}</time>. Performance varies by task, context, and hardware. Explore-only entries have not been tested in Cove.</p>
-      </details>
+      </DisclosureContent></Disclosure>
       {documentsOpen && <LocalDocumentsDialog onClose={() => setDocumentsOpen(false)} onUseSources={onUseSources} />}
     </section>
   );

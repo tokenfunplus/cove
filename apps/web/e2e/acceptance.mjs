@@ -2003,8 +2003,8 @@ try {
   await click('button[aria-label="New conversation"]');
   await fill('#generation-input', "Reasoning fixture");
   await click('button[aria-label="Send message"]');
-  await until(`!!document.querySelector('[data-reasoning][open]')`);
-  await until(`!!document.querySelector('[data-reasoning]:not([open])') && !document.querySelector('button[aria-label="Stop generation"]')`);
+  await until(`!!document.querySelector('[data-reasoning][data-state="open"]')`);
+  await until(`!!document.querySelector('[data-reasoning][data-state="closed"]') && !document.querySelector('button[aria-label="Stop generation"]')`);
   assert(await evaluate(`document.querySelector('[data-answer-source]').textContent.includes('Browser answer from deepseek/fixture')`));
   const reasoningRecord = (await api("/api/conversations"))[0];
   const reasoningView = await api(`/api/conversations/${reasoningRecord.id}`);
@@ -2013,9 +2013,9 @@ try {
   assert.equal(reasoningAnswer.body, "Browser answer from deepseek/fixture");
   await snapshot("reasoning-collapsed-1440");
   await reloadPage();
-  await until(`!!document.querySelector('[data-reasoning]:not([open])')`);
-  await click('[data-reasoning] summary');
-  await until(`!!document.querySelector('[data-reasoning][open]')`);
+  await until(`!!document.querySelector('[data-reasoning][data-state="closed"]')`);
+  await click('[data-reasoning] [data-slot="disclosure-trigger"]');
+  await until(`!!document.querySelector('[data-reasoning][data-state="open"]')`);
   await click('.model-selector button[aria-label="Add model to favorites"]');
   await click('.model-selector [role="combobox"][aria-label="Model"]');
   await until(`document.querySelector('[role="listbox"]').textContent.includes('Favorites')`);

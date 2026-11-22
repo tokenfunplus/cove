@@ -1,3 +1,4 @@
+import { RadioGroup, RadioCard } from "@/components/ui/radio-group";
 import { Check } from "lucide-react";
 import { selectSkin, skins, useSkin } from "@/theme/skin";
 
@@ -6,18 +7,9 @@ export function SkinPicker() {
   return (
     <fieldset className="border-b border-border pb-5">
       <legend className="mb-3 text-xs font-semibold">Workspace skin</legend>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <RadioGroup aria-label="Workspace skin" name="workspace-skin" value={current} onValueChange={value=>selectSkin(value as typeof current)} className="grid-cols-2 sm:grid-cols-4">
         {skins.map((skin) => (
-          <label key={skin.id} className="relative cursor-pointer">
-            <input
-              className="peer sr-only"
-              type="radio"
-              name="workspace-skin"
-              value={skin.id}
-              checked={skin.id === current}
-              onChange={() => selectSkin(skin.id)}
-            />
-            <span className="block h-full rounded-lg border border-border p-2 peer-checked:border-primary peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring">
+          <RadioCard key={skin.id} value={skin.id} aria-label={skin.name} aria-describedby={`skin-${skin.id}-detail`}>
               <span
                 data-skin={skin.id}
                 aria-hidden="true"
@@ -35,13 +27,12 @@ export function SkinPicker() {
                 {skin.name}
                 {skin.id === current && <Check aria-hidden="true" size={13} />}
               </span>
-              <span className="block pt-1 text-[10px] leading-snug text-muted-foreground">
+              <span id={`skin-${skin.id}-detail`} className="block pt-1 text-[10px] leading-snug text-muted-foreground">
                 {skin.detail}
               </span>
-            </span>
-          </label>
+          </RadioCard>
         ))}
-      </div>
+      </RadioGroup>
     </fieldset>
   );
 }

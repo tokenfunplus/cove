@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { setupControlTests, chooseOption } from "@/test/control-helpers";
 import { afterEach, expect, test, vi } from "vitest";
 import { useState } from "react";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -28,6 +29,8 @@ vi.mock("@/api/projects", async (original) => ({
   moveProjectConversation: vi.fn(),
 }));
 const browserMethods: string[] = [];
+setupControlTests();
+
 afterEach(() => {
   cleanup();
   for (const name of browserMethods.splice(0)) Reflect.deleteProperty(Element.prototype, name);
@@ -532,8 +535,8 @@ test("project material usage changes keep the editor open and submit the reviewe
  const project:Project={...savedProject,sources:[{id:"source",blob_hash:"hash",usage:"always",snapshot:{id:"hash",name:"Search.txt",media_type:"text/plain",size:5,characters:5,extraction_version:"text-v1",sections:[{id:"L1",text:"Notes"}]}}]};
  vi.mocked(api.setProjectSourceUsage).mockResolvedValue({...project,revision:project.revision+1,sources:[{...project.sources[0],usage:"search"}]});
  renderProjectDialogs(project);
- await userEvent.setup().selectOptions(screen.getByRole("combobox",{name:"Use Search.txt"}),"search");
+ await chooseOption(userEvent.setup(),screen.getByRole("combobox",{name:"Use Search.txt"}),"Search when needed");
  await waitFor(()=>expect(api.setProjectSourceUsage).toHaveBeenCalledWith(project.id,"source",project.revision,"search"));
- await waitFor(()=>expect(screen.getByRole<HTMLSelectElement>("combobox",{name:"Use Search.txt"}).value).toBe("search"));
+ await waitFor(()=>expect(screen.getByRole("combobox",{name:"Use Search.txt"}).textContent).toBe("Search when needed"));
  expect(screen.getByRole("dialog",{name:"Edit project"})).toBeTruthy();
 });

@@ -1,3 +1,5 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { DebateControls, DebateSeat, DebateUsage } from "@cove/api-contract";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -45,16 +47,16 @@ export function DebateControlsFields({ controls, seats, onChange }: { controls: 
       <label className="grid gap-2 text-sm">Token budget <span className="sr-only">(optional)</span><Input type="number" min="1" max="1000000000000" step="1" placeholder="No limit" value={controls.token_budget ?? ""} onChange={event => update({ token_budget: event.target.value === "" ? undefined : Number(event.target.value) })} /></label>
       <label className="grid gap-2 text-sm">Estimated cost budget (USD)<Input type="number" min="0" max="1000000" step="any" placeholder="No limit" value={controls.cost_budget_usd ?? ""} onChange={event => update({ cost_budget_usd: event.target.value === "" ? undefined : Number(event.target.value) })} /></label>
     </div>
-    <label className="flex items-start gap-3 text-sm"><input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={controls.auto_pause} onChange={event => update({ auto_pause: event.target.checked })} /><span>Pause automatically at a budget limit. Missing reported usage also pauses when a budget is enabled.</span></label>
+    <label className="flex items-start gap-3 text-sm"><Checkbox  className="mt-0.5 size-4 " checked={controls.auto_pause} onCheckedChange={checked => update({ auto_pause: (checked === true) })} /><span>Pause automatically at a budget limit. Missing reported usage also pauses when a budget is enabled.</span></label>
     <p className="text-xs leading-relaxed text-muted-foreground">Budgets use cumulative reported input/output tokens and saved USD rates. Estimates exclude discounts and other charges. Limits are checked before further calls; active requests can exceed a threshold. With automatic pause off, limits show a reminder.</p>
-    <details className="rounded-xl border border-border p-3" open={controls.cost_budget_usd !== undefined ? true : undefined}>
-      <summary className="cursor-pointer text-sm font-medium">Cost rates · USD per 1M tokens</summary>
+    <Disclosure key={String(controls.cost_budget_usd !== undefined)} className="rounded-xl border border-border p-3" defaultOpen={controls.cost_budget_usd !== undefined ? true : undefined}>
+      <DisclosureTrigger className="cursor-pointer text-sm font-medium">Cost rates · USD per 1M tokens</DisclosureTrigger><DisclosureContent>
       <p className="mt-2 text-xs text-muted-foreground">Rates are saved with this debate and apply to its cumulative estimate. Review catalog suggestions against your Provider plan.</p>
       <div className="mt-3 space-y-4">{seats.map((seat, index) => <div key={`${seat.provider_id}:${seat.model_id}`} className="space-y-2">
         <p className="break-all text-xs font-medium">Seat {index + 1} · {seat.model_id}</p>
         <div className="grid grid-cols-2 gap-3">{(["input_per_million", "output_per_million"] as const).map((key, rateIndex) => <label className="grid gap-1 text-xs" key={key}>{rateIndex ? "Output" : "Input"}<Input type="number" min="0" max="1000000" step="any" aria-label={`Seat ${index + 1} ${rateIndex ? "output" : "input"} rate`} placeholder="Unknown" value={controls.rates?.[index]?.[key] ?? ""} onChange={event => update({ rates: seats.map((_, i) => ({ ...controls.rates?.[i], ...(i === index ? { [key]: event.target.value === "" ? undefined : Number(event.target.value) } : {}) })) })} /></label>)}</div>
       </div>)}</div>
-    </details>
+    </DisclosureContent></Disclosure>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
   </div>;
 }

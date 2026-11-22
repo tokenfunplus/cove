@@ -1,3 +1,4 @@
+import { FileInput } from "@/components/ui/file-input";
 import { useRef, useState, type ReactNode } from "react";
 import { Link, Paperclip, X } from "lucide-react";
 import type { AttachmentDraft as AttachmentDraftState } from "@/hooks/chat/use-attachment-draft";
@@ -37,11 +38,11 @@ export function AttachmentDraft({
   }
   const actions = (
       <div className="flex shrink-0 items-center gap-0.5">
-        <input
+        <FileInput
           ref={input}
           className="sr-only"
           aria-label={copy.attachFiles}
-          type="file"
+
           tabIndex={-1}
           multiple
           disabled={disabled || state.attachments.length >= 4}

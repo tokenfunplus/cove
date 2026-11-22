@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { CodeBlock } from "@/components/chat/CodeBlock";
 import { messagesStyles } from "@/styles/messages";
 import { cn } from "@/lib/utils";
@@ -175,14 +176,14 @@ function renderInline(
       const openSource = navigation.resolve(match[4] ?? "");
       if (openSource) {
         nodes.push(
-          <button
+          <Button variant="plain" size="none"
             type="button"
             className="cursor-pointer text-primary underline underline-offset-2"
             key={key}
             onClick={openSource}
           >
             {renderText(match[3])}
-          </button>,
+          </Button>,
         );
         lastIndex = pattern.lastIndex;
         continue;

@@ -13,6 +13,8 @@
 | `web-search-mobile-dark.png` | The same fixture at 390 × 844: dark-mode advanced search controls inside Settings. |
 | `local-speech-discover.jpg` | Unreleased local-capabilities source build, 2026-11-22: Discover filtered to Speak text, with five managed speech downloads. |
 | `local-speech-settings.jpg` | The same isolated build: automatic English/Chinese selection, per-model voice preferences, and the missing-model download prompt. |
+| `custom-controls-dark.jpg` | Shared custom-control source build, 2026-11-22: the speech model menu in dark mode, from an empty temporary workspace. |
+| `custom-controls-mobile-dark.jpg` | The same disposable fixture in a narrow viewport: custom model selection, searchable voices, and the speech slider. |
 
 Atlas and Lumen are demo model names. These captures use an isolated temporary data directory and a loopback simulated Provider with disposable credentials. They contain no personal conversation history or real Provider Keys. The displayed transport/verification state belongs to that fixture and does not demonstrate real Provider verification.
 
@@ -23,3 +25,5 @@ The 2026-11-18 captures come directly from `apps/web/e2e/acceptance.mjs` in this
 The Beta 8 captures come from the `web-search` scenario in `apps/web/e2e/acceptance.mjs`. It uses only synthetic prompts, a loopback model Provider, and a disposable source/key fixture. No live search service or personal workspace was captured.
 
 The local-speech captures use a fresh, empty temporary `COVE_DATA_DIR` and the explicitly enabled test file Secret Store. They contain no conversations, copied preferences, or credentials; all models are uninstalled. Model metadata and controls come from the implemented service. Real native synthesis, download, and deletion checks are recorded separately in [Local speech](../local-speech.md).
+
+The custom-control captures use an empty temporary data directory with dark mode configured only in that fixture. No everyday appearance preferences, model files, conversation records, or credentials were copied. Keyboard, nested disclosure, empty selection, and voice search behavior also have component regression coverage.

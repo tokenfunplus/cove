@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { ProjectContextUsage } from "@/components/chat/ProjectContextUsage";
 import { projectSystemPrompt, projectUserInput } from "@/lib/chat/project-context";
 import {
@@ -173,15 +174,15 @@ export function DocumentPreview({
             </div>
           ))}
         </div>
-        <details className="text-xs text-muted-foreground">
-          <summary>{copy.sourceFileDetails}</summary>
+        <Disclosure className="text-xs text-muted-foreground">
+          <DisclosureTrigger>{copy.sourceFileDetails}</DisclosureTrigger><DisclosureContent>
           <p className="mt-2 break-all">{document.web ? "Snapshot ID" : "SHA-256"}: {document.id}</p>
           {document.web && <p className="break-all">Content SHA-256: {document.web.content_sha256}</p>}
           <p>
             {document.extraction_version} · {document.size.toLocaleString()}{" "}
             bytes
           </p>
-        </details>
+        </DisclosureContent></Disclosure>
         {batchId && (
           <div>
             <Button

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { setupControlTests } from "@/test/control-helpers";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -26,6 +27,8 @@ beforeEach(() => {
   vi.mocked(api.addDebateIntervention).mockImplementation(async (_id, input) => { const note = { ...input, id: "note-one", applied_round: 0, created_at: view.session.created_at }; view.interventions.push(note); return note; });
   vi.mocked(api.createDebate).mockResolvedValue(session);
 });
+setupControlTests();
+
 afterEach(() => { cleanup(); cache.clear(); vi.unstubAllGlobals(); });
 function mount(element: React.ReactNode) { return render(<QueryClientProvider client={cache}>{element}</QueryClientProvider>); }
 

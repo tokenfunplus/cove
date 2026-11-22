@@ -21,6 +21,8 @@
 
 ### Changed
 
+- Replace remaining native form controls and disclosure widgets with shared custom components across Discover, speech settings, Projects, Chat, Debate, and verification. Preserve keyboard navigation, focus restoration, form values, and streaming reasoning state.
+
 - Streamline On this Mac discovery with separate integrated/explore-only groups, compact filters, file-size sorting, progressive candidate browsing, and preserved filters across Installed/Discover switching.
 
 - Move Projects into a dedicated directory and project home. Ordinary chat keeps a compact navigation entry; global New chat stays ungrouped, and conversation menus own project moves.

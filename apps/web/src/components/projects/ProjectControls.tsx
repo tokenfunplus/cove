@@ -1,3 +1,6 @@
+import { FileInput } from "@/components/ui/file-input";
+import { Textarea } from "@/components/ui/textarea";
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { FolderClosed } from "lucide-react";
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -269,12 +272,12 @@ export function ProjectDialogs({ workspace: w }: { workspace: ChatWorkspace }) {
               in the complete request, including turn attachments.
             </p>
             {w.projectContextPreview.messages.map((m, i) => (
-              <details key={i}>
-                <summary>{m.role}</summary>
+              <Disclosure key={i}>
+                <DisclosureTrigger>{m.role}</DisclosureTrigger><DisclosureContent>
                 <pre className="whitespace-pre-wrap break-words">
                   {m.content}
                 </pre>
-              </details>
+              </DisclosureContent></Disclosure>
             ))}
           </DialogContent>
         </Dialog>
@@ -413,7 +416,7 @@ export function ProjectEditor({
           </label>
           <label className="block">
             Project instructions
-            <textarea
+            <Textarea
               aria-label="Project instructions"
               disabled={busy}
               className="mt-1 min-h-24 w-full rounded-lg border border-input bg-background p-2"
@@ -423,7 +426,7 @@ export function ProjectEditor({
           </label>
           <label className="block">
             Project background
-            <textarea
+            <Textarea
               aria-label="Project background"
               disabled={busy}
               className="mt-1 min-h-32 w-full rounded-lg border border-input bg-background p-2"
@@ -462,21 +465,19 @@ export function ProjectEditor({
                 key={source.id}
                 className="rounded-lg border border-border p-2"
               >
-                <details>
-                  <summary>
+                <Disclosure>
+                  <DisclosureTrigger>
                     {source.snapshot.name} ·{" "}
                     {source.snapshot.characters.toLocaleString()} characters
-                  </summary>
+                  </DisclosureTrigger><DisclosureContent>
                   <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words">
                     {source.snapshot.sections
                       .map((s) => `${s.id}: ${s.text}`)
                       .join("\n")}
                   </pre>
-                </details>
+                </DisclosureContent></Disclosure>
                 <label className="my-3 grid gap-1 text-xs">Use this material
-                  <select className="rounded-lg border border-border bg-background p-2 text-sm" aria-label={`Use ${source.snapshot.name}`} value={source.usage??"always"} disabled={busy||dirty} onChange={event=>{const usage=event.target.value as "always"|"search";void run(async()=>saved(await setProjectSourceUsage(value.id,source.id,value.revision,usage),{keepOpen:true}));}}>
-                    <option value="always">Always include</option><option value="search">Search when needed</option>
-                  </select>
+                  <FrontSelect ariaLabel={`Use ${source.snapshot.name}`} value={source.usage??"always"} disabled={busy||dirty} onValueChange={next=>{const usage=next as "always"|"search";void run(async()=>saved(await setProjectSourceUsage(value.id,source.id,value.revision,usage),{keepOpen:true}));}} options={[{value:"always",label:"Always include"},{value:"search",label:"Search when needed"}]}/>
                 </label>
                 <Button
                   size="xs"
@@ -499,9 +500,9 @@ export function ProjectEditor({
                 </Button>
               </div>
             ))}
-            <input
+            <FileInput
               ref={file}
-              type="file"
+
               className="sr-only"
               aria-label="Choose fixed project file"
               disabled={busy || dirty || value.sources.length >= 3}
@@ -586,12 +587,12 @@ export function ProjectEditor({
                 >
                   Refresh revision and keep my edits
                 </Button>
-                <details>
-                  <summary>Latest loaded project text for comparison</summary>
+                <Disclosure>
+                  <DisclosureTrigger>Latest loaded project text for comparison</DisclosureTrigger><DisclosureContent>
                   <pre className="max-h-48 overflow-auto whitespace-pre-wrap">
                     {value.instructions + "\n\n" + value.background}
                   </pre>
-                </details>
+                </DisclosureContent></Disclosure>
               </>
             )}
           </div>

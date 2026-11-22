@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { NearAIVerificationFrame } from "@/components/verification/NearAIVerificationFrame";
 import { settingsStyles } from "@/styles/settings";
 import { verificationStyles } from "@/styles/verification";
@@ -127,10 +128,10 @@ export function VerificationDialog({
               modelId={modelId}
               onClose={onClose}
             />
-            <details className={verificationStyles.viewer_details}>
-              <summary className={verificationStyles.viewer_summary}>
+            <Disclosure className={verificationStyles.viewer_details}>
+              <DisclosureTrigger className={verificationStyles.viewer_summary}>
                 {copy.verificationLocalDetails}
-              </summary>
+              </DisclosureTrigger><DisclosureContent>
               <VerificationDialogContent
                 kind={activeKind}
                 evidence={displayedEvidence}
@@ -144,7 +145,7 @@ export function VerificationDialog({
                 hasModelEvidence
                 hasGatewayEvidence
               />
-            </details>
+            </DisclosureContent></Disclosure>
             {copyError ? <p role="alert">{copy.copyFailed}</p> : null}
             {isVerifying ? (
               <p role="status">{copy.privateInferenceVerifying}</p>
@@ -294,14 +295,14 @@ export function VerificationDialogContent({
       {evidence ? (
         <div className={verificationStyles.verificationDialog_evidenceList}>
           {model ? (
-            <details
+            <Disclosure
               className={verificationStyles.verificationDialog_evidenceCard}
               data-verification-card="gpu"
             >
-              <summary>
+              <DisclosureTrigger>
                 <span>{copy.gpuAttestation.replace("NVIDIA ", "")}</span>
                 <strong>NVIDIA</strong>
-              </summary>
+              </DisclosureTrigger><DisclosureContent>
               <p>
                 {evidence.gpu_evidence === "verified"
                   ? copy.verificationVerified
@@ -314,16 +315,16 @@ export function VerificationDialogContent({
                   raw: evidence.raw,
                 })}
               </pre>
-            </details>
+            </DisclosureContent></Disclosure>
           ) : null}
-          <details
+          <Disclosure
             className={verificationStyles.verificationDialog_evidenceCard}
             data-verification-card="tdx"
           >
-            <summary>
+            <DisclosureTrigger>
               <span>{copy.tdxAttestation}</span>
               <strong>intel.</strong>
-            </summary>
+            </DisclosureTrigger><DisclosureContent>
             <p>{copy.verificationVerified}</p>
             <dl className={verificationStyles.verificationDialog_facts}>
               <div>
@@ -362,7 +363,7 @@ export function VerificationDialogContent({
               </Button>
               <pre>{rawValue(evidence.raw)}</pre>
             </div>
-          </details>
+          </DisclosureContent></Disclosure>
         </div>
       ) : (
         <p

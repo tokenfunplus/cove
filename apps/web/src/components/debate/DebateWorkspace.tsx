@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDebate } from "@/api/hooks/useDebates";
 import { getDebateExport, getDebateTurn } from "@/api/debates";
@@ -271,7 +272,7 @@ export function DebateWorkspace({
               : [];
           })
         ).map((position) => (
-          <button
+          <Button variant="plain" size="none"
             className={styles.position}
             key={position.turn_id}
             onClick={() => inspectTurn(position.turn_id)}
@@ -282,7 +283,7 @@ export function DebateWorkspace({
             <span className="line-clamp-3 whitespace-pre-wrap break-words">
               {summarize(position.body, 180)}
             </span>
-          </button>
+          </Button>
         ))}
       </section>
       <section
@@ -463,10 +464,10 @@ export function DebateWorkspace({
             )}
             {session.browser_required && session.status !== "stopped" && (
               focusMode ? <p className="py-1 text-xs text-muted-foreground">{copy.focusBrowserHint}</p> : (
-                <details className={styles.connectionNotice}>
-                  <summary>{copy.focusBrowserHint}</summary>
+                <Disclosure className={styles.connectionNotice}>
+                  <DisclosureTrigger>{copy.focusBrowserHint}</DisclosureTrigger><DisclosureContent>
                   <p>{copy.browserBackground}</p>
-                </details>
+                </DisclosureContent></Disclosure>
               )
             )}
             {(error || exportError || debate.isError) && (
@@ -543,12 +544,12 @@ export function DebateWorkspace({
                   <p className="mt-2 text-xs text-primary">{turn.phase === "verifying_environment" ? "Verifying NearAI environment…" : turn.phase === "verifying_response" ? "Verifying response…" : "Speaking…"}</p>
                 )}
                 {turn.reasoning && (
-                  <details className="mt-3 text-sm">
-                    <summary className="cursor-pointer text-muted-foreground">
+                  <Disclosure className="mt-3 text-sm">
+                    <DisclosureTrigger className="cursor-pointer text-muted-foreground">
                       Provider reasoning
-                    </summary>
+                    </DisclosureTrigger><DisclosureContent>
                     <MarkdownMessage content={turn.reasoning} />
-                  </details>
+                  </DisclosureContent></Disclosure>
                 )}
                 <div className={styles.footer}>
                   <span>{turn.state}</span>
@@ -789,7 +790,7 @@ export function DebateWorkspace({
               {inspected.kind === "summary" ? (
                 <>
                   {inspected.summary ? <DebateSummaryCard summary={inspected.summary} onInspect={inspectTurn} /> : <p className="text-sm text-muted-foreground">{inspected.error_message || "Summary unavailable."}</p>}
-                  {inspected.body && <details open={!inspected.summary} className="mt-4 text-sm"><summary>Original summary response</summary><pre className="mt-2 whitespace-pre-wrap break-words text-xs">{inspected.body}</pre></details>}
+                  {inspected.body && <Disclosure defaultOpen={!inspected.summary} className="mt-4 text-sm"><DisclosureTrigger>Original summary response</DisclosureTrigger><DisclosureContent><pre className="mt-2 whitespace-pre-wrap break-words text-xs">{inspected.body}</pre></DisclosureContent></Disclosure>}
                 </>
               ) : <MarkdownMessage
                 content={
@@ -810,10 +811,10 @@ export function DebateWorkspace({
                   embedded
                 />
                 <VerificationDetailsButton verification={inspected.verification} providerName={inspected.snapshot.provider_name} modelId={inspected.snapshot.model_id} copy={englishConversationCopy} />
-                <details className="mt-5 text-sm">
-                  <summary className="cursor-pointer">
+                <Disclosure className="mt-5 text-sm">
+                  <DisclosureTrigger className="cursor-pointer">
                     Effective ground rules and context references
-                  </summary>
+                  </DisclosureTrigger><DisclosureContent>
                   <pre className="mt-3 whitespace-pre-wrap break-words rounded-xl bg-muted p-3 font-sans text-xs leading-relaxed">
                     {inspected.configuration.system_prompt}
                   </pre>
@@ -822,7 +823,7 @@ export function DebateWorkspace({
                     {inspected.context_ids.join(", ") ||
                       "Independent opening; no other participant answers were included."}
                   </p>
-                </details>
+                </DisclosureContent></Disclosure>
               </div>
             </>
           )}

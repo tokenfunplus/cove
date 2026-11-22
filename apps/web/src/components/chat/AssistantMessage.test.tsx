@@ -13,18 +13,18 @@ test("streaming reasoning expands, then collapses as soon as text streaming fini
   const { container, rerender } = render(
     <AssistantMessage content="<think>Consider" streaming />,
   );
-  expect(container.querySelector("details")?.open).toBe(true);
+  expect(container.querySelector("[data-reasoning]")?.getAttribute("data-state")).toBe("open");
   rerender(<AssistantMessage content={content} streaming />);
-  expect(container.querySelector("details")?.open).toBe(true);
+  expect(container.querySelector("[data-reasoning]")?.getAttribute("data-state")).toBe("open");
   expect(screen.getByText("The final answer.")).toBeTruthy();
   rerender(<AssistantMessage content={content} />);
-  expect(container.querySelector("details")?.open).toBe(false);
+  expect(container.querySelector("[data-reasoning]")?.getAttribute("data-state")).toBe("closed");
   await userEvent.click(screen.getByText("Reasoning"));
   await waitFor(() =>
-    expect(container.querySelector("details")?.open).toBe(true),
+    expect(container.querySelector("[data-reasoning]")?.getAttribute("data-state")).toBe("open"),
   );
   rerender(<AssistantMessage content={content} />);
-  expect(container.querySelector("details")?.open).toBe(true);
+  expect(container.querySelector("[data-reasoning]")?.getAttribute("data-state")).toBe("open");
 });
 
 test("a manual fold stays closed during further deltas, and completion resets a manual expansion", async () => {
@@ -33,28 +33,28 @@ test("a manual fold stays closed during further deltas, and completion resets a 
   );
   await userEvent.click(screen.getByText("Reasoning"));
   await waitFor(() =>
-    expect(container.querySelector("details")?.open).toBe(false),
+    expect(container.querySelector("[data-reasoning]")?.getAttribute("data-state")).toBe("closed"),
   );
   rerender(
     <AssistantMessage content="<think>First part. More text." streaming />,
   );
-  expect(container.querySelector("details")?.open).toBe(false);
+  expect(container.querySelector("[data-reasoning]")?.getAttribute("data-state")).toBe("closed");
   await userEvent.click(screen.getByText("Reasoning"));
   await waitFor(() =>
-    expect(container.querySelector("details")?.open).toBe(true),
+    expect(container.querySelector("[data-reasoning]")?.getAttribute("data-state")).toBe("open"),
   );
   rerender(<AssistantMessage content={content} />);
-  expect(container.querySelector("details")?.open).toBe(false);
+  expect(container.querySelector("[data-reasoning]")?.getAttribute("data-state")).toBe("closed");
 });
 
 test("saved reasoning is collapsed, empty reasoning is omitted, and ordinary Markdown remains readable", () => {
   const { container, rerender } = render(
     <AssistantMessage content={content} />,
   );
-  expect(container.querySelector("details")?.open).toBe(false);
+  expect(container.querySelector("[data-reasoning]")?.getAttribute("data-state")).toBe("closed");
   expect(screen.getByText("The final answer.")).toBeTruthy();
   rerender(<AssistantMessage content={"<think>\n</think>## Answer"} />);
-  expect(container.querySelector("details")).toBeNull();
+  expect(container.querySelector("[data-reasoning]")).toBeNull();
   expect(screen.getByRole("heading", { name: "Answer" })).toBeTruthy();
   rerender(<AssistantMessage content="**Plain answer**" />);
   expect(screen.getByText("Plain answer").tagName).toBe("STRONG");
@@ -76,9 +76,9 @@ test.each([
   const { container, rerender } = render(
     <ModelAnswerCard {...props} phase="streaming" />,
   );
-  expect(screen.getByText("Reasoning").closest("details")?.open).toBe(true);
+  expect(screen.getByText("Reasoning").closest("[data-reasoning]")?.getAttribute("data-state")).toBe("open");
   rerender(<ModelAnswerCard {...props} phase={phase} />);
-  expect(screen.getByText("Reasoning").closest("details")?.open).toBe(false);
+  expect(screen.getByText("Reasoning").closest("[data-reasoning]")?.getAttribute("data-state")).toBe("closed");
   expect(container.querySelector("script")).toBeNull();
 });
 
@@ -86,15 +86,15 @@ test("Provider reasoning without tags collapses separately from the final answer
   const { rerender } = render(
     <AssistantMessage content="" reasoning="Plan a useful answer." streaming />,
   );
-  expect(screen.getByText("Reasoning").closest("details")?.open).toBe(true);
+  expect(screen.getByText("Reasoning").closest("[data-reasoning]")?.getAttribute("data-state")).toBe("open");
   rerender(
     <AssistantMessage
       content="A useful answer."
       reasoning="Plan a useful answer."
     />,
   );
-  const reasoning = screen.getByText("Reasoning").closest("details");
-  expect(reasoning?.open).toBe(false);
+  const reasoning = screen.getByText("Reasoning").closest("[data-reasoning]");
+  expect(reasoning?.getAttribute("data-state")).toBe("closed");
   expect(reasoning?.textContent).not.toContain("A useful answer.");
   expect(screen.getByText("A useful answer.")).toBeTruthy();
 });

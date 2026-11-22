@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { useState } from "react";
 import { ArrowUpRight, AudioLines, Code2, FileSearch, Image as ImageIcon, Languages, ListFilter, ScanText, Sparkles, Tags, Volume2, Waves } from "lucide-react";
 import type { LocalModel } from "@/lib/local-model-catalog";
@@ -52,8 +53,8 @@ export function LocalModelDiscoveryCard({ model, manage, onUseChat, onUseSearch,
     {ready && <p className={styles.limitation}>{model.limitation}</p>}
     {useError && <p role="alert" className="mt-3 text-sm text-destructive">{useError}</p>}
     {manage && ready && <div className="mt-auto"><LocalModelControl id={model.id} compact onUse={model.purpose==="speak"?()=>onUseSpeech?.(model.id):model.id === "bge-small-zh" ? onUseSearch : onUseChat ? () => void useChat() : undefined} useLabel={model.purpose==="speak"?"Speech settings":model.id === "bge-small-zh" ? "Open document search" : "Use in this chat"} useDisabled={using} /></div>}
-    <details className={styles.details}>
-      <summary>{copy.details}</summary>
+    <Disclosure className={styles.details}>
+      <DisclosureTrigger>{copy.details}</DisclosureTrigger><DisclosureContent>
       {!ready && <p className="mt-3"><strong className="font-medium text-foreground">{copy.limitation}: </strong>{model.limitation}</p>}
       <dl>
         <dt>Publisher</dt><dd>{model.publisher}</dd>
@@ -69,7 +70,7 @@ export function LocalModelDiscoveryCard({ model, manage, onUseChat, onUseSearch,
         <a href={model.filesUrl} target="_blank" rel="noopener noreferrer">{copy.files}<ArrowUpRight className="size-3.5" aria-hidden="true" /><span className="sr-only"> for {model.name} (external website)</span></a>
         <a href={model.modelUrl} target="_blank" rel="noopener noreferrer">{copy.model}<ArrowUpRight className="size-3.5" aria-hidden="true" /><span className="sr-only">: {model.name} (external website)</span></a>
       </div>
-    </details>
+    </DisclosureContent></Disclosure>
     </div>
   </article>;
 }

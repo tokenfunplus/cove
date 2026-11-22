@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { useQuery } from "@tanstack/react-query";
 import { getProject, projectKeys } from "@/api/projects";
 import type { AttachmentDraft } from "@/hooks/chat/use-attachment-draft";
@@ -35,11 +36,11 @@ export function ProjectInputSummary({
       className="mb-2 text-xs text-muted-foreground"
       aria-label="Active project input"
     >
-      <details>
-        <summary className="cursor-pointer select-none">
+      <Disclosure>
+        <DisclosureTrigger className="cursor-pointer select-none">
           Project context · {fixed.length}{" "}
           {fixed.length === 1 ? "source" : "sources"}
-        </summary>
+        </DisclosureTrigger><DisclosureContent>
         <div className="space-y-1 pb-1 pt-2">
           <p>
             {p.name} · {Math.max(0, remainingSlots)} attachment slots and{" "}
@@ -51,7 +52,7 @@ export function ProjectInputSummary({
             model. Review context for exact input and destinations.
           </p>
         </div>
-      </details>
+      </DisclosureContent></Disclosure>
       {(remainingSlots < 0 || remainingCharacters < 0) && (
         <p role="alert">
           Project sources and turn attachments exceed the shared limit. Remove

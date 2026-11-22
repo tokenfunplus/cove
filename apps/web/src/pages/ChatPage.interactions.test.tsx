@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { setupControlTests, chooseOption } from "@/test/control-helpers";
 
 import * as transport from "@/api";
 import * as conversationApi from "@/api/conversations";
@@ -124,6 +125,8 @@ beforeEach(() => {
   });
   configureWorkspace();
 });
+
+setupControlTests();
 
 afterEach(() => {
   cleanup();
@@ -1194,10 +1197,10 @@ test("local model discovery is reachable from settings without starting generati
   const panel = document.getElementById("settings-local-models")!;
   await user.click(within(panel).getByRole("button",{name:"Discover"}));
   expect(within(panel).getAllByRole("article")).toHaveLength(14);
-  await user.selectOptions(within(panel).getByRole("combobox", { name: "Task" }), "write");
+  await chooseOption(user,within(panel).getByRole("combobox", { name: "Task" }),"Write offline");
   await user.click(within(panel).getByRole("button", { name: "Installed" }));
   await user.click(within(panel).getByRole("button", { name: "Discover" }));
-  expect((within(panel).getByRole("combobox", { name: "Task" }) as HTMLSelectElement).value).toBe("write");
+  expect(within(panel).getByRole("combobox", { name: "Task" }).textContent).toBe("Write offline");
   expect(within(panel).getByText("Qwen2.5 0.5B Instruct")).toBeTruthy();
   expect(transport.createGenerationBatch).not.toHaveBeenCalled();
   await user.keyboard("{Escape}");
@@ -2018,13 +2021,13 @@ test("Gateway reasoning remains separate through streaming, settlement, and save
   await user.type(composer, "A reasoning fixture");
   await user.click(screen.getByRole("button", { name: "Send message" }));
   await screen.findByText("Plan the response without tags.");
-  expect(screen.getByText("Reasoning", {exact:true}).closest("details")?.open).toBe(true);
+  expect(screen.getByText("Reasoning", {exact:true}).closest("[data-reasoning]")?.getAttribute("data-state")).toBe("open");
   await act(async () => { finish(); });
   await waitFor(() => expect(transport.settleSecureGeneration).toHaveBeenCalledWith(
     generation.id, saved.body, expect.objectContaining({status:"verified_gateway"}),
     expect.objectContaining({source:"browser"}), saved.reasoning,
   ));
-  await waitFor(() => expect(screen.getByText("Reasoning", {exact:true}).closest("details")?.open).toBe(false));
+  await waitFor(() => expect(screen.getByText("Reasoning", {exact:true}).closest("[data-reasoning]")?.getAttribute("data-state")).toBe("closed"));
   expect(screen.getByText(saved.body, {exact:true})).toBeTruthy();
 });
 

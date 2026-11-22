@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { settingsStyles } from "@/styles/settings";
 import { verificationStyles } from "@/styles/verification";
 import { cn } from "@/lib/utils";
@@ -224,13 +225,13 @@ export function PrivacyStatusPanel({
                   <h3 className={verificationStyles.dsec_title}>
                     {copy.verificationEvidenceTitle}
                   </h3>
-                  <details
+                  <Disclosure
                     className={verificationStyles.privacyStatusPanel_messages}
                   >
-                    <summary>
+                    <DisclosureTrigger>
                       {copy.verifiedAssistantMessages} (
                       {summary.verifiedAssistantMessageCount})
-                    </summary>
+                    </DisclosureTrigger><DisclosureContent>
                     <ul>
                       {summary.verifiedMessages.map((message) => {
                         const messageEvidence = message.verification.evidence;
@@ -241,8 +242,8 @@ export function PrivacyStatusPanel({
                               verificationStyles.privacyStatusPanel_message
                             }
                           >
-                            <details>
-                              <summary>
+                            <Disclosure>
+                              <DisclosureTrigger>
                                 <span>{message.providerName}</span>
                                 <span>{message.modelId}</span>
                                 <span role="status">
@@ -251,7 +252,7 @@ export function PrivacyStatusPanel({
                                     copy,
                                   ) ?? copy.chatUnverified}
                                 </span>
-                              </summary>
+                              </DisclosureTrigger><DisclosureContent>
                               {message.body ? (
                                 <p
                                   className={
@@ -315,12 +316,12 @@ export function PrivacyStatusPanel({
                                   </Button>
                                 ) : null}
                               </div>
-                            </details>
+                            </DisclosureContent></Disclosure>
                           </li>
                         );
                       })}
                     </ul>
-                  </details>
+                  </DisclosureContent></Disclosure>
                 </div>
               )}
               {attested && (

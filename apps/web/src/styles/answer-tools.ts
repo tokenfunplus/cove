@@ -17,7 +17,7 @@ export const answerToolsStyles = {
     "min-h-64 w-full flex-1 resize-none rounded-xl border border-border bg-background p-3 font-mono text-sm leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring",
   hint: "text-xs leading-relaxed text-muted-foreground",
   stats:
-    "mt-2 rounded-xl border border-border bg-muted/20 text-xs [&_summary]:cursor-pointer [&_summary]:px-3 [&_summary]:py-2",
+    "mt-2 rounded-xl border border-border bg-muted/20 text-xs [&_[data-slot=disclosure-trigger]]:cursor-pointer [&_[data-slot=disclosure-trigger]]:px-3 [&_[data-slot=disclosure-trigger]]:py-2",
   statGrid:
     "grid grid-cols-2 gap-x-4 gap-y-3 p-3 [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:font-medium",
 };

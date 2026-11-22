@@ -270,7 +270,7 @@ export function AnswerToolsPanel({ tools }: { tools: AnswerTools }) {
               {view === "edit" ? (
                 <label className="flex min-h-64 flex-1 flex-col gap-2 text-xs text-muted-foreground">
                   {toolCopy.workingDraft}
-                  <textarea
+                  <Textarea
                     ref={editor}
                     aria-label={toolCopy.workingDraft}
                     className={styles.editor}

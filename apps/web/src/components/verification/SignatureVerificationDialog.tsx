@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { NearAIVerificationFrame } from "@/components/verification/NearAIVerificationFrame";
 import { settingsStyles } from "@/styles/settings";
 import { verificationStyles } from "@/styles/verification";
@@ -67,10 +68,10 @@ export function SignatureVerificationDialog({
             verification={verification}
             onClose={onClose}
           />
-          <details className={verificationStyles.viewer_details}>
-            <summary className={verificationStyles.viewer_summary}>
+          <Disclosure className={verificationStyles.viewer_details}>
+            <DisclosureTrigger className={verificationStyles.viewer_summary}>
               {copy.verificationLocalDetails}
-            </summary>
+            </DisclosureTrigger><DisclosureContent>
             <SignatureVerificationContent
               verification={verification}
               copy={copy}
@@ -78,7 +79,7 @@ export function SignatureVerificationDialog({
               copied={copied}
               onClose={onClose}
             />
-          </details>
+          </DisclosureContent></Disclosure>
           {copyError ? <p role="alert">{copy.copyFailed}</p> : null}
         </DialogContent>
       </div>
