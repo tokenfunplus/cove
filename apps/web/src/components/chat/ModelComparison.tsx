@@ -15,6 +15,7 @@ import {
 
 export function ModelComparisonResultGrid({
   busy = false,
+  localOnly = false,
   batch,
   messages,
   liveTargets,
@@ -25,6 +26,7 @@ export function ModelComparisonResultGrid({
   copy,
 }: {
   busy?: boolean;
+  localOnly?: boolean;
   batch: GenerationBatch;
   messages: ConversationView["messages"];
   liveTargets?: NonNullable<LiveTurn["targets"]>;
@@ -92,7 +94,7 @@ export function ModelComparisonResultGrid({
                 {(phase === "failed" || phase === "stopped") && onRetry ? (
                   <Button
                     variant="outline"
-                    disabled={busy || !terminal}
+                    disabled={busy || !terminal || (localOnly && target.provider_id !== "cove-local")}
                     onClick={() => onRetry(batch.id, target.id)}
                     type="button"
                   >
@@ -172,6 +174,7 @@ export function ModelComparisonResultGrid({
 
 export function LiveModelComparisonGrid({
   busy = false,
+  localOnly = false,
   batch,
   targets,
   onCancelTarget,
@@ -181,6 +184,7 @@ export function LiveModelComparisonGrid({
   copy,
 }: {
   busy?: boolean;
+  localOnly?: boolean;
   batch?: GenerationBatch;
   targets: NonNullable<LiveTurn["targets"]>;
   onCancelTarget?: (batchID: string, generationID: string) => void;
@@ -240,7 +244,7 @@ export function LiveModelComparisonGrid({
               onRetry ? (
                 <Button
                   variant="outline"
-                  disabled={busy || !terminal}
+                  disabled={busy || !terminal || (localOnly && target.providerId !== "cove-local")}
                   onClick={() =>
                     onRetry(
                       batch?.id ?? "",

@@ -11,6 +11,13 @@
 | `web-search-settings.png` | Cove 0.1.0-beta.8 release preparation at `6052c1b`, 2026-11-21, 1440 × 900: search connection, per-model limits, and folded advanced settings. |
 | `web-search-composer.png` | The same isolated production build: compact source/context actions and the Web search globe in the composer. |
 | `web-search-mobile-dark.png` | The same fixture at 390 × 844: dark-mode advanced search controls inside Settings. |
+| `local-speech-discover.jpg` | Unreleased local-capabilities source build, 2026-11-22: Discover filtered to Speak text, with five managed speech downloads. |
+| `local-speech-settings.jpg` | The same isolated build: automatic English/Chinese selection, per-model voice preferences, and the missing-model download prompt. |
+| `custom-controls-dark.jpg` | Shared custom-control source build, 2026-11-22: the speech model menu in dark mode, from an empty temporary workspace. |
+| `custom-controls-mobile-dark.jpg` | The same disposable fixture in a narrow viewport: custom model selection, searchable voices, and the speech slider. |
+| `debate-read-aloud.jpg` | Debate speech source build, 2026-11-22: ordered local reading paused on Lumen with Atlas queued, using synthetic stored turns. |
+| `debate-read-aloud-narrow-dark.jpg` | The same temporary fixture in narrow dark Focus mode, showing the sound toggle and paused Atlas reading. |
+| `debate-missing-voice.jpg` | The same fixture with an uninstalled manual voice selected, showing direct Discover and Speech settings guidance. |
 
 Atlas and Lumen are demo model names. These captures use an isolated temporary data directory and a loopback simulated Provider with disposable credentials. They contain no personal conversation history or real Provider Keys. The displayed transport/verification state belongs to that fixture and does not demonstrate real Provider verification.
 
@@ -19,3 +26,9 @@ When refreshing screenshots, capture the implemented application with synthetic 
 The 2026-11-18 captures come directly from `apps/web/e2e/acceptance.mjs` in this change. The model names and responses are synthetic; the loopback Provider reports fixed token counts for the performance example. Neither the displayed metrics nor the fixture's transport labels establish live Provider performance or verification. The screenshots are original production-browser captures, not rendered mockups.
 
 The Beta 8 captures come from the `web-search` scenario in `apps/web/e2e/acceptance.mjs`. It uses only synthetic prompts, a loopback model Provider, and a disposable source/key fixture. No live search service or personal workspace was captured.
+
+The local-speech captures use a fresh, empty temporary `COVE_DATA_DIR` and the explicitly enabled test file Secret Store. They contain no conversations, copied preferences, or credentials; all models are uninstalled. Model metadata and controls come from the implemented service. Real native synthesis, download, and deletion checks are recorded separately in [Local speech](../local-speech.md).
+
+The custom-control captures use an empty temporary data directory with dark mode configured only in that fixture. No everyday appearance preferences, model files, conversation records, or credentials were copied. Keyboard, nested disclosure, empty selection, and voice search behavior also have component regression coverage.
+
+The Debate speech captures use synthetic paused Debate sessions in temporary storage. No Provider request was made. Existing Kitten bundle files were hard-linked into that disposable fixture for real native synthesis; everyday preferences, conversations, credentials, and model selections were not copied. The audio player advanced from Lumen to Atlas, paused/resumed successfully, and stopped with Debate. Missing-model navigation retained the intervention draft.

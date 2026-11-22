@@ -49,7 +49,7 @@ func (server *Server) writeStaticHeaders(writer http.ResponseWriter) {
 	// Browser-side attestation validation may retrieve Intel TDX collateral and
 	// verify NVIDIA GPU evidence. These are fixed SDK verifier origins; all
 	// NearAI protocol traffic still uses the session-authorized local proxy.
-	writer.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; connect-src 'self' https://pccs.phala.network https://nras.attestation.nvidia.com; form-action 'self'; frame-src https://cloud-stg.near.ai; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'")
+	writer.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'none'; connect-src 'self' https://pccs.phala.network https://nras.attestation.nvidia.com; form-action 'self'; frame-src https://cloud-stg.near.ai; frame-ancestors 'none'; img-src 'self' data:; media-src 'self' blob:; object-src 'none'; script-src 'self'; style-src 'self'")
 	writer.Header().Set("Referrer-Policy", "no-referrer")
 	writer.Header().Set("X-Content-Type-Options", "nosniff")
 	writer.Header().Set("X-Frame-Options", "DENY")

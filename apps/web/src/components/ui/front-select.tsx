@@ -13,7 +13,6 @@ import {
   Combobox,
   ComboboxButton,
   ComboboxInput,
-  ComboboxLabel,
   ComboboxOption,
   ComboboxOptions,
 } from "@headlessui/react";
@@ -110,9 +109,9 @@ export function FrontSelect({
           )}
         >
           {label ? (
-            <ComboboxLabel className={primitivesStyles.fieldSelect_label}>
+            <label htmlFor={triggerId} className={primitivesStyles.fieldSelect_label}>
               {label}
-            </ComboboxLabel>
+            </label>
           ) : null}
           <div className={primitivesStyles.frontSelect_inputShell}>
             <span
@@ -234,8 +233,11 @@ export function FrontSelect({
     );
   }
 
+  let emptyValue = `__cove-empty-${triggerId}`;
+  while (options.some(option => option.value === emptyValue)) emptyValue += "_";
+  const encodeValue = (optionValue: string) => optionValue === "" ? emptyValue : optionValue;
   return (
-    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+    <Select value={encodeValue(value)} onValueChange={next => onValueChange(next === emptyValue ? "" : next)} disabled={disabled}>
       <div className={primitivesStyles.fieldSelect}>
         {label ? (
           <label
@@ -266,7 +268,7 @@ export function FrontSelect({
             <SelectItem
               className={optionClassName}
               key={option.value}
-              value={option.value}
+              value={encodeValue(option.value)}
               disabled={option.disabled}
             >
               {option.label}

@@ -96,9 +96,9 @@ const messages = {
   chatData: "Chat data",
   clearChatData: "Clear chat data",
   clearChatDataScope:
-    "Deletes all local conversations, messages, Generations, and Provider Snapshots. Provider Profiles, workspace settings, and saved Provider Keys are kept.",
+    "Deletes all local conversations, messages, Generations, Provider Snapshots, and the local document library. Projects and project materials, downloaded models, Provider Profiles, workspace settings, and saved Provider Keys are kept.",
   confirmClearChatData:
-    "Clear all local chat history? This cannot be undone. Projects and fixed project sources, Provider Profiles, workspace settings, and saved Provider Keys will be kept.",
+    "Clear all local chat history and the local document library? This cannot be undone. Projects and project materials, downloaded models, Provider Profiles, workspace settings, and saved Provider Keys will be kept.",
   clearingChatData: "Clearing...",
   chatDataCleared: "Local chat history cleared",
   clearChatDataFailed: "Could not clear local chat history",

@@ -15,12 +15,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
 
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 24
+const schemaVersion = 27
 
 const defaultConversationTitle = "New conversation"
 
@@ -163,15 +164,16 @@ type ConversationView struct {
 }
 
 type ProviderSnapshot struct {
-	ProviderKind      string `json:"provider_kind,omitempty"`
-	ProviderID        string `json:"provider_id"`
-	ProviderName      string `json:"provider_name"`
-	ModelID           string `json:"model_id"`
-	RuntimeLocation   string `json:"runtime_location"`
-	Destination       string `json:"destination"`
-	TransportSecurity string `json:"transport_security"`
-	PrivacyNotice     string `json:"privacy_notice"`
-	PrivacyMode       string `json:"privacy_mode,omitempty"`
+	LocalModel        *provider.ModelArtifact `json:"local_model,omitempty"`
+	ProviderKind      string                  `json:"provider_kind,omitempty"`
+	ProviderID        string                  `json:"provider_id"`
+	ProviderName      string                  `json:"provider_name"`
+	ModelID           string                  `json:"model_id"`
+	RuntimeLocation   string                  `json:"runtime_location"`
+	Destination       string                  `json:"destination"`
+	TransportSecurity string                  `json:"transport_security"`
+	PrivacyNotice     string                  `json:"privacy_notice"`
+	PrivacyMode       string                  `json:"privacy_mode,omitempty"`
 }
 
 func (snapshot ProviderSnapshot) IsNearAI() bool {
@@ -283,6 +285,7 @@ const (
 )
 
 type GenerationBatch struct {
+	LocalOnly       bool                 `json:"local_only,omitempty"`
 	ProjectContext  *ProjectContext      `json:"project_context,omitempty"`
 	WebSearch       *websearch.Policy    `json:"web_search,omitempty"`
 	ContextItems    []ContextItem        `json:"-"`
@@ -331,6 +334,7 @@ type GenerationTargetInput struct {
 }
 
 type BeginGenerationBatchInput struct {
+	LocalOnly            bool
 	ExpectedProject      *ProjectExpectation
 	WebSearch            *websearch.Policy
 	EditOfBatchID        string
@@ -465,6 +469,21 @@ func (store *SQLiteStore) migrate() error {
 		return fmt.Errorf("begin SQLite migration: %w", err)
 	}
 	defer tx.Rollback()
+	if version == 23 {
+		// The unreleased local-model preview also used version 23, before
+		// Projects landed. Identify that shape without changing either payload.
+		var localPreview bool
+		if err := tx.QueryRow(`SELECT
+  (SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('local_documents','local_document_chunks'))=2
+  AND NOT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name IN ('projects','project_source_blobs','project_sources','generation_project_contexts','batch_project_sources'))
+  AND NOT EXISTS(SELECT 1 FROM pragma_table_info('conversations') WHERE name IN ('project_id','membership_revision'))
+  AND NOT EXISTS(SELECT 1 FROM pragma_table_info('generation_batches') WHERE name='project_context_required')`).Scan(&localPreview); err != nil {
+			return fmt.Errorf("identify SQLite preview schema: %w", err)
+		}
+		if localPreview {
+			version = 22
+		}
+	}
 	if version == 0 {
 		if _, err := tx.Exec(`
 CREATE TABLE conversations (
@@ -740,8 +759,6 @@ PRAGMA user_version=22;`); err != nil {
 		if _, err := tx.Exec(`INSERT INTO web_search_settings(id,configuration) VALUES(1,?)`, string(configuration)); err != nil {
 			return err
 		}
-	}
-	if version == 21 {
 		version = 22
 	}
 	if version == 22 {
@@ -755,6 +772,28 @@ PRAGMA user_version=22;`); err != nil {
 	if version == 23 {
 		if _, err := tx.Exec(`CREATE INDEX project_context_project_idx ON generation_project_contexts(json_extract(payload,'$.project_id')); CREATE INDEX project_sources_blob_idx ON project_sources(blob_hash); CREATE INDEX batch_project_sources_blob_idx ON batch_project_sources(blob_hash); PRAGMA user_version=24;`); err != nil {
 			return fmt.Errorf("apply SQLite migration 24: %w", err)
+		}
+	}
+	if version == 23 {
+		version = 24
+	}
+	if version == 24 {
+		if _, err := tx.Exec(localDocumentsMigration); err != nil {
+			return fmt.Errorf("apply SQLite migration 25: %w", err)
+		}
+	}
+	if version == 24 {
+		version = 25
+	}
+	if version == 25 {
+		if _, err := tx.Exec(localCapabilitiesMigration); err != nil {
+			return fmt.Errorf("apply SQLite migration 26: %w", err)
+		}
+		version = 26
+	}
+	if version == 26 {
+		if _, err := tx.Exec(speechMigration); err != nil {
+			return fmt.Errorf("apply SQLite migration 27: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -930,7 +969,7 @@ func (store *SQLiteStore) ClearChatData(ctx context.Context) error {
 		return fmt.Errorf("begin clear chat data: %w", err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM conversations`); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM conversations; DELETE FROM local_documents; DELETE FROM project_source_indexes;`); err != nil {
 		return fmt.Errorf("clear conversation history: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

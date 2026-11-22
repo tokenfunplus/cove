@@ -642,7 +642,7 @@ func (fake *fakeChat) CancelGenerationBatch(context.Context, string) (persistenc
 	return fake.GetGenerationBatch(context.Background(), "")
 }
 
-func (fake *fakeChat) RetryGenerationTarget(context.Context, string, string) (chat.GenerationStart, error) {
+func (fake *fakeChat) RetryGenerationTarget(context.Context, string, string, ...bool) (chat.GenerationStart, error) {
 	return chat.GenerationStart{Generation: fake.generation}, nil
 }
 
@@ -778,6 +778,9 @@ func TestAuthorizedBrowserLoadsEmbeddedReactShell(t *testing.T) {
 	}
 	if body := response.Body.String(); !strings.Contains(body, "<div id=\"root\">") {
 		t.Fatalf("shell does not contain the React root: %s", body)
+	}
+	if policy := response.Header().Get("Content-Security-Policy"); !strings.Contains(policy, "media-src 'self' blob:;") {
+		t.Fatal("local speech blob playback is blocked")
 	}
 	if policy := response.Header().Get("Content-Security-Policy"); !strings.Contains(policy, "default-src 'self'") {
 		t.Fatalf("shell CSP = %q, want self-only default source", policy)

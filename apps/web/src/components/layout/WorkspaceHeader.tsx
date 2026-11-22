@@ -27,6 +27,7 @@ import {
 import { useEffect, useRef } from "react";
 
 export function WorkspaceHeader({
+  onOpenLocalModels,
 	debateMode = false,
   focusMode = false,
   onEnterFocus,
@@ -59,6 +60,7 @@ export function WorkspaceHeader({
 }: {
 	debateMode?: boolean;
   focusMode?: boolean;
+  onOpenLocalModels?: () => void;
   onEnterFocus?: () => void;
   onExitFocus?: () => void;
   profiles: ProviderProfile[];
@@ -139,7 +141,7 @@ export function WorkspaceHeader({
         hidden={focusMode || debateMode}
         data-workspace-model-controls="compact"
       >
-        <ModelSelector
+        <ModelSelector onOpenLocalModels={onOpenLocalModels}
           trailingAction={onEnterFocus && !debateMode ? (
             <Button
               ref={enterFocusRef}

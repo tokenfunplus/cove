@@ -1,3 +1,5 @@
+import { Checkbox } from "@/components/ui/checkbox";
+import { ComposerLocalTools } from "./ComposerLocalTools";
 import { ProjectInputSummary } from "@/components/projects/ProjectInputSummary";
 import { ArrowUp, Globe, LoaderCircle, LockKeyhole, Square } from "lucide-react";
 import { useEffect, type ReactNode, type RefObject } from "react";
@@ -19,6 +21,7 @@ import { DraftContext } from "@/components/chat/DraftContext";
 import { type AttachmentDraft as AttachmentDraftState } from "@/hooks/chat/use-attachment-draft";
 
 type Props = {
+  execution?: {localOnly:boolean;setLocalOnly:(value:boolean)=>void;openLocalModels:()=>void};
   webSearch?: { enabled: boolean; busy: boolean; toggle: () => void; budgetLabel?: string };
   composerId?: string;
   compact?: boolean;
@@ -39,6 +42,7 @@ type Props = {
   composerRef: RefObject<HTMLTextAreaElement | null>;
 };
 export function ChatComposer({
+  execution,
   webSearch,
   composerId = "generation-input",
   compact = false,
@@ -73,7 +77,15 @@ export function ChatComposer({
     };
   }, [compact, draft, composerRef]);
 
+  const localMismatch = Boolean(execution?.localOnly && (webSearch?.enabled || activeModelSet.some(target=>profiles.find(p=>p.id===target.providerId)?.kind!=="local")));
+  const retrieved = attachmentDraft?.attachments.some(item=>item.snapshot?.retrieval);
+  const destinations = activeModelSet.map(target=>{const p=profiles.find(profile=>profile.id===target.providerId);return p?.kind==="local"?"On this Mac":p?.name??target.providerId;});
+  const allLocal=activeModelSet.length>0&&activeModelSet.every(target=>profiles.find(p=>p.id===target.providerId)?.kind==="local");
+  const executionNotice = allLocal
+    ? "The selected models process your question and context on this Mac. Experimental local model: check facts, code, and citations."
+    : "Your question, selected history, project context, and attached source text go to the listed Providers.";
   const canSend =
+    !localMismatch &&
     !navigationBusy &&
     !attachmentDraft?.invalid &&
     !isSending &&
@@ -82,6 +94,22 @@ export function ChatComposer({
     Boolean(draft.trim());
   const actionLabel = isSending ? copy.stopGeneration : copy.sendMessage;
   function renderInput(sourceActions?: ReactNode) {
+    const contextAction = attachmentDraft ? (
+      <DraftContext
+        compact
+        destinations={activeModelSet.map(t=>{const p=profiles.find(p=>p.id===t.providerId);return `${p?.name??t.providerId} / ${t.modelId}: ${p?.endpoint??"unavailable"}`;})}
+        conversationId={view.id}
+        body={draft}
+        attachments={attachmentDraft}
+        disabled={isSending || navigationBusy}
+      />
+    ) : (
+      <span className={cn(chatStyles.generationComposer_contextNote, compact && "sr-only")}>
+        {copy.contextSnapshot.toUpperCase()} ·{" "}
+        {(view.generation_batches ?? []).filter(batch => batch.context_frozen).length} TURNS
+      </span>
+    );
+    const localTools = attachmentDraft && <ComposerLocalTools key={view.id} attachments={attachmentDraft} projectId={view.project_id} disabled={isSending||navigationBusy} onManage={execution?.openLocalModels} compact={compact} actions={compact ? <>{sourceActions}{contextAction}</> : undefined}/>;
     return <>
         {view.project_id&&<ProjectInputSummary id={view.project_id} attachments={attachmentDraft}/>}
         <label htmlFor={composerId}>{copy.sendMessage}</label>
@@ -109,30 +137,10 @@ export function ChatComposer({
         />
         <div className={cn(chatStyles.generationComposer_bar, compact && "mt-0 shrink-0 gap-1")}>
           <div className="flex min-w-0 items-center gap-0.5">
-          {sourceActions}
-          {attachmentDraft ? (
-            <DraftContext
-              compact
-              destinations={activeModelSet.map(t=>{const p=profiles.find(p=>p.id===t.providerId);return `${p?.name??t.providerId} / ${t.modelId}: ${p?.endpoint??"unavailable"}`;})}
-              conversationId={view.id}
-              body={draft}
-              attachments={attachmentDraft}
-              disabled={isSending || navigationBusy}
-            />
-          ) : (
-            <span className={cn(chatStyles.generationComposer_contextNote, compact && "sr-only")}>
-              {copy.contextSnapshot.toUpperCase()} ·{" "}
-              {
-                (view.generation_batches ?? []).filter(
-                  (batch) => batch.context_frozen,
-                ).length
-              }{" "}
-              TURNS
-            </span>
-          )}
+          {compact && attachmentDraft ? localTools : <>{sourceActions}{localTools}{contextAction}</>}
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {webSearch && <Tooltip content={<><span className="block font-medium">Web search {webSearch.enabled ? "on" : "off"}</span><span className="mt-0.5 block text-[11px] text-muted-foreground">{webSearch.enabled ? webSearch.budgetLabel ?? "Models can search when needed." : "Let models search for current information and sources."}</span></>}><Button type="button" variant="ghost" size="icon-sm" aria-label="Web search" aria-pressed={webSearch.enabled} aria-busy={webSearch.busy} disabled={webSearch.busy || isSending || navigationBusy} className={cn("rounded-lg", webSearch.enabled ? "bg-accent text-primary ring-1 ring-primary/15" : "text-muted-foreground")} onClick={webSearch.toggle}>{webSearch.busy ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Globe className="size-4" aria-hidden="true" />}</Button></Tooltip>}
+            {webSearch && <Tooltip content={<><span className="block font-medium">Web search {webSearch.enabled ? "on" : "off"}</span><span className="mt-0.5 block text-[11px] text-muted-foreground">{webSearch.enabled ? webSearch.budgetLabel ?? "Models can search when needed." : "Let models search for current information and sources."}</span></>}><Button type="button" variant="ghost" size="icon-sm" aria-label="Web search" aria-pressed={webSearch.enabled} aria-busy={webSearch.busy} disabled={webSearch.busy || isSending || navigationBusy || execution?.localOnly || (allLocal && !webSearch.enabled)} className={cn("rounded-lg", webSearch.enabled ? "bg-accent text-primary ring-1 ring-primary/15" : "text-muted-foreground")} onClick={webSearch.toggle}>{webSearch.busy ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Globe className="size-4" aria-hidden="true" />}</Button></Tooltip>}
 
             {privateMode && (
               <span className={cn(chatStyles.generationComposer_mode, compact && "hidden")} hidden={compact}>
@@ -183,7 +191,7 @@ export function ChatComposer({
       data-compact={compact ? "true" : undefined}
       onSubmit={(event) => {
         event.preventDefault();
-        if (canSend) onSend();
+        if (event.target === event.currentTarget && canSend) onSend();
       }}
     >
       <div className={cn(chatStyles.generationComposer_models, compact && "hidden")} hidden={compact}>
@@ -213,14 +221,19 @@ export function ChatComposer({
       </div>
       <div className={cn(chatStyles.generationComposer_box, compact && chatStyles.focusComposerBox)}>
         {attachmentDraft ? (
-          <AttachmentDraft state={attachmentDraft} disabled={isSending || navigationBusy} compact={compact} draft={draft}>
+          <AttachmentDraft localOnly={execution?.localOnly} state={attachmentDraft} disabled={isSending || navigationBusy} compact={compact} draft={draft}>
             {renderInput}
           </AttachmentDraft>
         ) : renderInput()}
       </div>
+      {execution&&<div className={cn("mt-2 grid gap-2 text-xs", compact && "mt-1 gap-1 text-[10px] leading-4")} aria-label="Execution locations">
+        <div className={cn("flex flex-wrap items-center justify-between gap-2", compact && "flex-nowrap")}><Tooltip content={executionNotice}><span tabIndex={compact ? 0 : undefined} className={compact ? "min-w-0 flex-1 truncate rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" : undefined}>{retrieved?"Search: On this Mac → ":""}Answer: {destinations.join(" + ")||"Choose a model"}</span></Tooltip><label className="flex shrink-0 items-center gap-2 whitespace-nowrap"><Checkbox  checked={execution.localOnly} disabled={isSending||navigationBusy||webSearch?.busy} onCheckedChange={checked=>execution.setLocalOnly(checked === true)}/>Only on this Mac</label></div>
+        {localMismatch?<p role="alert" className="text-destructive">Choose an installed local chat model to send in this mode. <Button variant="link" size="xs" onClick={execution.openLocalModels}>Choose local model</Button></p>:<p className={cn("text-muted-foreground", compact && "sr-only")}>{allLocal?"The selected models process your question and context on this Mac.":executionNotice}</p>}
+        {allLocal&&<p className={cn("text-muted-foreground", compact && "sr-only")}>Experimental local model: check facts, code, and citations.</p>}
+      </div>}
       <p className={cn(chatStyles.generationComposer_foot, compact && "hidden")} hidden={compact}>
         <LockKeyhole aria-hidden="true" size={11} strokeWidth={1.8} />
-        {copy.composerFoot}
+        {allLocal?"History and local model processing stay on this Mac.":copy.composerFoot}
       </p>
     </form>
   );

@@ -6,6 +6,7 @@ require (
 	codeberg.org/readeck/go-readability/v2 v2.1.3
 	github.com/keybase/go-keychain v0.0.1
 	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
+	github.com/yuin/goldmark v1.7.13
 	golang.org/x/net v0.63.0
 	modernc.org/sqlite v1.34.4
 )

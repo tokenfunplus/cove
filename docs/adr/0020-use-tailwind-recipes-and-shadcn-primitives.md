@@ -20,3 +20,11 @@ Motion is limited to surface entrances, hover/press feedback, sidebar changes, a
 ## Consequences
 
 This replaces the legacy global component stylesheet referenced in ADR-0019. API hooks, persistence formats, inference protocols, and generation ownership remain governed by their existing decisions. Visual acceptance and the final capability regression gate are separate from this architectural decision.
+
+## Shared interaction controls
+
+Domain components use shared UI adapters for visible controls. Native element rendering stays inside the generic controls; semantic document markup remains ordinary HTML. Checkbox, Slider, RadioGroup/RadioCard, Progress, and Disclosure use the installed Radix primitives. FileInput centralizes the hidden OS-picker input, with shared Button triggers. Existing Button, Input, Textarea, Select, and searchable FrontSelect adapters are reused throughout settings, Projects, Chat, Debate, and verification reports.
+
+Disclosures expose a keyboard-operable button with expanded state and a controlled content region. Closed content remains mounted but hidden so report work and unsaved local input survive folding. Streaming reasoning retains its explicit controlled lifecycle. Styling uses primitive slots and `data-state` instead of native details/summary selectors.
+
+FrontSelect maps an empty domain value through a collision-free internal option identity, allowing automatic model preferences without leaking sentinel values into settings. Long voice lists use its searchable adapter. Custom controls retain labels, disabled states, focus indicators, keyboard navigation, and modal Escape/focus restoration. Shared interaction tests cover these contracts.

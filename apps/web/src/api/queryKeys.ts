@@ -16,6 +16,9 @@ export const providerKeys = {
 
 export const settingsKey = ["settings"] as const;
 export const sessionKey = ["local-session"] as const;
+export const localModelKey = ["local-models"] as const;
+export const speechKey = ["local-speech"] as const;
+export const localDocumentsKey = ["local-documents"] as const;
 export const debateKeys = {
   all: ["debates"] as const,
   session: (id: string) => ["debates", id] as const,

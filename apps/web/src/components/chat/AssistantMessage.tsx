@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { SourceReferences } from "./SourceReferences";
 import { memo, useState } from "react";
 import { ChevronRight } from "lucide-react";
@@ -42,13 +43,13 @@ function ReasoningBlock({
 }) {
   const [open, setOpen] = useState(streaming);
   return (
-    <details
+    <Disclosure
       data-reasoning
       className={messagesStyles.reasoning}
       open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onOpenChange={setOpen}
     >
-      <summary className={messagesStyles.reasoningSummary}>
+      <DisclosureTrigger showChevron={false} className={messagesStyles.reasoningSummary}>
         <ChevronRight
           aria-hidden="true"
           size={14}
@@ -60,10 +61,10 @@ function ReasoningBlock({
             {englishConversationCopy.reasoningStreaming}
           </span>
         ) : null}
-      </summary>
+      </DisclosureTrigger><DisclosureContent>
       <div className={messagesStyles.reasoningBody}>
         <MarkdownMessage content={content} />
       </div>
-    </details>
+    </DisclosureContent></Disclosure>
   );
 }

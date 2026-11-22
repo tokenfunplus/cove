@@ -6,8 +6,8 @@ export const messagesStyles = {
   mathDisplay: "max-w-full min-w-0 overflow-x-auto overflow-y-hidden py-2 [overflow-wrap:normal] focus-visible:outline-ring [&_.katex-display]:m-0 [&_.katex-display]:w-max [&_.katex-display]:min-w-full [&_.katex]:text-[1.1em] [&[data-math-source]]:whitespace-pre-wrap [&[data-math-source]]:break-words",
   assistantContent: "space-y-3",
   reasoning: "group/reasoning overflow-hidden rounded-xl border border-border bg-muted/30",
-  reasoningSummary: "flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-ring [&::-webkit-details-marker]:hidden",
-  reasoningChevron: "shrink-0 transition-transform group-open/reasoning:rotate-90 motion-reduce:transition-none",
+  reasoningSummary: "flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-ring ",
+  reasoningChevron: "shrink-0 transition-transform group-data-[state=open]/reasoning:rotate-90 motion-reduce:transition-none",
   reasoningStatus: "ml-auto text-[10px] font-normal",
   reasoningBody: "px-3 pb-3",
   codeBlock_pre: "!m-0 !rounded-none !border-0",
@@ -67,10 +67,10 @@ export const messagesStyles = {
   `),
   message_snapshot: cn(String.raw`
     message__snapshot mt-2 border-t border-border text-muted-foreground
-    [&[open]_.message\_\_snapshot-chevron]:rotate-180 [&_>_summary]:flex [&_>_summary]:items-center
-    [&_>_summary]:justify-between [&_>_summary]:gap-3 [&_>_summary]:py-2 [&_>_summary]:list-none
-    [&_>_summary::-webkit-details-marker]:hidden [&_>_summary:hover]:text-foreground
-    [&_>_summary:focus-visible]:outline-ring
+    [&[data-state=open]_.message\_\_snapshot-chevron]:rotate-180 [&_>_[data-slot=disclosure-trigger]]:flex [&_>_[data-slot=disclosure-trigger]]:items-center
+    [&_>_[data-slot=disclosure-trigger]]:justify-between [&_>_[data-slot=disclosure-trigger]]:gap-3 [&_>_[data-slot=disclosure-trigger]]:py-2 [&_>_[data-slot=disclosure-trigger]]:list-none
+     [&_>_[data-slot=disclosure-trigger]:hover]:text-foreground
+    [&_>_[data-slot=disclosure-trigger]:focus-visible]:outline-ring
   `),
   message_snapshotSummary: cn(String.raw`
     message__snapshot-summary flex min-w-0 items-center gap-2 [&_svg]:shrink-0

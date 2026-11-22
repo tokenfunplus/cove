@@ -42,7 +42,7 @@ export const debateStyles = {
   notice:
     "rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm leading-relaxed text-muted-foreground",
   sessionNotice: "mt-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground",
-  connectionNotice: "mt-2 text-xs leading-relaxed text-muted-foreground [&_summary]:cursor-pointer [&_summary]:py-1 [&_p]:pt-1",
+  connectionNotice: "mt-2 text-xs leading-relaxed text-muted-foreground [&_[data-slot=disclosure-trigger]]:cursor-pointer [&_[data-slot=disclosure-trigger]]:py-1 [&_p]:pt-1",
   pending:
     "max-h-28 space-y-2 overflow-auto rounded-xl border border-primary/15 bg-accent/40 p-3 text-sm",
   inspector:

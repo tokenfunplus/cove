@@ -1,7 +1,7 @@
 import { usePreviewAttachment } from "@/api/hooks/useGenerations";
 import { LocalServiceError, prepareWebSource, releaseWebSource } from "@/api";
-import type { AttachmentInput, AttachmentSnapshot } from "@cove/api-contract";
-import { useEffect, useRef, useState } from "react";
+import type { AttachmentInput, AttachmentSnapshot, PreparedWebSource } from "@cove/api-contract";
+import { useEffect, useRef, useState, type SetStateAction } from "react";
 
 export type DraftAttachment = {
   key: string;
@@ -16,19 +16,30 @@ export type DraftAttachment = {
 
 function expireAttachments(items: DraftAttachment[]) {
   return items.map(item => item.webSourceToken && item.expiresAt !== undefined && Date.now() >= item.expiresAt
-    ? { ...item, error: "The webpage preview expired. Remove it and read the webpage again." }
+    ? { ...item, error: item.snapshot?.retrieval ? "The source preview expired. Remove it and select the source again." : "The webpage preview expired. Remove it and read the webpage again." }
     : item);
 }
 
-export function useAttachmentDraft(conversationId?: string) {
-  const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
+export function useAttachmentDraft(conversationId?: string, localOnly = false) {
+  const [attachments, setAttachmentState] = useState<DraftAttachment[]>([]);
+  const attachmentsRef = useRef(attachments);
+  function setAttachments(update: SetStateAction<DraftAttachment[]>) {
+    const next = typeof update === "function" ? update(attachmentsRef.current) : update;
+    attachmentsRef.current = next;
+    setAttachmentState(next);
+  }
   const [selectionError, setSelectionError] = useState<string>();
   const transfer=useRef<{id:string;items:DraftAttachment[]}|undefined>(undefined);
   const epoch = useRef(0);
+  const currentLocalOnly = useRef(localOnly);
+  currentLocalOnly.current=localOnly;
+  const currentConversation = useRef(conversationId);
+  currentConversation.current = conversationId;
   const count = useRef(0);
   const preview = usePreviewAttachment().mutateAsync;
   const webRequests = useRef(new Map<string, AbortController>());
   const webTokens = useRef(new Map<string, string>());
+  useEffect(()=>{if(!localOnly)return;const pending=new Set(webRequests.current.keys());for(const request of webRequests.current.values())request.abort();webRequests.current.clear();if(pending.size)setAttachments(current=>current.map(item=>pending.has(item.key)?{...item,error:"Webpage reading stopped by Only on this Mac. Remove this source or turn off the restriction and read it again."}:item));},[localOnly]);
   useEffect(() => {
     const next = Math.min(...attachments.filter(item => item.webSourceToken && !item.error && item.expiresAt !== undefined).map(item => item.expiresAt!));
     if (!Number.isFinite(next)) return;
@@ -70,6 +81,20 @@ export function useAttachmentDraft(conversationId?: string) {
     count.current = items.length;
     setAttachments(expireAttachments(items));
   }
+  function addRetrievedSources(sources: PreparedWebSource[]) {
+    if (currentConversation.current !== conversationId) {
+      for (const source of sources) void releaseWebSource(source.source_token).catch(()=>undefined);
+      return false;
+    }
+    if (count.current+sources.length>4 || new Set(sources.map(source=>source.snapshot.id)).size !== sources.length || sources.some(source=>attachmentsRef.current.some(item=>item.snapshot?.id===source.snapshot.id))) {
+      for (const source of sources) void releaseWebSource(source.source_token).catch(()=>undefined);
+      setSelectionError("Attach at most four distinct sources. Remove an existing copy before adding retrieved sections from the same document.");
+      return false;
+    }
+    const added=sources.map(source=>({key:crypto.randomUUID(),name:source.snapshot.name,snapshot:source.snapshot,webSourceToken:source.source_token,expiresAt:source.expires_at?Date.parse(source.expires_at):Date.now()+15*60*1000}));
+    for (const item of added) webTokens.current.set(item.key,item.webSourceToken);
+    count.current+=added.length;setAttachments(current=>[...current,...added]);setSelectionError(undefined);return true;
+  }
   function removeAttachment(key: string) {
     webRequests.current.get(key)?.abort();
     webRequests.current.delete(key);
@@ -80,6 +105,7 @@ export function useAttachmentDraft(conversationId?: string) {
     setAttachments((current) => current.filter((item) => item.key !== key));
   }
   async function addWebSource(url: string) {
+    if(currentLocalOnly.current){setSelectionError("Only on this Mac cannot read external webpages.");return;}
     if (count.current >= 4) {
       setSelectionError("Attach at most four files or webpages per message.");
       return;
@@ -199,8 +225,10 @@ export function useAttachmentDraft(conversationId?: string) {
     return !invalid;
   }
   return {
+    ...(localOnly ? {localOnly:true}:{}),
     transferToConversation:(id:string,items:DraftAttachment[])=>{transfer.current={id,items};},
     attachments,
+    addRetrievedSources,
     restoreAttachments,
     addAttachments,
     addWebSource,

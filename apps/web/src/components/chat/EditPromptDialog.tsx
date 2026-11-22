@@ -1,3 +1,4 @@
+import { Checkbox } from "@/components/ui/checkbox";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogOverlay } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -85,13 +86,13 @@ export function EditPromptDialog({
                 key={key}
                 className="flex min-w-0 items-center gap-2 text-xs"
               >
-                <input
-                  type="checkbox"
+                <Checkbox
+
                   disabled={busy}
                   checked={selected.includes(key)}
-                  onChange={(event) =>
+                  onCheckedChange={(checked) =>
                     setSelected((current) =>
-                      event.target.checked
+                      (checked === true)
                         ? [...current, key]
                         : current.filter((item) => item !== key),
                     )

@@ -26,6 +26,40 @@ See the [configuration reference](configuration.md#provider-profiles) for connec
 
 macOS may request permission when Cove first reads an existing Provider Key or when its signing identity changes. Authorized keys are reused within the running Local Service. Catalog errors do not automatically retry on focus or reconnect. After granting access, use the explicit connection test to recover the catalog. Restart Cove after changing an existing key outside the running service.
 
+## Install and use small local models
+
+Open **Settings > On this Mac > Discover** to explore 31 small models across eleven uses, including retrieval, reranking, writing, code, translation, OCR, transcription, speech synthesis, audio preparation, image tools, and text classification. **Ready to use in Cove** separates integrated models from **Explore other models**, whose entries require separate integration. Choose a task, search text, or **Cove integration**; **Filters** adds language, file-size limits, and sorting by the smallest files first within each group. Explore-only results appear six at a time; **Show more models** reveals the next group. Switching between Installed and Discover preserves filters while Settings stays open. **Files and requirements** expands limitations, selected files, runtime, model license, publisher, conversion source, source revision, and external source links. Management and removal remain in Installed.
+
+Use the 10 MB size limit to find tiny utilities such as language detection, portrait matting, or image classification. Larger limits expose Chinese OCR, bidirectional English/Chinese translation, Chinese speech synthesis, multilingual search, and additional small chat families. Sizes count the selected files rather than total installed memory or runtime disk space. See [catalog source notes](local-model-catalog.md).
+
+Install **BGE Small Chinese v1.5** (about 26.5 MB), then open **Search local documents**. Add text, code, or text-based PDF files, select up to four documents, and enter a query. Open a result to inspect its original line or page sections. Choose the results to attach and click **Use selected results in chat**. Only these selected sections enter the submitted prompt; selecting a remote Provider sends them to that Provider. Similarity scores rank results and do not establish answer accuracy.
+
+After validating retrieval, install **Qwen2.5 0.5B Instruct** (about 491 MB) and select its **On this Mac** target in the workspace model picker. It uses ordinary chat, streaming, history, and Stop controls without a Provider Key. These two models run offline after installation on Apple Silicon Macs with macOS 13.3 or later. The small chat model is experimental and can invent facts, omit citations, or produce incorrect code. Its suggested use is short rewriting and extraction from supplied material, with outputs checked against the original. Its context limit is 4,096 tokens and output limit is 1,024 tokens; oversized input fails. It cannot use Web Research tools.
+
+For an alternative experimental chat target, install **Qwen3 0.6B Abliterated Q5_K_M** (444.4 MB) and choose **Use in this chat** on its own card. Both chat models can remain installed and selected independently. Qwen3 runs in non-thinking mode with the same context/output limits and offline controls. Its reduced refusals do not improve factual or coding accuracy. Installing or removing one model does not replace the other model's weights or saved answers. See [ADR-0054](adr/0054-add-qwen3-abliterated-local-chat.md).
+
+Downloads show progress, support cancellation, and verify pinned file sizes and SHA-256 hashes before installation. Removing BGE deletes its vector indexes but keeps original library documents for reindexing. Deleting a library document removes its original, vectors, and pending result attachments; copies already saved in conversations remain. Clearing chat data also clears the library and keeps installed weights.
+
+You can choose up to 32 files for a library import; each selected file is processed in order, subject to the 32-document library limit. Stop cancels the current request and prevents remaining files from starting. Closing the document dialog cancels pending work and prevents late search-source results from entering another chat draft. Search still covers only the one to four documents you select.
+
+Five supported speech bundles can also be installed and used with Read aloud; see [local speech](local-speech.md). Unsupported catalog entries remain discovery-only. **View files** and **About this model** open external source websites. File sizes exclude runtimes and working memory. The discovery list itself works without a model-hub request. See [local inference acceptance](local-inference.md) for observed smoke-test results and their limits.
+
+Hugging Face and publisher GitHub repositories provide the listed files. ModelScope is another hub to inspect individually; a matching name does not establish the same revision or artifact. Local tools can still supply results to a remote Provider when that Provider generates the final answer.
+
+### Use local capabilities in a chat
+
+Open **Tools > Search local documents** in the composer. If document search is not installed, download BGE in that dialog; your chat draft is retained. Select documents, search, inspect original passages, then choose **Copy selected text** or **Use selected results in chat**. The tool can run independently of the selected answer model. The execution line distinguishes **Search: On this Mac** from each answer destination.
+
+**On this Mac** beside the model picker opens capability management. **Installed** shows downloaded tools and chat models; **Discover** includes additional candidates with their integration state. After downloading Qwen, **Use in this chat** explicitly selects its target without replacing the draft. Installing a model alone does not change your selection. OCR, transcription, unsupported speech candidates, and other explore-only entries still require integration.
+
+Turn on **Only on this Mac** to restrict new chat and answer-tool submissions to managed local models. Web search is suppressed while the restriction is on without overwriting its saved per-conversation preference; external webpage preparation is blocked, and an incompatible model selection disables sending while preserving the draft. Choose a local model or turn off the restriction. The Local Service independently validates the restriction, including retries of older answers; saved local-only batches retain their restriction even after the window toggle is off. Explicit model downloads still require internet. Existing Debate sessions have separate rules and are not changed by this chat control.
+
+### Choose how Project materials are used
+
+The Project editor offers **Always include** and **Search when needed** for each material. Existing sources remain Always include. Instructions, background, and Always include sources go to each selected model as before. Search-only materials are excluded until you open **Tools > Search project materials**, select documents, and attach chosen passages. Indexing is performed locally when needed. A material has one use at a time, avoiding automatic inclusion of both its full text and retrieved passages. The three-material/60,000-character project limit remains in effect.
+
+Changing use clears that material's vector index and pending retrieval selections; already saved chat snapshots remain unchanged. Removing BGE removes all search indexes, including Project indexes, while retaining originals. Clearing chat history also clears indexes and the global library, while retaining live Projects, Project materials, and installed model weights.
+
 ## Chat and compare models
 
 Choose one model for an ordinary conversation, or up to four targets for a comparison. Each answer retains its Provider Snapshot and available verification evidence. Select the answer you want to include in the next turn's context, or continue without an answer from that turn.
@@ -81,6 +115,8 @@ Optionally enter your Provider/model's input and output rates in USD per million
 ### Focus and timeline bookmarks
 
 Click the four-corner button beside Model comparison to enter Focus. It hides the sidebar, compacts the header and composer, and gives replies more room. Exit Focus or press Escape to restore the previous layout. Escape closes an open preview or dialog first. Drafts, attachments, model selections, and active responses are preserved. Command-K or Control-K leaves Focus and opens conversation search.
+
+In Focus, open the **Tools** icon for **Attach files**, **Read webpage**, **Review context**, and local document search. The execution line and **Only on this Mac** control remain visible; focus or hover over the execution line for the processing notice.
 
 The slim timeline on the right has one marker per user turn; the longer, darker marker follows your reading position. Hover or keyboard-focus a marker to preview its prompt and a short answer excerpt. Move into the card to save or remove a bookmark, or click a marker to jump to that turn. The card stays open while moving between the marker and its controls. On touch screens, tap a marker to open its preview and navigate.
 
@@ -160,13 +196,13 @@ Web search requires native tool calling support from the chosen model. A rejecte
 
 ## Reuse project background
 
-Open **Projects** in the sidebar and choose **New project** to save a name, Project Instructions and Project Background. Instructions guide the model; background is reference data. Save changes before adding fixed files or public webpages. The editor previews extracted source sections. Each Project supports three fixed sources with 60,000 extracted characters in total, leaving capacity for at least one new turn source under the existing attachment limits.
+Open **Projects** in the sidebar and choose **New project** to save a name, Project Instructions and Project Background. Instructions guide the model; background is reference data. Save changes before adding fixed files or public webpages. The editor previews extracted source sections. Each Project supports three materials with 60,000 extracted characters in total, leaving capacity for at least one new turn source under the existing attachment limits.
 
 Use a conversation menu's **Move to project** action to move an existing Conversation. Global **New chat** creates an ungrouped conversation; **Start chat** in a project home creates one in that project. Sidebar History and its search show only ungrouped chats. Moving preserves existing history, including anything previously stated about another Project; it changes project input for new turns only. Branches inherit their source conversation's current Project. Side conversations derive membership from the conversation containing the quoted answer. Debate history supports grouping, while Debate model inputs continue using its existing rules.
 
 The composer shows a collapsed context summary for assigned chats; expand it for remaining source capacity. **Review context** and **Review project context** show exact input and character counts for instructions, background, sources, history and the current question. Project content goes to every selected model on each turn. A project edit racing submission preserves the draft and refreshes project information; review and send again. If the complete context exceeds 240,000 characters, use **Continue in a new conversation** to carry the draft and attachments into a fresh chat in the same Project without sending automatically.
 
-A saved turn keeps its original project snapshot for retries, source citations, downloads and exports. Changing background or removing a fixed source affects future turns; historical copies remain. **Dissolve and keep conversations** moves current members to Ungrouped. **Delete project and its conversations** deletes current members after stopping their work. Both confirmations explain historical copies that remain in other Conversations. Clearing chat history preserves live Project settings and fixed sources.
+A saved turn keeps its original project snapshot for retries, source citations, downloads and exports. Changing background or removing a fixed source affects future turns; historical copies remain. **Dissolve and keep conversations** moves current members to Ungrouped. **Delete project and its conversations** deletes current members after stopping their work. Both confirmations explain historical copies that remain in other Conversations. Clearing chat history preserves live Project settings and materials, while clearing their vector indexes.
 
 ### Project navigation
 
@@ -179,3 +215,7 @@ The project home has a draft entry above its recent chats and compact controls f
 ![Project home with a pinned conversation](images/projects-home.png)
 
 ![Project home on a narrow screen](images/projects-home-mobile.png)
+
+### Read answers aloud
+
+In Settings > On this Mac > Discover, filter by Speak text and install a voice model. Open the Speech tab to choose English/Chinese defaults, voices, speed, volume, and available model options. Click the sound icon below an answer to read it locally. Pause, resume, stop, and WAV export are available in the player. If a model is missing, Cove links to Discover and keeps your draft. See [Local speech](local-speech.md).

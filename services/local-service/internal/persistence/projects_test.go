@@ -228,7 +228,7 @@ func TestProjectMigrationPreservesSchema22History(t *testing.T) {
 		t.Fatal("migration changed existing history or injected project input")
 	}
 	version, err := readPragmaInt(upgraded.db, "user_version")
-	if err != nil || version != 24 {
+	if err != nil || version != schemaVersion {
 		t.Fatalf("schema migration did not finish: %d %v", version, err)
 	}
 	if projects, err := upgraded.ListProjects(ctx); err != nil || len(projects) != 0 {
@@ -256,7 +256,7 @@ func TestProjectIndexMigrationPreservesSchema23Snapshots(t *testing.T) {
 	if e = s.db.QueryRow(`SELECT payload FROM generation_project_contexts WHERE batch_id=?`, b.ID).Scan(&original); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = s.db.Exec(`DROP INDEX project_context_project_idx; DROP INDEX project_sources_blob_idx; DROP INDEX batch_project_sources_blob_idx; PRAGMA user_version=23;`); e != nil {
+	if _, e = s.db.Exec(`DROP TABLE project_source_indexes; ALTER TABLE project_sources DROP COLUMN usage; ALTER TABLE generation_batches DROP COLUMN local_only; DROP INDEX project_context_project_idx; DROP INDEX project_sources_blob_idx; DROP INDEX batch_project_sources_blob_idx; PRAGMA user_version=23;`); e != nil {
 		t.Fatal(e)
 	}
 	if e = s.Close(); e != nil {

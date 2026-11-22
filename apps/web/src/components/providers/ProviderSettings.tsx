@@ -26,12 +26,13 @@ import { useEffect, useRef, useState } from "react";
 
 export function ProviderSettings({
   id,
-  profiles,
+  profiles: allProfiles,
   initialProviderId,
   onSave,
   onTest,
   onDelete,
   onDeleteKey,
+  onOpenLocalModels,
   copy = englishConversationCopy,
 }: {
   id?: string;
@@ -43,8 +44,10 @@ export function ProviderSettings({
   ) => Promise<string[] | ProviderValidationResponse>;
   onDelete: (id: string) => Promise<void>;
   onDeleteKey: (id: string) => Promise<void>;
+  onOpenLocalModels?:()=>void;
   copy?: ApplicationCopy;
 }) {
+  const profiles=allProfiles.filter((profile):profile is ProviderProfile & {kind:"nearai"|"openai_compatible"}=>profile.kind!=="local");
   const existing =
     profiles.find((profile) => profile.id === initialProviderId) ?? profiles[0];
   const [selectedProviderId, setSelectedProviderId] = useState(
@@ -213,7 +216,7 @@ export function ProviderSettings({
     try {
       const saved = await onSave(input());
       setSelectedProviderId(saved.id);
-      setKind(saved.kind);
+      setKind(saved.kind==="local"?"openai_compatible":saved.kind);
       setName(saved.name);
       setEndpoint(saved.endpoint);
       setAuthMethod(saved.auth_method);
@@ -293,6 +296,7 @@ export function ProviderSettings({
       <p className={settingsStyles.settingsSection_lede}>
         {copy.settingsProviderLede}
       </p>
+      {initialProviderId==="cove-local" && <div className="mb-4 grid gap-2 rounded-xl bg-muted p-3 text-sm"><p>Your current model runs on this Mac. Manage its download in Local models; it does not use a Provider Key.</p><Button variant="outline" onClick={onOpenLocalModels}>Open Local models</Button></div>}
       <form className="provider-settings__form" onSubmit={save}>
         <fieldset disabled={busy} className="min-w-0 border-0 p-0">
           <div

@@ -129,7 +129,9 @@ func TestUnclaimedDebateBrowserSummaryRemainsDueAfterResume(t *testing.T) {
 	if _, err := service.SettleDebateBrowserTurn(ctx, session.ID, retry.ID, DebateBrowserResult{ClaimID: "summary-retry", Body: body, Verification: verifiedSettlement("").Verification}); err != nil {
 		t.Fatal(err)
 	}
-	view = waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+	view = waitDebate(t, service, session.ID, func(view persistence.DebateView) bool {
+		return view.Session.Status == "paused" && !service.debateBusy()
+	})
 	if view.Session.LastSummaryRound != 1 || view.Session.Summary == nil || view.Usage.SummaryCalls != 1 {
 		t.Fatal("the authorized summary retry did not settle independently", view.Usage)
 	}
@@ -170,7 +172,9 @@ func TestDebateBrowserClaimRechecksDeadlineAfterUsageWrite(t *testing.T) {
 	if store.saveDelay.Load() {
 		t.Fatal("claim did not exercise the delayed usage write")
 	}
-	view = waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+	view = waitDebate(t, service, session.ID, func(view persistence.DebateView) bool {
+		return view.Session.Status == "paused" && !service.debateBusy()
+	})
 	if view.Usage.Calls != 0 || view.Usage.MissingUsageCalls != 0 {
 		t.Fatal("a rejected claim was recorded as chargeable work")
 	}
@@ -197,7 +201,9 @@ func TestDebateBrowserClaimRechecksDeadlineAfterSessionRead(t *testing.T) {
 	if store.delay.Load() {
 		t.Fatal("claim did not exercise the delayed session read")
 	}
-	waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+	waitDebate(t, service, session.ID, func(view persistence.DebateView) bool {
+		return view.Session.Status == "paused" && !service.debateBusy()
+	})
 }
 
 func TestDebateVerificationFailureReleasesOtherUnclaimedOpenings(t *testing.T) {
@@ -215,7 +221,9 @@ func TestDebateVerificationFailureReleasesOtherUnclaimedOpenings(t *testing.T) {
 	if _, err := service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserResult{ClaimID: "failed-browser", Verification: persistence.GenerationVerification{Status: persistence.VerificationFailed, FailureCode: "response_verification_failed"}}); err != nil {
 		t.Fatal(err)
 	}
-	waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+	waitDebate(t, service, session.ID, func(view persistence.DebateView) bool {
+		return view.Session.Status == "paused" && !service.debateBusy()
+	})
 	paused, err := store.ReadDebate(ctx, session.ID, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +299,9 @@ func TestDebateBrowserStageSummaryRequiresVerificationAndAccountsForUsage(t *tes
 			if _, err := service.SettleDebateBrowserTurn(ctx, session.ID, turn.ID, DebateBrowserResult{ClaimID: "summary-browser", Body: body, Metrics: metrics, Verification: verification}); err != nil {
 				t.Fatal(err)
 			}
-			waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+			waitDebate(t, service, session.ID, func(view persistence.DebateView) bool {
+				return view.Session.Status == "paused" && !service.debateBusy()
+			})
 			current, err := service.ReadDebate(ctx, session.ID, 0)
 			if err != nil {
 				t.Fatal(err)
@@ -456,7 +466,9 @@ func TestDebatePauseRejectsUnclaimedBrowserWorkAndReleasesReservation(t *testing
 			t.Fatal("Pause admitted a new browser call", err)
 		}
 	}
-	paused := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool { return !service.debateBusy() })
+	paused := waitDebate(t, service, session.ID, func(view persistence.DebateView) bool {
+		return view.Session.Status == "paused" && !service.debateBusy()
+	})
 	if paused.Session.Status != "paused" || paused.Session.TotalTurns != 0 || upstream.calls() != 0 {
 		t.Fatal("unclaimed tasks retained the work reservation")
 	}

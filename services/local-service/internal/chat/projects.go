@@ -111,7 +111,24 @@ func (s *Service) RemoveProjectSource(ctx context.Context, id, source string, re
 	if e != nil {
 		return persistence.Project{}, e
 	}
-	return p.RemoveProjectSource(ctx, id, source, rev)
+	var result persistence.Project
+	change := func() error {
+		snapshot, err := s.projectSourceSnapshot(ctx, id, source)
+		if err != nil {
+			return err
+		}
+		result, err = p.RemoveProjectSource(ctx, id, source, rev)
+		if result.ID != "" {
+			s.invalidateProjectSource(id, snapshot)
+		}
+		return err
+	}
+	if s.retrieval != nil {
+		e = s.retrieval.Exclusive(ctx, change)
+	} else {
+		e = change()
+	}
+	return result, e
 }
 func (s *Service) CreateProjectConversation(ctx context.Context, title, project, source string) (persistence.Conversation, error) {
 	p, e := s.projectStore()
@@ -212,6 +229,11 @@ func (s *Service) projectForInput(ctx context.Context, input SendInput, attachme
 	}
 	if p != nil {
 		for _, a := range p.Sources {
+			for _, attachment := range attachments {
+				if input.EditOfBatchID == "" && attachment.Retrieval != nil && a.Snapshot.ID == attachment.ID {
+					return nil, fmt.Errorf("%w: This source is already included by the project. Change its use to Search when needed before attaching selected passages.", documents.ErrInvalidDocument)
+				}
+			}
 			count++
 			chars += a.Snapshot.Characters
 		}

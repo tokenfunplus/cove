@@ -71,7 +71,7 @@ export function useModelSelection({
           isDuplicateModelTarget(targets, target, index),
       )
     )
-      return;
+      return false;
     const revision = ++selectionRevisionRef.current;
     try {
       const updated = await updateSettings({
@@ -87,9 +87,11 @@ export function useModelSelection({
         activeModelSetFromWorkspaceSettings(updated, providerProfiles),
       );
       setFeedback(undefined);
+      return true;
     } catch (error) {
       if (revision !== selectionRevisionRef.current) return;
       setFeedback(providerErrorMessage(error, copy));
+      return false;
     }
   }
 

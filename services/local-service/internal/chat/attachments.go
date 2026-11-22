@@ -83,6 +83,17 @@ func (service *Service) prepareAttachments(ctx context.Context, input SendInput,
 	if err != nil {
 		return nil, "", err
 	}
+	for _, source := range web {
+		if source.Retrieval != nil && source.Retrieval.ProjectID != "" {
+			view, err := service.store.LoadConversation(ctx, input.ConversationID)
+			if err != nil {
+				return nil, "", err
+			}
+			if view.ProjectID != source.Retrieval.ProjectID {
+				return nil, "", fmt.Errorf("%w: Select project sources again in the current project.", documents.ErrInvalidDocument)
+			}
+		}
+	}
 	prepared = append(prepared, web...)
 	seen := make(map[string]bool)
 	sourceCharacters := 0

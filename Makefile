@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help version build build-web build-service build-macos package-macos dmg test-package-macos test-dmg start-local stop-local check check-go test test-contract test-web test-service test-fuzz test-macos test-lifecycle test-scripts test-web-browser
+.PHONY: help version build build-web build-inference-runtime build-speech-runtime build-service build-macos package-macos dmg test-package-macos test-dmg start-local stop-local check check-go test test-contract test-web test-service test-fuzz test-macos test-lifecycle test-scripts test-web-browser
 
 FUZZ_TIME ?= 10s
 FUZZ_WORKERS ?= 2
@@ -16,7 +16,13 @@ build: build-service build-macos
 build-web:
 	pnpm run build:web
 
-build-service: build-web
+build-inference-runtime:
+	node scripts/prepare-inference-runtime.mjs
+
+build-speech-runtime:
+	node scripts/prepare-speech-runtime.mjs
+
+build-service: build-web build-inference-runtime build-speech-runtime
 	mkdir -p .artifacts
 	cd services/local-service && ../../scripts/go build -o ../../.artifacts/cove-local-service ./cmd/cove-local-service
 	scripts/sign-local-service.sh .artifacts/cove-local-service

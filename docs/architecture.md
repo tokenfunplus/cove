@@ -1,6 +1,6 @@
 # Architecture
 
-Cove has three runtime components and a shared TypeScript contract package.
+Cove has three primary runtime components, optional native inference workers, and a shared TypeScript contract package.
 
 ```text
 SwiftUI Launcher
@@ -25,6 +25,8 @@ React Chat Surface
 | `services/local-service/internal/api/` | Session-authorized HTTP adapter and static serving |
 | `services/local-service/internal/chat/` | Conversation and Generation Batch orchestration |
 | `services/local-service/internal/documents/` | Bounded source parsing and prompt formatting owned by Chat |
+| `services/local-service/internal/retrieval/` | Explicit document scope, embedding indexes, and original source selection |
+| `services/local-service/internal/localmodels/` | Pinned downloads and private native inference worker lifecycle |
 | `services/local-service/internal/persistence/` | SQLite migrations, settings, and history |
 | `services/local-service/internal/providerconfig/` | Provider validation and key rotation |
 | `services/local-service/internal/provider/` | Provider adapters and fixed-destination evidence proxies |
@@ -37,6 +39,12 @@ React Chat Surface
 
 `api/client.ts` owns local HTTP/session adaptation and error decoding. Domain endpoint modules retain the shared contract types. `api/hooks` exposes TanStack Query queries and mutations, with scoped keys in `api/queryKeys.ts`. Mutations explicitly disable automatic retries. Conversation refreshes and generation batch reads use the same cache keys as mounted queries. The SSE adapter remains a stream rather than a cached query.
 
+`api/queryClient.ts` keeps loopback queries and commands active when the browser reports no internet. Actual Local Service failures still use ordinary error handling; remote Providers and downloads require reachable destinations. See [offline loopback requests](adr/0049-keep-loopback-requests-active-without-internet.md).
+
+[Local capability workflows](adr/0053-integrate-local-capabilities-into-chat-and-projects.md) connect the composer Tools menu, installed/discovery management, Project material use, and server-enforced local-only Generation admission. Project originals remain in their existing blob store; scoped vector indexes are separate.
+
+Small-model discovery uses typed, bundled records in `lib/local-model-catalog-data.ts` and local filtering in `lib/local-model-catalog.ts`. Its integration labels are separate from actual installed state returned by the Local Service. Explore-only entries never register a runtime or tool. See [task-based model discovery](adr/0051-expand-small-model-discovery-by-task.md).
+
 `hooks/workspace/use-chat-workspace.ts` composes UI state and focused domain controllers. Conversation actions, model selection, ordinary batch streaming, private inference, and private connection verification have separate hooks. Query data owns server records. Workspace UI state and the transient Live Turn remain separate from durable history. Session query data contains readiness only, while the CSRF proof stays in the HTTP client.
 
 `lib/inference` isolates the browser SDK, protocol adapters, evidence conversion, and verifiers. `lib/chat` owns pure Live Turn and timeline projections. `messages` owns interface copy and `theme` owns system appearance resolution, skin selection, and semantic variables. Skin preferences and timeline bookmark references are browser-local presentation state; bookmark storage contains identifiers only, never message bodies or excerpts. Appearance continues to use the settings API.
@@ -45,7 +53,7 @@ Unit/component tests are colocated with their owning modules. `pages/ChatPage.in
 
 Assistant Markdown protects math delimiters before parsing emphasis and uses locally bundled KaTeX and fonts for presentation. Formula source remains unchanged in storage, copying, and exports. See [local math rendering](adr/0036-render-local-math-in-assistant-markdown.md) for delimiter, fallback, and rendering limits.
 
-`components/ui` owns editable shadcn/Radix primitives. Tailwind recipes in `styles` express domain presentation through semantic variables in `theme/tokens.css`. Component-specific CSS is avoided; CSS retains theme registration, base rules, and shared motion. See [presentation and skin decision](adr/0020-use-tailwind-recipes-and-shadcn-primitives.md).
+`components/ui` owns editable shadcn/Radix primitives. Domain presentation uses these adapters for selects, checkboxes, sliders, radio cards, progress, disclosures, buttons, text fields, and file-picker triggers. Tailwind recipes in `styles` express domain presentation through semantic variables in `theme/tokens.css`. Component-specific CSS is avoided; CSS retains theme registration, base rules, and shared motion. See [presentation and skin decision](adr/0020-use-tailwind-recipes-and-shadcn-primitives.md).
 
 Model selection preferences contain bounded browser-local identifiers and names; manual cost rates are also browser-local. Explicitly saved Debate rates are copied into the session for cumulative background budget estimates; see [Debate stage summaries and controls](adr/0041-add-debate-stage-summaries-and-run-controls.md). Model filter popovers and option menus use shared Radix primitives, including nested focus and Escape behavior in Provider settings. Conversation reading anchors and updated-answer counts remain transient presentation state. See [workspace experience and edited-prompt branches](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
@@ -79,7 +87,18 @@ Automatic research uses `internal/websearch` for fixed-destination search connec
 
 Schema 23 stores Projects, current instructions/background and fixed sources in persistence. Chat assembles project input independently of replayable `input_content`: saved instructions augment each attempt's base System Prompt, and a saved reference prefix is concatenated with the final user input at execution time. Ordinary and NearAI requests share the Batch snapshot. Normalized references retain content-addressed original-byte blobs until the last owner is deleted; branches copy text snapshots and add blob references. Project-aware context previews expose revisions and character breakdowns. See [project background reuse](adr/0045-add-projects-and-independent-context-snapshots.md).
 
+## Managed local inference and document retrieval
+
+`internal/localmodels` owns verified downloads and authenticated native worker lifecycles; workers have no browser sessions, Provider Keys, or persistence responsibilities. The managed local Provider uses ordinary Chat Generations and immutable model-artifact provenance. A single lease bounds concurrent native inference, cancellation terminates local chat work, and idle workers unload.
+
+Installed chat artifacts share the managed Provider but retain independent model targets, workers, and saved artifact revisions/hashes. Model selection, local-only admission, and removal honor the chosen target. Qwen3 Abliterated runs its embedded template in non-thinking mode. See [multiple local chat targets](adr/0054-add-qwen3-abliterated-local-chat.md).
+
+Chat exposes explicit library import, search, source selection, and deletion operations. `internal/retrieval` indexes only selected documents with versioned embeddings and resolves hits back to original source sections. Persistence owns library originals, vectors, and weight files. Selected results enter the existing immutable source-snapshot and citation path; library deletion does not mutate saved history. See [managed local inference and retrieval](adr/0048-add-managed-local-inference-and-document-retrieval.md).
+
+[Schema compatibility](adr/0052-combine-projects-and-local-model-storage-migrations.md) preserves both mainline Project databases and earlier local-model preview data. Model removal shares Generation admission, and library clearing serializes with parsing and indexing. Browser dialog cancellation rejects late source responses, while clearing removes library cache entries. See [local lifecycle consistency](adr/0050-serialize-local-model-and-document-lifecycle-changes.md).
+
 ## Continuous debates
+
 
 `internal/chat/debate_summary.go` schedules bounded, cited stage analyses through the same service/browser turn lifecycle. `debate_controls.go` owns cumulative estimate policy, budget admission, and persistent pacing; persistence aggregates usage independently of transcript pagination. Generated analyses remain separate from participant context.
 
@@ -111,3 +130,5 @@ Saved verification records report browser checks; SQLite does not independently 
 See [CONTEXT.md](../CONTEXT.md) for vocabulary and [architecture decisions](adr/) for rationale.
 
 Conversation API responses intern saved project payloads in a per-response dictionary; API adaptation restores shared immutable references before query data reaches domain presentation. Project-aware context reads use their own generation query key.
+
+Local speech follows the same boundary: HTTP adapts session-authenticated settings, reading, preview, status, stop, and WAV requests; Chat resolves saved assistant and completed Debate participant bodies; `speech` coordinates model choice, native workers, and cancellation; persistence owns verified multi-file bundles, schema-27 preferences, and temporary audio. The native workers use private pipes and sanitized environments, independently of chat Providers. See [ADR 0055](adr/0055-add-managed-local-speech-and-answer-reading.md) and [Debate read aloud](adr/0056-read-debate-turns-with-local-speech.md).

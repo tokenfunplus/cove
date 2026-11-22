@@ -16,6 +16,7 @@ import {
 } from "@cove/api-contract";
 
 export type GenerationSelection = {
+  localOnly?: boolean;
  expectedProject?:ProjectExpectation;
   editOfBatchId?: string;
   clientRequestId: string;
@@ -31,6 +32,7 @@ export function createGenerationBatch(
   selection: GenerationSelection,
 ): Promise<GenerationBatch> {
   const input: GenerationInput = {
+    ...(selection.localOnly ? {local_only:true}:{}),
     ...(selection.editOfBatchId ? {edit_of_batch_id:selection.editOfBatchId} : {}),
     expected_project:selection.expectedProject,
     client_request_id: selection.clientRequestId,
@@ -109,13 +111,14 @@ export function cancelGenerationBatch(id: string): Promise<GenerationBatch> {
 export function retryGenerationTarget(
   id: string,
   clientRequestId: string,
+  localOnly = false,
 ): Promise<Generation> {
   return request<Generation>(
     `/api/generation-targets/${encodeURIComponent(id)}/retry`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_request_id: clientRequestId }),
+      body: JSON.stringify({ client_request_id: clientRequestId, ...(localOnly ? {local_only:true} : {}) }),
     },
   );
 }

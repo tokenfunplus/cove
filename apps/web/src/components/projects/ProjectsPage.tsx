@@ -1,3 +1,5 @@
+import { Textarea } from "@/components/ui/textarea";
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
@@ -136,7 +138,7 @@ function ProjectDirectory({ workspace: w }: { workspace: ChatWorkspace }) {
         <div className="grid gap-4 md:grid-cols-2" aria-label="Your projects">
           {visible.map((p) => (
             <div key={p.id} className="relative">
-              <button
+              <Button variant="plain" size="none"
                 className="group flex h-full min-h-40 w-full items-start gap-4 rounded-2xl border border-border/70 bg-card p-6 pr-16 text-left transition-colors hover:border-primary/30 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => w.setProjectPage({ projectId: p.id })}
                 aria-label={`Open project ${p.name}`}
@@ -160,7 +162,7 @@ function ProjectDirectory({ workspace: w }: { workspace: ChatWorkspace }) {
                     })}
                   </span>
                 </span>
-              </button>
+              </Button>
               <div className="absolute right-4 top-5">
                 <ProjectActions project={p} workspace={w} />
               </div>
@@ -280,20 +282,20 @@ function ProjectHome({
                     {p.description}
                   </p>
                 ) : (
-                  <details className="group mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-                      <span className="line-clamp-3 whitespace-pre-wrap group-open:hidden">
+                  <Disclosure className="group mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                    <DisclosureTrigger showChevron={false} className="block cursor-pointer text-left">
+                      <span className="line-clamp-3 whitespace-pre-wrap group-data-[state=open]:hidden">
                         {p.description}
                       </span>
-                      <span className="mt-2 inline-block text-foreground group-open:hidden">
+                      <span className="mt-2 inline-block text-foreground group-data-[state=open]:hidden">
                         Show more
                       </span>
-                      <span className="hidden text-foreground group-open:inline">
+                      <span className="hidden text-foreground group-data-[state=open]:inline">
                         Show less
                       </span>
-                    </summary>
+                    </DisclosureTrigger><DisclosureContent>
                     <p className="mt-2 whitespace-pre-wrap">{p.description}</p>
-                  </details>
+                  </DisclosureContent></Disclosure>
                 ))}
             </div>
             <ProjectActions project={p} workspace={w} />
@@ -307,7 +309,7 @@ function ProjectHome({
                   void w.handleCreateConversation(p.id, w.projectDrafts[p.id]);
                 }}
               >
-                <textarea
+                <Textarea
                   aria-label="New project chat draft"
                   placeholder={`New chat in ${p.name}`}
                   className="min-h-24 w-full resize-none bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
@@ -371,7 +373,7 @@ function ProjectHome({
                 <div className="divide-y divide-border">
                   {chats.map((chat) => (
                     <div key={chat.id} className="relative">
-                      <button
+                      <Button variant="plain" size="none"
                         className="flex w-full items-center gap-4 py-5 pl-1 pr-12 text-left hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         onClick={() => openChat(
                           chat.id,
@@ -413,7 +415,7 @@ function ProjectHome({
                             { month: "short", day: "numeric" },
                           )}
                         </time>
-                      </button>
+                      </Button>
                       <ConversationActions
                         conversation={chat}
                         disabled={w.isSending}

@@ -101,7 +101,7 @@ func copyBranchTurnTx(ctx context.Context, tx *sql.Tx, conversationID string, it
 	if _, err := tx.ExecContext(ctx, `INSERT INTO batch_context_items (generation_batch_id, position, user_message_id, selected_generation_id) SELECT ?, ROW_NUMBER() OVER (ORDER BY created_at, id) - 1, user_message_id, selected_generation_id FROM generation_batches WHERE conversation_id = ? AND id != ?`, batchID, conversationID, batchID); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE generation_batches SET project_context_required=(SELECT project_context_required FROM generation_batches WHERE id=?) WHERE id=?`, generation.GenerationBatchID, batchID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE generation_batches SET project_context_required=(SELECT project_context_required FROM generation_batches WHERE id=?),local_only=(SELECT local_only FROM generation_batches WHERE id=?) WHERE id=?`, generation.GenerationBatchID, generation.GenerationBatchID, batchID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO generation_project_contexts(batch_id,payload) SELECT ?,payload FROM generation_project_contexts WHERE batch_id=?`, batchID, generation.GenerationBatchID); err != nil {

@@ -84,3 +84,7 @@ export function moveProjectConversation(
     },
   ).then(hydrateConversation);
 }
+
+export function setProjectSourceUsage(id:string,source:string,revision:number,usage:"always"|"search"):Promise<Project>{
+return request(`/api/projects/${encodeURIComponent(id)}/sources/${encodeURIComponent(source)}/usage`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({revision,usage})});
+}

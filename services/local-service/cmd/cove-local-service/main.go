@@ -18,11 +18,13 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/localmodels"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 	"github.com/tokenfunplus/cove/services/local-service/internal/providerconfig"
 	localruntime "github.com/tokenfunplus/cove/services/local-service/internal/runtime"
+	"github.com/tokenfunplus/cove/services/local-service/internal/speech"
 	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
 )
 
@@ -101,7 +103,18 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	chatService := chat.NewServiceWithSettings(store, providerSetup, provider.NewHTTPAdapter(nil), store)
+	localModels := localmodels.New(applicationDataDirectory, localmodels.DefaultRuntime(executable))
+	defer localModels.Close()
+	providerSetup.SetLocalProvider(localModels)
+	chatService := chat.NewServiceWithSettings(store, providerSetup, localmodels.RoutedProvider{Local: localModels, Remote: provider.NewHTTPAdapter(nil)}, store)
+	chatService.SetLocalModels(localModels, store)
+	speechDirectory := os.Getenv("COVE_SPEECH_RUNTIME")
+	if speechDirectory == "" {
+		speechDirectory = speech.RuntimeDirectory(executable)
+	}
+	localSpeech := speech.New(applicationDataDirectory, speechDirectory, store)
+	defer localSpeech.Close()
+	chatService.SetSpeech(localSpeech)
 	searchService := websearch.NewService(store, secretStore, nil)
 	chatService.SetWebSearchService(searchService)
 	shutdownDone := make(chan struct{})

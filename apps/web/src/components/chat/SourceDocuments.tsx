@@ -1,3 +1,4 @@
+import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
 import { ProjectContextUsage } from "@/components/chat/ProjectContextUsage";
 import { projectSystemPrompt, projectUserInput } from "@/lib/chat/project-context";
 import {
@@ -120,7 +121,7 @@ export function DocumentPreview({
       open
       onClose={onClose}
       label={document.name}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
+      className="fixed inset-0 z-90 flex items-center justify-center p-3 sm:p-6"
     >
       <DialogOverlay />
       <DialogContent className="flex max-h-[85dvh] w-full max-w-3xl flex-col gap-3 rounded-2xl p-4 sm:p-6">
@@ -139,6 +140,7 @@ export function DocumentPreview({
         <p className="text-sm text-muted-foreground">
           {copy.sourceCitationNotice}
         </p>
+        {document.retrieval && <p className="text-sm text-muted-foreground">Selected original sections from local semantic search · {document.retrieval.model_id} · {document.retrieval.index_version}</p>}
         {document.web && (
           <div className="space-y-1 text-sm">
             <a className="break-all text-primary underline" href={document.web.final_url} target="_blank" rel="noopener noreferrer">
@@ -172,15 +174,15 @@ export function DocumentPreview({
             </div>
           ))}
         </div>
-        <details className="text-xs text-muted-foreground">
-          <summary>{copy.sourceFileDetails}</summary>
+        <Disclosure className="text-xs text-muted-foreground">
+          <DisclosureTrigger>{copy.sourceFileDetails}</DisclosureTrigger><DisclosureContent>
           <p className="mt-2 break-all">{document.web ? "Snapshot ID" : "SHA-256"}: {document.id}</p>
           {document.web && <p className="break-all">Content SHA-256: {document.web.content_sha256}</p>}
           <p>
             {document.extraction_version} · {document.size.toLocaleString()}{" "}
             bytes
           </p>
-        </details>
+        </DisclosureContent></Disclosure>
         {batchId && (
           <div>
             <Button
@@ -326,6 +328,7 @@ function ContextSnapshotDialog({
           onValueChange={value => setTargetIndex(Number(value))}
           options={batch.targets.map((item, index) => ({ value: String(index), label: item.model_id }))}
         />
+        {batch.local_only && <p className="text-sm font-medium">Execution policy: Only on this Mac</p>}
         {context && batch.project_context && <ProjectContextUsage project={batch.project_context} base={target?.generation.configuration_snapshot.system_prompt??""} body={batch.input_content??userBody} history={context}/>}
         {context ? (
           <p className="text-sm">

@@ -1,0 +1,17 @@
+{
+  "mode": "auto",
+  "model_id": "",
+  "english_model_id": "kitten-nano-en",
+  "chinese_model_id": "kokoro-zh",
+  "profiles": {
+    "kitten-nano-en": {
+      "voice_id": "expr-voice-2-f",
+      "speed": 1,
+      "noise_scale": 0.667,
+      "temperature": 0.3
+    }
+  },
+  "include_code": false,
+  "volume": 0.9,
+  "threads": 2
+}

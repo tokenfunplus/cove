@@ -1,0 +1,13 @@
+# Bundled local speech runtimes
+
+Cove invokes these optional workers as separate processes. Model downloads are separate from runtime binaries.
+
+- sherpa-onnx v1.12.40 and v2.0.3: Apache-2.0. Source: https://github.com/k2-fsa/sherpa-onnx/tree/v1.12.40 and https://github.com/k2-fsa/sherpa-onnx/tree/v2.0.3
+- ONNX Runtime v1.28.2: MIT. Cove shares the v2.0.3 pinned runtime library with the 1.12.40 C adapter using ONNX Runtime's backward-compatible C API. This avoids the older bundle's macOS 15.5-only library. The binary archive and notices are pinned in the preparation script and v2.0.3's `cmake/onnxruntime-osx-arm64.cmake`. Source: https://github.com/microsoft/onnxruntime
+- The sherpa-onnx TTS phonemization build includes eSpeak NG and piper-phonemize. eSpeak NG is GPL-3.0-or-later; piper-phonemize is MIT. Corresponding dependency source/build references are in sherpa-onnx v1.12.40 `cmake` and https://github.com/rhasspy/piper-phonemize. Cove's IPC speech adapter source is provided in `scripts/native/speech-worker.cpp` under GPL-3.0-or-later for this combined worker.
+- Pocket TTS v4.0.1: MIT code. Source and build instructions: https://github.com/kyutai-labs/pocket-tts/tree/v4.0.1/rust. The upstream asset filename still contains `3.3.0`; Cove pins the asset published by the v4.0.1 release and its SHA-256.
+- Kokoro models: Apache-2.0; Kitten Nano 0.8: Apache-2.0; MeloTTS: MIT; Pocket TTS preset-only 18M weights: CC-BY-4.0. Installed model bundles retain their supplied notices. Pocket preset voices are attributed to Kyutai's voice collection, with Alba, Anna, and Bill Boerst provided as predefined voice states. No voice-cloning interface is exposed.
+
+See https://www.gnu.org/licenses/gpl-3.0.txt for GPL-3.0 and the named source repositories for complete license texts. Distribution packages must retain these notices and the corresponding licenses and source information.
+
+The `source` directory in the speech distribution includes both sherpa-onnx source releases, piper-phonemize at `78a788e0b719013401572d70fef372e77bff8e43`, its eSpeak NG fork at `7251208ee427ef87e94f39d0e99b15d287224ed6`, Kitten's eSpeak NG 1.52.0 source, the Cove adapter, and the pinned preparation recipe. Native workers are built for ARM64/macOS 13.3 using Apple's clang. The recipe disables unused sound-output/speed libraries, builds the phonemizer as a shared library, sets its relative runtime install name, and links the private adapter. The sherpa source archives contain the corresponding dependency manifests and upstream build scripts. CMake 3.31.6 is used only at build time (BSD-3-Clause); it is not bundled as an executable.

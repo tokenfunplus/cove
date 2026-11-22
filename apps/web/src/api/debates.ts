@@ -23,8 +23,8 @@ const json = (method: string, body: unknown) => ({
 
 export const createDebate = (input: StartDebateInput) =>
   request<DebateSession>("/api/debates", json("POST", input));
-export const getDebate = (id: string, before = 0) =>
-  request<DebateView>(`${path(id)}${before ? `?before=${before}` : ""}`);
+export const getDebate = (id: string, before = 0, signal?: AbortSignal) =>
+  request<DebateView>(`${path(id)}${before ? `?before=${before}` : ""}`, { signal });
 export const getDebateTurn = (id: string, turnId: string) => request<DebateTurn>(`${path(id)}/turns/${encodeURIComponent(turnId)}`);
 const browserTurnPath = (id: string, turnId: string) => `${path(id)}/turns/${encodeURIComponent(turnId)}/browser`;
 export const claimDebateBrowserTurn = (id: string, turnId: string, claimId: string, signal?: AbortSignal) =>

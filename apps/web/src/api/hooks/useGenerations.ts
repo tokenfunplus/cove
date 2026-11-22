@@ -81,10 +81,12 @@ export function useRetryGenerationTarget() {
     mutationFn: ({
       targetId,
       clientRequestId,
+      localOnly,
     }: {
+      localOnly?: boolean;
       targetId: string;
       clientRequestId: string;
-    }) => api.retryGenerationTarget(targetId, clientRequestId),
+    }) => localOnly ? api.retryGenerationTarget(targetId, clientRequestId, true) : api.retryGenerationTarget(targetId, clientRequestId),
     retry: false,
   });
 }

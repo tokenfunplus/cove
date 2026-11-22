@@ -9,5 +9,5 @@ test.each(["unknown", "stopped"] as const)("a reasoning-only %s response retains
   render(<ModelAnswerCard targetId="target" modelId="fixture-model" phase={phase} body="" reasoning="Partial reasoning" copy={copy} />);
   expect(screen.getByText(phase === "unknown" ? copy.generationDeliveryUnknown : copy.generationStopped)).toBeTruthy();
   expect(screen.getByText("Partial reasoning")).toBeTruthy();
-  expect(screen.getByText("Reasoning", { exact: true }).closest("details")?.open).toBe(false);
+  expect(screen.getByText("Reasoning", { exact: true }).closest("[data-reasoning]")?.getAttribute("data-state")).toBe("closed");
 });

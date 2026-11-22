@@ -1,3 +1,4 @@
+import { FileInput } from "@/components/ui/file-input";
 import { useRef, useState, type ReactNode } from "react";
 import { Link, Paperclip, X } from "lucide-react";
 import type { AttachmentDraft as AttachmentDraftState } from "@/hooks/chat/use-attachment-draft";
@@ -11,12 +12,14 @@ import { cn } from "@/lib/utils";
 import { englishConversationCopy as copy } from "@/messages";
 
 export function AttachmentDraft({
+  localOnly = false,
   state,
   children,
   disabled,
   compact = false,
   draft = "",
 }: {
+  localOnly?: boolean;
   state: AttachmentDraftState;
   children: (actions: ReactNode) => ReactNode;
   disabled: boolean;
@@ -29,17 +32,17 @@ export function AttachmentDraft({
   const [webUrl, setWebUrl] = useState("");
 
   function readWebpage() {
-    if (disabled || !webUrl.trim()) return;
+    if (localOnly || state.localOnly || disabled || !webUrl.trim()) return;
     void state.addWebSource(webUrl.trim());
     setWebOpen(false);
   }
   const actions = (
       <div className="flex shrink-0 items-center gap-0.5">
-        <input
+        <FileInput
           ref={input}
           className="sr-only"
           aria-label={copy.attachFiles}
-          type="file"
+
           tabIndex={-1}
           multiple
           disabled={disabled || state.attachments.length >= 4}
@@ -67,7 +70,7 @@ export function AttachmentDraft({
           variant="ghost"
           size="icon-sm"
           className="rounded-lg text-muted-foreground"
-          disabled={disabled || state.attachments.length >= 4}
+          disabled={localOnly || state.localOnly || disabled || state.attachments.length >= 4}
           onClick={() => {
             setWebUrl(draft.match(/https?:\/\/[^\s<>"\u3000-\u303f]+/i)?.[0] ?? "");
             setWebOpen(true);

@@ -111,7 +111,7 @@ export function ConversationTimeline({
               onOpenChange={(open) => setPreviewId(open ? entry.id : undefined)}
             >
               <Popover.Trigger asChild>
-                <button
+                <Button variant="plain" size="none"
                   type="button"
                   className={styles.marker}
                   data-timeline-marker={entry.id}
@@ -129,7 +129,7 @@ export function ConversationTimeline({
                 >
                   <span aria-hidden="true" className={styles.line} data-active={activeId === entry.id} data-bookmarked={saved} />
                   {saved && <span aria-hidden="true" className={styles.saved} />}
-                </button>
+                </Button>
               </Popover.Trigger>
               <Popover.Portal>
                 <Popover.Content

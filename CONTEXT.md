@@ -60,7 +60,7 @@ The immutable ordered references to Selected Answers that a Generation Batch sup
 _Avoid_: Live conversation history, Provider transcript
 
 **Source Document**:
-A text, code, or text-based PDF file, or an explicitly retrieved public webpage attached to a submitted user message. Cove retains its original bytes locally and sends its extracted text through the selected Provider transport.
+A text, code, or text-based PDF file, or an explicitly retrieved public webpage attached to a submitted user message. Cove retains its original bytes locally and sends its extracted text, or explicitly selected original sections from local retrieval, through the selected Provider transport.
 _Avoid_: Provider upload, Knowledge base
 
 **Project**:
@@ -78,12 +78,16 @@ A single user-edited reference text shared by Conversations in a Project. Each n
 _Avoid_: Automatic memory, verified fact, accumulated chat history
 
 **Project Source**:
-A fixed file or webpage snapshot saved for reuse across Conversations in a Project. It retains the existing source identity, parser version and sections, with original bytes held in content-addressed storage. Each Batch captures the current fixed source metadata and text sections plus references to those original bytes.
+A file or webpage snapshot saved for reuse across Conversations in a Project, with explicit Always include or Search when needed use. Existing sources default to Always include. It retains the existing source identity, parser version and sections, with original bytes held in content-addressed storage. Each Batch captures the current Always include source metadata and text sections plus references to those original bytes. Search-only material enters a turn only through explicitly selected retrieval results.
 _Avoid_: Live file reference, Knowledge base, automatically retrieved material
 
 **Project Context Snapshot**:
 A Batch-owned record of the exact rendered Project Instructions, Project Background and fixed source inputs, their rendering version, originating Project revision, and source identities. It is injected once for that Batch, outside historical turn replay, and reused by every Target and retry. Later project edits or source removal do not change it.
 _Avoid_: Live project state, augmented user message, project history transcript
+
+**Local Document Library**:
+An explicitly populated local collection of original documents and versioned embedding indexes. Users select the documents to search and the result sections to attach to Chat. Deleting a library item does not remove copies already saved in Conversation History.
+_Avoid_: Automatic history search, cloud knowledge base
 
 **Attachment Snapshot**:
 The immutable source identity, filename, parser version, and extracted line/page sections saved with a Generation Batch. Webpage snapshots also record source URLs, read time, and a separate original-content hash. Every Target and retry uses the same saved source input. A source citation navigates to a section; it does not establish factual correctness or cryptographic verification.
@@ -156,3 +160,5 @@ _Avoid_: Mutated original conversation, newly verified copied answer
 **Conversation Branch**:
 A separate locally saved conversation created by editing a saved user turn. Its inherited history copies that turn's immutable Selected Answer context and source snapshots; the new prompt uses current generation settings. Deleting the source does not remove the branch's copies.
 _Avoid_: Edited original history, regenerated evidence
+
+Local speech is a managed processing capability, separate from chat Providers. Five pinned speech bundles can be installed in Discover and configured in On this Mac > Speech. Chat resolves saved assistant text and completed Debate participant bodies for bounded, session-owned local WAV jobs; persistence owns speech preferences (schema 27), bundle files, and temporary audio. Debate read aloud is opt-in and follows new turns sequentially without controlling generation. See [ADR 0055](docs/adr/0055-add-managed-local-speech-and-answer-reading.md), [ADR 0056](docs/adr/0056-read-debate-turns-with-local-speech.md), and [Local speech](docs/local-speech.md).

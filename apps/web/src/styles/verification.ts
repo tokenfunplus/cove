@@ -71,9 +71,9 @@ export const verificationStyles = {
   `),
   verificationDialog_evidenceCard: cn(String.raw`
     verification-dialog__evidence-card border border-border rounded-[calc(var(--radius)*1.0625)]
-    bg-popover p-4 [&_summary]:flex [&_summary]:items-center [&_summary]:justify-between
-    [&_summary]:text-xs [&_summary]:font-[550] [&_summary_strong]:text-primary
-    [&_summary_strong]:text-[11px] [&_p]:text-[11px] [&_p]:text-muted-foreground [&_p]:mt-[13px]
+    bg-popover p-4 [&_[data-slot=disclosure-trigger]]:flex [&_[data-slot=disclosure-trigger]]:items-center [&_[data-slot=disclosure-trigger]]:justify-between
+    [&_[data-slot=disclosure-trigger]]:text-xs [&_[data-slot=disclosure-trigger]]:font-[550] [&_[data-slot=disclosure-trigger]_strong]:text-primary
+    [&_[data-slot=disclosure-trigger]_strong]:text-[11px] [&_p]:text-[11px] [&_p]:text-muted-foreground [&_p]:mt-[13px]
     [&_p]:leading-[1.7] [&_pre]:text-[10px] [&_pre]:p-[13px] [&_pre]:mt-3
     [&_pre]:rounded-[calc(var(--radius)*0.6875)] [&_pre]:bg-muted [&_pre]:max-h-[300px]
     [&_pre]:overflow-auto
@@ -162,14 +162,14 @@ export const verificationStyles = {
     [&_code]:text-primary
   `),
   privacyStatusPanel_messages: cn(String.raw`
-    privacy-status-panel__messages text-[11px] [&_summary]:py-[9px] [&_summary]:px-0 [&_ul]:list-none
+    privacy-status-panel__messages text-[11px] [&_[data-slot=disclosure-trigger]]:py-[9px] [&_[data-slot=disclosure-trigger]]:px-0 [&_ul]:list-none
     [&_ul]:p-0
   `),
   privacyStatusPanel_message: cn(String.raw`
     privacy-status-panel__message border border-border rounded-[calc(var(--radius)*0.8125)] mt-2.5 p-3
-    [&_summary]:grid [&_summary]:gap-[5px] [&_summary]:[overflow-wrap:anywhere]
-    [&_summary_span:nth-child(2)]:text-muted-foreground [&_summary_span:nth-child(2)]:text-[9px]
-    [&_summary_span[role="status"]]:text-primary [&_summary_span[role="status"]]:text-[9px]
+    [&_[data-slot=disclosure-trigger]]:grid [&_[data-slot=disclosure-trigger]]:gap-[5px] [&_[data-slot=disclosure-trigger]]:[overflow-wrap:anywhere]
+    [&_[data-slot=disclosure-trigger]_span:nth-of-type(2)]:text-muted-foreground [&_[data-slot=disclosure-trigger]_span:nth-of-type(2)]:text-[9px]
+    [&_[data-slot=disclosure-trigger]_span[role="status"]]:text-primary [&_[data-slot=disclosure-trigger]_span[role="status"]]:text-[9px]
   `),
   privacyStatusPanel_messageBody: cn(String.raw`
     privacy-status-panel__message-body max-h-[180px] overflow-auto text-[11px] leading-[1.8]

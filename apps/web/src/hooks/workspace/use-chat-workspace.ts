@@ -49,7 +49,7 @@ export function useChatWorkspace() {
   } = workspaceState;
   const { setFeedback, setMobileSidebarOpen } = workspaceUi;
   const generationState = useGenerationState();
-  const attachmentDraft = useAttachmentDraft(selectedId);
+  const attachmentDraft = useAttachmentDraft(selectedId, workspaceUi.localOnly);
   const webSearch = useWebSearch(selectedId, workspaceUi.setSettingsEntry, workspaceUi.setFeedback);
   const {
     setGenerationBatch,
@@ -75,7 +75,7 @@ export function useChatWorkspace() {
   }, [narrowLayout]);
 
   const { catalogs, activeSelection, catalog, selectionStatus } =
-    useProviderCatalogs(providerProfiles, activeModelSet);
+    useProviderCatalogs(providerProfiles, activeModelSet, workspaceUi.localOnly);
 
   useEffect(() => {
     const active = conversationView?.active_generation_batch;
@@ -202,6 +202,7 @@ export function useChatWorkspace() {
   });
 
   const answerTools = useAnswerTools({
+    localOnly: workspaceUi.localOnly,
     activeModelSet,
     providerProfiles,
     catalogs,
@@ -211,7 +212,7 @@ export function useChatWorkspace() {
   });
 
   const generationCommands = useGenerationCommands({
-    webSearchEnabled: webSearch.enabled,
+    webSearchEnabled: webSearch.enabled && !workspaceUi.localOnly,
     attachmentDraft,
     ...workspaceState,
     ...workspaceUi,
@@ -288,7 +289,7 @@ export function useChatWorkspace() {
   }
   return {
     continueProjectDraft,
-    webSearch,
+    webSearch: {...webSearch, enabled:webSearch.enabled && !workspaceUi.localOnly},
     answerTools,
     conversationSearch,
     attachmentDraft,
