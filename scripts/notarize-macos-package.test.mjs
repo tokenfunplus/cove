@@ -103,7 +103,7 @@ test("local notarization signs native workers and libraries before the enclosing
     }
     await writeFile(path.join(bin, "otool"), '#!/bin/sh\nprintf "cmd LC_BUILD_VERSION\\nminos 13.0\\n"\n', { mode: 0o700 });
     // Stop at the service signature, before any notarization or disk-image work.
-    await writeFile(path.join(bin, "codesign"), '#!/bin/sh\nprintf "%s\\n" "$@" >> "$COVE_FIXTURE_SIGN_LOG"\nfor argument do\n case "$argument" in */cove-local-service) exit 1;; esac\ndone\nexit 0\n', { mode: 0o700 });
+    await writeFile(path.join(bin, "codesign"), '#!/bin/sh\nprintf "%s\\n" "$@" >> "$COVE_FIXTURE_SIGN_LOG"\nfor argument do\n case "$argument" in\n  */cove-local-service) exit 1;;\n  */Contents/Resources/inference/*|*/Contents/Resources/speech/*) printf "Signed fixture\\n" >> "$argument";;\n esac\ndone\nexit 0\n', { mode: 0o700 });
     const result = spawnSync("sh", [path.join(root, "scripts/notarize-macos-package.sh"), app, path.join(directory, "output")], {
       encoding: "utf8",
       env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, COVE_SIGNING_IDENTITY: "Fixture Developer ID", COVE_NOTARY_PROFILE: "unused-fixture-profile", COVE_FIXTURE_SIGN_LOG: log },
