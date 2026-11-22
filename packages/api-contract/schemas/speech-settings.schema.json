@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cove.local/schemas/speech-settings.schema.json",
+  "title": "Local speech preferences",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mode",
+    "model_id",
+    "english_model_id",
+    "chinese_model_id",
+    "profiles",
+    "include_code",
+    "volume",
+    "threads"
+  ],
+  "properties": {
+    "mode": {
+      "enum": [
+        "auto",
+        "manual"
+      ]
+    },
+    "model_id": {
+      "type": "string"
+    },
+    "english_model_id": {
+      "type": "string"
+    },
+    "chinese_model_id": {
+      "type": "string"
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "voice_id",
+          "speed",
+          "noise_scale",
+          "temperature"
+        ],
+        "properties": {
+          "voice_id": {
+            "type": "string"
+          },
+          "speed": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 2
+          },
+          "noise_scale": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 1
+          },
+          "temperature": {
+            "type": "number",
+            "minimum": 0.1,
+            "maximum": 1
+          }
+        }
+      }
+    },
+    "include_code": {
+      "type": "boolean"
+    },
+    "volume": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "threads": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4
+    }
+  }
+}

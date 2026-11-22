@@ -88,7 +88,7 @@ func (service *Service) preparedWebSources(owner string, tokens []string) ([]doc
 	for _, token := range tokens {
 		item, ok := service.webSources[token]
 		if !ok || owner == "" || item.owner != owner {
-			return nil, fmt.Errorf("%w: The webpage preview expired or is unavailable. Remove it and read the webpage again.", documents.ErrInvalidDocument)
+			return nil, fmt.Errorf("%w: The source preview expired or is unavailable. Remove it and select the source again.", documents.ErrInvalidDocument)
 		}
 		sources = append(sources, item.document)
 	}

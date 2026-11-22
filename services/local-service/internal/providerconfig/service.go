@@ -28,11 +28,21 @@ type ValidationResult = provider.ValidationResult
 type ModelMetadata = provider.ModelMetadata
 
 type Service struct {
+	local    LocalProvider
 	profiles persistence.ProviderStore
 	secrets  credentials.SecretStore
 	adapter  *provider.HTTPAdapter
 	writeMu  sync.Mutex
 }
+
+type LocalProvider interface {
+	Profile() provider.Profile
+	Metadata() []provider.ModelMetadata
+}
+
+func (service *Service) SetLocalProvider(local LocalProvider) { service.local = local }
+
+const localProviderID = "cove-local"
 
 func NewService(profiles persistence.ProviderStore, secrets credentials.SecretStore, client *http.Client) *Service {
 	return &Service{profiles: profiles, secrets: secrets, adapter: provider.NewHTTPAdapter(client)}
@@ -52,10 +62,16 @@ func (service *Service) List(ctx context.Context) ([]Profile, error) {
 		profile.Configured = service.hasSecret(ctx, saved)
 		profiles = append(profiles, profile)
 	}
+	if service.local != nil {
+		profiles = append(profiles, service.local.Profile())
+	}
 	return profiles, nil
 }
 
 func (service *Service) Get(ctx context.Context, id string) (Profile, error) {
+	if id == localProviderID && service.local != nil {
+		return service.local.Profile(), nil
+	}
 	saved, err := service.profiles.GetProviderProfile(ctx, id)
 	if err != nil {
 		return Profile{}, err
@@ -70,6 +86,13 @@ func (service *Service) Get(ctx context.Context, id string) (Profile, error) {
 
 // Resolve reads the destination and its credential reference from the same row.
 func (service *Service) Resolve(ctx context.Context, id string) (Profile, credentials.Secret, error) {
+	if id == localProviderID && service.local != nil {
+		profile := service.local.Profile()
+		if !profile.Configured {
+			return Profile{}, credentials.Secret{}, ErrUnconfigured
+		}
+		return profile, credentials.Secret{}, nil
+	}
 	saved, err := service.profiles.GetProviderProfile(ctx, id)
 	if err != nil {
 		return Profile{}, credentials.Secret{}, err
@@ -85,6 +108,10 @@ func (service *Service) Resolve(ctx context.Context, id string) (Profile, creden
 
 // ResolveCatalog retrieves one current catalog for a resolved connection.
 func (service *Service) ResolveCatalog(ctx context.Context, id string) (Profile, credentials.Secret, []ModelMetadata, error) {
+	if id == localProviderID && service.local != nil {
+		profile, secret, err := service.Resolve(ctx, id)
+		return profile, secret, service.local.Metadata(), err
+	}
 	profile, secret, err := service.Resolve(ctx, id)
 	if err != nil {
 		return Profile{}, credentials.Secret{}, nil, err
@@ -94,6 +121,9 @@ func (service *Service) ResolveCatalog(ctx context.Context, id string) (Profile,
 }
 
 func (service *Service) Validate(ctx context.Context, input ProfileInput) (ValidationResult, error) {
+	if input.ID == localProviderID && service.local != nil {
+		return service.Discover(ctx, input)
+	}
 	profile, secret, err := service.validationConnection(ctx, input)
 	if err != nil {
 		return ValidationResult{}, err
@@ -106,6 +136,14 @@ func (service *Service) Validate(ctx context.Context, input ProfileInput) (Valid
 }
 
 func (service *Service) Discover(ctx context.Context, input ProfileInput) (ValidationResult, error) {
+	if input.ID == localProviderID && service.local != nil {
+		_, _, metadata, err := service.ResolveCatalog(ctx, input.ID)
+		ids := make([]string, len(metadata))
+		for i, m := range metadata {
+			ids[i] = m.ID
+		}
+		return ValidationResult{Models: ids, ModelMetadata: metadata}, err
+	}
 	profile, secret, err := service.validationConnection(ctx, input)
 	if err != nil {
 		return ValidationResult{}, err
@@ -152,6 +190,9 @@ const noCredential = "-"
 const credentialPrefix = "cove-credential/"
 
 func (service *Service) Configure(ctx context.Context, input ProfileInput) (Profile, error) {
+	if input.ID == localProviderID || input.Kind == provider.KindLocal {
+		return Profile{}, provider.ErrInvalidProfile
+	}
 	profile, err := provider.NewProfile(input)
 	if err != nil {
 		return Profile{}, err
@@ -263,6 +304,12 @@ func (service *Service) deleteCredential(ctx context.Context, saved persistence.
 }
 
 func (service *Service) CheckResolvedProfile(ctx context.Context, profile Profile) error {
+	if profile.ID == localProviderID && service.local != nil {
+		if !service.local.Profile().Configured {
+			return ErrUnconfigured
+		}
+		return nil
+	}
 	current, err := service.profiles.GetProviderProfile(ctx, profile.ID)
 	if err != nil {
 		return err

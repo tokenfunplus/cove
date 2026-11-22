@@ -18,8 +18,9 @@ const emptyCatalog: ModelCatalogState = {
 export function useProviderCatalogs(
   profiles: ProviderProfile[],
   targets: ActiveModelSet,
+  localOnly = false,
 ) {
-  const configured = profiles.filter((profile) => profile.configured);
+  const configured = profiles.filter((profile) => profile.configured && (!localOnly || profile.kind === "local"));
   const queries = useQueries({
     queries: configured.map((profile) =>
       providerCatalogQueryOptions(profile.id),

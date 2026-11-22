@@ -11,6 +11,7 @@ import type { ProviderSnapshot } from "@cove/api-contract";
 import { Button } from "@/components/ui/button";
 import { answerToolsStyles as styles } from "@/styles/answer-tools";
 import { MessageSquarePlus, SquarePen } from "lucide-react";
+import { ReadAloudButton, useLocalSpeech } from "./LocalSpeech";
 
 export interface AnswerSource {
   messageId: string;
@@ -36,6 +37,7 @@ export function AnswerActions({
   children: ReactNode;
 }) {
   const tools = useContext(AnswerToolsContext);
+  const speech = useLocalSpeech();
   const root = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{
     text: string;
@@ -94,8 +96,10 @@ export function AnswerActions({
       >
         {children}
       </div>
-      {tools && (
+      {(tools || speech) && (
         <div className={styles.actions}>
+          <ReadAloudButton source={source}/>
+          {tools && <>
           <Button
             size="xs"
             variant="ghost"
@@ -116,6 +120,7 @@ export function AnswerActions({
             <SquarePen aria-hidden="true" />
             {toolCopy.editAnswer}
           </Button>
+          </>}
         </div>
       )}
       {tools && selection && (
@@ -144,6 +149,7 @@ export function AnswerActions({
               {label}
             </Button>
           ))}
+          <ReadAloudButton source={source} selection={selection.text}/>
         </div>
       )}
     </>

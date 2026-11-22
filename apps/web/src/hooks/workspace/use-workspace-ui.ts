@@ -38,6 +38,7 @@ export function useWorkspaceUi() {
   const [privateConnectionProgress, setPrivateConnectionProgress] =
     useState<PrivateConnectionProgressState>();
 
+  const [localOnly, setLocalOnly] = useState(false);
   const [privacyStatusOpen, setPrivacyStatusOpen] = useState(false);
 
   const [isClearingChatData, setIsClearingChatData] = useState(false);
@@ -49,7 +50,8 @@ export function useWorkspaceUi() {
   const [projectRemoval, setProjectRemoval] = useState<{ project: Project; deleteConversations: boolean }>();
   const [projectContextPreview, setProjectContextPreview] = useState<ProjectContextPreview>();
 
-  const [settingsEntry, setSettingsEntry] = useState<"general" | "provider" | "web-search">();
+  const [settingsEntry, setSettingsEntry] = useState<"general" | "provider" | "web-search" | "local-models">();
+  const [localCapabilityEntry, setLocalCapabilityEntry] = useState<{tab:"installed"|"discover"|"speech";purpose?:"speak";modelId?:string}>();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -117,6 +119,7 @@ export function useWorkspaceUi() {
     setWorkspaceVerification,
     privateConnectionProgress,
     setPrivateConnectionProgress,
+    localOnly, setLocalOnly,
     privacyStatusOpen,
     setPrivacyStatusOpen,
     isClearingChatData,
@@ -135,6 +138,7 @@ export function useWorkspaceUi() {
     setProjectContextPreview,
     settingsEntry,
     setSettingsEntry,
+    localCapabilityEntry, setLocalCapabilityEntry,
     sidebarCollapsed,
     setSidebarCollapsed,
     mobileSidebarOpen,

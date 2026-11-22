@@ -16,6 +16,7 @@ import {
 } from "@cove/api-contract";
 
 export type GenerationSelection = {
+  localOnly?: boolean;
  expectedProject?:ProjectExpectation;
   editOfBatchId?: string;
   clientRequestId: string;
@@ -31,6 +32,7 @@ export function createGenerationBatch(
   selection: GenerationSelection,
 ): Promise<GenerationBatch> {
   const input: GenerationInput = {
+    ...(selection.localOnly ? {local_only:true}:{}),
     ...(selection.editOfBatchId ? {edit_of_batch_id:selection.editOfBatchId} : {}),
     expected_project:selection.expectedProject,
     client_request_id: selection.clientRequestId,

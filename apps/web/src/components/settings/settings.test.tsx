@@ -60,11 +60,12 @@ test("chat workspace explains the clear scope before offering the destructive ac
 
   expect(markup).toContain("Clear chat data");
   expect(markup).toContain(
-    "Deletes all local conversations, messages, Generations, and Provider Snapshots.",
+    "Deletes all local conversations, messages, Generations, Provider Snapshots, and the local document library.",
   );
   expect(markup).toContain(
     "Provider Profiles, workspace settings, and saved Provider Keys are kept.",
   );
+  expect(markup).toContain("Projects and project materials, downloaded models");
   expect(markup).toContain("data-stats");
   expect(markup).toContain("JSON");
   expect(markup).toContain("Markdown");

@@ -69,10 +69,12 @@ type Dependencies = Pick<
     copy: ApplicationCopy;
     attachmentDraft: AttachmentDraft;
     webSearchEnabled?: boolean;
+    localOnly?: boolean;
     setSelectedId?: WorkspaceState["setSelectedId"];
   };
 
 export function useGenerationCommands({
+  localOnly = false,
   webSearchEnabled,
   attachmentDraft,
   setSelectedId,
@@ -157,6 +159,9 @@ export function useGenerationCommands({
       );
       return;
     }
+    if (localOnly && (webSearchEnabled || selectedTargets.some(target => target.providerId !== "cove-local"))) {
+      const message="Only on this Mac requires a local answer model and Web search turned off.";setFeedback(message);override?.onFailure?.(message);return;
+    }
     const body = submittedBody;
     const originalAttachments = override?.editOfBatchId
       ? []
@@ -174,6 +179,7 @@ export function useGenerationCommands({
     let sourcesRestored = false;
     try {
       const selection = {
+        ...(localOnly ? {localOnly:true}:{}),
  ...(override?.expectedProject ? {expectedProject:override.expectedProject} : conversationView?.project_id || conversationView?.membership_revision ? {expectedProject:{project_id:conversationView.project_id??"",project_revision:conversationView.project_revision??0,membership_revision:conversationView.membership_revision??0}} : {}),
         ...(webSearchEnabled ? { webSearchEnabled: true } : {}),
         ...(override?.editOfBatchId

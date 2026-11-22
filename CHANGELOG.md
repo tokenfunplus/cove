@@ -4,15 +4,41 @@
 
 ### Added
 
+- Added five managed local speech downloads, per-model voice/speed preferences, English/Chinese routing, voice preview, and answer read aloud with pause/stop and WAV export. Speech remains independent of chat Providers and works offline after installation.
+
+- Add independently selectable Qwen3 0.6B Abliterated Q5_K_M (444.4 MB) with verified installation, non-thinking local inference, model-specific history provenance, and local-only execution alongside the existing Qwen2.5 model.
+
+- Integrate On this Mac capability management and in-place installation with composer tools, explicit local chat selection, scoped Project material search, and saved server-enforced local-only execution policy. SQLite schema 26 preserves existing fixed-source behavior and frozen payloads.
+
 - Local Projects with reusable instructions/background, fixed file/webpage sources, conversation moves, scoped history, and context usage inspection.
 - Independent project input snapshots shared by ordinary and NearAI targets/retries, content-addressed originals, preserved revision-conflict drafts, and same-project continuation for oversized conversations.
 
+- Expand Local models from seven to 27 entries across eleven tasks, including translation, Chinese OCR, speech synthesis, image tools, audio preparation, language identification, and additional small chat families. Add Cove-integration and multilingual filters, finer size limits, source revisions, model-license links, and explicit explore-only badges.
+
+- A curated Local models page with task/language/weight-size filters, artifact details, source links, and managed, integrity-checked BGE Small Chinese (26.5 MB) and Qwen2.5 0.5B (491 MB) downloads.
+- Explicit local document indexing and semantic search, original-section previews, selected result attachments, persistent citations, and separate document/model deletion controls.
+- A managed `On this Mac` offline chat Provider with streamed output, Stop controls, saved model/runtime provenance, and ordinary conversation history.
+
 ### Changed
+
+- Streamline On this Mac discovery with separate integrated/explore-only groups, compact filters, file-size sorting, progressive candidate browsing, and preserved filters across Installed/Discover switching.
 
 - Move Projects into a dedicated directory and project home. Ordinary chat keeps a compact navigation entry; global New chat stays ungrouped, and conversation menus own project moves.
 
-- Upgrade SQLite to schema 24. Older services reject upgraded databases; retain a compatible backup before upgrading if downgrade is needed.
+- Upgrade SQLite to schema 26. Older services reject upgraded databases; retain a compatible backup before upgrading if downgrade is needed.
 - Clear-history retains live Project settings and fixed sources. Project dissolution preserves Conversations; project deletion previews retained historical copies outside its current members.
+
+- SQLite schema 25 adds local document originals and versioned embedding indexes. Older services reject upgraded databases; clearing chat data also clears the document library while keeping installed weights.
+- macOS packages include a signed, pinned llama.cpp runtime. Optional native inference requires Apple Silicon and macOS 13.3 or later; other catalog entries remain discovery-only.
+
+### Fixed
+
+- Cancel pending document operations when their dialog closes, release late source previews, and process library imports beyond four files without silently discarding the remaining selection.
+- Keep cleared libraries empty during concurrent document parsing and late cache refreshes, while preserving installed model weights.
+- Serialize local model removal with Generation admission, reject already canceled local work, and terminate native workers when Stop occurs before response headers.
+- Remove orphaned temporary weight downloads on retry or model removal, and reject source callbacks retained by a previous conversation.
+
+- Keep Local Service reads and commands active without internet, including offline workspace startup, local model selection, sending messages, and stopping generation. Browser offline state no longer pauses loopback requests.
 
 ## 0.1.0-beta.8 - 2026-11-21
 

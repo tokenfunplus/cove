@@ -136,6 +136,16 @@ cp -R "$cove_resource_bundle" "$cove_app/Contents/Resources/"
 cp "$cove_root/apps/macos/Resources/Info.plist" "$cove_app/Contents/Info.plist"
 cp "$cove_root/LICENSE" "$cove_app/Contents/Resources/LICENSE"
 cp "$cove_root/THIRD_PARTY_NOTICES.md" "$cove_app/Contents/Resources/THIRD_PARTY_NOTICES.md"
+node "$cove_root/scripts/prepare-inference-runtime.mjs"
+mkdir -p "$cove_app/Contents/Resources/inference"
+cp "$cove_root/.artifacts/inference/llama-server" "$cove_root/.artifacts/inference/LICENSE" "$cove_app/Contents/Resources/inference/"
+cp -P "$cove_root/.artifacts/inference/"*.dylib "$cove_app/Contents/Resources/inference/"
+node "$cove_root/scripts/prepare-speech-runtime.mjs"
+mkdir -p "$cove_app/Contents/Resources/speech/kitten" "$cove_app/Contents/Resources/speech/source"
+cp "$cove_root/.artifacts/speech/cove-speech-worker" "$cove_root/.artifacts/speech/pocket-tts" "$cove_root/.artifacts/speech/"*.dylib "$cove_root/.artifacts/speech/SPEECH_NOTICES.md" "$cove_root/.artifacts/speech/runtime-version.json" "$cove_app/Contents/Resources/speech/"
+cp "$cove_root/.artifacts/speech/kitten/cove-speech-worker" "$cove_root/.artifacts/speech/kitten/"*.dylib "$cove_app/Contents/Resources/speech/kitten/"
+cp -R "$cove_root/.artifacts/speech/source/." "$cove_app/Contents/Resources/speech/source/"
+cp "$cove_root/.artifacts/speech/"*.txt "$cove_app/Contents/Resources/speech/"
 node "$cove_root/scripts/collect-licenses.mjs" --include-go --output "$cove_app/Contents/Resources/THIRD_PARTY_LICENSES.txt"
 if [ "$cove_insecure_file_secret_store" = "1" ]; then
   plutil -insert CoveInsecureFileSecretStore -bool true "$cove_app/Contents/Info.plist"
@@ -169,11 +179,15 @@ if [ "$cove_release" = "1" ]; then
 fi
 if [ -n "$cove_signing_identity" ]; then
   require_command codesign
+  find "$cove_app/Contents/Resources/inference" -type f ! -name LICENSE -exec codesign --force --options runtime --timestamp --sign "$cove_signing_identity" {} \;
+  find "$cove_app/Contents/Resources/speech" -type f \( -name "*.dylib" -o -name cove-speech-worker -o -name pocket-tts \) -exec codesign --force --options runtime --timestamp --sign "$cove_signing_identity" {} \;
   codesign --force --options runtime --timestamp --sign "$cove_signing_identity" "$cove_app/Contents/Resources/cove-local-service"
   codesign --force --options runtime --timestamp --sign "$cove_signing_identity" "$cove_app"
   codesign --verify --deep --strict "$cove_app"
 else
   require_command codesign
+  find "$cove_app/Contents/Resources/inference" -type f ! -name LICENSE -exec codesign --force --sign - --timestamp=none {} \;
+  find "$cove_app/Contents/Resources/speech" -type f \( -name "*.dylib" -o -name cove-speech-worker -o -name pocket-tts \) -exec codesign --force --sign - --timestamp=none {} \;
   codesign --force --sign - --timestamp=none \
     --identifier io.github.tokenfunplus.cove.local-service \
     "$cove_app/Contents/Resources/cove-local-service"

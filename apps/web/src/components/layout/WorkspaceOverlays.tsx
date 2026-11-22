@@ -4,6 +4,7 @@ import { ProviderSettings } from "@/components/providers/ProviderSettings";
 import { WebSearchSettingsPanel } from "@/components/settings/WebSearchSettingsPanel";
 import { ChatDataPanel } from "@/components/settings/ChatDataPanel";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
+import { LocalModelsPanel } from "@/components/settings/LocalModelsPanel";
 import { WorkspaceSettingsPanel } from "@/components/settings/WorkspaceSettingsPanel";
 import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
 import { PrivacyStatusPanel } from "@/components/verification/PrivacyStatusPanel";
@@ -17,6 +18,9 @@ type Props = {
   workspace: Pick<
     ChatWorkspace,
     | "webSearch"
+    | "handleApplyModelSet"
+    | "localOnly"
+    | "attachmentDraft"
     | "workspaceVerification"
     | "providerProfiles"
     | "activeSelection"
@@ -30,6 +34,7 @@ type Props = {
     | "handleVerifyAgain"
     | "settingsEntry"
     | "setSettingsEntry"
+    | "localCapabilityEntry"
     | "settings"
     | "handleSaveSettings"
     | "handleSaveProvider"
@@ -156,7 +161,11 @@ export function WorkspaceOverlays({ workspace }: Props) {
             onTest={handleTestProvider}
             onDelete={handleDeleteProvider}
             onDeleteKey={handleDeleteProviderKey}
+            onOpenLocalModels={()=>setSettingsEntry("local-models")}
           />
+        </div>
+        <div aria-labelledby="settings-tab-local-models" className="settings-dialog__section settings-section" data-settings-section="local-models" id="settings-local-models" role="tabpanel">
+          <LocalModelsPanel entry={workspace.localCapabilityEntry} onUseChat={async(modelId)=>{if(isSending)return false;const changed=await workspace.handleApplyModelSet([{providerId:"cove-local",modelId}]);if(changed)setSettingsEntry(undefined);return changed;}} manage={Boolean(settingsEntry)} onUseSources={conversationView ? sources=>{const added=workspace.attachmentDraft.addRetrievedSources(sources);if(added)setSettingsEntry(undefined);return added;} : undefined}/>
         </div>
         <div aria-labelledby="settings-tab-web-search" className="settings-dialog__section settings-section" data-settings-section="web-search" id="settings-web-search" role="tabpanel">
           {settingsEntry && <WebSearchSettingsPanel onSaved={workspace.webSearch.configured} />}

@@ -11,12 +11,14 @@ import { cn } from "@/lib/utils";
 import { englishConversationCopy as copy } from "@/messages";
 
 export function AttachmentDraft({
+  localOnly = false,
   state,
   children,
   disabled,
   compact = false,
   draft = "",
 }: {
+  localOnly?: boolean;
   state: AttachmentDraftState;
   children: (actions: ReactNode) => ReactNode;
   disabled: boolean;
@@ -29,7 +31,7 @@ export function AttachmentDraft({
   const [webUrl, setWebUrl] = useState("");
 
   function readWebpage() {
-    if (disabled || !webUrl.trim()) return;
+    if (localOnly || state.localOnly || disabled || !webUrl.trim()) return;
     void state.addWebSource(webUrl.trim());
     setWebOpen(false);
   }
@@ -67,7 +69,7 @@ export function AttachmentDraft({
           variant="ghost"
           size="icon-sm"
           className="rounded-lg text-muted-foreground"
-          disabled={disabled || state.attachments.length >= 4}
+          disabled={localOnly || state.localOnly || disabled || state.attachments.length >= 4}
           onClick={() => {
             setWebUrl(draft.match(/https?:\/\/[^\s<>"\u3000-\u303f]+/i)?.[0] ?? "");
             setWebOpen(true);

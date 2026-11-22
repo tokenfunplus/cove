@@ -45,7 +45,20 @@ Attachment and draft-context previews are parsed locally without contacting a Pr
 
 Cove's namespace is `io.github.tokenfunplus.cove`; earlier TBD data and Keychain entries are not automatically migrated.
 
+## Local models and document retrieval
+
+Installing BGE or Qwen contacts Hugging Face and its download infrastructure for pinned weights. Document contents and queries are not part of these downloads. After installation, embedding inference, local search, and the managed `On this Mac` chat Provider run on your Mac without a Provider Key or remote inference request.
+
+Library originals and versioned vector indexes are stored in the local SQLite database without additional encryption; weights are separate files under the local data directory. Search covers only the documents you explicitly select. Choosing results for chat creates snapshots of their original line/page sections. A remote chat Provider receives those selected sections through its normal transport. Local processing does not change the destination of a separately selected remote Provider.
+
+Deleting a library document removes its original, vectors, and pending result tokens. Saved conversation snapshots remain until those conversations are removed. Removing the embedding model deletes indexes but keeps library originals. Clearing chat data removes the library and conversation snapshots while retaining installed model weights. Source citations navigate to saved original sections and do not certify the model's claims.
+
+Project materials marked Search when needed are indexed within their Project and excluded from fixed Project input. Search results enter a turn only after explicit selection. Their originals stay in the Project blob store; accepted chat attachments retain independent copies. The execution line distinguishes where search runs from where each answer is generated.
+
+Only on this Mac restricts new chat and answer-tool inference to managed local models and blocks Web Research and external webpage preparation. The service validates the submitted policy and saves it with the Batch for retries. Explicit installation downloads and separately running Debate sessions remain outside this chat-specific restriction.
+
 ## Verification claims
+
 
 Supported NearAI models can use browser-side end-to-end encryption and hardware attestation. Availability depends on the model's advertised mode. A model TEE receipt, a gateway receipt, and an unverified ordinary response are distinct results.
 
@@ -78,3 +91,5 @@ Search keys stay in macOS Keychain and are absent from browser responses and exp
 Project Instructions, Project Background and all current fixed Project Sources are included in each new project turn and sent to every selected model Provider through its existing transport. The composer and context inspector show this input before submission. It consumes context and can increase usage. NearAI verification covers its existing inference evidence, not the truth of project reference data. Explicitly reading a fixed webpage contacts that website outside encrypted inference.
 
 Project data, extracted sections and original-byte blobs are stored unencrypted in local SQLite. Saved Batches retain independent text snapshots and references to shared original bytes. Removing a live source or editing a Project affects new turns; historical snapshots remain until their owning history is deleted. Clearing chat history retains live Projects and fixed sources. Dissolving a Project preserves its Conversations. Deleting current Project members can leave snapshots in Conversations previously moved or branched elsewhere; confirmations explain those retained copies. External exports, backups and Provider-held content are outside local deletion.
+
+Local read aloud sends assistant text to local speech workers only. They inherit no Provider Keys and use installed local model/voice paths. Installing models contacts their public download source. Audio is temporary, browser-session owned, never stored in conversation history, and removed on Stop, relevant deletion, expiry, or restart. Explicit WAV downloads remain in the chosen destination. See [Local speech](local-speech.md) for limits and lifecycle details.

@@ -5,7 +5,8 @@
   "required": ["id", "kind", "name", "endpoint", "model_id", "auth_method", "runtime_location", "destination", "transport_security", "privacy_notice", "configured", "created_at", "updated_at"],
   "properties": {
     "id": { "type": "string" },
-    "kind": { "enum": ["nearai", "openai_compatible"] },
+    "kind": { "enum": ["nearai", "openai_compatible", "local"] },
+    "local_model": {"type":"object","required":["revision","sha256","runtime_version"],"properties":{"revision":{"type":"string"},"sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"runtime_version":{"type":"string"}},"additionalProperties":false},
     "name": { "type": "string" },
     "endpoint": { "type": "string", "format": "uri" },
     "model_id": { "type": "string" },

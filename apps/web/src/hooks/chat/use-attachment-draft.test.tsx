@@ -12,6 +12,52 @@ const snapshot: AttachmentSnapshot = { id: "a".repeat(64), name: "Evidence", med
 
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.resetAllMocks(); });
 
+test("local-only preparation rejects retained webpage callbacks without a request",async()=>{
+  const {result,rerender}=renderHook(({local})=>useAttachmentDraft("chat",local),{initialProps:{local:false}});
+  const retained=result.current.addWebSource;
+  rerender({local:true});
+  await act(()=>retained("https://example.com"));
+  expect(api.prepareWebSource).not.toHaveBeenCalled();
+  expect(result.current.attachments).toEqual([]);
+  expect(result.current.selectionError).toContain("Only on this Mac");
+});
+
+test("enabling local-only preparation aborts a pending webpage and rejects a late token",async()=>{
+  let complete!:(source:{source_token:string;snapshot:AttachmentSnapshot})=>void;
+  vi.mocked(api.prepareWebSource).mockReturnValue(new Promise(resolve=>{complete=resolve;}));
+  vi.mocked(api.releaseWebSource).mockResolvedValue(undefined);
+  const {result,rerender}=renderHook(({local})=>useAttachmentDraft("chat",local),{initialProps:{local:false}});
+  let pending!:Promise<void>;
+  act(()=>{pending=result.current.addWebSource("https://example.com");});
+  rerender({local:true});
+  expect(vi.mocked(api.prepareWebSource).mock.calls[0][1].aborted).toBe(true);
+  await act(async()=>{complete({source_token:"late-web-token",snapshot});await pending;});
+  expect(result.current.attachments[0].webSourceToken).toBeUndefined();
+  expect(result.current.attachments[0].error).toContain("Only on this Mac");
+  expect(api.releaseWebSource).toHaveBeenCalledWith("late-web-token");
+});
+
+test("a source callback retained by the previous conversation cannot modify the new draft", () => {
+  vi.mocked(api.releaseWebSource).mockResolvedValue(undefined);
+  const {result,rerender} = renderHook(({id}) => useAttachmentDraft(id), {initialProps:{id:"chat-one"}});
+  const previousDraft = result.current.addRetrievedSources;
+  rerender({id:"chat-two"});
+  act(() => expect(previousDraft([{source_token:"old-chat-source",snapshot}])).toBe(false));
+  expect(result.current.attachments).toEqual([]);
+  expect(result.current.selectionError).toBeUndefined();
+  expect(api.releaseWebSource).toHaveBeenCalledWith("old-chat-source");
+});
+
+test("retrieved sections retain their source token and reject a duplicate draft source",()=>{
+  vi.mocked(api.releaseWebSource).mockResolvedValue(undefined);
+  const {result}=renderHook(()=>useAttachmentDraft("chat-1"));
+  const local={...snapshot,retrieval:{model_id:"bge-small-zh",model_sha256:"b".repeat(64),index_version:"fixture"}};
+  act(()=>{expect(result.current.addRetrievedSources([{source_token:"local-source",snapshot:local}])).toBe(true);});
+  expect(result.current.attachments[0].snapshot?.retrieval?.model_id).toBe("bge-small-zh");
+  act(()=>{expect(result.current.addRetrievedSources([{source_token:"duplicate",snapshot:local}])).toBe(false);});
+  expect(api.releaseWebSource).toHaveBeenCalledWith("duplicate");expect(result.current.attachments).toHaveLength(1);
+});
+
 test("prepared webpages expire visibly and restored submissions cannot reuse expired tokens", async () => {
   vi.useFakeTimers();
   vi.mocked(api.releaseWebSource).mockResolvedValue(undefined);

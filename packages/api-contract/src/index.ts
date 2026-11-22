@@ -231,10 +231,11 @@ export interface ConversationView extends Conversation {
   generation_batches?: GenerationBatch[];
 }
 
-export type ProviderKind = "nearai" | "openai_compatible";
+export type ProviderKind = "nearai" | "openai_compatible" | "local";
 export type ProviderAuthMethod = "bearer" | "x_api_key";
 
 export interface ProviderProfile {
+  local_model?: { revision: string; sha256: string; runtime_version: string };
   id: string;
   kind: ProviderKind;
   name: string;
@@ -335,6 +336,7 @@ export interface VerificationEvidence {
 }
 
 export interface ProviderSnapshot {
+  local_model?: { revision: string; sha256: string; runtime_version: string };
   provider_id: string;
   provider_kind?: ProviderKind;
   provider_name: string;
@@ -392,6 +394,7 @@ export interface ExpectedGenerationTarget {
 }
 
 export interface GenerationInput {
+  local_only?: boolean;
   expected_project?: ProjectExpectation;
   web_search_enabled?: boolean;
   edit_of_batch_id?: string;
@@ -415,6 +418,7 @@ export interface SourceSection {
 }
 
 export interface AttachmentSnapshot {
+  retrieval?: { project_id?: string; model_id: string; model_sha256: string; index_version: string };
   /** File content hash, or the identity of an immutable webpage capture. */
   id: string;
   name: string;
@@ -438,6 +442,35 @@ export interface PreparedWebSource {
   expires_at?: string;
   snapshot: AttachmentSnapshot;
 }
+
+export interface LocalModelStatus {
+  id: string; name: string; role: "embedding" | "chat" | "tts"; revision: string; sha256: string;
+  bytes: number; filename: string; source_url: string; state: "not_installed" | "downloading" | "installed" | "failed";
+  downloaded_bytes: number; error?: string; runtime_ready: boolean; runtime_version: string;
+}
+export interface SpeechProfile { voice_id: string; speed: number; noise_scale: number; temperature: number }
+export interface SpeechSettings {
+  mode: "auto" | "manual"; model_id: string; english_model_id: string; chinese_model_id: string;
+  profiles: Record<string, SpeechProfile>; include_code: boolean; volume: number; threads: number;
+}
+export interface SpeechModel {
+  id: string; name: string; engine: "kokoro" | "kitten" | "melo" | "pocket"; languages: string[];
+  voices: {id: string; name: string; language: string; speaker: number}[]; default_voice: string;
+  installed: boolean; runtime_ready: boolean;
+}
+export interface SpeechConfiguration { settings: SpeechSettings; models: SpeechModel[] }
+export interface SpeechJob {
+  id: string; state: "preparing" | "generating" | "completed" | "failed" | "stopped";
+  model_id: string; model_name: string; voice_name: string; language: string; ready_chunks: number;
+  total_chunks: number; characters: number; playback_rate: number; volume: number; error?: string;
+}
+export interface SpeechPreview {text: string; model_id: string; profile: SpeechProfile}
+export interface LocalDocument {
+  id: string; name: string; characters: number; chunks: number; model_sha256: string; index_version: string; indexed_at: string;
+}
+export interface LocalSearchSelection { document_id: string; ordinal: number }
+export interface LocalSearchHit extends LocalSearchSelection { score: number; text: string; source: AttachmentSnapshot }
+export interface LocalSearchResults { hits: LocalSearchHit[]; elapsed_ms: number; model_sha256: string; index_version: string }
 
 export type GenerationEventType = "started" | "delta" | "web_activity" | "completed" | "stopped" | "failed";
 
@@ -492,6 +525,7 @@ export interface GenerationPromptMessage {
 }
 
 export interface GenerationBatch {
+  local_only?: boolean;
   project_context_id?: string;
   project_context?: ProjectContext;
   web_search?: WebSearchPolicy;
@@ -564,6 +598,7 @@ export interface ProjectExpectation {
   membership_revision: number;
 }
 export interface ProjectSource {
+  usage?: "always" | "search";
   id: string;
   snapshot: AttachmentSnapshot;
   blob_hash: string;

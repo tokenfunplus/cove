@@ -53,6 +53,7 @@ import { useConversationScroll } from "@/hooks/chat/use-conversation-scroll";
 import type { ConversationNavigation } from "@/lib/workspace-types";
 
 export function ConversationPanel({
+  execution,
   webSearch,
   focusMode = false,
   composerId,
@@ -86,6 +87,7 @@ export function ConversationPanel({
   onSkipContext,
   onVerifyAgain,
 }: {
+  execution?: Parameters<typeof ChatComposer>[0]["execution"];
   webSearch?: Parameters<typeof ChatComposer>[0]["webSearch"];
   focusMode?: boolean;
   attachmentDraft?: AttachmentDraft;
@@ -769,7 +771,7 @@ export function ConversationPanel({
             </div>
           ) : null}
           {showComposer ? (
-            <ChatComposer
+            <ChatComposer execution={execution}
               webSearch={webSearch}
               composerId={composerId}
               compact={focusMode}

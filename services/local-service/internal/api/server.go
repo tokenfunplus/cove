@@ -108,6 +108,7 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("PATCH /api/projects/{project}", browserSession(http.HandlerFunc(server.projects)))
 	mux.Handle("DELETE /api/projects/{project}", browserSession(http.HandlerFunc(server.projects)))
 	mux.Handle("POST /api/projects/{project}/sources", browserSession(http.HandlerFunc(server.projects)))
+	mux.Handle("POST /api/projects/{project}/sources/{source}/usage", browserSession(http.HandlerFunc(server.projectSourceUsage)))
 	mux.Handle("POST /api/projects/{project}/sources/{source}/remove", browserSession(http.HandlerFunc(server.projects)))
 	mux.Handle("POST /api/conversations/{id}/project", browserSession(http.HandlerFunc(server.moveProjectConversation)))
 	mux.Handle("POST /api/conversations", browserSession(http.HandlerFunc(server.createConversation)))
@@ -131,6 +132,23 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("GET /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.getConversationMessages)))
 	mux.Handle("POST /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.createGeneration)))
 	mux.Handle("POST /api/attachments/preview", browserSession(http.HandlerFunc(server.previewAttachment)))
+	mux.Handle("GET /api/local-models", browserSession(http.HandlerFunc(server.localModelCommand)))
+	mux.Handle("POST /api/local-models/{model}/{action}", browserSession(http.HandlerFunc(server.localModelCommand)))
+	mux.Handle("DELETE /api/local-models/{model}", browserSession(http.HandlerFunc(server.localModelCommand)))
+	mux.Handle("GET /api/speech/settings", browserSession(http.HandlerFunc(server.speechCommand)))
+	mux.Handle("PUT /api/speech/settings", browserSession(http.HandlerFunc(server.speechCommand)))
+	mux.Handle("POST /api/speech", browserSession(http.HandlerFunc(server.speechCommand)))
+	mux.Handle("POST /api/speech/preview", browserSession(http.HandlerFunc(server.speechCommand)))
+	mux.Handle("GET /api/speech/{speech}", browserSession(http.HandlerFunc(server.speechCommand)))
+	mux.Handle("DELETE /api/speech/{speech}", browserSession(http.HandlerFunc(server.speechCommand)))
+	mux.Handle("GET /api/speech/{speech}/chunks/{chunk}", browserSession(http.HandlerFunc(server.speechAudio)))
+	mux.Handle("GET /api/speech/{speech}/audio", browserSession(http.HandlerFunc(server.speechAudio)))
+	mux.Handle("GET /api/local-documents", browserSession(http.HandlerFunc(server.localDocumentCommand)))
+	mux.Handle("POST /api/local-documents", browserSession(http.HandlerFunc(server.localDocumentCommand)))
+	mux.Handle("POST /api/local-documents/search", browserSession(http.HandlerFunc(server.localDocumentCommand)))
+	mux.Handle("POST /api/local-documents/prepare", browserSession(http.HandlerFunc(server.localDocumentCommand)))
+	mux.Handle("POST /api/local-documents/{document}/{action}", browserSession(http.HandlerFunc(server.localDocumentCommand)))
+	mux.Handle("DELETE /api/local-documents/{document}", browserSession(http.HandlerFunc(server.localDocumentCommand)))
 	mux.Handle("POST /api/web-search/test", browserSession(http.HandlerFunc(server.testWebSearchConnection)))
 	mux.Handle("GET /api/web-search/settings", browserSession(http.HandlerFunc(server.webSearchSettings)))
 	mux.Handle("PUT /api/web-search/settings", browserSession(http.HandlerFunc(server.saveWebSearchSettings)))
@@ -554,6 +572,7 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		ClientRequestID  string                          `json:"client_request_id"`
 		Body             string                          `json:"body"`
 		Attachments      []documents.Input               `json:"attachments"`
+		LocalOnly        bool                            `json:"local_only"`
 		WebSearchEnabled bool                            `json:"web_search_enabled"`
 		WebSourceTokens  []string                        `json:"web_source_tokens"`
 		ExpectedTargets  []chat.ExpectedGenerationTarget `json:"expected_targets"`
@@ -564,7 +583,7 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		return
 	}
 	session, _ := localsecurity.SessionFromRequest(request)
-	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{ExpectedProject: input.ExpectedProject, EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, WebSearchEnabled: input.WebSearchEnabled, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID, ExpectedTargets: input.ExpectedTargets})
+	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{LocalOnly: input.LocalOnly, ExpectedProject: input.ExpectedProject, EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, WebSearchEnabled: input.WebSearchEnabled, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID, ExpectedTargets: input.ExpectedTargets})
 	if err != nil {
 		if errors.Is(err, persistence.ErrProjectChanged) {
 			current, readErr := server.chat.ReadConversation(request.Context(), request.PathValue("id"))
@@ -818,15 +837,16 @@ func (server *Server) secureGenerationSettle(writer http.ResponseWriter, request
 }
 
 type providerSnapshotEnvelope struct {
-	ProviderKind      string `json:"provider_kind,omitempty"`
-	ProviderID        string `json:"provider_id"`
-	ProviderName      string `json:"provider_name"`
-	ModelID           string `json:"model_id"`
-	RuntimeLocation   string `json:"runtime_location"`
-	Destination       string `json:"destination"`
-	TransportSecurity string `json:"transport_security"`
-	PrivacyNotice     string `json:"privacy_notice"`
-	PrivacyMode       string `json:"privacy_mode,omitempty"`
+	LocalModel        *provider.ModelArtifact `json:"local_model,omitempty"`
+	ProviderKind      string                  `json:"provider_kind,omitempty"`
+	ProviderID        string                  `json:"provider_id"`
+	ProviderName      string                  `json:"provider_name"`
+	ModelID           string                  `json:"model_id"`
+	RuntimeLocation   string                  `json:"runtime_location"`
+	Destination       string                  `json:"destination"`
+	TransportSecurity string                  `json:"transport_security"`
+	PrivacyNotice     string                  `json:"privacy_notice"`
+	PrivacyMode       string                  `json:"privacy_mode,omitempty"`
 }
 
 type generationConfigurationSnapshotEnvelope struct {
@@ -920,6 +940,7 @@ type generationTargetEnvelope struct {
 }
 
 type generationBatchEnvelope struct {
+	LocalOnly            bool                             `json:"local_only,omitempty"`
 	ProjectContextID     string                           `json:"project_context_id,omitempty"`
 	ProjectContext       *persistence.ProjectContext      `json:"project_context,omitempty"`
 	WebSearch            *websearch.Policy                `json:"web_search,omitempty"`
@@ -993,6 +1014,7 @@ func generationBatchEnvelopeFor(batch persistence.GenerationBatch) generationBat
 		})
 	}
 	return generationBatchEnvelope{
+		LocalOnly:      batch.LocalOnly,
 		ProjectContext: batch.ProjectContext, InputContent: batch.InputContent, Attachments: batch.Attachments, WebSearch: batch.WebSearch,
 		ID: batch.ID, ConversationID: batch.ConversationID, ClientRequestID: batch.ClientRequestID, UserMessageID: batch.UserMessageID,
 		State: batch.State, Targets: targets, EventsURL: "/api/generation-batches/" + batch.ID + "/events",
@@ -1021,6 +1043,7 @@ func generationEventEnvelopeFor(event chat.GenerationEvent) generationEventEnvel
 
 func providerSnapshotEnvelopeFor(snapshot persistence.ProviderSnapshot) providerSnapshotEnvelope {
 	return providerSnapshotEnvelope{
+		LocalModel:   snapshot.LocalModel,
 		ProviderKind: snapshot.ProviderKind, ProviderID: snapshot.ProviderID, ProviderName: snapshot.ProviderName, ModelID: snapshot.ModelID,
 		RuntimeLocation: snapshot.RuntimeLocation, Destination: snapshot.Destination,
 		TransportSecurity: snapshot.TransportSecurity, PrivacyNotice: snapshot.PrivacyNotice,
@@ -1169,6 +1192,8 @@ func writeConversationError(writer http.ResponseWriter, err error) {
 
 func writeGenerationError(writer http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, chat.ErrLocalOnly):
+		writeError(writer, http.StatusBadRequest, "local_only", err.Error())
 	case errors.Is(err, websearch.ErrUnavailable):
 		writeError(writer, http.StatusConflict, "web_search_unconfigured", "Configure a search Provider in Settings before enabling Web search.")
 	case errors.Is(err, chat.ErrDebateConversation):

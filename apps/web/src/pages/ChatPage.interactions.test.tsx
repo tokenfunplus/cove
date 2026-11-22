@@ -2,12 +2,14 @@
 
 import * as transport from "@/api";
 import * as conversationApi from "@/api/conversations";
+import * as localApi from "@/api/local-models";
 import * as projectApi from "@/api/projects";
 import * as debateApi from "@/api/debates";
 import { runDebateBrowserTurn } from "@/lib/inference/debate-browser-turn";
 import { defaultDebateRules } from "@/components/debate/DebateSetupDialog";
 import { historyFiltersStorageKey, historyQueryFilter } from "@/components/conversations/history-filters";
 import { conversationKeys } from "@/api/queryKeys";
+import { createLocalServiceQueryClient } from "@/api/queryClient";
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 import { App } from "@/App";
 import { ProjectsPage } from "@/components/projects/ProjectsPage";
@@ -18,7 +20,7 @@ import {
   createWorkspaceFixture,
 } from "@/test/workspace-fixture";
 import type { DebateView, Generation, ProviderModelPrivacyMode } from "@cove/api-contract";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, onlineManager } from "@tanstack/react-query";
 import {
   act,
   cleanup,
@@ -117,7 +119,7 @@ beforeEach(() => {
         new Error("Unexpected network request in workspace test"),
       ),
   );
-  queryClient = new QueryClient({
+  queryClient = createLocalServiceQueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
   configureWorkspace();
@@ -128,6 +130,8 @@ afterEach(() => {
   feed.close();
   queryClient.clear();
   vi.restoreAllMocks();
+
+  onlineManager.setOnline(true);
   vi.unstubAllGlobals();
   window.localStorage.removeItem(historyFiltersStorageKey);
   for (const name of historyBrowserMethods.splice(0)) Reflect.deleteProperty(Element.prototype, name);
@@ -641,6 +645,47 @@ test("conversation search exits Focus and reveals the search field", async () =>
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Search conversations" })));
 });
 
+test.each(["before opening", "during streaming"])("local Qwen starts and stops when internet is lost %s", async (offlineAt) => {
+  Object.assign(fixture.profile, {
+    id: "cove-local", kind: "local", name: "On this Mac",
+    endpoint: "http://127.0.0.1", model_id: "qwen-small-chat",
+    runtime_location: "On this Mac", destination: "This Mac",
+  });
+  fixture.models.splice(0, fixture.models.length, "qwen-small-chat");
+  fixture.settings.active_model_set = [{ provider_id: "cove-local", model_id: "qwen-small-chat" }];
+  for (const batch of [fixture.pendingBatch, fixture.completedBatch]) {
+    for (const target of batch.targets) {
+      target.provider_id = "cove-local";
+      target.model_id = "qwen-small-chat";
+      Object.assign(target.generation.snapshot, {
+        provider_kind: "local", provider_id: "cove-local",
+        provider_name: "On this Mac", model_id: "qwen-small-chat",
+      });
+    }
+  }
+  if (offlineAt === "before opening") onlineManager.setOnline(false);
+  const { user } = await sendPrompt();
+  await act(async () => feed.emit(0, "delta", "Synthetic offline answer"));
+  await screen.findByText("Synthetic offline answer", { exact: true });
+  if (offlineAt === "during streaming") {
+    await act(async () => window.dispatchEvent(new Event("offline")));
+  }
+  vi.mocked(transport.cancelGenerationBatch).mockImplementation(async () => {
+    feed.close();
+    return { ...fixture.pendingBatch, state: "stopped" };
+  });
+  await user.click(screen.getByRole("button", { name: "Stop generation" }));
+  await waitFor(() => expect(transport.cancelGenerationBatch).toHaveBeenCalledWith(fixture.pendingBatch.id));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Stop generation" })).toBeNull());
+  expect(transport.createGenerationBatch).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(transport.createGenerationBatch).mock.calls[0]?.[1]?.expectedTargets).toEqual([
+    { provider_id: "cove-local", model_id: "qwen-small-chat", require_private_tee: false },
+  ]);
+  expect(onlineManager.isOnline()).toBe(false);
+  expect(privateInference.generate).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 test("Focus transitions leave an active stream and its stop control intact", async () => {
   const { user } = await sendPrompt();
   await user.click(screen.getByRole("button", { name: "Enter Focus mode" }));
@@ -1138,6 +1183,52 @@ test("Provider settings test the active chat connection when a similarly named c
       endpoint: staging.endpoint,
     }),
   );
+});
+
+test("local model discovery is reachable from settings without starting generation", async () => {
+  const { user, composer } = await openWorkspace();
+  await user.type(composer, "Keep this draft");
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  await user.click(screen.getByRole("tab", { name: "On this Mac" }));
+  expect(screen.getByRole("tab", { name: "On this Mac" }).getAttribute("aria-selected")).toBe("true");
+  const panel = document.getElementById("settings-local-models")!;
+  await user.click(within(panel).getByRole("button",{name:"Discover"}));
+  expect(within(panel).getAllByRole("article")).toHaveLength(14);
+  await user.selectOptions(within(panel).getByRole("combobox", { name: "Task" }), "write");
+  await user.click(within(panel).getByRole("button", { name: "Installed" }));
+  await user.click(within(panel).getByRole("button", { name: "Discover" }));
+  expect((within(panel).getByRole("combobox", { name: "Task" }) as HTMLSelectElement).value).toBe("write");
+  expect(within(panel).getByText("Qwen2.5 0.5B Instruct")).toBeTruthy();
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft");
+});
+
+test.each(["Installed", "Discover"])("%s selects the requested local model and preserves the draft", async (view) => {
+  const modelId = "qwen3-abliterated-chat";
+  const name = "Qwen3 0.6B Abliterated Q5_K_M";
+  const localProfile = { ...fixture.profile, id: "cove-local", kind: "local" as const, name: "On this Mac", endpoint: "http://127.0.0.1", configured: true };
+  vi.mocked(transport.getProviderProfiles).mockResolvedValue([fixture.profile, localProfile]);
+  vi.mocked(transport.getProviderCatalog).mockImplementation(async id => ({ models: id === "cove-local" ? ["qwen-small-chat", modelId] : fixture.models }));
+  vi.mocked(transport.updateSettings).mockImplementation(async settings => settings);
+  vi.spyOn(localApi, "getLocalModels").mockResolvedValue([{
+    id: modelId, name, role: "chat", state: "installed", runtime_ready: true,
+    bytes: 444415104, downloaded_bytes: 444415104, revision: "fixture", sha256: "a".repeat(64),
+    runtime_version: "fixture", filename: "fixture.gguf", source_url: "https://example.test/model",
+  }]);
+  const { user, composer } = await openWorkspace();
+  await user.type(composer, "Keep this local trial draft");
+  await user.click(screen.getByRole("button", { name: "Settings" }));
+  await user.click(screen.getByRole("tab", { name: "On this Mac" }));
+  const panel = document.getElementById("settings-local-models")!;
+  if (view === "Discover") await user.click(within(panel).getByRole("button", { name: "Discover" }));
+  const heading = await within(panel).findByText(name);
+  await user.click(within(heading.closest("article")!).getByRole("button", { name: "Use in this chat" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(vi.mocked(transport.updateSettings).mock.calls.at(-1)![0].active_model_set).toEqual([{ provider_id: "cove-local", model_id: modelId }]);
+  expect((composer as HTMLTextAreaElement).value).toBe("Keep this local trial draft");
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
 });
 
 test("settings tabs support arrow keys and restore focus after Escape", async () => {
@@ -2397,4 +2488,35 @@ test("project search opens the matching historical turn", async()=>{
  await user.type(screen.getByRole("textbox",{name:"Search project chats"}),"historical");
  await user.click(await screen.findByText("Matching historical answer"));
  await waitFor(()=>expect(result.current.conversationNavigation).toMatchObject({conversationId:fixture.conversation.id,messageId:"older-user"}));
+});
+
+
+test("only-on-this-Mac mode blocks remote sending without losing the draft",async()=>{
+ const {user,composer}=await openWorkspace();
+ await user.type(composer,"Keep this question local");
+ await user.click(screen.getByRole("checkbox",{name:"Only on this Mac"}));
+ expect(screen.getByRole<HTMLButtonElement>("button",{name:"Send message"}).disabled).toBe(true);
+ expect(screen.getByRole<HTMLButtonElement>("button",{name:"Read webpage"}).disabled).toBe(true);
+ expect(screen.getByRole<HTMLButtonElement>("button",{name:"Web search"}).disabled).toBe(true);
+ expect((composer as HTMLTextAreaElement).value).toBe("Keep this question local");
+ expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+ await user.click(screen.getByRole("checkbox",{name:"Only on this Mac"}));
+ expect(screen.getByRole<HTMLButtonElement>("button",{name:"Send message"}).disabled).toBe(false);
+});
+
+test("document search installs in place while preserving the chat draft",async()=>{
+ let installed=false;
+ vi.spyOn(localApi,"getLocalModels").mockImplementation(async()=>[{id:"bge-small-zh",name:"BGE",role:"embedding",state:installed?"installed":"not_installed",runtime_ready:true,bytes:26472640,downloaded_bytes:installed?26472640:0,revision:"fixture",sha256:"a".repeat(64),runtime_version:"fixture",filename:"fixture.gguf",source_url:"https://example.test/model"}]);
+ vi.spyOn(localApi,"getLocalDocuments").mockResolvedValue([]);
+ vi.spyOn(localApi,"installLocalModel").mockImplementation(async()=>{installed=true;});
+ const {user,composer}=await openWorkspace();
+ await user.type(composer,"Retain this draft during installation");
+ await user.click(screen.getByRole("button",{name:"Tools"}));
+ await user.click(screen.getByRole("button",{name:"Search local documents"}));
+ await user.click(await screen.findByRole("button",{name:/Download and install/}));
+ await waitFor(()=>expect(screen.getByRole<HTMLButtonElement>("button",{name:"Add documents"}).disabled).toBe(false));
+ expect(localApi.installLocalModel).toHaveBeenCalledWith("bge-small-zh");
+ await user.click(screen.getByRole("button",{name:"Close"}));
+ expect((composer as HTMLTextAreaElement).value).toBe("Retain this draft during installation");
+ expect(transport.createGenerationBatch).not.toHaveBeenCalled();
 });

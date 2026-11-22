@@ -37,6 +37,7 @@ export function ChatDataPanel({
       <p className={settingsStyles.settingsSection_lede}>
         {copy.settingsChatDataLede}
       </p>
+      <p className="mb-4 text-sm text-muted-foreground">Clearing chat data also removes your local document library and its search indexes. Downloaded model weights are kept.</p>
       <div className={settingsStyles.dataStats}>
         <div className={settingsStyles.dataStats_cell}>
           <div className={settingsStyles.dataStats_k}>

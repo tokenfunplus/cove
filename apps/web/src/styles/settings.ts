@@ -34,7 +34,7 @@ export const settingsStyles = {
   `),
   settingsDialog_panel: cn(String.raw`
     settings-dialog__panel flex flex-col w-full max-w-[1000px] h-[min(780px,_calc(100dvh_-_48px))]
-    bg-card border border-border rounded-[calc(var(--radius)*1.875)] shadow-popover overflow-hidden
+    bg-card border border-border rounded-[calc(var(--radius)*1.875)] shadow-popover overflow-clip
     max-[767px]:h-[calc(100dvh_-_20px)] max-[767px]:rounded-[calc(var(--radius)*1.4375)]
     animate-[cove-rise_230ms_var(--ease-out)_both]
   `),
@@ -53,18 +53,19 @@ export const settingsStyles = {
     max-[767px]:flex-col
   `),
   settingsDialog_navigation: cn(String.raw`
-    settings-dialog__navigation flex flex-col gap-1 border-r border-border bg-sidebar p-3
+    settings-dialog__navigation flex shrink-0 flex-col gap-1 border-r border-border bg-sidebar p-3
     [&_button]:h-10 [&_button]:justify-start [&_button]:gap-2.5 [&_button]:rounded-lg [&_button]:px-3
     [&_button]:font-medium [&_button]:text-[13px] [&_button]:text-muted-foreground
     [&_button[aria-selected="true"]]:bg-accent [&_button[aria-selected="true"]]:text-primary
-    max-[767px]:flex-row max-[767px]:border-r-0 max-[767px]:border-b max-[767px]:p-2
-    max-[767px]:[&_button]:flex-1 max-[767px]:[&_button]:justify-center max-[767px]:[&_button]:gap-1.5
+    max-[767px]:flex-row max-[767px]:overflow-x-auto max-[767px]:border-r-0 max-[767px]:border-b max-[767px]:p-2
+    max-[767px]:[&_button]:shrink-0 max-[767px]:[&_button]:justify-center max-[767px]:[&_button]:gap-1.5
     max-[767px]:[&_button]:px-1 max-[767px]:[&_button]:text-xs
   `),
   settingsDialog_sections: cn(String.raw`
-    settings-dialog__sections overflow-y-auto min-w-0 p-6.5 [&_>_.settings-dialog\_\_section]:hidden
+    settings-dialog__sections min-h-0 flex-1 overflow-y-auto min-w-0 p-6.5 [&_>_.settings-dialog\_\_section]:hidden
     [&[data-active-settings-section="general"]_>_[data-settings-section="general"]]:block
     [&[data-active-settings-section="provider"]_>_[data-settings-section="provider"]]:block
+    [&[data-active-settings-section="local-models"]_>_[data-settings-section="local-models"]]:block
     [&[data-active-settings-section="web-search"]]:scroll-pb-36
     [&[data-active-settings-section="web-search"]_>_[data-settings-section="web-search"]]:block
     [&[data-active-settings-section="chat-data"]_>_[data-settings-section="chat-data"]]:block

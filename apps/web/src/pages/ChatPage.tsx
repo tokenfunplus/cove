@@ -1,6 +1,7 @@
 import { answerToolsCopy as toolCopy } from "@/messages/answer-tools";
 import { useNarrowLayout } from "@/hooks/use-media-query";
 import { AnswerToolsContext } from "@/components/chat/AnswerActions";
+import { LocalSpeechProvider } from "@/components/chat/LocalSpeech";
 import { AnswerToolsPanel } from "@/components/chat/AnswerToolsPanel";
 import { answerToolsStyles } from "@/styles/answer-tools";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,7 @@ export function ChatPage() {
   );
 
   return (
+    <LocalSpeechProvider conversationId={workspace.projectPage?"projects":conversationView?.id} onDiscover={()=>{workspace.setLocalCapabilityEntry({tab:"discover",purpose:"speak"});setSettingsEntry("local-models");}} onSettings={()=>{workspace.setLocalCapabilityEntry({tab:"speech"});setSettingsEntry("local-models");}}>
     <main
       className={cn(
         focusMode ? workspaceStyles.focusSurface : workspaceStyles.surface,
@@ -119,7 +121,7 @@ export function ChatPage() {
             className={cn(workspaceStyles.workspace_main, "workspace__main")}
           >
             {workspace.projectPage ? <ProjectsPage workspace={workspace}/> : <>
-            <WorkspaceHeader
+            <WorkspaceHeader onOpenLocalModels={()=>setSettingsEntry("local-models")}
               debateMode={Boolean(conversationView?.debate_id)}
               focusMode={focusMode}
               onEnterFocus={enterFocusMode}
@@ -214,7 +216,7 @@ export function ChatPage() {
                   className={answerToolsStyles.main}
                   inert={workspace.answerTools.open && narrowAnswerTools}
                 >
-                  <ConversationPanel
+                  <ConversationPanel execution={{localOnly:workspace.localOnly,setLocalOnly:workspace.setLocalOnly,openLocalModels:()=>setSettingsEntry("local-models")}}
                     webSearch={{...workspace.webSearch, budgetLabel: workspace.webSearch.budgetLabel(activeModelSet.length)}}
                     focusMode={focusMode}
                     attachmentDraft={workspace.attachmentDraft}
@@ -305,5 +307,6 @@ export function ChatPage() {
       <ProjectDialogs workspace={workspace} />
       <DebateSetupDialog open={debateSetupOpen} onClose={() => setDebateSetupOpen(false)} profiles={providerProfiles} catalogs={catalogs} activeModelSet={activeModelSet} onStarted={id => { workspace.answerTools.setOpen(false); workspace.setSelectedId(id); workspace.setShowingArchived(false); }} onOpenSettings={() => setSettingsEntry("provider")} />
     </main>
+    </LocalSpeechProvider>
   );
 }

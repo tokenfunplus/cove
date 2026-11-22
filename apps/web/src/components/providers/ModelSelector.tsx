@@ -34,6 +34,7 @@ import { ChevronDown, GitCompareArrows, Plus, Search, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 export function ModelSelector({
+  onOpenLocalModels,
   profiles,
   activeProviderId,
   activeModelId,
@@ -50,6 +51,7 @@ export function ModelSelector({
   disabled = false,
   copy = englishConversationCopy,
 }: {
+  onOpenLocalModels?:()=>void;
   profiles: ProviderProfile[];
   activeProviderId: string;
   activeModelId: string;
@@ -152,6 +154,7 @@ export function ModelSelector({
             options={configuredProfiles.map((profile) => ({
               value: profile.id,
               label: profile.name,
+              group: profile.kind === "local" ? "On this Mac" : "Connected Providers",
             }))}
             placeholder={copy.selectProvider}
             value={selectedTarget?.providerId ?? ""}
@@ -190,6 +193,7 @@ export function ModelSelector({
             }
           />
         </div>
+        {onOpenLocalModels && <Button variant="ghost" size="sm" disabled={disabled} onClick={onOpenLocalModels}>On this Mac</Button>}
         <Popover className="static shrink-0">
           <PopoverButton
             as={Button}

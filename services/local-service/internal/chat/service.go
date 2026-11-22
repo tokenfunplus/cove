@@ -13,8 +13,11 @@ import (
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/localmodels"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
+	"github.com/tokenfunplus/cove/services/local-service/internal/retrieval"
+	"github.com/tokenfunplus/cove/services/local-service/internal/speech"
 	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
 	"github.com/tokenfunplus/cove/services/local-service/internal/websources"
 )
@@ -43,6 +46,7 @@ type ExpectedGenerationTarget struct {
 }
 
 type SendInput struct {
+	LocalOnly            bool
 	previewProject       *persistence.ProjectContext
 	previewProjectSet    bool
 	PreviewOnly          bool
@@ -73,6 +77,7 @@ type GenerationBatchStart struct {
 var ErrGenerationInProgress = errors.New("a Generation is already in progress")
 var ErrGenerationBatchInProgress = errors.New("a Generation Batch is already in progress")
 var ErrGenerationSelectionChanged = errors.New("active model selection changed")
+var ErrLocalOnly = errors.New("Only on this Mac requires an installed Cove local chat model and Web search turned off.")
 var ErrPrivateTEEUnavailable = errors.New("the required Private TEE transport is unavailable")
 var ErrProviderSelectionRequired = errors.New("a configured Provider and model must be selected")
 
@@ -155,6 +160,10 @@ type GenerationEvent struct {
 }
 
 type Service struct {
+	speech         *speech.Manager
+	localModels    *localmodels.Manager
+	localDocuments retrieval.Store
+	retrieval      *retrieval.Service
 	searchService  *websearch.Service
 	webToolCancels sync.Map
 	debateMu       sync.Mutex
@@ -162,6 +171,7 @@ type Service struct {
 	debateWatchers map[string]map[chan struct{}]bool
 	debateDelay    time.Duration
 	documentParser documents.Parser
+	libraryEpoch   atomic.Uint64
 	webReader      webSourceReader
 	webMu          sync.Mutex
 	webSources     map[string]preparedWebSource
@@ -385,6 +395,11 @@ func (service *Service) DeleteConversation(ctx context.Context, conversationID s
 	if err := service.stopConversationWork(ctx, conversationID); err != nil {
 		return err
 	}
+	if service.speech != nil {
+		if err := service.speech.CancelConversation(ctx, conversationID); err != nil {
+			return err
+		}
+	}
 	return service.store.DeleteConversation(ctx, conversationID)
 }
 
@@ -423,6 +438,11 @@ func (service *Service) ClearChatData(ctx context.Context) error {
 	}
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
+	if service.speech != nil {
+		if err := service.speech.CancelConversation(ctx, ""); err != nil {
+			return err
+		}
+	}
 	if err := service.stopDebateForDataChange(ctx, ""); err != nil {
 		return err
 	}
@@ -440,7 +460,20 @@ func (service *Service) ClearChatData(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := service.store.ClearChatData(ctx); err != nil {
+	clearData := func() error {
+		if err := service.store.ClearChatData(ctx); err != nil {
+			return err
+		}
+		service.libraryEpoch.Add(1)
+		return nil
+	}
+	var clearErr error
+	if service.retrieval != nil {
+		clearErr = service.retrieval.Exclusive(ctx, clearData)
+	} else {
+		clearErr = clearData()
+	}
+	if err := clearErr; err != nil {
 		return err
 	}
 	service.clearPreparedWebSources()

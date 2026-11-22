@@ -11,6 +11,7 @@ import (
 const (
 	KindNearAIPreset     = "nearai"
 	KindOpenAICompatible = "openai_compatible"
+	KindLocal            = "local"
 
 	AuthBearer = "bearer"
 	AuthAPIKey = "x_api_key"
@@ -26,19 +27,26 @@ var (
 )
 
 type Profile struct {
-	ID                string    `json:"id"`
-	Kind              string    `json:"kind"`
-	Name              string    `json:"name"`
-	Endpoint          string    `json:"endpoint"`
-	Model             string    `json:"model_id"`
-	AuthMethod        string    `json:"auth_method"`
-	RuntimeLocation   string    `json:"runtime_location"`
-	Destination       string    `json:"destination"`
-	TransportSecurity string    `json:"transport_security"`
-	PrivacyNotice     string    `json:"privacy_notice"`
-	Configured        bool      `json:"configured"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	LocalModel        *ModelArtifact `json:"local_model,omitempty"`
+	ID                string         `json:"id"`
+	Kind              string         `json:"kind"`
+	Name              string         `json:"name"`
+	Endpoint          string         `json:"endpoint"`
+	Model             string         `json:"model_id"`
+	AuthMethod        string         `json:"auth_method"`
+	RuntimeLocation   string         `json:"runtime_location"`
+	Destination       string         `json:"destination"`
+	TransportSecurity string         `json:"transport_security"`
+	PrivacyNotice     string         `json:"privacy_notice"`
+	Configured        bool           `json:"configured"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+}
+
+type ModelArtifact struct {
+	Revision       string `json:"revision"`
+	SHA256         string `json:"sha256"`
+	RuntimeVersion string `json:"runtime_version"`
 }
 
 type ProfileInput struct {
@@ -60,6 +68,10 @@ func NormalizeProfile(profile Profile) (Profile, error) {
 	profile.AuthMethod = strings.TrimSpace(profile.AuthMethod)
 
 	switch profile.Kind {
+	case KindLocal:
+		if profile.ID != "cove-local" || profile.Endpoint != "http://127.0.0.1" || profile.AuthMethod != AuthBearer {
+			return Profile{}, ErrInvalidProfile
+		}
 	case KindNearAIPreset:
 		if profile.Endpoint == "" {
 			profile.Endpoint = NearAIEndpoint
@@ -99,6 +111,11 @@ func NormalizeProfile(profile Profile) (Profile, error) {
 	profile.TransportSecurity = transportSecurity(endpoint)
 	profile.RuntimeLocation = runtimeLocation(profile.Kind, endpoint)
 	profile.PrivacyNotice = privacyNotice(profile)
+	if profile.Kind == KindLocal {
+		profile.RuntimeLocation = "On this Mac"
+		profile.Destination = "Cove managed local inference"
+		profile.PrivacyNotice = "This response is generated on this Mac using a bundled inference runtime. Conversation text is not sent to a remote model Provider. Explicit web tools still contact their sources."
+	}
 	return profile, nil
 }
 

@@ -1,0 +1,1099 @@
+[
+  {
+    "id": "kokoro-en",
+    "name": "Kokoro 82M v1.0 \u00b7 English",
+    "role": "tts",
+    "revision": "sherpa-onnx-tts-bundle-72c347230107",
+    "sha256": "72c347230107ef8a31098ec4d468a605244beef5f1ed00db97efa13518800653",
+    "bytes": 132353410,
+    "source_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2",
+    "filename": "kokoro-int8-multi-lang-v1_0.tar.bz2",
+    "engine": "kokoro",
+    "archive_root": "kokoro-int8-multi-lang-v1_0",
+    "languages": [
+      "en"
+    ],
+    "voices": [
+      {
+        "id": "af_alloy",
+        "name": "Alloy \u00b7 American female",
+        "speaker": 0,
+        "language": "en"
+      },
+      {
+        "id": "af_aoede",
+        "name": "Aoede \u00b7 American female",
+        "speaker": 1,
+        "language": "en"
+      },
+      {
+        "id": "af_bella",
+        "name": "Bella \u00b7 American female",
+        "speaker": 2,
+        "language": "en"
+      },
+      {
+        "id": "af_heart",
+        "name": "Heart \u00b7 American female",
+        "speaker": 3,
+        "language": "en"
+      },
+      {
+        "id": "af_jessica",
+        "name": "Jessica \u00b7 American female",
+        "speaker": 4,
+        "language": "en"
+      },
+      {
+        "id": "af_kore",
+        "name": "Kore \u00b7 American female",
+        "speaker": 5,
+        "language": "en"
+      },
+      {
+        "id": "af_nicole",
+        "name": "Nicole \u00b7 American female",
+        "speaker": 6,
+        "language": "en"
+      },
+      {
+        "id": "af_nova",
+        "name": "Nova \u00b7 American female",
+        "speaker": 7,
+        "language": "en"
+      },
+      {
+        "id": "af_river",
+        "name": "River \u00b7 American female",
+        "speaker": 8,
+        "language": "en"
+      },
+      {
+        "id": "af_sarah",
+        "name": "Sarah \u00b7 American female",
+        "speaker": 9,
+        "language": "en"
+      },
+      {
+        "id": "af_sky",
+        "name": "Sky \u00b7 American female",
+        "speaker": 10,
+        "language": "en"
+      },
+      {
+        "id": "am_adam",
+        "name": "Adam \u00b7 American male",
+        "speaker": 11,
+        "language": "en"
+      },
+      {
+        "id": "am_echo",
+        "name": "Echo \u00b7 American male",
+        "speaker": 12,
+        "language": "en"
+      },
+      {
+        "id": "am_eric",
+        "name": "Eric \u00b7 American male",
+        "speaker": 13,
+        "language": "en"
+      },
+      {
+        "id": "am_fenrir",
+        "name": "Fenrir \u00b7 American male",
+        "speaker": 14,
+        "language": "en"
+      },
+      {
+        "id": "am_liam",
+        "name": "Liam \u00b7 American male",
+        "speaker": 15,
+        "language": "en"
+      },
+      {
+        "id": "am_michael",
+        "name": "Michael \u00b7 American male",
+        "speaker": 16,
+        "language": "en"
+      },
+      {
+        "id": "am_onyx",
+        "name": "Onyx \u00b7 American male",
+        "speaker": 17,
+        "language": "en"
+      },
+      {
+        "id": "am_puck",
+        "name": "Puck \u00b7 American male",
+        "speaker": 18,
+        "language": "en"
+      },
+      {
+        "id": "am_santa",
+        "name": "Santa \u00b7 American male",
+        "speaker": 19,
+        "language": "en"
+      },
+      {
+        "id": "bf_alice",
+        "name": "Alice \u00b7 British female",
+        "speaker": 20,
+        "language": "en"
+      },
+      {
+        "id": "bf_emma",
+        "name": "Emma \u00b7 British female",
+        "speaker": 21,
+        "language": "en"
+      },
+      {
+        "id": "bf_isabella",
+        "name": "Isabella \u00b7 British female",
+        "speaker": 22,
+        "language": "en"
+      },
+      {
+        "id": "bf_lily",
+        "name": "Lily \u00b7 British female",
+        "speaker": 23,
+        "language": "en"
+      },
+      {
+        "id": "bm_daniel",
+        "name": "Daniel \u00b7 British male",
+        "speaker": 24,
+        "language": "en"
+      },
+      {
+        "id": "bm_fable",
+        "name": "Fable \u00b7 British male",
+        "speaker": 25,
+        "language": "en"
+      },
+      {
+        "id": "bm_george",
+        "name": "George \u00b7 British male",
+        "speaker": 26,
+        "language": "en"
+      },
+      {
+        "id": "bm_lewis",
+        "name": "Lewis \u00b7 British male",
+        "speaker": 27,
+        "language": "en"
+      }
+    ],
+    "default_voice": "af_heart",
+    "model_file": "model.int8.onnx",
+    "tokens_file": "tokens.txt",
+    "voices_file": "voices.bin",
+    "data_dir": "espeak-ng-data",
+    "dict_dir": "dict",
+    "lexicon": [
+      "lexicon-us-en.txt",
+      "lexicon-gb-en.txt"
+    ],
+    "rules": [],
+    "artifacts": [
+      {
+        "filename": "kokoro-int8-multi-lang-v1_0.tar.bz2",
+        "bytes": 132353410,
+        "sha256": "72c347230107ef8a31098ec4d468a605244beef5f1ed00db97efa13518800653",
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_0.tar.bz2"
+      }
+    ],
+    "required": [
+      "model.int8.onnx",
+      "tokens.txt",
+      "voices.bin",
+      "lexicon-us-en.txt",
+      "lexicon-gb-en.txt"
+    ]
+  },
+  {
+    "id": "kokoro-zh",
+    "name": "Kokoro 82M v1.1 \u00b7 Chinese",
+    "role": "tts",
+    "revision": "sherpa-onnx-tts-bundle-259c9c8bc906",
+    "sha256": "259c9c8bc906d6078e4e0570421885dabb68b539c2f970fcbb890a58eeaf3e9c",
+    "bytes": 147052523,
+    "source_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2",
+    "filename": "kokoro-int8-multi-lang-v1_1.tar.bz2",
+    "engine": "kokoro",
+    "archive_root": "kokoro-int8-multi-lang-v1_1",
+    "languages": [
+      "zh",
+      "en"
+    ],
+    "voices": [
+      {
+        "id": "af_maple",
+        "speaker": 0,
+        "language": "en",
+        "name": "Maple \u00b7 English"
+      },
+      {
+        "id": "af_sol",
+        "speaker": 1,
+        "language": "en",
+        "name": "Sol \u00b7 English"
+      },
+      {
+        "id": "bf_vale",
+        "speaker": 2,
+        "language": "en",
+        "name": "Vale \u00b7 English"
+      },
+      {
+        "id": "zf_001",
+        "speaker": 3,
+        "language": "zh",
+        "name": "Mandarin female 001"
+      },
+      {
+        "id": "zf_002",
+        "speaker": 4,
+        "language": "zh",
+        "name": "Mandarin female 002"
+      },
+      {
+        "id": "zf_003",
+        "speaker": 5,
+        "language": "zh",
+        "name": "Mandarin female 003"
+      },
+      {
+        "id": "zf_004",
+        "speaker": 6,
+        "language": "zh",
+        "name": "Mandarin female 004"
+      },
+      {
+        "id": "zf_005",
+        "speaker": 7,
+        "language": "zh",
+        "name": "Mandarin female 005"
+      },
+      {
+        "id": "zf_006",
+        "speaker": 8,
+        "language": "zh",
+        "name": "Mandarin female 006"
+      },
+      {
+        "id": "zf_007",
+        "speaker": 9,
+        "language": "zh",
+        "name": "Mandarin female 007"
+      },
+      {
+        "id": "zf_008",
+        "speaker": 10,
+        "language": "zh",
+        "name": "Mandarin female 008"
+      },
+      {
+        "id": "zf_017",
+        "speaker": 11,
+        "language": "zh",
+        "name": "Mandarin female 017"
+      },
+      {
+        "id": "zf_018",
+        "speaker": 12,
+        "language": "zh",
+        "name": "Mandarin female 018"
+      },
+      {
+        "id": "zf_019",
+        "speaker": 13,
+        "language": "zh",
+        "name": "Mandarin female 019"
+      },
+      {
+        "id": "zf_021",
+        "speaker": 14,
+        "language": "zh",
+        "name": "Mandarin female 021"
+      },
+      {
+        "id": "zf_022",
+        "speaker": 15,
+        "language": "zh",
+        "name": "Mandarin female 022"
+      },
+      {
+        "id": "zf_023",
+        "speaker": 16,
+        "language": "zh",
+        "name": "Mandarin female 023"
+      },
+      {
+        "id": "zf_024",
+        "speaker": 17,
+        "language": "zh",
+        "name": "Mandarin female 024"
+      },
+      {
+        "id": "zf_026",
+        "speaker": 18,
+        "language": "zh",
+        "name": "Mandarin female 026"
+      },
+      {
+        "id": "zf_027",
+        "speaker": 19,
+        "language": "zh",
+        "name": "Mandarin female 027"
+      },
+      {
+        "id": "zf_028",
+        "speaker": 20,
+        "language": "zh",
+        "name": "Mandarin female 028"
+      },
+      {
+        "id": "zf_032",
+        "speaker": 21,
+        "language": "zh",
+        "name": "Mandarin female 032"
+      },
+      {
+        "id": "zf_036",
+        "speaker": 22,
+        "language": "zh",
+        "name": "Mandarin female 036"
+      },
+      {
+        "id": "zf_038",
+        "speaker": 23,
+        "language": "zh",
+        "name": "Mandarin female 038"
+      },
+      {
+        "id": "zf_039",
+        "speaker": 24,
+        "language": "zh",
+        "name": "Mandarin female 039"
+      },
+      {
+        "id": "zf_040",
+        "speaker": 25,
+        "language": "zh",
+        "name": "Mandarin female 040"
+      },
+      {
+        "id": "zf_042",
+        "speaker": 26,
+        "language": "zh",
+        "name": "Mandarin female 042"
+      },
+      {
+        "id": "zf_043",
+        "speaker": 27,
+        "language": "zh",
+        "name": "Mandarin female 043"
+      },
+      {
+        "id": "zf_044",
+        "speaker": 28,
+        "language": "zh",
+        "name": "Mandarin female 044"
+      },
+      {
+        "id": "zf_046",
+        "speaker": 29,
+        "language": "zh",
+        "name": "Mandarin female 046"
+      },
+      {
+        "id": "zf_047",
+        "speaker": 30,
+        "language": "zh",
+        "name": "Mandarin female 047"
+      },
+      {
+        "id": "zf_048",
+        "speaker": 31,
+        "language": "zh",
+        "name": "Mandarin female 048"
+      },
+      {
+        "id": "zf_049",
+        "speaker": 32,
+        "language": "zh",
+        "name": "Mandarin female 049"
+      },
+      {
+        "id": "zf_051",
+        "speaker": 33,
+        "language": "zh",
+        "name": "Mandarin female 051"
+      },
+      {
+        "id": "zf_059",
+        "speaker": 34,
+        "language": "zh",
+        "name": "Mandarin female 059"
+      },
+      {
+        "id": "zf_060",
+        "speaker": 35,
+        "language": "zh",
+        "name": "Mandarin female 060"
+      },
+      {
+        "id": "zf_067",
+        "speaker": 36,
+        "language": "zh",
+        "name": "Mandarin female 067"
+      },
+      {
+        "id": "zf_070",
+        "speaker": 37,
+        "language": "zh",
+        "name": "Mandarin female 070"
+      },
+      {
+        "id": "zf_071",
+        "speaker": 38,
+        "language": "zh",
+        "name": "Mandarin female 071"
+      },
+      {
+        "id": "zf_072",
+        "speaker": 39,
+        "language": "zh",
+        "name": "Mandarin female 072"
+      },
+      {
+        "id": "zf_073",
+        "speaker": 40,
+        "language": "zh",
+        "name": "Mandarin female 073"
+      },
+      {
+        "id": "zf_074",
+        "speaker": 41,
+        "language": "zh",
+        "name": "Mandarin female 074"
+      },
+      {
+        "id": "zf_075",
+        "speaker": 42,
+        "language": "zh",
+        "name": "Mandarin female 075"
+      },
+      {
+        "id": "zf_076",
+        "speaker": 43,
+        "language": "zh",
+        "name": "Mandarin female 076"
+      },
+      {
+        "id": "zf_077",
+        "speaker": 44,
+        "language": "zh",
+        "name": "Mandarin female 077"
+      },
+      {
+        "id": "zf_078",
+        "speaker": 45,
+        "language": "zh",
+        "name": "Mandarin female 078"
+      },
+      {
+        "id": "zf_079",
+        "speaker": 46,
+        "language": "zh",
+        "name": "Mandarin female 079"
+      },
+      {
+        "id": "zf_083",
+        "speaker": 47,
+        "language": "zh",
+        "name": "Mandarin female 083"
+      },
+      {
+        "id": "zf_084",
+        "speaker": 48,
+        "language": "zh",
+        "name": "Mandarin female 084"
+      },
+      {
+        "id": "zf_085",
+        "speaker": 49,
+        "language": "zh",
+        "name": "Mandarin female 085"
+      },
+      {
+        "id": "zf_086",
+        "speaker": 50,
+        "language": "zh",
+        "name": "Mandarin female 086"
+      },
+      {
+        "id": "zf_087",
+        "speaker": 51,
+        "language": "zh",
+        "name": "Mandarin female 087"
+      },
+      {
+        "id": "zf_088",
+        "speaker": 52,
+        "language": "zh",
+        "name": "Mandarin female 088"
+      },
+      {
+        "id": "zf_090",
+        "speaker": 53,
+        "language": "zh",
+        "name": "Mandarin female 090"
+      },
+      {
+        "id": "zf_092",
+        "speaker": 54,
+        "language": "zh",
+        "name": "Mandarin female 092"
+      },
+      {
+        "id": "zf_093",
+        "speaker": 55,
+        "language": "zh",
+        "name": "Mandarin female 093"
+      },
+      {
+        "id": "zf_094",
+        "speaker": 56,
+        "language": "zh",
+        "name": "Mandarin female 094"
+      },
+      {
+        "id": "zf_099",
+        "speaker": 57,
+        "language": "zh",
+        "name": "Mandarin female 099"
+      },
+      {
+        "id": "zm_009",
+        "speaker": 58,
+        "language": "zh",
+        "name": "Mandarin male 009"
+      },
+      {
+        "id": "zm_010",
+        "speaker": 59,
+        "language": "zh",
+        "name": "Mandarin male 010"
+      },
+      {
+        "id": "zm_011",
+        "speaker": 60,
+        "language": "zh",
+        "name": "Mandarin male 011"
+      },
+      {
+        "id": "zm_012",
+        "speaker": 61,
+        "language": "zh",
+        "name": "Mandarin male 012"
+      },
+      {
+        "id": "zm_013",
+        "speaker": 62,
+        "language": "zh",
+        "name": "Mandarin male 013"
+      },
+      {
+        "id": "zm_014",
+        "speaker": 63,
+        "language": "zh",
+        "name": "Mandarin male 014"
+      },
+      {
+        "id": "zm_015",
+        "speaker": 64,
+        "language": "zh",
+        "name": "Mandarin male 015"
+      },
+      {
+        "id": "zm_016",
+        "speaker": 65,
+        "language": "zh",
+        "name": "Mandarin male 016"
+      },
+      {
+        "id": "zm_020",
+        "speaker": 66,
+        "language": "zh",
+        "name": "Mandarin male 020"
+      },
+      {
+        "id": "zm_025",
+        "speaker": 67,
+        "language": "zh",
+        "name": "Mandarin male 025"
+      },
+      {
+        "id": "zm_029",
+        "speaker": 68,
+        "language": "zh",
+        "name": "Mandarin male 029"
+      },
+      {
+        "id": "zm_030",
+        "speaker": 69,
+        "language": "zh",
+        "name": "Mandarin male 030"
+      },
+      {
+        "id": "zm_031",
+        "speaker": 70,
+        "language": "zh",
+        "name": "Mandarin male 031"
+      },
+      {
+        "id": "zm_033",
+        "speaker": 71,
+        "language": "zh",
+        "name": "Mandarin male 033"
+      },
+      {
+        "id": "zm_034",
+        "speaker": 72,
+        "language": "zh",
+        "name": "Mandarin male 034"
+      },
+      {
+        "id": "zm_035",
+        "speaker": 73,
+        "language": "zh",
+        "name": "Mandarin male 035"
+      },
+      {
+        "id": "zm_037",
+        "speaker": 74,
+        "language": "zh",
+        "name": "Mandarin male 037"
+      },
+      {
+        "id": "zm_041",
+        "speaker": 75,
+        "language": "zh",
+        "name": "Mandarin male 041"
+      },
+      {
+        "id": "zm_045",
+        "speaker": 76,
+        "language": "zh",
+        "name": "Mandarin male 045"
+      },
+      {
+        "id": "zm_050",
+        "speaker": 77,
+        "language": "zh",
+        "name": "Mandarin male 050"
+      },
+      {
+        "id": "zm_052",
+        "speaker": 78,
+        "language": "zh",
+        "name": "Mandarin male 052"
+      },
+      {
+        "id": "zm_053",
+        "speaker": 79,
+        "language": "zh",
+        "name": "Mandarin male 053"
+      },
+      {
+        "id": "zm_054",
+        "speaker": 80,
+        "language": "zh",
+        "name": "Mandarin male 054"
+      },
+      {
+        "id": "zm_055",
+        "speaker": 81,
+        "language": "zh",
+        "name": "Mandarin male 055"
+      },
+      {
+        "id": "zm_056",
+        "speaker": 82,
+        "language": "zh",
+        "name": "Mandarin male 056"
+      },
+      {
+        "id": "zm_057",
+        "speaker": 83,
+        "language": "zh",
+        "name": "Mandarin male 057"
+      },
+      {
+        "id": "zm_058",
+        "speaker": 84,
+        "language": "zh",
+        "name": "Mandarin male 058"
+      },
+      {
+        "id": "zm_061",
+        "speaker": 85,
+        "language": "zh",
+        "name": "Mandarin male 061"
+      },
+      {
+        "id": "zm_062",
+        "speaker": 86,
+        "language": "zh",
+        "name": "Mandarin male 062"
+      },
+      {
+        "id": "zm_063",
+        "speaker": 87,
+        "language": "zh",
+        "name": "Mandarin male 063"
+      },
+      {
+        "id": "zm_064",
+        "speaker": 88,
+        "language": "zh",
+        "name": "Mandarin male 064"
+      },
+      {
+        "id": "zm_065",
+        "speaker": 89,
+        "language": "zh",
+        "name": "Mandarin male 065"
+      },
+      {
+        "id": "zm_066",
+        "speaker": 90,
+        "language": "zh",
+        "name": "Mandarin male 066"
+      },
+      {
+        "id": "zm_068",
+        "speaker": 91,
+        "language": "zh",
+        "name": "Mandarin male 068"
+      },
+      {
+        "id": "zm_069",
+        "speaker": 92,
+        "language": "zh",
+        "name": "Mandarin male 069"
+      },
+      {
+        "id": "zm_080",
+        "speaker": 93,
+        "language": "zh",
+        "name": "Mandarin male 080"
+      },
+      {
+        "id": "zm_081",
+        "speaker": 94,
+        "language": "zh",
+        "name": "Mandarin male 081"
+      },
+      {
+        "id": "zm_082",
+        "speaker": 95,
+        "language": "zh",
+        "name": "Mandarin male 082"
+      },
+      {
+        "id": "zm_089",
+        "speaker": 96,
+        "language": "zh",
+        "name": "Mandarin male 089"
+      },
+      {
+        "id": "zm_091",
+        "speaker": 97,
+        "language": "zh",
+        "name": "Mandarin male 091"
+      },
+      {
+        "id": "zm_095",
+        "speaker": 98,
+        "language": "zh",
+        "name": "Mandarin male 095"
+      },
+      {
+        "id": "zm_096",
+        "speaker": 99,
+        "language": "zh",
+        "name": "Mandarin male 096"
+      },
+      {
+        "id": "zm_097",
+        "speaker": 100,
+        "language": "zh",
+        "name": "Mandarin male 097"
+      },
+      {
+        "id": "zm_098",
+        "speaker": 101,
+        "language": "zh",
+        "name": "Mandarin male 098"
+      },
+      {
+        "id": "zm_100",
+        "speaker": 102,
+        "language": "zh",
+        "name": "Mandarin male 100"
+      }
+    ],
+    "default_voice": "zf_001",
+    "model_file": "model.int8.onnx",
+    "tokens_file": "tokens.txt",
+    "voices_file": "voices.bin",
+    "data_dir": "espeak-ng-data",
+    "dict_dir": "dict",
+    "lexicon": [
+      "lexicon-zh.txt",
+      "lexicon-us-en.txt"
+    ],
+    "rules": [
+      "date-zh.fst",
+      "number-zh.fst",
+      "phone-zh.fst"
+    ],
+    "artifacts": [
+      {
+        "filename": "kokoro-int8-multi-lang-v1_1.tar.bz2",
+        "bytes": 147052523,
+        "sha256": "259c9c8bc906d6078e4e0570421885dabb68b539c2f970fcbb890a58eeaf3e9c",
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2"
+      }
+    ],
+    "required": [
+      "model.int8.onnx",
+      "tokens.txt",
+      "voices.bin",
+      "lexicon-zh.txt",
+      "lexicon-us-en.txt",
+      "date-zh.fst",
+      "number-zh.fst",
+      "phone-zh.fst"
+    ]
+  },
+  {
+    "id": "kitten-nano-en",
+    "name": "Kitten TTS Nano 0.8 \u00b7 INT8",
+    "role": "tts",
+    "revision": "sherpa-onnx-tts-bundle-6fa5be852612",
+    "sha256": "6fa5be852612ce761094ba74ee6123b4fc4acfefa79bf64dc63acae4a83af2fd",
+    "bytes": 31220690,
+    "source_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kitten-nano-en-v0_8-int8.tar.bz2",
+    "filename": "kitten-nano-en-v0_8-int8.tar.bz2",
+    "engine": "kitten",
+    "archive_root": "kitten-nano-en-v0_8-int8",
+    "languages": [
+      "en"
+    ],
+    "voices": [
+      {
+        "id": "expr-voice-2-m",
+        "name": "Voice 1 \u00b7 Male",
+        "speaker": 0,
+        "language": "en"
+      },
+      {
+        "id": "expr-voice-2-f",
+        "name": "Voice 2 \u00b7 Female",
+        "speaker": 1,
+        "language": "en"
+      },
+      {
+        "id": "expr-voice-3-m",
+        "name": "Voice 3 \u00b7 Male",
+        "speaker": 2,
+        "language": "en"
+      },
+      {
+        "id": "expr-voice-3-f",
+        "name": "Voice 4 \u00b7 Female",
+        "speaker": 3,
+        "language": "en"
+      },
+      {
+        "id": "expr-voice-4-m",
+        "name": "Voice 5 \u00b7 Male",
+        "speaker": 4,
+        "language": "en"
+      },
+      {
+        "id": "expr-voice-4-f",
+        "name": "Voice 6 \u00b7 Female",
+        "speaker": 5,
+        "language": "en"
+      },
+      {
+        "id": "expr-voice-5-m",
+        "name": "Voice 7 \u00b7 Male",
+        "speaker": 6,
+        "language": "en"
+      },
+      {
+        "id": "expr-voice-5-f",
+        "name": "Voice 8 \u00b7 Female",
+        "speaker": 7,
+        "language": "en"
+      }
+    ],
+    "default_voice": "expr-voice-2-f",
+    "model_file": "model.int8.onnx",
+    "tokens_file": "tokens.txt",
+    "voices_file": "voices.bin",
+    "data_dir": "espeak-ng-data",
+    "dict_dir": "",
+    "lexicon": [],
+    "rules": [],
+    "artifacts": [
+      {
+        "filename": "kitten-nano-en-v0_8-int8.tar.bz2",
+        "bytes": 31220690,
+        "sha256": "6fa5be852612ce761094ba74ee6123b4fc4acfefa79bf64dc63acae4a83af2fd",
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kitten-nano-en-v0_8-int8.tar.bz2"
+      }
+    ],
+    "required": [
+      "model.int8.onnx",
+      "tokens.txt",
+      "voices.bin"
+    ]
+  },
+  {
+    "id": "melo-zh-en",
+    "name": "MeloTTS \u00b7 Chinese + English",
+    "role": "tts",
+    "revision": "sherpa-onnx-tts-bundle-e58351ed7149",
+    "sha256": "e58351ed7149f290a54534538badd4077cdbe6fddc964b24d0bee870415d1514",
+    "bytes": 167006755,
+    "source_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-melo-tts-zh_en.tar.bz2",
+    "filename": "vits-melo-tts-zh_en.tar.bz2",
+    "engine": "melo",
+    "archive_root": "vits-melo-tts-zh_en",
+    "languages": [
+      "zh",
+      "en"
+    ],
+    "voices": [
+      {
+        "id": "zh-en-female",
+        "name": "Chinese + English \u00b7 Female",
+        "speaker": 0,
+        "language": "zh"
+      }
+    ],
+    "default_voice": "zh-en-female",
+    "model_file": "model.onnx",
+    "tokens_file": "tokens.txt",
+    "voices_file": "",
+    "data_dir": "",
+    "dict_dir": "dict",
+    "lexicon": [
+      "lexicon.txt"
+    ],
+    "rules": [
+      "date.fst",
+      "number.fst",
+      "phone.fst",
+      "new_heteronym.fst"
+    ],
+    "artifacts": [
+      {
+        "filename": "vits-melo-tts-zh_en.tar.bz2",
+        "bytes": 167006755,
+        "sha256": "e58351ed7149f290a54534538badd4077cdbe6fddc964b24d0bee870415d1514",
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-melo-tts-zh_en.tar.bz2"
+      }
+    ],
+    "required": [
+      "model.onnx",
+      "tokens.txt",
+      "lexicon.txt",
+      "date.fst",
+      "number.fst",
+      "phone.fst",
+      "new_heteronym.fst"
+    ]
+  },
+  {
+    "id": "pocket-tts-en",
+    "name": "Pocket TTS 18M \u00b7 Preset voices",
+    "role": "tts",
+    "revision": "a7056f505a4a8ca72d8b5fb1440071d6f1a35739",
+    "sha256": "c3a28c28abac59e9d9caf9a4053a0e5d9677c181b15e7c1f1e3566a67c951c12",
+    "bytes": 125393955,
+    "source_url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english_18m_2026-10/embeddings/alba.safetensors",
+    "filename": "pocket-tts-18m-preset-bundle",
+    "engine": "pocket",
+    "archive_root": "",
+    "languages": [
+      "en"
+    ],
+    "voices": [
+      {
+        "id": "alba",
+        "name": "Alba",
+        "speaker": 0,
+        "language": "en"
+      },
+      {
+        "id": "anna",
+        "name": "Anna",
+        "speaker": 1,
+        "language": "en"
+      },
+      {
+        "id": "bill_boerst",
+        "name": "Bill Boerst",
+        "speaker": 2,
+        "language": "en"
+      }
+    ],
+    "default_voice": "alba",
+    "artifacts": [
+      {
+        "filename": "alba.safetensors",
+        "bytes": 4163992,
+        "sha256": "11554cbe9f3d3a3e10722932df9952bb44928e534f7af3200524659166b5627a",
+        "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english_18m_2026-10/embeddings/alba.safetensors"
+      },
+      {
+        "filename": "anna.safetensors",
+        "bytes": 5081496,
+        "sha256": "d4c2f3660183b58d6fedd428ad59ba07ff4ea9f26a16295aba127e281c746450",
+        "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english_18m_2026-10/embeddings/anna.safetensors"
+      },
+      {
+        "filename": "bill_boerst.safetensors",
+        "bytes": 4360600,
+        "sha256": "927a31d7627daf996efce71ee7898a799a9386738077c3bd401bd1445f6f6657",
+        "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english_18m_2026-10/embeddings/bill_boerst.safetensors"
+      },
+      {
+        "filename": "model.safetensors",
+        "bytes": 111728528,
+        "sha256": "599329dcea2f2a8d17b575e1c6e11b78822453c9073040d55c26faadf4883188",
+        "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english_18m_2026-10/model.safetensors"
+      },
+      {
+        "filename": "tokenizer.model",
+        "bytes": 59339,
+        "sha256": "d461765ae179566678c93091c5fa6f2984c31bbe990bf1aa62d92c64d91bc3f6",
+        "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a7056f505a4a8ca72d8b5fb1440071d6f1a35739/languages/english_18m_2026-10/tokenizer.model"
+      }
+    ],
+    "required": [
+      "alba.safetensors",
+      "anna.safetensors",
+      "bill_boerst.safetensors",
+      "model.safetensors",
+      "tokenizer.model"
+    ]
+  }
+]

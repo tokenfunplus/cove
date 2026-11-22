@@ -23,6 +23,7 @@ vi.mock("@/api/projects", async (original) => ({
   saveProject: vi.fn(),
   addProjectSource: vi.fn(),
   removeProjectSource: vi.fn(),
+  setProjectSourceUsage: vi.fn(),
   deleteProject: vi.fn(),
   moveProjectConversation: vi.fn(),
 }));
@@ -305,7 +306,7 @@ test("removing a fixed source keeps the editor open with the saved revision", as
     expect(screen.queryByText("Notes.txt", { exact: false })).toBeNull(),
   );
   expect(screen.getByRole("dialog", { name: "Edit project" })).toBeTruthy();
-  expect(screen.getByText(/Fixed sources · 0 \/ 3/)).toBeTruthy();
+  expect(screen.getByText(/Project materials · 0 \/ 3/)).toBeTruthy();
   const user = userEvent.setup();
   await user.type(
     screen.getByRole("textbox", { name: "Project description" }),
@@ -524,4 +525,15 @@ test("a failed move response reconciles membership that already committed", asyn
  expect(screen.getByText("Current project: No project")).toBeTruthy();
  expect((screen.getByRole("button",{name:"Move conversation"}) as HTMLButtonElement).disabled).toBe(true);
  cache.clear();
+});
+
+
+test("project material usage changes keep the editor open and submit the reviewed revision",async()=>{
+ const project:Project={...savedProject,sources:[{id:"source",blob_hash:"hash",usage:"always",snapshot:{id:"hash",name:"Search.txt",media_type:"text/plain",size:5,characters:5,extraction_version:"text-v1",sections:[{id:"L1",text:"Notes"}]}}]};
+ vi.mocked(api.setProjectSourceUsage).mockResolvedValue({...project,revision:project.revision+1,sources:[{...project.sources[0],usage:"search"}]});
+ renderProjectDialogs(project);
+ await userEvent.setup().selectOptions(screen.getByRole("combobox",{name:"Use Search.txt"}),"search");
+ await waitFor(()=>expect(api.setProjectSourceUsage).toHaveBeenCalledWith(project.id,"source",project.revision,"search"));
+ await waitFor(()=>expect(screen.getByRole<HTMLSelectElement>("combobox",{name:"Use Search.txt"}).value).toBe("search"));
+ expect(screen.getByRole("dialog",{name:"Edit project"})).toBeTruthy();
 });

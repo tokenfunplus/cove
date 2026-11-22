@@ -14,6 +14,7 @@ import (
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/localmodels"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
@@ -31,6 +32,9 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 	service.startMu.Unlock()
 	if err != nil || existing.ID != "" {
 		return GenerationBatchStart{Batch: existing}, err
+	}
+	if input.LocalOnly && input.WebSearchEnabled {
+		return GenerationBatchStart{}, ErrLocalOnly
 	}
 	var searchPolicy *websearch.Policy
 	if input.WebSearchEnabled {
@@ -51,6 +55,13 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		return GenerationBatchStart{}, err
 	}
 
+	if input.LocalOnly {
+		for _, target := range activeModelSet {
+			if target.ProviderID != localmodels.ProviderID || !localmodels.IsChatModel(target.ModelID) {
+				return GenerationBatchStart{}, ErrLocalOnly
+			}
+		}
+	}
 	resolved, resolveErr := service.resolveTargets(ctx, activeModelSet)
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
@@ -74,6 +85,9 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 	hasOrdinaryTarget := false
 	for index, target := range activeModelSet {
 		connection := resolved[index]
+		if input.LocalOnly && connection.profile.Kind != provider.KindLocal {
+			return GenerationBatchStart{}, ErrLocalOnly
+		}
 		if input.ExpectedTargets != nil && input.ExpectedTargets[index].RequirePrivateTEE && !connection.isPrivateTEE() {
 			return GenerationBatchStart{}, ErrPrivateTEEUnavailable
 		}
@@ -106,6 +120,7 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		return GenerationBatchStart{}, err
 	}
 	batch, err := service.store.BeginGenerationBatch(ctx, persistence.BeginGenerationBatchInput{
+		LocalOnly:       input.LocalOnly,
 		ExpectedProject: input.ExpectedProject,
 		WebSearch:       searchPolicy,
 		EditOfBatchID:   input.EditOfBatchID, ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID, Body: input.Body, InputContent: inputContent, Attachments: attachments, SystemPrompt: systemPrompt, GenerationParameters: parameters, Targets: batchTargets,
@@ -303,6 +318,13 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 	if err != nil || existing.ID != "" {
 		return GenerationStart{Generation: existing}, err
 	}
+	priorBatch, err := service.store.GetGenerationBatch(ctx, target.BatchID)
+	if err != nil {
+		return GenerationStart{}, err
+	}
+	if priorBatch.LocalOnly && (target.ProviderID != localmodels.ProviderID || !localmodels.IsChatModel(target.ModelID)) {
+		return GenerationStart{}, ErrLocalOnly
+	}
 	resolved, resolveErr := service.resolveTargets(ctx, []persistence.ActiveModelTarget{{ProviderID: target.ProviderID, ModelID: target.ModelID}})
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
@@ -338,6 +360,9 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 	var connection resolvedTarget
 	if resolveErr == nil {
 		connection = resolved[0]
+		if batch.LocalOnly && connection.profile.Kind != provider.KindLocal {
+			return GenerationStart{}, ErrLocalOnly
+		}
 		resolveErr = service.checkResolvedProfile(ctx, connection.profile)
 		if resolveErr == nil && snapshot.IsNearAI() && snapshot.PrivacyMode == provider.PrivacyModePrivateTEE && !connection.isPrivateTEE() {
 			resolveErr = ErrPrivateTEEUnavailable
@@ -521,7 +546,13 @@ func (target resolvedTarget) isSecure() bool {
 }
 
 func snapshotFor(profile provider.Profile, privacyMode string) persistence.ProviderSnapshot {
+	if profile.Kind == provider.KindLocal {
+		if model, err := localmodels.Lookup(profile.Model); err == nil && model.Role == "chat" {
+			profile.LocalModel = &provider.ModelArtifact{Revision: model.Revision, SHA256: model.SHA256, RuntimeVersion: localmodels.RuntimeVersion}
+		}
+	}
 	return persistence.ProviderSnapshot{
+		LocalModel:   profile.LocalModel,
 		ProviderKind: profile.Kind, ProviderID: profile.ID, ProviderName: profile.Name, ModelID: profile.Model,
 		RuntimeLocation: profile.RuntimeLocation, Destination: profile.Destination,
 		TransportSecurity: profile.TransportSecurity, PrivacyNotice: profile.PrivacyNotice,

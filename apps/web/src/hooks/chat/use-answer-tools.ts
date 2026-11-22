@@ -30,6 +30,7 @@ import {
 } from "@/lib/chat/workbench";
 
 export function useAnswerTools({
+  localOnly = false,
   activeModelSet,
   providerProfiles,
   catalogs,
@@ -43,6 +44,7 @@ export function useAnswerTools({
   selectionStatus: ProviderSelectionStatus;
   copy: ApplicationCopy;
   externalBusy: boolean;
+  localOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"ask" | "write">("ask");
@@ -65,7 +67,7 @@ export function useAnswerTools({
   const sideIdRef = useRef<string | undefined>(undefined);
   const sideConversation = useConversation(sideId);
   const state = useGenerationState();
-  const attachments = useAttachmentDraft(sideId);
+  const attachments = useAttachmentDraft(sideId, localOnly);
   const [feedback, setFeedback] = useState<string>();
   const [creating, setCreating] = useState(false);
   const operationRef = useRef(false);
@@ -119,6 +121,7 @@ export function useAnswerTools({
     refreshCurrentConversation,
   });
   const commands = useGenerationCommands({
+    localOnly,
     ...shared,
     ...events,
     ...privateGeneration,

@@ -40,6 +40,7 @@ type Section struct {
 }
 
 type Snapshot struct {
+	Retrieval         *Retrieval `json:"retrieval,omitempty"`
 	ID                string     `json:"id"`
 	Name              string     `json:"name"`
 	MediaType         string     `json:"media_type"`
@@ -48,6 +49,14 @@ type Snapshot struct {
 	ExtractionVersion string     `json:"extraction_version"`
 	Sections          []Section  `json:"sections"`
 	Web               *WebSource `json:"web,omitempty"`
+}
+
+// Retrieval identifies the local index that selected these original sections.
+type Retrieval struct {
+	ProjectID    string `json:"project_id,omitempty"`
+	ModelID      string `json:"model_id"`
+	ModelSHA256  string `json:"model_sha256"`
+	IndexVersion string `json:"index_version"`
 }
 
 // WebSource records the provenance of an explicitly retrieved public webpage.

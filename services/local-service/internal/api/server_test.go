@@ -779,6 +779,9 @@ func TestAuthorizedBrowserLoadsEmbeddedReactShell(t *testing.T) {
 	if body := response.Body.String(); !strings.Contains(body, "<div id=\"root\">") {
 		t.Fatalf("shell does not contain the React root: %s", body)
 	}
+	if policy := response.Header().Get("Content-Security-Policy"); !strings.Contains(policy, "media-src 'self' blob:;") {
+		t.Fatal("local speech blob playback is blocked")
+	}
 	if policy := response.Header().Get("Content-Security-Policy"); !strings.Contains(policy, "default-src 'self'") {
 		t.Fatalf("shell CSP = %q, want self-only default source", policy)
 	}

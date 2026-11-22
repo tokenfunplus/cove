@@ -1,6 +1,6 @@
 import * as api from "@/api";
 import { projectKeys } from "@/api/projects";
-import { conversationKeys, debateKeys, generationKeys } from "@/api/queryKeys";
+import { conversationKeys, debateKeys, generationKeys, localDocumentsKey } from "@/api/queryKeys";
 import type { ConversationUpdateInput } from "@cove/api-contract";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
@@ -112,9 +112,12 @@ export function useClearChatData() {
       await cache.cancelQueries({ queryKey: conversationKeys.all });
       await cache.cancelQueries({ queryKey: generationKeys.all });
       await cache.cancelQueries({ queryKey: debateKeys.all });
+      await cache.cancelQueries({ queryKey: localDocumentsKey });
       cache.removeQueries({ queryKey: conversationKeys.all });
       cache.removeQueries({ queryKey: generationKeys.all });
       cache.removeQueries({ queryKey: debateKeys.all });
+      cache.removeQueries({ queryKey: localDocumentsKey });
+      cache.setQueryData(localDocumentsKey, []);
       cache.setQueryData(conversationKeys.list(false), []);
       cache.setQueryData(conversationKeys.list(true), []);
       await cache.invalidateQueries({ queryKey: projectKeys });

@@ -23,11 +23,12 @@ export function ProjectInputSummary({
           : "Loading project context…"}
       </p>
     );
+  const fixed = p.sources.filter(source=>source.usage!=="search");
   const turn = attachments?.attachments ?? [];
-  const remainingSlots = 4 - p.sources.length - turn.length;
+  const remainingSlots = 4 - fixed.length - turn.length;
   const remainingCharacters =
     120000 -
-    p.sources.reduce((n, s) => n + s.snapshot.characters, 0) -
+    fixed.reduce((n, s) => n + s.snapshot.characters, 0) -
     turn.reduce((n, a) => n + (a.snapshot?.characters ?? 0), 0);
   return (
     <div
@@ -36,8 +37,8 @@ export function ProjectInputSummary({
     >
       <details>
         <summary className="cursor-pointer select-none">
-          Project context · {p.sources.length}{" "}
-          {p.sources.length === 1 ? "source" : "sources"}
+          Project context · {fixed.length}{" "}
+          {fixed.length === 1 ? "source" : "sources"}
         </summary>
         <div className="space-y-1 pb-1 pt-2">
           <p>
@@ -46,7 +47,7 @@ export function ProjectInputSummary({
             characters remaining.
           </p>
           <p>
-            Instructions, background and fixed sources go to every selected
+            Materials marked Search when needed are excluded until you select results. Instructions, background and fixed sources go to every selected
             model. Review context for exact input and destinations.
           </p>
         </div>

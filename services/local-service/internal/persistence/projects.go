@@ -41,6 +41,7 @@ type ProjectExpectation struct {
 	MembershipRevision int64  `json:"membership_revision"`
 }
 type ProjectSource struct {
+	Usage    string             `json:"usage,omitempty"`
 	ID       string             `json:"id"`
 	Snapshot documents.Snapshot `json:"snapshot"`
 	BlobHash string             `json:"blob_hash"`
@@ -105,7 +106,7 @@ func readProject(ctx context.Context, db projectReader, id string) (Project, err
 	p.CreatedAt = time.Unix(0, created).UTC()
 	p.UpdatedAt = time.Unix(0, updated).UTC()
 	p.Sources = []ProjectSource{}
-	rows, err := db.QueryContext(ctx, `SELECT id,snapshot,blob_hash FROM project_sources WHERE project_id=? ORDER BY position,id`, id)
+	rows, err := db.QueryContext(ctx, `SELECT id,snapshot,blob_hash,usage FROM project_sources WHERE project_id=? ORDER BY position,id`, id)
 	if err != nil {
 		return p, err
 	}
@@ -113,7 +114,7 @@ func readProject(ctx context.Context, db projectReader, id string) (Project, err
 	for rows.Next() {
 		var s ProjectSource
 		var raw string
-		if err = rows.Scan(&s.ID, &raw, &s.BlobHash); err != nil {
+		if err = rows.Scan(&s.ID, &raw, &s.BlobHash, &s.Usage); err != nil {
 			return p, err
 		}
 		if err = json.Unmarshal([]byte(raw), &s.Snapshot); err != nil {
@@ -430,6 +431,13 @@ func projectContextFor(ctx context.Context, db projectReader, conversationID str
 	if e != nil {
 		return nil, expected, e
 	}
+	fixed := []ProjectSource{}
+	for _, source := range p.Sources {
+		if source.Usage != "search" {
+			fixed = append(fixed, source)
+		}
+	}
+	p.Sources = fixed
 	expected.ProjectRevision = p.Revision
 	snapshot := &ProjectContext{ProjectExpectation: expected, ProjectName: p.Name, RenderingVersion: 1, Instructions: p.Instructions, Background: p.Background, Sources: p.Sources}
 	if p.Background != "" {

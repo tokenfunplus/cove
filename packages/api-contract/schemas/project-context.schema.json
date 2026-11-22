@@ -65,6 +65,12 @@
           "blob_hash": {
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
+          },
+          "usage": {
+            "enum": [
+              "always",
+              "search"
+            ]
           }
         },
         "additionalProperties": false

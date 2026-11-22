@@ -31,7 +31,7 @@ test.each(["success", "failure"] as const)("a delayed preset %s cannot overwrite
       copy: englishConversationCopy,
     }) };
   }, { wrapper: ({ children }) => <QueryClientProvider client={cache}>{children}</QueryClientProvider> });
-  let applying!: Promise<void>;
+  let applying!: Promise<unknown>;
   act(() => { applying = result.current.handleApplyModelSet([{ providerId: fixture.profile.id, modelId: "model-one" }]); });
   await waitFor(() => expect(api.updateSettings).toHaveBeenCalledOnce());
   act(() => result.current.handleProviderChange(other.id));

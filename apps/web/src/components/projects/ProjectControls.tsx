@@ -6,6 +6,7 @@ import type { ChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 import {
   getProjects,
   saveProject,
+  setProjectSourceUsage,
   addProjectSource,
   removeProjectSource,
   deleteProject,
@@ -446,7 +447,7 @@ export function ProjectEditor({
             aria-label="Fixed project sources"
           >
             <h3>
-              Fixed sources · {value.sources.length} / 3 ·{" "}
+              Project materials · {value.sources.length} / 3 ·{" "}
               {chars.toLocaleString()} / 60,000 characters
             </h3>
             <p className="text-xs text-muted-foreground">
@@ -454,7 +455,7 @@ export function ProjectEditor({
               for each new turn.{" "}
               {dirty
                 ? "Save project changes before changing sources."
-                : "All fixed sources are included in each new turn."}
+                : "Always include sends the source in each new turn. Search when needed keeps it out until you choose search results."}
             </p>
             {value.sources.map((source) => (
               <div
@@ -472,6 +473,11 @@ export function ProjectEditor({
                       .join("\n")}
                   </pre>
                 </details>
+                <label className="my-3 grid gap-1 text-xs">Use this material
+                  <select className="rounded-lg border border-border bg-background p-2 text-sm" aria-label={`Use ${source.snapshot.name}`} value={source.usage??"always"} disabled={busy||dirty} onChange={event=>{const usage=event.target.value as "always"|"search";void run(async()=>saved(await setProjectSourceUsage(value.id,source.id,value.revision,usage),{keepOpen:true}));}}>
+                    <option value="always">Always include</option><option value="search">Search when needed</option>
+                  </select>
+                </label>
                 <Button
                   size="xs"
                   variant="ghost"

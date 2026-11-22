@@ -98,6 +98,30 @@
         }
       },
       "additionalProperties": false
+    },
+    "retrieval": {
+      "type": "object",
+      "required": [
+        "model_id",
+        "model_sha256",
+        "index_version"
+      ],
+      "properties": {
+        "model_id": {
+          "type": "string"
+        },
+        "model_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "index_version": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

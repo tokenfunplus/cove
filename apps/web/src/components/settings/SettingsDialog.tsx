@@ -9,11 +9,12 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Database, Globe, Settings2, SlidersHorizontal, X } from "lucide-react";
+import { Cpu, Database, Globe, Settings2, SlidersHorizontal, X } from "lucide-react";
+import { localModelsCopy } from "@/messages/local-models";
 import { Portal } from "@headlessui/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-type SettingsDialogSection = "general" | "provider" | "chat-data" | "web-search";
+type SettingsDialogSection = "general" | "provider" | "chat-data" | "web-search" | "local-models";
 
 export function SettingsDialog({
   open,
@@ -88,12 +89,14 @@ export function SettingsDialogContent({
     useState<SettingsDialogSection>(initialSection);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(()=>setActiveSection(initialSection),[initialSection]);
   useEffect(() => {
     if (contentRef.current) contentRef.current.scrollTop = 0;
   }, [activeSection]);
   const sections = [
     { id: "general" as const, icon: SlidersHorizontal, label: copy.general },
     { id: "provider" as const, icon: Settings2, label: copy.providerSettings },
+    { id: "local-models" as const, icon: Cpu, label: localModelsCopy.navigation },
     { id: "web-search" as const, icon: Globe, label: "Web search" },
     { id: "chat-data" as const, icon: Database, label: copy.chatData },
   ];
