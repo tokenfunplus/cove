@@ -136,6 +136,7 @@ function markdownExport(view: ConversationView): string {
       message.body,
       "",
     );
+    if (message.role === "user" && batch?.project_context) { const p=batch.project_context;lines.push(`#### Project context: ${p.project_name} (revision ${p.project_revision})`,"","Project instructions:",p.instructions,"","Project background:",p.background,""); }
     if (message.role === "user" && batch) {
       const selected = batch.targets.find(
         (target) => target.generation.id === batch.selected_generation_id,
@@ -192,7 +193,7 @@ function markdownExport(view: ConversationView): string {
     }
   }
   const sources = new Map(
-    [...(view.generation_batches ?? []).flatMap(batch => [...(batch.attachments ?? []), ...batch.targets.flatMap(target => target.generation.web_search?.sources ?? [])]), ...view.messages.flatMap(message => message.web_sources ?? [])].map(source => [source.id, source] as const),
+    [...(view.generation_batches ?? []).flatMap(batch => [...(batch.attachments ?? []), ...(batch.project_context?.sources.map(source=>source.snapshot) ?? []), ...batch.targets.flatMap(target => target.generation.web_search?.sources ?? [])]), ...view.messages.flatMap(message => message.web_sources ?? [])].map(source => [source.id, source] as const),
   );
   if (sources.size > 0)
     lines.push(

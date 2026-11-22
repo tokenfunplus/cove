@@ -157,3 +157,25 @@ With the toggle on, models can search, read public HTML pages, or answer directl
 Answers link to saved source sections and list resolvable citations under **References**. Click a title for the saved excerpt or page; **Original** opens the source website. **Web research** shows queries, page reads, cache hits, errors, and usage when the search service reports it. Search excerpts are labelled separately from retrieved pages. If no tools were used, the answer says Web search was available and unused. Sources are retained with history, retries, branches, and local exports.
 
 Web search requires native tool calling support from the chosen model. A rejected or incompatible tool request fails visibly; turn the toggle off or choose another model. Cove does not silently switch search Providers. Search queries go to the selected search service outside NearAI encrypted inference. Dynamic JavaScript rendering, signed-in pages, and private network addresses are not supported. Continuous Debate and answer-tool side conversations do not inherit the main chat toggle. The composer toolbar uses icons for **Attach files**, **Read webpage**, and **Review context**; hover or focus an icon for its label. Manual **Read webpage** remains available through the link icon.
+
+## Reuse project background
+
+Open **Projects** in the sidebar and choose **New project** to save a name, Project Instructions and Project Background. Instructions guide the model; background is reference data. Save changes before adding fixed files or public webpages. The editor previews extracted source sections. Each Project supports three fixed sources with 60,000 extracted characters in total, leaving capacity for at least one new turn source under the existing attachment limits.
+
+Use a conversation menu's **Move to project** action to move an existing Conversation. Global **New chat** creates an ungrouped conversation; **Start chat** in a project home creates one in that project. Sidebar History and its search show only ungrouped chats. Moving preserves existing history, including anything previously stated about another Project; it changes project input for new turns only. Branches inherit their source conversation's current Project. Side conversations derive membership from the conversation containing the quoted answer. Debate history supports grouping, while Debate model inputs continue using its existing rules.
+
+The composer shows a collapsed context summary for assigned chats; expand it for remaining source capacity. **Review context** and **Review project context** show exact input and character counts for instructions, background, sources, history and the current question. Project content goes to every selected model on each turn. A project edit racing submission preserves the draft and refreshes project information; review and send again. If the complete context exceeds 240,000 characters, use **Continue in a new conversation** to carry the draft and attachments into a fresh chat in the same Project without sending automatically.
+
+A saved turn keeps its original project snapshot for retries, source citations, downloads and exports. Changing background or removing a fixed source affects future turns; historical copies remain. **Dissolve and keep conversations** moves current members to Ungrouped. **Delete project and its conversations** deletes current members after stopping their work. Both confirmations explain historical copies that remain in other Conversations. Clearing chat history preserves live Project settings and fixed sources.
+
+### Project navigation
+
+The sidebar History and conversation search show ungrouped chats. Open Projects to find project chats, including archived chats. Conversation actions are available from each project chat row and from the project breadcrumb toolbar while reading a project chat. Moving a chat back to No project makes it appear in ordinary History again. The current destination cannot be submitted as a move. If membership changed elsewhere, use **Refresh current project**, review its current location, then choose and submit a destination again.
+
+Use the project card or project home’s **⋯** menu to edit, dissolve, or delete a project. **Dissolve project** keeps its conversations and moves them to Ungrouped; **Delete project** permanently removes its current conversations after confirmation. Historical snapshots in surviving conversations remain available.
+
+The project home has a draft entry above its recent chats and compact controls for instructions, background, and files or webpages. **Start chat** carries the typed question into a new project chat; review model choices and use Send there. Project-home drafts stay in this window when you browse between projects.
+
+![Project home with a pinned conversation](images/projects-home.png)
+
+![Project home on a narrow screen](images/projects-home-mobile.png)

@@ -4,6 +4,8 @@ export type ConversationNavigation = { conversationId: string; messageId: string
 
 export type ConfirmationRequest = {
   kind: "switch" | "new" | "navigate" | "delete" | "clear";
+  projectId?: string;
+  initialDraft?: string;
   conversationId?: string;
   discardDraft?: boolean;
   stopGeneration?: boolean;

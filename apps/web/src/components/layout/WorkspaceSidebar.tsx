@@ -1,45 +1,17 @@
+import { Button } from "@/components/ui/button";
+import { FolderClosed } from "lucide-react";
 import { workspaceStyles } from "@/styles/workspace";
 import { baseStyles } from "@/styles/base";
 import { cn } from "@/lib/utils";
 import { CoveMark } from "@/components/ui/CoveMark";
+import { historyStyles } from "@/styles/history";
 import { ConversationList } from "@/components/conversations/ConversationList";
 import { SidebarToggle } from "@/components/layout/SidebarToggle";
 import { Dialog, DialogOverlay, DialogContent } from "@/components/ui/dialog";
 
 import { type ChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 
-type Props = {
-  workspace: Pick<
-    ChatWorkspace,
-    | "copy"
-    | "focusMode"
-    | "exitFocusMode"
-    | "narrowLayout"
-    | "mobileSidebarOpen"
-    | "sidebarCollapsed"
-    | "setMobileSidebarOpen"
-    | "setSidebarCollapsed"
-    | "conversations"
-    | "conversationSearch"
-    | "conversationSearchQuery"
-    | "historyFilters"
-    | "historyQueryFilters"
-    | "setHistoryFilters"
-    | "setConversationSearchQuery"
-    | "selectedId"
-    | "showingArchived"
-    | "handleSelectConversation"
-    | "handleCreateConversation"
-    | "setRenameTarget"
-    | "handleUpdateConversation"
-    | "handleRequestDownload"
-    | "handleDeleteConversation"
-    | "handleConversationListMode"
-    | "setSettingsEntry"
-    | "setPrivacyStatusOpen"
-    | "isSending"
-  >;
-};
+type Props = {workspace: ChatWorkspace};
 
 export function WorkspaceSidebar({ workspace }: Props) {
   const {
@@ -68,6 +40,7 @@ export function WorkspaceSidebar({ workspace }: Props) {
     setPrivacyStatusOpen,
     isSending,
   } = workspace;
+  const projectsActive = Boolean(workspace.projectPage || workspace.conversationView?.project_id);
   const sidebarContents = (
     <>
       <div className={workspaceStyles.workspaceSidebar_brand}>
@@ -91,6 +64,8 @@ export function WorkspaceSidebar({ workspace }: Props) {
         />
       </div>
       <ConversationList
+        navigation={<Button variant="ghost" type="button" aria-label="Projects" aria-current={projectsActive ? "page" : undefined} className={workspaceStyles.projectNavigation} onClick={() => { exitFocusMode();workspace.setProjectPage({});setMobileSidebarOpen(false); }}><FolderClosed className={cn(historyStyles.rowIcon, projectsActive && "text-primary")} aria-hidden="true"/><span className="truncate text-[13px]">Projects</span></Button>}
+        onMoveToProject={conversation => {workspace.setProjectMoveTarget(conversation);setMobileSidebarOpen(false);}}
         revealSearch={
           focusMode
             ? () => {
@@ -101,18 +76,18 @@ export function WorkspaceSidebar({ workspace }: Props) {
             ? () => setSidebarCollapsed(false)
             : undefined
         }
-        conversations={conversations}
+        conversations={conversations.filter(conversation => !conversation.project_id)}
         historyFilters={workspace.historyFilters}
         historyQueryFilters={workspace.historyQueryFilters}
         onHistoryFiltersChange={workspace.setHistoryFilters}
         searchQuery={conversationSearchQuery}
         onSearchQueryChange={setConversationSearchQuery}
-        searchResults={conversationSearch.results}
+        searchResults={conversationSearch.results.filter(conversation => !conversation.project_id)}
         searchPending={conversationSearch.pending}
         searchFailed={conversationSearch.failed}
-        selectedId={selectedId}
+        selectedId={workspace.projectPage ? undefined : selectedId}
         showingArchived={showingArchived}
-        onSelect={(id, messageId) => void handleSelectConversation(id, messageId)}
+        onSelect={(id, messageId) => {void handleSelectConversation(id, messageId);}}
         onCreate={() => void handleCreateConversation()}
         onRename={(conversation) => {
           setRenameTarget(conversation);
@@ -143,7 +118,7 @@ export function WorkspaceSidebar({ workspace }: Props) {
           setMobileSidebarOpen(false);
         }}
         deleteDisabled={isSending}
-        copy={copy}
+        copy={{ ...copy, noConversations: conversations.some(conversation => conversation.project_id) ? "Project chats are in Projects" : copy.noConversations }}
       />
     </>
   );

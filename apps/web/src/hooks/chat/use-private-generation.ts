@@ -1,3 +1,4 @@
+import { projectSystemPrompt, projectUserInput } from "@/lib/chat/project-context";
 import { useConversationCache } from "@/api/hooks/useConversations";
 import {
   useGenerationCache,
@@ -54,7 +55,7 @@ export function usePrivateGeneration({
   setIsSending,
   secureGenerationRunsRef,
 }: Dependencies) {
-  const { loadContext } = useGenerationCache();
+  const { loadContext, loadProjectContext } = useGenerationCache();
   const cancelGeneration = useCancelGeneration().mutateAsync;
   const markSecureGenerationEnvironment =
     useMarkSecureGenerationEnvironment().mutateAsync;
@@ -203,8 +204,9 @@ export function usePrivateGeneration({
         updatePhase("verifying_environment");
         if (controller.signal.aborted)
           throw new DOMException("Generation stopped", "AbortError");
+        let projectContext = next.project_context;
         const context = await Promise.race([
-          loadContext(next.id),
+          next.project_context ? loadProjectContext(next.id).then(value=>{if(!value.project_context)throw new Error("The saved project context is unavailable.");projectContext=value.project_context;return value.history;}) : loadContext(next.id),
           new Promise<never>((_, reject) => {
             interruptContextRead = () =>
               reject(new DOMException("Generation stopped", "AbortError"));
@@ -331,13 +333,13 @@ export function usePrivateGeneration({
             },
             mode,
             configuration: {
-              systemPrompt: configuration.system_prompt,
+              systemPrompt: projectSystemPrompt(configuration.system_prompt,projectContext),
               temperature: configuration.temperature,
               topP: configuration.top_p,
               maxTokens: configuration.max_tokens,
             },
             context,
-            message: next.input_content ?? body,
+            message: projectUserInput(next.input_content ?? body,projectContext),
           };
         const stream = configuration.web_search
           ? generateWithWebSearch(transport, inferenceInput, configuration.web_search, generationID, controller.signal)

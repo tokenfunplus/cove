@@ -19,12 +19,13 @@ type Dependencies = Pick<
   | "showingArchived"
   | "setRenameTarget"
   | "setDownloadTarget"
+  | "setProjectPage"
 > &
   Pick<
     WorkspaceState,
     "setSelectedId" | "setConnection" | "selectedIdRef" | "setConversationView"
   > &
-  { copy: ApplicationCopy };
+  { copy: ApplicationCopy; onConversationCreated?: (id: string, initialDraft: string, projectId?: string) => void };
 
 export function useConversationActions({
   setFeedback,
@@ -33,12 +34,14 @@ export function useConversationActions({
   setConnection,
   setMobileSidebarOpen,
   copy,
+  onConversationCreated,
   setIsSavingTitle,
   showingArchived,
   selectedIdRef,
   setConversationView,
   setRenameTarget,
   setDownloadTarget,
+  setProjectPage,
 }: Dependencies) {
   const createConversation = useCreateConversation().mutateAsync;
   const renameConversation = useRenameConversation().mutateAsync;
@@ -48,13 +51,15 @@ export function useConversationActions({
     loadConversations: getConversations,
   } = useConversationCache();
 
-  async function handleCreateConversation() {
+  async function handleCreateConversation(projectId?: string, initialDraft?: string) {
     setFeedback(undefined);
     try {
-      const conversation = await createConversation(undefined);
+      const conversation = await createConversation(projectId ? {project_id:projectId} : undefined);
       setShowingArchived(false);
 
+      if (initialDraft) onConversationCreated?.(conversation.id, initialDraft, projectId);
       setSelectedId(conversation.id);
+      setProjectPage(undefined);
       setConnection("ready");
       setMobileSidebarOpen(false);
       return true;
@@ -108,7 +113,7 @@ export function useConversationActions({
         input.archived !== undefined &&
         input.archived !== showingArchived
       ) {
-        setSelectedId(refreshed[0]?.id);
+        setSelectedId(refreshed.find(conversation => !conversation.project_id)?.id);
         setConversationView(undefined);
       } else if (conversationID === selectedIdRef.current) {
         const view = await getConversation(conversationID);
@@ -130,7 +135,7 @@ export function useConversationActions({
       });
       setShowingArchived(nextShowingArchived);
 
-      setSelectedId(refreshed[0]?.id);
+      setSelectedId(refreshed.find(conversation => !conversation.project_id)?.id);
       setMobileSidebarOpen(false);
     } catch {
       setFeedback(copy.conversationUpdateFailed);

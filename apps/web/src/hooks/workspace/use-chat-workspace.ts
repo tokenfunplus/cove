@@ -1,3 +1,5 @@
+import { useCreateConversation } from "@/api/hooks/useConversations";
+import { useRef } from "react";
 import { useAnswerTools } from "@/hooks/chat/use-answer-tools";
 import { useCancelGeneration } from "@/api/hooks/useGenerations";
 import { useConversationSearch } from "@/api/hooks/useConversationSearch";
@@ -26,6 +28,7 @@ import { useWebSearch } from "@/hooks/chat/use-web-search";
 import { useEffect } from "react";
 
 export function useChatWorkspace() {
+  const createProjectConversation = useCreateConversation().mutateAsync;
   const cancelGeneration = useCancelGeneration().mutateAsync;
 
   const workspaceUi = useWorkspaceUi();
@@ -34,7 +37,7 @@ export function useChatWorkspace() {
     workspaceUi.conversationSearchQuery,
     workspaceUi.showingArchived,
     workspaceState.connection === "ready",
-    Object.keys(workspaceUi.historyQueryFilters).length ? workspaceUi.historyQueryFilters : undefined,
+    { ...workspaceUi.historyQueryFilters, projectId: "" },
   );
   const {
     selectedId,
@@ -59,6 +62,7 @@ export function useChatWorkspace() {
     secureGenerationRunsRef,
   } = generationState;
 
+  const pendingDraftTransfer = useRef<{ id: string; body: string } | undefined>(undefined);
   const narrowLayout = useNarrowLayout();
 
   const copy = applicationMessages(settings.locale);
@@ -80,7 +84,8 @@ export function useChatWorkspace() {
   }, [conversationView?.id]);
 
   useEffect(() => {
-    if (conversationError) setFeedback(copy.unavailable);
+    // Keep the actionable operation error when a recovery read also fails.
+    if (conversationError && workspaceUi.feedback?.tone !== "error") setFeedback(copy.unavailable);
   }, [conversationError, copy.unavailable]);
 
   useEffect(() => {
@@ -89,6 +94,13 @@ export function useChatWorkspace() {
     setResumeGenerationBatch(undefined);
     setDraft("");
     setIsSending(false);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (pendingDraftTransfer.current?.id === selectedId && pendingDraftTransfer.current) {
+      setDraft(pendingDraftTransfer.current.body);
+      pendingDraftTransfer.current = undefined;
+    }
   }, [selectedId]);
 
   useEffect(
@@ -151,6 +163,14 @@ export function useChatWorkspace() {
   }, [conversationView, resumeGenerationBatch]);
 
   const conversationActions = useConversationActions({
+    onConversationCreated: (id, body, projectId) => {
+      pendingDraftTransfer.current = { id, body };
+      if (projectId) workspaceUi.setProjectDrafts(current => {
+        const next = { ...current };
+        delete next[projectId];
+        return next;
+      });
+    },
     ...workspaceState,
     ...workspaceUi,
     ...generationState,
@@ -241,7 +261,24 @@ export function useChatWorkspace() {
     copy,
   });
 
+  async function continueProjectDraft() {
+    if (generationState.isSending || attachmentDraft.invalid) return;
+    const body = generationState.draft;
+    const items = [...attachmentDraft.attachments];
+    try {
+      const next = await createProjectConversation({ project_id: conversationView?.project_id });
+      workspaceUi.setShowingArchived(false);
+      pendingDraftTransfer.current = { id: next.id, body };
+      attachmentDraft.transferToConversation(next.id, items);
+      workspaceState.setSelectedId(next.id);
+      workspaceUi.setProjectPage(undefined);
+      return next.id;
+    } catch {
+      setFeedback("The new conversation could not be created. Your draft is preserved.");
+    }
+  }
   return {
+    continueProjectDraft,
     webSearch,
     answerTools,
     conversationSearch,

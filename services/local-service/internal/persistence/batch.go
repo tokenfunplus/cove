@@ -56,6 +56,17 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return GenerationBatch{}, err
 	}
+	projectContext, expectedProject, projectErr := projectContextFor(ctx, tx, input.ConversationID)
+	if projectErr != nil {
+		return GenerationBatch{}, projectErr
+	}
+	if input.ExpectedProject == nil {
+		if expectedProject.ProjectID != "" || expectedProject.MembershipRevision != 0 {
+			return GenerationBatch{}, ErrProjectChanged
+		}
+	} else if *input.ExpectedProject != expectedProject {
+		return GenerationBatch{}, ErrProjectChanged
+	}
 	if input.EditOfBatchID != "" {
 		branchID, err := forkConversationTx(ctx, tx, input.ConversationID, input.EditOfBatchID)
 		if err != nil {
@@ -91,6 +102,9 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 		return GenerationBatch{}, fmt.Errorf("save generation batch: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE generation_batches SET web_search_policy=? WHERE id=?`, webPolicyJSON(input.WebSearch), batchID); err != nil {
+		return GenerationBatch{}, err
+	}
+	if err := saveProjectContext(ctx, tx, batchID, projectContext); err != nil {
 		return GenerationBatch{}, err
 	}
 	if len(input.Attachments) > 0 {
@@ -168,7 +182,7 @@ type batchReader interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
-func getGenerationBatch(ctx context.Context, db batchReader, id string) (GenerationBatch, error) {
+func getGenerationBatch(ctx context.Context, db batchReader, id string, caches ...map[string]*ProjectContext) (GenerationBatch, error) {
 	row := db.QueryRowContext(ctx, `SELECT id, conversation_id, client_request_id, user_message_id, system_prompt, temperature, top_p, max_tokens, state, selected_generation_id, context_skipped, context_frozen, created_at, updated_at, input_content, attachments, web_search_policy FROM generation_batches WHERE id = ?`, id)
 	batch, err := scanGenerationBatch(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -177,7 +191,7 @@ func getGenerationBatch(ctx context.Context, db batchReader, id string) (Generat
 	if err != nil {
 		return GenerationBatch{}, fmt.Errorf("get generation batch: %w", err)
 	}
-	return populateGenerationBatchTargets(ctx, db, batch)
+	return populateGenerationBatchTargets(ctx, db, batch, caches...)
 }
 
 func (store *SQLiteStore) GetGenerationBatchByClientRequestID(ctx context.Context, clientRequestID string) (GenerationBatch, error) {
@@ -192,7 +206,12 @@ func (store *SQLiteStore) GetGenerationBatchByClientRequestID(ctx context.Contex
 	return populateGenerationBatchTargets(ctx, store.db, batch)
 }
 
-func populateGenerationBatchTargets(ctx context.Context, db batchReader, batch GenerationBatch) (GenerationBatch, error) {
+func populateGenerationBatchTargets(ctx context.Context, db batchReader, batch GenerationBatch, caches ...map[string]*ProjectContext) (GenerationBatch, error) {
+	var projectErr error
+	batch.ProjectContext, projectErr = loadProjectContext(ctx, db, batch.ID, caches...)
+	if projectErr != nil {
+		return GenerationBatch{}, projectErr
+	}
 	rows, err := db.QueryContext(ctx, `SELECT id, generation_batch_id, provider_id, model_id, position, latest_generation_id FROM generation_targets WHERE generation_batch_id = ? ORDER BY position ASC`, batch.ID)
 	if err != nil {
 		return GenerationBatch{}, fmt.Errorf("list generation targets: %w", err)

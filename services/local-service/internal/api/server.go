@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,6 +102,14 @@ func (server *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", server.health)
 	mux.Handle("GET /api/conversations", browserSession(http.HandlerFunc(server.listConversations)))
 	mux.Handle("GET /api/conversations/search", browserSession(http.HandlerFunc(server.searchConversations)))
+	mux.Handle("GET /api/projects", browserSession(http.HandlerFunc(server.projects)))
+	mux.Handle("POST /api/projects", browserSession(http.HandlerFunc(server.projects)))
+	mux.Handle("GET /api/projects/{project}", browserSession(http.HandlerFunc(server.projects)))
+	mux.Handle("PATCH /api/projects/{project}", browserSession(http.HandlerFunc(server.projects)))
+	mux.Handle("DELETE /api/projects/{project}", browserSession(http.HandlerFunc(server.projects)))
+	mux.Handle("POST /api/projects/{project}/sources", browserSession(http.HandlerFunc(server.projects)))
+	mux.Handle("POST /api/projects/{project}/sources/{source}/remove", browserSession(http.HandlerFunc(server.projects)))
+	mux.Handle("POST /api/conversations/{id}/project", browserSession(http.HandlerFunc(server.moveProjectConversation)))
 	mux.Handle("POST /api/conversations", browserSession(http.HandlerFunc(server.createConversation)))
 	mux.Handle("POST /api/debates", browserSession(http.HandlerFunc(server.createDebate)))
 	mux.Handle("GET /api/debates/{id}", browserSession(http.HandlerFunc(server.getDebate)))
@@ -326,6 +336,18 @@ func (server *Server) listConversations(writer http.ResponseWriter, request *htt
 		writeError(writer, http.StatusInternalServerError, "internal_error", "Local history is unavailable.")
 		return
 	}
+	if request.URL.Query().Has("project_id") {
+		p, ok := server.chat.(chat.ProjectChat)
+		if !ok {
+			writeError(writer, 503, "unavailable", "Project history is unavailable.")
+			return
+		}
+		conversations, err = p.ListProjectConversations(request.Context(), archived, request.URL.Query().Get("project_id"))
+		if err != nil {
+			writeProjectError(writer, err)
+			return
+		}
+	}
 	writeJSON(writer, http.StatusOK, conversations)
 }
 
@@ -335,15 +357,42 @@ func (server *Server) createConversation(writer http.ResponseWriter, request *ht
 		return
 	}
 	var input struct {
-		Title string `json:"title"`
+		Title                string  `json:"title"`
+		ProjectID            *string `json:"project_id"`
+		SourceConversationID *string `json:"source_conversation_id"`
 	}
 	if err := decodeJSON(request, &input); err != nil {
 		writeError(writer, http.StatusBadRequest, "validation", "The conversation title is invalid.")
 		return
 	}
-	conversation, err := server.chat.CreateConversation(request.Context(), input.Title)
+	var conversation persistence.Conversation
+	var err error
+	if input.ProjectID != nil && input.SourceConversationID != nil {
+		writeProjectError(writer, persistence.ErrInvalidProject)
+		return
+	}
+	projectID, sourceID := "", ""
+	if input.ProjectID != nil {
+		projectID = *input.ProjectID
+	}
+	if input.SourceConversationID != nil {
+		sourceID = *input.SourceConversationID
+		if sourceID == "" {
+			writeProjectError(writer, persistence.ErrInvalidProject)
+			return
+		}
+	}
+	if input.ProjectID != nil || input.SourceConversationID != nil {
+		if p, ok := server.chat.(chat.ProjectChat); ok {
+			conversation, err = p.CreateProjectConversation(request.Context(), input.Title, projectID, sourceID)
+		} else {
+			err = persistence.ErrInvalidProject
+		}
+	} else {
+		conversation, err = server.chat.CreateConversation(request.Context(), input.Title)
+	}
 	if err != nil {
-		writeError(writer, http.StatusInternalServerError, "internal_error", "Local history is unavailable.")
+		writeProjectError(writer, err)
 		return
 	}
 	writeJSON(writer, http.StatusCreated, conversation)
@@ -365,6 +414,10 @@ func (server *Server) searchConversations(writer http.ResponseWriter, request *h
 		return
 	}
 	filter := persistence.ConversationSearchFilter{Kind: request.URL.Query().Get("kind")}
+	if request.URL.Query().Has("project_id") {
+		value := request.URL.Query().Get("project_id")
+		filter.ProjectID = &value
+	}
 	if filter.Kind != "" && filter.Kind != "all" && filter.Kind != "chat" && filter.Kind != "debate" {
 		writeError(writer, http.StatusBadRequest, "validation", "Choose a valid conversation type.")
 		return
@@ -378,7 +431,7 @@ func (server *Server) searchConversations(writer http.ResponseWriter, request *h
 		filter.UpdatedAfter = &cutoff
 	}
 	var results []persistence.ConversationSearchResult
-	if filter.Kind == "chat" || filter.Kind == "debate" || filter.UpdatedAfter != nil {
+	if filter.Kind == "chat" || filter.Kind == "debate" || filter.UpdatedAfter != nil || filter.ProjectID != nil {
 		service, ok := server.chat.(persistence.FilteredConversationSearcher)
 		if !ok {
 			writeError(writer, http.StatusServiceUnavailable, "service_unavailable", "Filtered local history is unavailable.")
@@ -492,6 +545,8 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		return
 	}
 	var input struct {
+		ExpectedProject  *persistence.ProjectExpectation `json:"expected_project"`
+		ProjectID        *json.RawMessage                `json:"project_id"`
 		EditOfBatchID    string                          `json:"edit_of_batch_id,omitempty"`
 		ClientRequestID  string                          `json:"client_request_id"`
 		Body             string                          `json:"body"`
@@ -501,14 +556,23 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		ExpectedTargets  []chat.ExpectedGenerationTarget `json:"expected_targets"`
 	}
 	request.Body = http.MaxBytesReader(writer, request.Body, documents.MaxRequestBytes)
-	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" || strings.TrimSpace(input.Body) == "" {
+	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" || strings.TrimSpace(input.Body) == "" || input.ProjectID != nil {
 		writeError(writer, http.StatusBadRequest, "validation", "The generation request is invalid.")
 		return
 	}
 	session, _ := localsecurity.SessionFromRequest(request)
-	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, WebSearchEnabled: input.WebSearchEnabled, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID, ExpectedTargets: input.ExpectedTargets})
+	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{ExpectedProject: input.ExpectedProject, EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, WebSearchEnabled: input.WebSearchEnabled, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID, ExpectedTargets: input.ExpectedTargets})
 	if err != nil {
-		writeGenerationError(writer, err)
+		if errors.Is(err, persistence.ErrProjectChanged) {
+			current, readErr := server.chat.ReadConversation(request.Context(), request.PathValue("id"))
+			if readErr != nil {
+				writeGenerationError(writer, readErr)
+				return
+			}
+			writeJSON(writer, 409, map[string]any{"error": map[string]any{"code": "project_context_changed", "message": "Project context changed. Review the refreshed context before sending again.", "request_id": "local", "details": map[string]any{"project_id": current.ProjectID, "project_revision": current.ProjectRevision, "membership_revision": current.MembershipRevision}}})
+		} else {
+			writeGenerationError(writer, err)
+		}
 		return
 	}
 	writeJSON(writer, http.StatusCreated, generationBatchEnvelopeFor(started.Batch))
@@ -535,6 +599,16 @@ func (server *Server) getGenerationBatchContext(writer http.ResponseWriter, requ
 	messages, err := server.chat.GetGenerationBatchContext(request.Context(), request.PathValue("id"))
 	if err != nil {
 		writeGenerationError(writer, err)
+		return
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	if request.URL.Query().Get("format") == "project-v1" {
+		batch, e := server.chat.GetGenerationBatch(request.Context(), request.PathValue("id"))
+		if e != nil {
+			writeGenerationError(writer, e)
+			return
+		}
+		writeJSON(writer, 200, map[string]any{"history": messages, "project_context": batch.ProjectContext})
 		return
 	}
 	writeJSON(writer, http.StatusOK, messages)
@@ -826,7 +900,8 @@ type generationTargetAttemptEnvelope struct {
 }
 
 type conversationViewEnvelope struct {
-	Branch *persistence.ConversationBranch `json:"branch,omitempty"`
+	ProjectContexts map[string]*persistence.ProjectContext `json:"project_contexts,omitempty"`
+	Branch          *persistence.ConversationBranch        `json:"branch,omitempty"`
 	persistence.Conversation
 	Messages              []persistence.Message     `json:"messages"`
 	ActiveGenerationBatch *generationBatchEnvelope  `json:"active_generation_batch,omitempty"`
@@ -842,6 +917,8 @@ type generationTargetEnvelope struct {
 }
 
 type generationBatchEnvelope struct {
+	ProjectContextID     string                           `json:"project_context_id,omitempty"`
+	ProjectContext       *persistence.ProjectContext      `json:"project_context,omitempty"`
 	WebSearch            *websearch.Policy                `json:"web_search,omitempty"`
 	ID                   string                           `json:"id"`
 	ConversationID       string                           `json:"conversation_id"`
@@ -872,12 +949,28 @@ func generationEnvelopeFor(generation persistence.Generation) generationEnvelope
 
 func conversationViewEnvelopeFor(view persistence.ConversationView) conversationViewEnvelope {
 	result := conversationViewEnvelope{Branch: view.Branch, Conversation: view.Conversation, Messages: view.Messages, GenerationBatches: make([]generationBatchEnvelope, 0, len(view.GenerationBatches))}
+	result.ProjectContexts = make(map[string]*persistence.ProjectContext)
+	reference := func(batch persistence.GenerationBatch) generationBatchEnvelope {
+		envelope := generationBatchEnvelopeFor(batch)
+		if p := batch.ProjectContext; p != nil {
+			key := p.Hash
+			if key == "" {
+				raw, _ := json.Marshal(p)
+				sum := sha256.Sum256(raw)
+				key = hex.EncodeToString(sum[:])
+			}
+			result.ProjectContexts[key] = p
+			envelope.ProjectContext = nil
+			envelope.ProjectContextID = key
+		}
+		return envelope
+	}
 	if view.ActiveGenerationBatch != nil {
-		batch := generationBatchEnvelopeFor(*view.ActiveGenerationBatch)
+		batch := reference(*view.ActiveGenerationBatch)
 		result.ActiveGenerationBatch = &batch
 	}
 	for _, batch := range view.GenerationBatches {
-		result.GenerationBatches = append(result.GenerationBatches, generationBatchEnvelopeFor(batch))
+		result.GenerationBatches = append(result.GenerationBatches, reference(batch))
 	}
 	return result
 }
@@ -897,7 +990,7 @@ func generationBatchEnvelopeFor(batch persistence.GenerationBatch) generationBat
 		})
 	}
 	return generationBatchEnvelope{
-		InputContent: batch.InputContent, Attachments: batch.Attachments, WebSearch: batch.WebSearch,
+		ProjectContext: batch.ProjectContext, InputContent: batch.InputContent, Attachments: batch.Attachments, WebSearch: batch.WebSearch,
 		ID: batch.ID, ConversationID: batch.ConversationID, ClientRequestID: batch.ClientRequestID, UserMessageID: batch.UserMessageID,
 		State: batch.State, Targets: targets, EventsURL: "/api/generation-batches/" + batch.ID + "/events",
 		SelectedGenerationID: batch.SelectedGenerationID, SelectedAnswer: batch.SelectedAnswer, ContextSkipped: batch.ContextSkipped, ContextFrozen: batch.ContextFrozen, CreatedAt: batch.CreatedAt, UpdatedAt: batch.UpdatedAt,
@@ -1077,7 +1170,11 @@ func writeGenerationError(writer http.ResponseWriter, err error) {
 		writeError(writer, http.StatusConflict, "web_search_unconfigured", "Configure a search Provider in Settings before enabling Web search.")
 	case errors.Is(err, chat.ErrDebateConversation):
 		writeError(writer, http.StatusConflict, "debate_conversation", "Use the debate controls for this conversation.")
-	case errors.Is(err, documents.ErrInvalidDocument), errors.Is(err, documents.ErrContextLimit):
+	case errors.Is(err, persistence.ErrProjectChanged):
+		writeError(writer, 409, "project_context_changed", "Project context changed. Refresh and review your draft.")
+	case errors.Is(err, documents.ErrContextLimit):
+		writeError(writer, 400, "context_limit", err.Error())
+	case errors.Is(err, documents.ErrInvalidDocument):
 		writeError(writer, http.StatusBadRequest, "invalid_attachment", err.Error())
 	case errors.Is(err, sql.ErrNoRows):
 		writeError(writer, http.StatusNotFound, "not_found", "The requested Generation does not exist.")

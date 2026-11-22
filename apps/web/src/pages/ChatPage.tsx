@@ -11,6 +11,8 @@ import { ConversationPanel } from "@/components/chat/ConversationPanel";
 import { WorkspaceToast } from "@/components/layout/WorkspaceToast";
 import { WorkspaceHeader } from "@/components/layout/WorkspaceHeader";
 import { WorkspaceOverlays } from "@/components/layout/WorkspaceOverlays";
+import { ProjectsPage } from "@/components/projects/ProjectsPage";
+import { ProjectControls, ProjectDialogs } from "@/components/projects/ProjectControls";
 import { WorkspaceSidebar } from "@/components/layout/WorkspaceSidebar";
 import { secureInferenceTargetSelected } from "@/components/providers/model-selection";
 import { PrivateConnectionProgress } from "@/components/verification/PrivateConnectionProgress";
@@ -116,6 +118,7 @@ export function ChatPage() {
           <div
             className={cn(workspaceStyles.workspace_main, "workspace__main")}
           >
+            {workspace.projectPage ? <ProjectsPage workspace={workspace}/> : <>
             <WorkspaceHeader
               debateMode={Boolean(conversationView?.debate_id)}
               focusMode={focusMode}
@@ -179,6 +182,7 @@ export function ChatPage() {
               }
               copy={copy}
             />
+            <ProjectControls workspace={workspace}/>
             <div className="relative shrink-0">
               {feedback ? (
                 <WorkspaceToast feedback={feedback} onDismiss={setFeedback} />
@@ -264,6 +268,7 @@ export function ChatPage() {
               )}
             </div>
             )}
+            </>}
             {privateConnectionProgress ? (
               <PrivateConnectionProgress
                 providerName={privateConnectionProgress.providerName}
@@ -297,6 +302,7 @@ export function ChatPage() {
         </div>
       </section>
       <WorkspaceOverlays workspace={workspace} />
+      <ProjectDialogs workspace={workspace} />
       <DebateSetupDialog open={debateSetupOpen} onClose={() => setDebateSetupOpen(false)} profiles={providerProfiles} catalogs={catalogs} activeModelSet={activeModelSet} onStarted={id => { workspace.answerTools.setOpen(false); workspace.setSelectedId(id); workspace.setShowingArchived(false); }} onOpenSettings={() => setSettingsEntry("provider")} />
     </main>
   );

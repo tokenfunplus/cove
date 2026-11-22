@@ -1,5 +1,8 @@
 import { request } from "@/api/client";
 import {
+  type ProjectContextPreview,
+  type ProjectExpectation,
+  type ProjectContextEnvelope,
   type Generation,
   type GenerationMetrics,
   type GenerationBatch,
@@ -13,6 +16,7 @@ import {
 } from "@cove/api-contract";
 
 export type GenerationSelection = {
+ expectedProject?:ProjectExpectation;
   editOfBatchId?: string;
   clientRequestId: string;
   body: string;
@@ -28,6 +32,7 @@ export function createGenerationBatch(
 ): Promise<GenerationBatch> {
   const input: GenerationInput = {
     ...(selection.editOfBatchId ? {edit_of_batch_id:selection.editOfBatchId} : {}),
+    expected_project:selection.expectedProject,
     client_request_id: selection.clientRequestId,
     body: selection.body,
     attachments: selection.attachments,
@@ -60,9 +65,9 @@ export function previewGenerationContext(input: {
   body: string;
   attachments?: AttachmentInput[];
   webSourceTokens?: string[];
-}): Promise<GenerationPromptMessage[]> {
+}): Promise<GenerationPromptMessage[] | ProjectContextPreview> {
   return request(
-    `/api/conversations/${encodeURIComponent(input.conversationId)}/context-preview`,
+    `/api/conversations/${encodeURIComponent(input.conversationId)}/context-preview?format=project-v1`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -184,3 +189,5 @@ export function getGenerationBatchContext(
     `/api/generation-batches/${encodeURIComponent(id)}/context`,
   );
 }
+
+export function getProjectBatchContext(id:string):Promise<ProjectContextEnvelope>{return request(`/api/generation-batches/${encodeURIComponent(id)}/context?format=project-v1`);}

@@ -2,6 +2,8 @@ package chat
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"unicode/utf8"
 
@@ -26,7 +28,11 @@ func (service *Service) parseAttachment(ctx context.Context, input documents.Inp
 }
 
 func (service *Service) ReadAttachment(ctx context.Context, batchID, documentID string) (documents.Input, error) {
-	return service.store.LoadAttachmentData(ctx, batchID, documentID)
+	result, err := service.store.LoadAttachmentData(ctx, batchID, documentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return readProjectAttachment(ctx, service.store, batchID, documentID)
+	}
+	return result, err
 }
 
 func (service *Service) PreviewGenerationContext(ctx context.Context, input SendInput) ([]provider.ProviderMessage, error) {
@@ -41,7 +47,7 @@ func (service *Service) PreviewGenerationContext(ctx context.Context, input Send
 		}
 		systemPrompt = settings.SystemPrompt
 	}
-	_, content, err := service.prepareAttachments(ctx, input, systemPrompt)
+	attachments, content, err := service.prepareAttachments(ctx, input, systemPrompt)
 	if err != nil {
 		return nil, err
 	}
@@ -49,14 +55,17 @@ func (service *Service) PreviewGenerationContext(ctx context.Context, input Send
 	if err != nil {
 		return nil, err
 	}
-	messages := make([]provider.ProviderMessage, 0, len(items)*2+2)
-	if systemPrompt != "" {
-		messages = append(messages, provider.ProviderMessage{Role: "system", Content: systemPrompt})
+	project, err := service.projectForInput(ctx, input, attachments, content, systemPrompt)
+	if err != nil {
+		return nil, err
 	}
-	for _, item := range items {
-		messages = append(messages, provider.ProviderMessage{Role: "user", Content: item.UserBody}, provider.ProviderMessage{Role: "assistant", Content: item.AssistantBody})
+	messages := messagesFromBatchContext(persistence.GenerationBatch{ProjectContext: project}, content, persistence.GenerationConfigurationSnapshot{SystemPrompt: systemPrompt}, items)
+	if !input.PreviewOnly {
+		if err = validateMessages(messages); err != nil {
+			return nil, err
+		}
 	}
-	return append(messages, provider.ProviderMessage{Role: "user", Content: content}), nil
+	return messages, nil
 }
 
 func (service *Service) prepareAttachments(ctx context.Context, input SendInput, systemPrompt string) ([]documents.Prepared, string, error) {
@@ -96,7 +105,7 @@ func (service *Service) prepareAttachments(ctx context.Context, input SendInput,
 	for _, item := range items {
 		characters += utf8.RuneCountInString(item.UserBody) + utf8.RuneCountInString(item.AssistantBody)
 	}
-	if characters > documents.MaxContextCharacters {
+	if characters > documents.MaxContextCharacters && !input.PreviewOnly {
 		return nil, "", documents.ErrContextLimit
 	}
 	return prepared, content, nil
@@ -123,7 +132,7 @@ func (service *Service) prepareEditedAttachments(ctx context.Context, input Send
 	for _, item := range items {
 		characters += utf8.RuneCountInString(item.UserBody) + utf8.RuneCountInString(item.AssistantBody)
 	}
-	if characters > documents.MaxContextCharacters {
+	if characters > documents.MaxContextCharacters && !input.PreviewOnly {
 		return nil, "", documents.ErrContextLimit
 	}
 	return prepared, content, nil

@@ -1,3 +1,4 @@
+import { runProjectsAcceptance } from "./projects.mjs";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -150,6 +151,11 @@ const provider = http.createServer(async (request, response) => {
       }) +
       "\n\n",
   );
+  if (prompt.includes('"name":"project-notes.txt"')) {
+    const reference = prompt.split("\n").find(line => line.startsWith('{"background":'));
+    const source = reference && JSON.parse(reference).sources.find(source => source.name === "project-notes.txt");
+    if (source) response.write("data: " + JSON.stringify({choices:[{delta:{content:`\n\n[View project evidence](cove:${source.id}:${source.sections[0].id})`}}]}) + "\n\n");
+  }
   if (prompt.includes('"name":"source-notes.md"')) {
     const sources = prompt
       .split("\n")
@@ -193,7 +199,7 @@ const provider = http.createServer(async (request, response) => {
     );
   setTimeout(
     () => response.end('data: {"choices":[],"usage":{"prompt_tokens":128,"completion_tokens":32}}\n\ndata: [DONE]\n\n'),
-    prompt.includes("Slow fixture") ? 3500 : 150,
+    prompt.includes("Project lifecycle fixture") ? 10000 : prompt.includes("Slow fixture") ? 3500 : 150,
   );
 });
 await new Promise((resolve) => provider.listen(0, "127.0.0.1", resolve));
@@ -581,7 +587,10 @@ try {
     );
     await cdp("Input.insertText", { text: value });
   }
-  if (process.env.COVE_BROWSER_SCENARIO === "web-search") {
+  if (process.env.COVE_BROWSER_SCENARIO === "projects") {
+    try { await runProjectsAcceptance({api,cdp,evaluate,until,click,fill,snapshot,reloadPage,dataDir:temp,requests}); } catch (error) { await snapshot("project-failure"); throw error; }
+    assert.equal(exceptions.length,0);socket.close();console.log("Project browser acceptance passed: creation, fixed files, moves, model comparison, frozen snapshots, preserved conflict drafts and reference-safe deletion.");
+  } else if (process.env.COVE_BROWSER_SCENARIO === "web-search") {
     const axeSource = await readFile(require.resolve("axe-core/axe.min.js"), "utf8");
     await runWebSearchAcceptance({ api, cdp, evaluate, until, click, snapshot, reloadPage, dataDir: temp, requests, axeSource });
     assert.equal(exceptions.length, 0);

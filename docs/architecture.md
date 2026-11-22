@@ -75,6 +75,10 @@ Public webpage reading uses `internal/websources` through Chat before Generation
 
 Automatic research uses `internal/websearch` for fixed-destination search connections and Chat for native tool orchestration. Schema 22 saves attempt policy, traces, and original evidence independently of mutable settings. Browser NearAI inference verifies intermediate tool responses before executing commands. See [model-directed research](adr/0044-add-opt-in-model-directed-web-research.md).
 
+## Project background reuse
+
+Schema 23 stores Projects, current instructions/background and fixed sources in persistence. Chat assembles project input independently of replayable `input_content`: saved instructions augment each attempt's base System Prompt, and a saved reference prefix is concatenated with the final user input at execution time. Ordinary and NearAI requests share the Batch snapshot. Normalized references retain content-addressed original-byte blobs until the last owner is deleted; branches copy text snapshots and add blob references. Project-aware context previews expose revisions and character breakdowns. See [project background reuse](adr/0045-add-projects-and-independent-context-snapshots.md).
+
 ## Continuous debates
 
 `internal/chat/debate_summary.go` schedules bounded, cited stage analyses through the same service/browser turn lifecycle. `debate_controls.go` owns cumulative estimate policy, budget admission, and persistent pacing; persistence aggregates usage independently of transcript pagination. Generated analyses remain separate from participant context.
@@ -105,3 +109,5 @@ Saved verification records report browser checks; SQLite does not independently 
 - Keep interface language independent of user-content language.
 
 See [CONTEXT.md](../CONTEXT.md) for vocabulary and [architecture decisions](adr/) for rationale.
+
+Conversation API responses intern saved project payloads in a per-response dictionary; API adaptation restores shared immutable references before query data reaches domain presentation. Project-aware context reads use their own generation query key.

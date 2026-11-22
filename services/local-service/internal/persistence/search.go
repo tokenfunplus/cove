@@ -21,6 +21,7 @@ type ConversationSearchResult struct {
 }
 
 type ConversationSearchFilter struct {
+	ProjectID    *string
 	Kind         string
 	UpdatedAfter *time.Time
 }
@@ -84,7 +85,7 @@ func (store *SQLiteStore) SearchFilteredConversations(ctx context.Context, query
 		var item ConversationSearchResult
 		var createdAt, updatedAt int64
 		var messageID, role, body, turnMessageID sql.NullString
-		if err := rows.Scan(&item.ID, &item.Title, &item.Pinned, &item.Archived, &createdAt, &updatedAt, &item.DebateID, &item.DebateStatus, &item.DebateRound, &messageID, &role, &body, &turnMessageID); err != nil {
+		if err := rows.Scan(&item.ID, &item.Title, &item.Pinned, &item.Archived, &createdAt, &updatedAt, &item.DebateID, &item.DebateStatus, &item.DebateRound, &item.ProjectID, &item.MembershipRevision, &item.ProjectRevision, &messageID, &role, &body, &turnMessageID); err != nil {
 			return nil, fmt.Errorf("read conversation search result: %w", err)
 		}
 		item.CreatedAt, item.UpdatedAt = time.Unix(0, createdAt).UTC(), time.Unix(0, updatedAt).UTC()
@@ -126,7 +127,7 @@ WITH matching_messages AS MATERIALIZED (
     AND role IN ('user', 'assistant') AND ` + predicate + `
 )
 SELECT c.id, c.title, c.pinned_at IS NOT NULL, c.archived_at IS NOT NULL, c.created_at, c.updated_at,
-       COALESCE(d.id,''), COALESCE(d.status,''), COALESCE(json_extract(d.record,'$.round'),0),
+       COALESCE(d.id,''), COALESCE(d.status,''), COALESCE(json_extract(d.record,'$.round'),0), COALESCE(c.project_id,''), c.membership_revision, COALESCE((SELECT revision FROM projects WHERE id=c.project_id),0),
        m.id, m.role, m.body,
        COALESCE((SELECT user_message_id FROM generations WHERE assistant_message_id = m.id LIMIT 1), CASE WHEN m.role = 'user' THEN m.id END)
 FROM conversations c
@@ -144,6 +145,10 @@ ORDER BY ` + order + ` LIMIT 50`, args
 func conversationSearchFilterSQL(filter ConversationSearchFilter) (string, []any) {
 	condition := ""
 	args := []any{}
+	if filter.ProjectID != nil {
+		condition += " AND COALESCE(c.project_id,'')=?"
+		args = append(args, *filter.ProjectID)
+	}
 	if filter.Kind == "chat" {
 		condition += " AND NOT EXISTS (SELECT 1 FROM debate_sessions WHERE id=c.id)"
 	}

@@ -36,6 +36,9 @@ export interface ActiveModelTarget {
 }
 
 export interface Conversation {
+  project_id?: string;
+  membership_revision?: number;
+  project_revision?: number;
 	/** A separate continuous Debate Session, outside ordinary comparison context. */
 	debate_id?: string;
   debate_status?: DebateSession["status"];
@@ -199,6 +202,7 @@ export interface ConversationSearchResult extends Conversation {
 }
 
 export interface ConversationSearchFilter {
+  projectId?: string;
   kind?: "chat" | "debate";
   updatedAfter?: string;
 }
@@ -388,6 +392,7 @@ export interface ExpectedGenerationTarget {
 }
 
 export interface GenerationInput {
+  expected_project?: ProjectExpectation;
   web_search_enabled?: boolean;
   edit_of_batch_id?: string;
   client_request_id: string;
@@ -487,6 +492,8 @@ export interface GenerationPromptMessage {
 }
 
 export interface GenerationBatch {
+  project_context_id?: string;
+  project_context?: ProjectContext;
   web_search?: WebSearchPolicy;
   id: string;
   conversation_id: string;
@@ -550,3 +557,58 @@ export interface ModelToolMessage {
   reasoning_content?: string;
 }
 export interface WebToolResult { status: string; content: string; info: WebSearchInfo }
+
+export interface ProjectExpectation {
+  project_id: string;
+  project_revision: number;
+  membership_revision: number;
+}
+export interface ProjectSource {
+  id: string;
+  snapshot: AttachmentSnapshot;
+  blob_hash: string;
+}
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  background: string;
+  revision: number;
+  sources: ProjectSource[];
+  conversation_count: number;
+  historical_copies: number;
+  created_at: string;
+  updated_at: string;
+}
+export interface ProjectContext extends ProjectExpectation {
+  background_characters?: number;
+  project_name: string;
+  rendering_version: number;
+  instructions: string;
+  background: string;
+  reference_prefix: string;
+  sources: ProjectSource[];
+}
+export interface ContextUsage {
+  instructions: number;
+  background: number;
+  sources: number;
+  history: number;
+  question: number;
+  total: number;
+  limit: number;
+}
+export interface ProjectContextPreview {
+  messages: GenerationPromptMessage[];
+  project_context: ProjectContext | null;
+  expected_project: ProjectExpectation;
+  usage: ContextUsage;
+}
+export interface ProjectContextEnvelope {
+  history: GenerationContextMessage[];
+  project_context: ProjectContext | null;
+}
+
+/** Conversation responses intern immutable project payloads by their content hash. */
+export type ConversationWireView = ConversationView & { project_contexts?: Record<string, ProjectContext> };

@@ -22,7 +22,7 @@ import {
   Settings2,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export function ConversationList({
   conversations,
@@ -39,6 +39,7 @@ export function ConversationList({
   onPin,
   onArchive,
   onDownload,
+  onMoveToProject,
   onDelete,
   onShowArchived,
   onOpenSettings,
@@ -46,10 +47,12 @@ export function ConversationList({
   revealSearch,
   deleteDisabled = false,
   copy = englishConversationCopy,
+  navigation,
   historyFilters,
   historyQueryFilters,
   onHistoryFiltersChange,
 }: {
+  navigation?: ReactNode;
   historyFilters?: HistoryFilters;
   historyQueryFilters?: ConversationSearchFilter;
   onHistoryFiltersChange?: (filters: HistoryFilters) => void;
@@ -67,6 +70,7 @@ export function ConversationList({
   onPin?: (conversation: Conversation) => void;
   onArchive?: (conversation: Conversation) => void;
   onDownload?: (conversation: Conversation) => void;
+  onMoveToProject?: (conversation: Conversation) => void;
   onDelete?: (id: string) => void;
   onShowArchived?: (archived: boolean) => void;
   onOpenSettings?: () => void;
@@ -153,6 +157,7 @@ export function ConversationList({
         />
         <kbd className="pointer-coarse:hidden">⌘K</kbd>
       </label>
+      {navigation}
       <HistoryToolbar filters={filters} onChange={changeFilters} count={visibleConversations.length} pending={Boolean(normalizedQuery) && searchPending} archived={showingArchived} />
       {normalizedQuery && (searchPending || searchFailed) ? (
         <p className={workspaceStyles.conversationList_empty} role="status">
@@ -220,12 +225,13 @@ export function ConversationList({
                       ) : null}
                     </span>
                   </Button>
-                  {onRename || onPin || onArchive || onDownload || onDelete ? (
+                  {onRename || onPin || onArchive || onDownload || onMoveToProject || onDelete ? (
                     <ConversationActions
                       conversation={conversation}
                       disabled={deleteDisabled}
                       onArchive={onArchive}
                       onDelete={onDelete}
+                      onMoveToProject={onMoveToProject}
                       onDownload={onDownload}
                       onPin={onPin}
                       onRename={onRename}
@@ -296,13 +302,14 @@ export function ConversationList({
   );
 }
 
-function ConversationActions({
+export function ConversationActions({
   conversation,
   disabled,
   onRename,
   onPin,
   onArchive,
   onDownload,
+  onMoveToProject,
   onDelete,
   copy,
 }: {
@@ -312,6 +319,7 @@ function ConversationActions({
   onPin?: (conversation: Conversation) => void;
   onArchive?: (conversation: Conversation) => void;
   onDownload?: (conversation: Conversation) => void;
+  onMoveToProject?: (conversation: Conversation) => void;
   onDelete?: (id: string) => void;
   copy: ApplicationCopy;
 }) {
@@ -369,6 +377,9 @@ function ConversationActions({
                 : copy.archiveConversation}
             </Button>
           </MenuItem>
+        ) : null}
+        {onMoveToProject ? (
+          <MenuItem><Button variant="ghost" type="button" onClick={() => onMoveToProject(conversation)}>Move to project</Button></MenuItem>
         ) : null}
         {onDownload ? (
           <MenuItem>

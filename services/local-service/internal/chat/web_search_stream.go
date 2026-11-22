@@ -39,6 +39,11 @@ func (stream *webCompletionStream) Recv(ctx context.Context) (provider.Event, er
 			return provider.Event{}, errors.New("web stream closed")
 		}
 		if stream.stream == nil {
+			stream.input.Tools = websearch.Tools()
+			if stream.rounds >= stream.generation.ConfigurationSnapshot.WebSearch.MaxRounds {
+				stream.input.Tools = nil
+				stream.input.Messages = append(stream.input.Messages, provider.ProviderMessage{Role: "system", Content: "The web tool budget has been reached. Finish using the available evidence, cite saved source sections, and state remaining gaps."})
+			}
 			characters := 0
 			for _, message := range stream.input.Messages {
 				characters += utf8.RuneCountInString(message.Content) + utf8.RuneCountInString(message.ReasoningContent) + len(message.ToolCallID)
@@ -49,11 +54,7 @@ func (stream *webCompletionStream) Recv(ctx context.Context) (provider.Event, er
 			if characters > 240000 {
 				return provider.Event{}, errors.New("web tool context limit exceeded")
 			}
-			stream.input.Tools = websearch.Tools()
-			if stream.rounds >= stream.generation.ConfigurationSnapshot.WebSearch.MaxRounds {
-				stream.input.Tools = nil
-				stream.input.Messages = append(stream.input.Messages, provider.ProviderMessage{Role: "system", Content: "The web tool budget has been reached. Finish using the available evidence, cite saved source sections, and state remaining gaps."})
-			}
+
 			upstream, err := stream.service.provider.Stream(ctx, stream.input)
 			if err != nil {
 				return provider.Event{}, err

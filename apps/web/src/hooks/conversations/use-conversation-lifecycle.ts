@@ -49,6 +49,7 @@ type Dependencies = Pick<
     | "setConversationNavigation"
     | "isNavigating"
     | "setIsNavigating"
+    | "setProjectPage"
   > &
   Pick<GenerationCommands, "handleCancel"> &
   Pick<ConversationActions, "handleCreateConversation" | "handleConversationListMode" | "handleUpdateConversation"> &
@@ -81,6 +82,7 @@ export function useConversationLifecycle({
   setConversationNavigation,
   isNavigating,
   setIsNavigating,
+  setProjectPage,
   draft,
   attachmentDraft,
   handleCreateConversation: createConversation,
@@ -113,13 +115,13 @@ export function useConversationLifecycle({
     finally { setIsNavigating(false); }
   }
 
-  async function handleCreateConversation() {
+  async function handleCreateConversation(projectId?: string, initialDraft?: string) {
     if (isNavigating) return;
     if (hasDraft || activeGeneration) {
-      setConfirmation({ kind: "new", discardDraft: hasDraft, stopGeneration: activeGeneration });
+      setConfirmation({ kind: "new", projectId, initialDraft, discardDraft: hasDraft, stopGeneration: activeGeneration });
       return;
     }
-    await withNavigationBusy(createConversation);
+    await withNavigationBusy(() => createConversation(projectId, initialDraft));
   }
 
   async function handleConversationListMode(archived: boolean) {
@@ -142,6 +144,7 @@ export function useConversationLifecycle({
   }
 
   function navigateToConversation(id: string, messageId?: string) {
+    setProjectPage(undefined);
     setSelectedId(id);
     setConversationNavigation(messageId ? { conversationId: id, messageId, requestId: crypto.randomUUID() } : undefined);
     setMobileSidebarOpen(false);
@@ -150,7 +153,7 @@ export function useConversationLifecycle({
   async function handleSelectConversation(id: string, messageId?: string) {
     if (isNavigating) return;
     if (id === selectedId) {
-      if (messageId) navigateToConversation(id, messageId);
+      navigateToConversation(id, messageId);
       return;
     }
     if (activeGeneration || hasDraft) {
@@ -172,7 +175,7 @@ export function useConversationLifecycle({
       const refreshed = await getConversations({ archived: showingArchived });
 
       if (id === selectedId) {
-        setSelectedId(refreshed[0]?.id);
+        setSelectedId(refreshed.find(conversation => !conversation.project_id)?.id);
       }
     } catch {
       setFeedback(copy.deleteFailed);
@@ -237,7 +240,7 @@ export function useConversationLifecycle({
         if (needsStop && !(await handleCancel())) return;
         if (request.kind === "navigate") await request.navigationAction?.();
         else if (request.kind === "new") {
-          if (!(await createConversation())) return;
+          if (!(await createConversation(request.projectId, request.initialDraft))) return;
         } else if (request.conversationId) {
           navigateToConversation(request.conversationId, request.messageId);
         }

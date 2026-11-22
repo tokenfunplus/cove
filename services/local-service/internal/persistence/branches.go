@@ -52,6 +52,9 @@ func forkConversationTx(ctx context.Context, tx *sql.Tx, conversationID, sourceB
 	if _, err := tx.ExecContext(ctx, `INSERT INTO conversations (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`, id, branchTitle, now.UnixNano(), now.UnixNano()); err != nil {
 		return "", err
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE conversations SET project_id=(SELECT project_id FROM conversations WHERE id=?) WHERE id=?`, conversationID, id); err != nil {
+		return "", err
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO conversation_branches (conversation_id, source_conversation_id, source_batch_id, source_title) VALUES (?, ?, ?, ?)`, id, conversationID, sourceBatchID, title); err != nil {
 		return "", err
 	}
@@ -96,6 +99,15 @@ func copyBranchTurnTx(ctx context.Context, tx *sql.Tx, conversationID string, it
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO batch_context_items (generation_batch_id, position, user_message_id, selected_generation_id) SELECT ?, ROW_NUMBER() OVER (ORDER BY created_at, id) - 1, user_message_id, selected_generation_id FROM generation_batches WHERE conversation_id = ? AND id != ?`, batchID, conversationID, batchID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE generation_batches SET project_context_required=(SELECT project_context_required FROM generation_batches WHERE id=?) WHERE id=?`, generation.GenerationBatchID, batchID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO generation_project_contexts(batch_id,payload) SELECT ?,payload FROM generation_project_contexts WHERE batch_id=?`, batchID, generation.GenerationBatchID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO batch_project_sources(batch_id,source_id,blob_hash) SELECT ?,source_id,blob_hash FROM batch_project_sources WHERE batch_id=?`, batchID, generation.GenerationBatchID); err != nil {
 		return err
 	}
 	return nil
