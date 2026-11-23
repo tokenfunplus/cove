@@ -42,9 +42,9 @@ Without notarization, the workflow still uses Keychain and produces ad-hoc signe
 
 ## Versioning and releases
 
-The current test release is `0.1.0-beta.9`, build `9`, with marketing version `0.1.0`. Use `make version VERSION=0.1.0-beta.10` to prepare the next beta. The command synchronizes the root and workspace package versions, `CoveReleaseVersion`, `CFBundleShortVersionString`, and `CFBundleVersion`. Omitting `BUILD` increments the existing build number; `BUILD=n` overrides it. Keep build numbers increasing for subsequent published packages.
+The current test release is `0.1.0-beta.10`, build `10`, with marketing version `0.1.0`. Use `make version VERSION=0.1.0-beta.11` to prepare the next beta. The command synchronizes the root and workspace package versions, `CoveReleaseVersion`, `CFBundleShortVersionString`, and `CFBundleVersion`. Omitting `BUILD` increments the existing build number. Use `BUILD=n` to override it. Keep build numbers increasing for subsequent published packages.
 
-Use `alpha.N`, `beta.N`, and `rc.N` suffixes for test releases, then the plain version for stable releases. Git tags add a `v` prefix, for example `v0.1.0-beta.9`. A prerelease is published with GitHub's prerelease flag and does not enter the stable `releases/latest` update feed. Updated Launchers offer explicit beta discovery from published GitHub releases, without changing the stable manifest or automatically installing updates. Beta and release-candidate versions are eligible for that action; alpha and draft releases are excluded. Older builds can use the Releases page.
+Use `alpha.N`, `beta.N`, and `rc.N` suffixes for test releases, then the plain version for stable releases. Git tags add a `v` prefix, as in `v0.1.0-beta.10`. A prerelease is published with GitHub's prerelease flag and does not enter the stable `releases/latest` update feed. Updated Launchers offer explicit beta discovery from published GitHub releases, without changing the stable manifest or automatically installing updates. Beta and release-candidate versions are eligible for that action; alpha and draft releases are excluded. Older builds can use the Releases page.
 
 1. Run the version command. `CoveReleaseVersion` is the full version; `CFBundleShortVersionString` is its numeric base.
 2. Move the relevant `CHANGELOG.md` entries into a dated release section.
@@ -67,10 +67,10 @@ Download the asset and its matching bundle, then verify with Cosign 3:
 
 ```sh
 cosign verify-blob \
-  --bundle Cove-0.1.0-beta.9-arm64.dmg.sigstore.json \
-  --certificate-identity-regexp '^https://github\.com/tokenfunplus/cove/\.github/workflows/release-signatures\.yml@refs/(heads/main|tags/v0\.1\.0-beta\.9)$' \
+  --bundle Cove-0.1.0-beta.10-arm64.dmg.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/tokenfunplus/cove/\.github/workflows/release-signatures\.yml@refs/(heads/main|tags/v0\.1\.0-beta\.10)$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  Cove-0.1.0-beta.9-arm64.dmg
+  Cove-0.1.0-beta.10-arm64.dmg
 ```
 
 For another release, update both filenames and the exact tag in the expected identity. Verification checks the artifact digest, signing identity, certificate, and transparency proof.
