@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-beta.10 - 2026-11-24
+
 ### Added
 
 - Open the macOS Quick Panel from the menu bar or with Control-Option-Space. Type, paste, or drop a supported file, keep the panel pinned for reference, and open the same conversation in the full workspace.
