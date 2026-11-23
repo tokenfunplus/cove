@@ -159,3 +159,30 @@ func TestRoutedChatPreservesThePrivateWorkerTransport(t *testing.T) {
 		t.Fatalf("private chat response lost: %q", body)
 	}
 }
+
+func TestSwitchingModelsRetainsOnlyTheCurrentInferenceWorker(t *testing.T) {
+	manager := New(t.TempDir(), "unused")
+	defer manager.Close()
+	for _, id := range []string{EmbeddingID, ChatID} {
+		command := exec.Command("/bin/sleep", "30")
+		if err := command.Start(); err != nil {
+			t.Fatal(err)
+		}
+		w := &worker{command: command, done: make(chan struct{}), client: &http.Client{}, directory: t.TempDir()}
+		go func() { command.Wait(); close(w.done) }()
+		manager.workers[id] = w
+	}
+	previous := manager.workers[EmbeddingID]
+	current, err := manager.startWorker(context.Background(), ChatID)
+	if err != nil || current != manager.workers[ChatID] || len(manager.workers) != 1 {
+		t.Fatal("model switch retained another inference worker", err)
+	}
+	select {
+	case <-previous.done:
+	default:
+		t.Fatal("previous model process remained resident")
+	}
+	if _, err = os.Stat(previous.directory); !os.IsNotExist(err) {
+		t.Fatal("previous worker files retained")
+	}
+}

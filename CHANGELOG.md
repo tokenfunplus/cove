@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- Resume interrupted inference and speech artifact downloads on retry, with validated HTTP ranges, full integrity checks, and explicit partial-download cleanup.
+- Deduplicate local search results by original sections and add a user-controlled similarity filter with empty-result guidance.
+- Show local inference waiting, preparation, and generation activity; unload the previous inference model on switching to bound retained memory.
+
+### Fixed
+
+- Use unsaved volume and CPU settings for voice previews, allow clearing preview text, and preserve speech drafts when switching capability views.
+- Save effective local output limits per attempt without changing remote comparison targets or workspace preferences. Disclose the local token budget in context review.
+
 ## 0.1.0-beta.9 - 2026-11-23
 
 ### Added

@@ -30,6 +30,8 @@ type SpeechInput struct {
 	Selection      string `json:"selection,omitempty"`
 }
 type SpeechPreview struct {
+	Volume  *float64                  `json:"volume,omitempty"`
+	Threads *int                      `json:"threads,omitempty"`
 	Text    string                    `json:"text"`
 	ModelID string                    `json:"model_id"`
 	Profile persistence.SpeechProfile `json:"profile"`
@@ -124,7 +126,7 @@ func (service *Service) PreviewSpeech(ctx context.Context, owner string, input S
 	if utf8.RuneCountInString(input.Text) > 400 {
 		return speech.JobStatus{}, errors.New("Use up to 400 characters for a voice preview.")
 	}
-	return service.speech.Start(ctx, owner, speech.Request{Text: input.Text, RenderedText: true, ModelID: input.ModelID, Profile: &input.Profile})
+	return service.speech.Start(ctx, owner, speech.Request{Text: input.Text, RenderedText: true, ModelID: input.ModelID, Profile: &input.Profile, Volume: input.Volume, Threads: input.Threads})
 }
 func (service *Service) ReadDebateAloud(ctx context.Context, owner string, input DebateSpeechInput) (speech.JobStatus, error) {
 	if service.speech == nil {

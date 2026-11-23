@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 
+import { setupControlTests } from "@/test/control-helpers";
+setupControlTests();
+
 import { afterEach, expect, test, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -83,7 +86,7 @@ test("search sends only selected documents and prepares selected original source
   await user.click(await screen.findByRole("checkbox",{name:/guide.txt/}));
   await user.type(screen.getByRole("textbox",{name:"What are you looking for?"}),"How long is the recovery copy kept?");
   await user.click(screen.getByRole("button",{name:"Search selected documents"}));
-  const hit=await screen.findByRole("article");expect(api.searchLocalDocuments).toHaveBeenCalledWith([source.id],"How long is the recovery copy kept?",expect.any(AbortSignal));
+  const hit=await screen.findByRole("article");expect(api.searchLocalDocuments).toHaveBeenCalledWith([source.id],"How long is the recovery copy kept?",expect.any(AbortSignal),0);
   await user.click(within(hit).getByRole("checkbox"));await user.click(screen.getByRole("button",{name:"Use selected results in chat"}));
   expect(api.prepareLocalSources).toHaveBeenCalledWith([{document_id:source.id,ordinal:1}],expect.any(AbortSignal));
   expect(useSources).toHaveBeenCalledWith([prepared]);expect(close).toHaveBeenCalled();cache.clear();
@@ -95,4 +98,19 @@ test("library deletion asks for explicit confirmation before removing its local 
   render(<QueryClientProvider client={cache}><LocalDocumentsDialog onClose={()=>{}}/></QueryClientProvider>);
   await user.click(await screen.findByRole("button",{name:"Delete document: guide.txt"}));expect(api.removeLocalDocument).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button",{name:"Delete library copy"}));expect(api.removeLocalDocument).toHaveBeenCalledWith(source.id,expect.any(AbortSignal));cache.clear();
+});
+
+
+test("a similarity cutoff is sent and empty results explain how to recover",async()=>{
+ vi.mocked(api.getLocalModels).mockResolvedValue([{id:"bge-small-zh",state:"installed",runtime_ready:true} as never]);
+ vi.mocked(api.getLocalDocuments).mockResolvedValue([{id:source.id,name:source.name,characters:50,chunks:1}] as never);
+ vi.mocked(api.searchLocalDocuments).mockResolvedValue({hits:[],elapsed_ms:1,model_sha256:"fixture",index_version:"fixture"});
+ const cache=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
+ render(<QueryClientProvider client={cache}><LocalDocumentsDialog onClose={()=>{}}/></QueryClientProvider>);
+ const user=userEvent.setup();await user.click(await screen.findByRole("checkbox",{name:/guide.txt/}));
+ await user.type(screen.getByRole("textbox",{name:"What are you looking for?"}),"unrelated question");
+ const slider=screen.getByRole("slider",{name:"Minimum similarity"});slider.focus();await user.keyboard("{End}");
+ await user.click(screen.getByRole("button",{name:"Search selected documents"}));
+ await screen.findByText(/No passages meet the current similarity filter/);
+ expect(api.searchLocalDocuments).toHaveBeenCalledWith([source.id],"unrelated question",expect.any(AbortSignal),1);
 });

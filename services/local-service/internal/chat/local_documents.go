@@ -114,11 +114,15 @@ func (service *Service) DeleteLocalDocument(ctx context.Context, id string) erro
 		return nil
 	})
 }
-func (service *Service) SearchLocalDocuments(ctx context.Context, ids []string, query string) (retrieval.Results, error) {
+func (service *Service) SearchLocalDocuments(ctx context.Context, ids []string, query string, minimum ...float64) (retrieval.Results, error) {
 	if service.retrieval == nil {
 		return retrieval.Results{}, errors.New("Local documents are unavailable.")
 	}
-	return service.retrieval.Search(ctx, ids, query)
+	cutoff := 0.0
+	if len(minimum) > 0 {
+		cutoff = minimum[0]
+	}
+	return service.retrieval.SearchAbove(ctx, ids, query, cutoff)
 }
 func (service *Service) PrepareLocalSources(ctx context.Context, owner string, selections []retrieval.Selection) ([]PreparedWebSource, error) {
 	return service.prepareRetrievalSources(ctx, owner, selections, service.retrieval, "")

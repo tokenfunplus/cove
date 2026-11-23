@@ -464,7 +464,7 @@ export interface SpeechJob {
   model_id: string; model_name: string; voice_name: string; language: string; ready_chunks: number;
   total_chunks: number; characters: number; playback_rate: number; volume: number; error?: string;
 }
-export interface SpeechPreview {text: string; model_id: string; profile: SpeechProfile}
+export interface SpeechPreview {text: string; model_id: string; profile: SpeechProfile; volume?: number; threads?: number}
 export interface DebateSpeechInput {debate_id: string; turn_id: string}
 export interface LocalDocument {
   id: string; name: string; characters: number; chunks: number; model_sha256: string; index_version: string; indexed_at: string;
@@ -473,9 +473,10 @@ export interface LocalSearchSelection { document_id: string; ordinal: number }
 export interface LocalSearchHit extends LocalSearchSelection { score: number; text: string; source: AttachmentSnapshot }
 export interface LocalSearchResults { hits: LocalSearchHit[]; elapsed_ms: number; model_sha256: string; index_version: string }
 
-export type GenerationEventType = "started" | "delta" | "web_activity" | "completed" | "stopped" | "failed";
+export type GenerationEventType = "started" | "delta" | "activity" | "web_activity" | "completed" | "stopped" | "failed";
 
 export interface GenerationEvent {
+  activity?: string;
   web_activity?: string;
   reset?: boolean;
   event_id: string;

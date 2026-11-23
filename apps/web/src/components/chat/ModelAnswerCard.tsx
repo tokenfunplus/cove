@@ -32,7 +32,7 @@ export type ModelAnswerPhase =
   | "unknown";
 
 export function ModelAnswerCard({
-  webSearch, webSearchEnabled, webActivity,
+  webSearch, webSearchEnabled, activity,
   answer,
   metrics,
   targetId,
@@ -54,7 +54,7 @@ export function ModelAnswerCard({
 }: {
   webSearch?: import("@cove/api-contract").WebSearchInfo;
   webSearchEnabled?: boolean;
-  webActivity?: string;
+  activity?: string;
   answer?: AnswerSource;
   metrics?: Metrics;
   targetId: string;
@@ -130,7 +130,7 @@ export function ModelAnswerCard({
         ) : null}
       </header>
       <div className={comparisonStyles.modelAnswerCard_body}>
-        {waiting && webActivity && <p role="status" className="my-2 text-xs text-muted-foreground">{webActivity}</p>}
+        {waiting && activity && <p role="status" className="my-2 text-xs text-muted-foreground">{activity}</p>}
         {waiting && <GenerationActivity onStop={onStop} stopWhenStalledOnly phase={phase} body={body} reasoning={reasoning}/>}
         {phase==="failed" && <FailureActions targetId={targetId} code={errorCode ?? verification?.failure_code}/>}
         {body || reasoning ? (

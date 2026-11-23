@@ -13,12 +13,13 @@ type PanelProps = {entry?:LocalEntry;manage?:boolean;onUseSources?:(sources:Prep
 export function LocalModelsPanel(props:PanelProps){
  const [tab,setTab]=useState<LocalEntry["tab"]>(props.entry?.tab??"installed");
  const [discovered,setDiscovered]=useState(props.entry?.tab==="discover");
+ const [speechVisited,setSpeechVisited]=useState(props.entry?.tab==="speech");
  const [speechModel,setSpeechModel]=useState(props.entry?.modelId);
  const [request,setRequest]=useState<{purpose?:"speak"}|undefined>(props.entry);
- useEffect(()=>{if(props.entry){setTab(props.entry.tab);setSpeechModel(props.entry.modelId);setRequest(props.entry);if(props.entry.tab==="discover")setDiscovered(true);}},[props.entry]);
- function useSpeech(modelId:string){setSpeechModel(modelId);setTab("speech");}
+ useEffect(()=>{if(props.entry){setTab(props.entry.tab);if(props.entry.tab==="speech")setSpeechVisited(true);setSpeechModel(props.entry.modelId);setRequest(props.entry);if(props.entry.tab==="discover")setDiscovered(true);}},[props.entry]);
+ function useSpeech(modelId:string){setSpeechVisited(true);setSpeechModel(modelId);setTab("speech");}
  function discoverSpeech(){setRequest({purpose:"speak"});setDiscovered(true);setTab("discover");}
- function selectTab(value: LocalEntry["tab"]) { setTab(value); if(value==="discover")setDiscovered(true); }
+ function selectTab(value: LocalEntry["tab"]) { setTab(value); if(value==="speech")setSpeechVisited(true); if(value==="discover")setDiscovered(true); }
  if(!props.manage)return <LocalModelDiscovery {...props}/>;
  return <section aria-label="On this Mac" className="grid gap-5">
   <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2"><h3 className="text-xl font-semibold">On this Mac</h3>
@@ -26,7 +27,7 @@ export function LocalModelsPanel(props:PanelProps){
   <p className="w-full text-xs leading-relaxed text-muted-foreground">Local tools, voices, and chat models. Model files are downloaded once.</p></header>
   {tab==="installed"&&<InstalledCapabilities {...props} onUseSpeech={useSpeech} onDiscover={()=>selectTab("discover")}/>}
   {discovered&&<div hidden={tab!=="discover"}><LocalModelDiscovery {...props} onUseSpeech={useSpeech} request={request}/></div>}
-  {tab==="speech"&&<SpeechSettingsPanel key={speechModel} initialModelId={speechModel} onDiscover={discoverSpeech}/>}
+  {speechVisited&&<div hidden={tab!=="speech"}><SpeechSettingsPanel active={tab==="speech"} initialModelId={speechModel} onDiscover={discoverSpeech}/></div>}
  </section>;
 }
 function InstalledCapabilities({onUseChat,onUseSources,onDiscover,onUseSpeech}:PanelProps&{onDiscover:()=>void;onUseSpeech:(id:string)=>void}){

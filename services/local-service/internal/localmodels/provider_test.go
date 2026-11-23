@@ -88,9 +88,11 @@ func testCancelBeforeResponseHeaders(t *testing.T, modelID string) {
 	})}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	activity := make(chan string, 3)
 	result := make(chan error, 1)
 	go func() {
 		_, err := (RoutedProvider{Local: manager}).Stream(ctx, provider.CompletionInput{
+			Activity: func(value string) { activity <- value },
 			Profile:  provider.Profile{ID: ProviderID, Kind: provider.KindLocal, Name: "Local fixture", Model: modelID, AuthMethod: provider.AuthBearer},
 			Messages: []provider.ProviderMessage{{Role: "user", Content: "Test input"}},
 		})
@@ -102,6 +104,11 @@ func testCancelBeforeResponseHeaders(t *testing.T, modelID string) {
 		t.Fatalf("local request failed before transport: %v", err)
 	case <-time.After(time.Second):
 		t.Fatal("local request never started")
+	}
+	for _, expected := range []string{"Waiting for local inference…", "Preparing local model…", "Generating on this Mac…"} {
+		if got := <-activity; got != expected {
+			t.Fatalf("unexpected processing state: %q", got)
+		}
 	}
 	cancel()
 	select {

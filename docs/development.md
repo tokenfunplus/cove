@@ -177,3 +177,7 @@ For installation, Provider setup, file chat, and comparison behavior, see the [u
 Read `CONTEXT.md` and relevant decisions in `docs/adr/` when changing domain behavior.
 
 Local speech adds a `build-speech-runtime` step to `build-service`. The pinned build downloads sherpa-onnx, Pocket TTS, CMake, and eSpeak NG source into ignored `.artifacts/speech`, then compiles native ARM64 adapters. It requires Apple's command line tools; end users receive bundled workers and do not need these build tools. Use `COVE_SPEECH_RUNTIME` only for development overrides. Details and native acceptance variables are in [Local speech](local-speech.md).
+
+### Local capability recovery
+
+After building web assets and an isolated Local Service executable, run `COVE_BROWSER_SCENARIO=local-capabilities node apps/web/e2e/acceptance.mjs`. `COVE_BROWSER_SERVICE_BIN` can select the isolated executable. The scenario uses disposable data and verifies speech draft retention, empty preview editing, similarity controls, and desktop/mobile layouts. Native model inference and audio quality remain separate opt-in gates.

@@ -17,7 +17,7 @@ export type LiveTurnPhase =
   | "unknown";
 
 type LiveTarget = {
-  webActivity?: string;
+  activity?: string;
   key: string;
   targetId?: string;
   generationId?: string;
@@ -147,8 +147,9 @@ export function applyLiveTurnEvent(
           next.reasoningBody =
             (next.reasoningBody ?? "") + event.reasoning_delta;
       }
+      if (event.type === "activity") next.activity = event.activity;
       if (event.type === "web_activity") {
-        next.webActivity = event.web_activity;
+        next.activity = event.web_activity;
         if (event.reset) { next.assistantBody = ""; next.reasoningBody = ""; }
       }
       if (event.type === "completed") next.phase = "completed";

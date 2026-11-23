@@ -353,7 +353,7 @@ export function usePrivateGeneration({
             updatePhase("streaming");
           } else if (event.type === "web_activity") {
             if (event.reset) { assistantBody = ""; reasoningBody = ""; }
-            setLiveTurn(current => current ? { ...current, targets: (current.targets ?? []).map(candidate => candidate.targetId === target.id ? { ...candidate, webActivity: event.activity, ...(event.reset ? { assistantBody: "", reasoningBody: "" } : {}) } : candidate) } : current);
+            setLiveTurn(current => current ? { ...current, targets: (current.targets ?? []).map(candidate => candidate.targetId === target.id ? { ...candidate, activity: event.activity, ...(event.reset ? { assistantBody: "", reasoningBody: "" } : {}) } : candidate) } : current);
           } else if (event.type === "usage") {
             if (event.inputTokens !== undefined) inputTokens = event.inputTokens;
             if (event.outputTokens !== undefined) outputTokens = event.outputTokens;

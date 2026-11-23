@@ -125,3 +125,45 @@ func TestChunkBoundsPreserveOriginalSectionIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchDeduplicatesOriginalSectionsAndAllowsAnEmptyFilteredResult(t *testing.T) {
+	ctx := context.Background()
+	store, err := persistence.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := New(store, fixtureEngine{})
+	long, _ := documents.Parse(ctx, documents.Input{Name: "long.txt", Data: []byte(strings.Repeat("orchard ", 300))})
+	other, _ := documents.Parse(ctx, documents.Input{Name: "other.txt", Data: []byte("orchard different passage")})
+	for _, source := range []documents.Prepared{long, other} {
+		if err := service.Import(ctx, source); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := service.Search(ctx, []string{long.ID, other.ID}, "orchard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Hits) != 2 {
+		t.Fatalf("duplicate source sections used result slots: %d", len(result.Hits))
+	}
+	if result.Hits[1].DocumentID != other.ID {
+		t.Fatal("distinct passage was crowded out")
+	}
+	filtered, err := service.SearchAbove(ctx, []string{long.ID, other.ID}, "unrelated", 0.5)
+	if err != nil || len(filtered.Hits) != 0 {
+		t.Fatal("irrelevant passages survived the filter", err)
+	}
+	if _, err = service.SearchAbove(ctx, []string{long.ID}, "orchard", 1.1); err == nil {
+		t.Fatal("invalid filter accepted")
+	}
+	if err = service.Selected(ctx, []Selection{result.Hits[1].Selection}, func(sources []documents.Prepared) error {
+		if sources[0].Sections[0] != other.Sections[0] {
+			t.Fatal("dedup changed source selection")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}

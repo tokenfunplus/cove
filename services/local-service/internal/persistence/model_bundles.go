@@ -346,5 +346,8 @@ func (files ModelBundles) Remove(bundle ModelBundle) error {
 	if err := os.RemoveAll(files.Path(bundle)); err != nil {
 		return err
 	}
+	if err := os.RemoveAll(filepath.Join(filepath.Dir(files.Path(bundle)), ".resume-"+bundle.SHA256)); err != nil {
+		return err
+	}
 	return files.cleanPartial(bundle)
 }

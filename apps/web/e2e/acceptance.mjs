@@ -1,3 +1,4 @@
+import { runLocalCapabilitiesAcceptance } from "./local-capabilities.mjs";
 import { runProjectsAcceptance } from "./projects.mjs";
 import http from "node:http";
 import { randomBytes } from "node:crypto";
@@ -590,7 +591,10 @@ try {
     );
     await cdp("Input.insertText", { text: value });
   }
-  if (process.env.COVE_BROWSER_SCENARIO === "projects") {
+  if (process.env.COVE_BROWSER_SCENARIO === "local-capabilities") {
+    await runLocalCapabilitiesAcceptance({api,cdp,evaluate,until,click,fill,snapshot});
+    assert.equal(exceptions.length,0);socket.close();console.log("Local capability browser acceptance passed: retained speech drafts, empty preview text, similarity controls, and responsive layouts.");
+  } else if (process.env.COVE_BROWSER_SCENARIO === "projects") {
     try { await runProjectsAcceptance({api,cdp,evaluate,until,click,fill,snapshot,reloadPage,dataDir:temp,requests}); } catch (error) { await snapshot("project-failure"); throw error; }
     assert.equal(exceptions.length,0);socket.close();console.log("Project browser acceptance passed: creation, fixed files, moves, model comparison, frozen snapshots, preserved conflict drafts and reference-safe deletion.");
   } else if (process.env.COVE_BROWSER_SCENARIO === "web-search") {

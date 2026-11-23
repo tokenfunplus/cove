@@ -133,6 +133,13 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 		return GenerationBatch{}, fmt.Errorf("freeze earlier generation batch dispositions: %w", err)
 	}
 	for position, inputTarget := range input.Targets {
+		targetConfiguration := configuration
+		if inputTarget.GenerationParameters != nil {
+			targetConfiguration.GenerationParameters = *inputTarget.GenerationParameters
+		}
+		if err := validateGenerationConfigurationSnapshot(targetConfiguration); err != nil {
+			return GenerationBatch{}, err
+		}
 		targetID, err := newID()
 		if err != nil {
 			return GenerationBatch{}, fmt.Errorf("create generation target ID: %w", err)
@@ -149,7 +156,7 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 		if _, err := tx.ExecContext(ctx, `INSERT INTO generation_targets (id, generation_batch_id, provider_id, model_id, position, latest_generation_id) VALUES (?, ?, ?, ?, ?, ?)`, targetID, batchID, inputTarget.ProviderID, inputTarget.ModelID, position, generationID); err != nil {
 			return GenerationBatch{}, fmt.Errorf("save generation target: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO generations (id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, created_at, updated_at, generation_batch_id, generation_target_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, generationID, input.ConversationID, requestID, userMessageID, GenerationPending, snapshot, configuration.SystemPrompt, configuration.Temperature, configuration.TopP, configuration.MaxTokens, now.UnixNano(), now.UnixNano(), batchID, targetID); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO generations (id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, created_at, updated_at, generation_batch_id, generation_target_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, generationID, input.ConversationID, requestID, userMessageID, GenerationPending, snapshot, targetConfiguration.SystemPrompt, targetConfiguration.Temperature, targetConfiguration.TopP, targetConfiguration.MaxTokens, now.UnixNano(), now.UnixNano(), batchID, targetID); err != nil {
 			return GenerationBatch{}, fmt.Errorf("save target generation: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE generations SET web_search_policy=? WHERE id=?`, webPolicyJSON(configuration.WebSearch), generationID); err != nil {

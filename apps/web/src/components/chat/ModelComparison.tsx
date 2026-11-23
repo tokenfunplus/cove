@@ -128,7 +128,7 @@ export function ModelComparisonResultGrid({
                 key={target.id}
               >
                 <ModelAnswerCard
-                  webSearch={target.generation.web_search} webSearchEnabled={Boolean(target.generation.configuration_snapshot.web_search)} webActivity={liveTarget?.webActivity}
+                  webSearch={target.generation.web_search} webSearchEnabled={Boolean(target.generation.configuration_snapshot.web_search)} activity={liveTarget?.activity}
                   answer={message ? { messageId: message.id, conversationId: message.conversation_id, body: message.body, snapshot: message.provider_snapshot } : undefined}
                   metrics={target.generation.metrics}
                   actions={actions}
@@ -287,7 +287,7 @@ export function LiveModelComparisonGrid({
               key={target.key}
             >
               <ModelAnswerCard
-                webSearch={batch?.targets.find(item => item.id === target.targetId)?.generation.web_search} webSearchEnabled={Boolean(batch?.web_search)} webActivity={target.webActivity}
+                webSearch={batch?.targets.find(item => item.id === target.targetId)?.generation.web_search} webSearchEnabled={Boolean(batch?.web_search)} activity={target.activity}
                 metrics={batch?.targets.find(item => item.id === target.targetId)?.generation.metrics}
                 actions={actions}
                 body={target.assistantBody}

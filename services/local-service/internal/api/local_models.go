@@ -17,7 +17,7 @@ import (
 type projectLocalChat interface {
 	ListProjectDocuments(context.Context, string) ([]persistence.LocalDocument, error)
 	ReindexProjectDocument(context.Context, string, string) error
-	SearchProjectDocuments(context.Context, string, []string, string) (retrieval.Results, error)
+	SearchProjectDocuments(context.Context, string, []string, string, ...float64) (retrieval.Results, error)
 	PrepareProjectSources(context.Context, string, string, []retrieval.Selection) ([]chat.PreparedWebSource, error)
 	SetProjectSourceUsage(context.Context, string, string, int64, string) (persistence.Project, error)
 }
@@ -31,7 +31,7 @@ type localChat interface {
 	ImportLocalDocument(context.Context, documents.Input) error
 	ReindexLocalDocument(context.Context, string) error
 	DeleteLocalDocument(context.Context, string) error
-	SearchLocalDocuments(context.Context, []string, string) (retrieval.Results, error)
+	SearchLocalDocuments(context.Context, []string, string, ...float64) (retrieval.Results, error)
 	PrepareLocalSources(context.Context, string, []retrieval.Selection) ([]chat.PreparedWebSource, error)
 }
 
@@ -121,6 +121,7 @@ func (server *Server) localDocumentCommand(writer http.ResponseWriter, request *
 		var input struct {
 			Documents []string `json:"document_ids"`
 			Query     string   `json:"query"`
+			Minimum   float64  `json:"minimum_similarity"`
 		}
 		if decodeJSON(request, &input) != nil {
 			writeError(writer, 400, "validation", "The document search request is invalid.")
@@ -128,9 +129,9 @@ func (server *Server) localDocumentCommand(writer http.ResponseWriter, request *
 		}
 		var result retrieval.Results
 		if project != "" {
-			result, err = projectService.SearchProjectDocuments(request.Context(), project, input.Documents, input.Query)
+			result, err = projectService.SearchProjectDocuments(request.Context(), project, input.Documents, input.Query, input.Minimum)
 		} else {
-			result, err = service.SearchLocalDocuments(request.Context(), input.Documents, input.Query)
+			result, err = service.SearchLocalDocuments(request.Context(), input.Documents, input.Query, input.Minimum)
 		}
 		if err == nil {
 			writeJSON(writer, 200, result)

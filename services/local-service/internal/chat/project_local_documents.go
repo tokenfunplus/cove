@@ -36,7 +36,7 @@ func (service *Service) ReindexProjectDocument(ctx context.Context, project, id 
 	return service.retrieval.Exclusive(ctx, func() error { return service.retrieval.WithStore(library).Reindex(ctx, id) })
 }
 
-func (service *Service) SearchProjectDocuments(ctx context.Context, project string, ids []string, query string) (retrieval.Results, error) {
+func (service *Service) SearchProjectDocuments(ctx context.Context, project string, ids []string, query string, minimum ...float64) (retrieval.Results, error) {
 	library, err := service.projectLibrary(project)
 	if err != nil {
 		return retrieval.Results{}, err
@@ -60,7 +60,11 @@ func (service *Service) SearchProjectDocuments(ctx context.Context, project stri
 			}
 		}
 		var e error
-		result, e = engine.Search(ctx, ids, query)
+		cutoff := 0.0
+		if len(minimum) > 0 {
+			cutoff = minimum[0]
+		}
+		result, e = engine.SearchAbove(ctx, ids, query, cutoff)
 		return e
 	})
 	return result, err
