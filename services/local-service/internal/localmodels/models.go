@@ -4,7 +4,7 @@ package localmodels
 import (
 	"context"
 	"errors"
-	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -161,19 +161,9 @@ func (manager *Manager) Install(id string) error {
 	go func() {
 		defer close(job.done)
 		defer cancel()
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, m.URL, nil)
-		if err == nil {
-			var response *http.Response
-			response, err = manager.client.Do(request)
-			if err == nil {
-				defer response.Body.Close()
-				if response.StatusCode != 200 {
-					err = fmt.Errorf("The model host could not serve this download (HTTP %d).", response.StatusCode)
-				} else {
-					err = manager.files.Install(ctx, id, m.SHA256, m.Bytes, response.Body, func(n int64) { manager.mu.Lock(); job.status.Downloaded = n; manager.mu.Unlock() })
-				}
-			}
-		}
+		err := manager.files.Download(ctx, id, m.SHA256, m.Bytes, func(offset int64) (io.ReadCloser, bool, error) {
+			return FetchArtifact(ctx, manager.client, m.URL, m.Bytes, offset)
+		}, func(n int64) { manager.mu.Lock(); job.status.Downloaded = n; manager.mu.Unlock() })
 		manager.mu.Lock()
 		defer manager.mu.Unlock()
 		job.status.State = "installed"

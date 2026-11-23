@@ -126,7 +126,7 @@ func (manager *Manager) Install(id string) error {
 	go func() {
 		defer close(job.done)
 		defer cancel()
-		err := manager.files.Install(ctx, model.Bundle(), func(asset persistence.BundleArtifact) (io.ReadCloser, error) {
+		err := manager.files.InstallResumable(ctx, model.Bundle(), func(asset persistence.BundleArtifact, offset int64) (io.ReadCloser, bool, error) {
 			var source string
 			for _, item := range model.Artifacts {
 				if item.Filename == asset.Filename {
@@ -135,21 +135,9 @@ func (manager *Manager) Install(id string) error {
 				}
 			}
 			if source == "" {
-				return nil, errors.New("The speech download manifest is incomplete.")
+				return nil, false, errors.New("The speech download manifest is incomplete.")
 			}
-			request, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
-			if err != nil {
-				return nil, err
-			}
-			response, err := manager.client.Do(request)
-			if err != nil {
-				return nil, errors.New("The speech model source could not be reached. Check your connection and retry.")
-			}
-			if response.StatusCode != http.StatusOK {
-				response.Body.Close()
-				return nil, errors.New("The speech model source could not serve this download. Retry later.")
-			}
-			return response.Body, nil
+			return localmodels.FetchArtifact(ctx, manager.client, source, asset.Bytes, offset)
 		}, func(n int64) { manager.mu.Lock(); job.status.Downloaded = n; manager.mu.Unlock() })
 		manager.mu.Lock()
 		defer manager.mu.Unlock()

@@ -174,9 +174,17 @@ func (service *Service) importSource(ctx context.Context, source documents.Prepa
 }
 
 func (service *Service) Search(ctx context.Context, ids []string, query string) (Results, error) {
+	return service.SearchAbove(ctx, ids, query, 0)
+}
+
+// SearchAbove applies a user-selected ranking cutoff, never a confidence estimate.
+func (service *Service) SearchAbove(ctx context.Context, ids []string, query string, minimum float64) (Results, error) {
 	started := time.Now()
 	result := Results{Hits: []Hit{}, ModelSHA256: hash(), IndexVersion: IndexVersion}
 	err := service.Exclusive(ctx, func() error {
+		if math.IsNaN(minimum) || math.IsInf(minimum, 0) || minimum < 0 || minimum > 1 {
+			return errors.New("Choose a minimum similarity between zero and one.")
+		}
 		query = strings.TrimSpace(query)
 		if len(ids) == 0 || len(ids) > 4 || utf8.RuneCountInString(query) == 0 || utf8.RuneCountInString(query) > 400 {
 			return errors.New("Select one to four documents and enter a query of up to 400 characters.")
@@ -232,7 +240,24 @@ func (service *Service) Search(ctx context.Context, ids []string, query string) 
 			rankedChunks = append(rankedChunks, ranked{chunk, score})
 		}
 		sort.SliceStable(rankedChunks, func(i, j int) bool { return rankedChunks[i].score > rankedChunks[j].score })
-		for _, item := range rankedChunks[:min(5, len(rankedChunks))] {
+		covered := map[string]bool{}
+		for _, item := range rankedChunks {
+			if item.score < minimum || len(result.Hits) == 5 {
+				break
+			}
+			novel := false
+			for _, section := range item.chunk.Sections {
+				if !covered[item.chunk.DocumentID+":"+section] {
+					novel = true
+				}
+			}
+			if !novel {
+				continue
+			}
+			for _, section := range item.chunk.Sections {
+				covered[item.chunk.DocumentID+":"+section] = true
+			}
+
 			source := selectSections(sources[item.chunk.DocumentID], []persistence.LocalChunk{item.chunk})
 			result.Hits = append(result.Hits, Hit{Selection: Selection{DocumentID: item.chunk.DocumentID, Ordinal: item.chunk.Ordinal}, Score: item.score, Text: item.chunk.Text, Source: source.Snapshot})
 		}

@@ -154,3 +154,35 @@ func TestWAVNormalizationAndExportRejectMalformedAudio(t *testing.T) {
 		t.Fatal("joined differing sample rates")
 	}
 }
+
+func TestPreviewOverridesValidateWithoutSavingPreferences(t *testing.T) {
+	root := t.TempDir()
+	store, err := persistence.OpenSQLite(filepath.Join(root, "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	manager := New(root, "", store)
+	defer manager.Close()
+	for _, volume := range []float64{0, 1, -1, 1.1, math.NaN()} {
+		threads := 1
+		_, err = manager.Start(context.Background(), "owner", Request{Text: "A preview", RenderedText: true, Volume: &volume, Threads: &threads})
+		var required *ModelRequiredError
+		if volume >= 0 && volume <= 1 {
+			if !errors.As(err, &required) {
+				t.Fatal("valid override did not pass admission validation", err)
+			}
+		} else if err == nil || errors.As(err, &required) {
+			t.Fatal("invalid volume reached model admission", err)
+		}
+	}
+	invalidThreads := 5
+	var required *ModelRequiredError
+	if _, err = manager.Start(context.Background(), "owner", Request{Text: "Preview", Threads: &invalidThreads}); err == nil || errors.As(err, &required) {
+		t.Fatal("invalid thread count accepted")
+	}
+	settings, err := manager.Settings(context.Background())
+	if err != nil || settings.Volume != 0.9 || settings.Threads != 2 {
+		t.Fatal("preview overrides changed saved preferences", err)
+	}
+}

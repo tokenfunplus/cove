@@ -895,6 +895,7 @@ type generationEnvelope struct {
 }
 
 type generationEventEnvelope struct {
+	Activity       string                    `json:"activity,omitempty"`
 	WebActivity    string                    `json:"web_activity,omitempty"`
 	Reset          bool                      `json:"reset,omitempty"`
 	EventID        string                    `json:"event_id"`
@@ -1034,7 +1035,7 @@ func generationVerificationEnvelopeFor(verification persistence.GenerationVerifi
 func generationEventEnvelopeFor(event chat.GenerationEvent) generationEventEnvelope {
 	result := generationEventEnvelope{
 		EventID: event.EventID, BatchID: event.BatchID, TargetID: event.TargetID, GenerationID: event.GenerationID, Type: event.Type,
-		WebActivity: event.WebActivity, Reset: event.Reset, Delta: event.Delta, ReasoningDelta: event.ReasoningDelta, ErrorCode: event.ErrorCode, ErrorMessage: event.ErrorMessage,
+		Activity: event.Activity, WebActivity: event.WebActivity, Reset: event.Reset, Delta: event.Delta, ReasoningDelta: event.ReasoningDelta, ErrorCode: event.ErrorCode, ErrorMessage: event.ErrorMessage,
 	}
 	if event.Snapshot != nil {
 		snapshot := providerSnapshotEnvelopeFor(*event.Snapshot)

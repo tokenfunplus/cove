@@ -43,6 +43,11 @@ func (manager *Manager) stopWorker(id string) {
 // The caller owns the manager gate for the worker's entire request/stream.
 func (manager *Manager) startWorker(ctx context.Context, id string) (*worker, error) {
 	started := time.Now()
+	for other := range manager.workers {
+		if other != id {
+			manager.stopWorker(other)
+		}
+	}
 	if w := manager.workers[id]; w != nil {
 		select {
 		case <-w.done:

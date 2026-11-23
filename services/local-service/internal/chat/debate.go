@@ -676,6 +676,7 @@ func (service *Service) runDebateRequest(run *debateRun, session persistence.Deb
 		turn.Configuration.SystemPrompt = turn.Context[0].Content
 		messages = turn.Context
 	}
+	turn.Configuration.GenerationParameters = effectiveGenerationParameters(turn.Configuration.GenerationParameters, connection.profile.Kind)
 	turn.UsageExpected = !connection.isSecure()
 	if connection.isSecure() {
 		turn.Execution = "browser"

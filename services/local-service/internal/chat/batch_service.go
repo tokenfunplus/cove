@@ -96,7 +96,8 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		}
 		hasOrdinaryTarget = hasOrdinaryTarget || !connection.isSecure()
 		snapshot := snapshotFor(connection.profile, connection.metadata.PrivacyMode)
-		batchTargets = append(batchTargets, persistence.GenerationTargetInput{ProviderID: target.ProviderID, ModelID: target.ModelID, Snapshot: snapshot})
+		effective := effectiveGenerationParameters(parameters, connection.profile.Kind)
+		batchTargets = append(batchTargets, persistence.GenerationTargetInput{GenerationParameters: &effective, ProviderID: target.ProviderID, ModelID: target.ModelID, Snapshot: snapshot})
 	}
 	project, expectedProject, err := service.PreviewProjectContext(ctx, input.ConversationID)
 	if err != nil {
@@ -378,6 +379,7 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 			snapshot = snapshotFor(connection.profile, connection.metadata.PrivacyMode)
 		}
 	}
+	configuration.GenerationParameters = effectiveGenerationParameters(configuration.GenerationParameters, snapshot.ProviderKind)
 	var messages []provider.ProviderMessage
 	if resolveErr == nil {
 		messages, err = service.messagesForBatch(ctx, batch, userBody, configuration)
@@ -581,6 +583,9 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 	completion := provider.CompletionInput{Profile: profile, Secret: secret, Messages: append([]provider.ProviderMessage(nil), messages...), GenerationParameters: providerGenerationParameters(configuration.GenerationParameters)}
 	if configuration.WebSearch != nil {
 		completion.Tools = websearch.Tools()
+	}
+	completion.Activity = func(activity string) {
+		service.publishBatch(GenerationEvent{BatchID: batchID, TargetID: targetID, GenerationID: generation.ID, Type: EventActivity, Activity: activity})
 	}
 	stream, err := service.provider.Stream(ctx, completion)
 	if err != nil {
@@ -845,4 +850,13 @@ func (hub *batchEventHub) removeSubscriber(ctx context.Context, stream *batchEve
 
 func isNearAIVerifiedTransport(privacyMode string) bool {
 	return privacyMode == provider.PrivacyModePrivateTEE || privacyMode == provider.PrivacyModeIncognito || privacyMode == provider.PrivacyModeChutes
+}
+
+// Save each attempt's effective limits without changing workspace preferences or other comparison targets.
+func effectiveGenerationParameters(parameters persistence.GenerationParameters, kind string) persistence.GenerationParameters {
+	if kind == provider.KindLocal && (parameters.MaxTokens == nil || *parameters.MaxTokens > localmodels.MaxOutputTokens) {
+		limit := localmodels.MaxOutputTokens
+		parameters.MaxTokens = &limit
+	}
+	return parameters
 }

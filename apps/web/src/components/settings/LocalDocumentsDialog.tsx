@@ -1,3 +1,4 @@
+import { Slider } from "@/components/ui/slider";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FileInput } from "@/components/ui/file-input";
 import { useEffect, useRef, useState } from "react";
@@ -31,6 +32,7 @@ type Operation = { signal: AbortSignal; isCurrent: () => boolean };
 export function LocalDocumentsDialog({onClose,onUseSources,projectId}:{onClose:()=>void;onUseSources?:(sources:PreparedWebSource[])=>boolean;projectId?:string}) {
   const library=useLocalDocuments(projectId);const models=useLocalModels();const cache=useQueryClient();
   const [selected,setSelected]=useState<string[]>([]);const [query,setQuery]=useState("");const [results,setResults]=useState<LocalSearchResults>();
+  const [minimum,setMinimum]=useState(0);
   const [chosen,setChosen]=useState<number[]>([]);const [preview,setPreview]=useState<AttachmentSnapshot>();
   const [copied,setCopied]=useState(false);const [busy,setBusy]=useState("");const [error,setError]=useState("");const [remove,setRemove]=useState<string>();
   const upload=useRef<HTMLInputElement>(null);const active=useRef<AbortController | undefined>(undefined);const epoch=useRef(0);
@@ -65,7 +67,7 @@ export function LocalDocumentsDialog({onClose,onUseSources,projectId}:{onClose:(
   }
   async function search(){
     const current=++epoch.current;const controller=new AbortController();active.current?.abort();active.current=controller;setBusy("Searching selected documents locally…");setError("");setResults(undefined);setChosen([]);
-    try{const value=await (projectId?searchProjectDocuments(projectId,selected,query,controller.signal):searchLocalDocuments(selected,query,controller.signal));if(current===epoch.current)setResults(value);}catch(error){if(current===epoch.current && !controller.signal.aborted)setError(error instanceof Error?error.message:"Local search failed.");}finally{if(current===epoch.current)setBusy("");}
+    try{const value=await (projectId?searchProjectDocuments(projectId,selected,query,controller.signal,minimum):searchLocalDocuments(selected,query,controller.signal,minimum));if(current===epoch.current)setResults(value);}catch(error){if(current===epoch.current && !controller.signal.aborted)setError(error instanceof Error?error.message:"Local search failed.");}finally{if(current===epoch.current)setBusy("");}
   }
   async function attach(){
     if(!onUseSources || !results)return;
@@ -106,12 +108,14 @@ export function LocalDocumentsDialog({onClose,onUseSources,projectId}:{onClose:(
           </section>
           <form className="grid gap-3 border-t border-border pt-4" onSubmit={event=>{event.preventDefault();event.stopPropagation();void search();}}>
             <label className="grid gap-2 text-sm font-medium">What are you looking for?<Input disabled={!!busy && busy!=="Searching selected documents locally…"} value={query} maxLength={400} onChange={event=>{reset();setQuery(event.target.value);}} placeholder="Ask a question about the selected documents"/></label>
+            <label className="grid gap-2 text-sm">Minimum similarity · {minimum.toFixed(2)}<Slider aria-label="Minimum similarity" min={0} max={1} step={0.05} value={minimum} disabled={!!busy} onValueChange={value=>{reset();setMinimum(value);}}/><span className="text-xs text-muted-foreground">Raise this filter to hide weaker matches. Zero keeps all non-negative matches. Similarity is not confidence.</span></label>
             <div className="flex flex-wrap items-center gap-3"><Button type="submit" disabled={!!busy || !installed || !selected.length || !query.trim()}>Search selected documents</Button><span className="text-sm text-muted-foreground">{selected.length} / 4 selected · Chinese-focused retrieval</span></div>
           </form>
           {busy && <div role="status" className="flex items-center justify-between gap-2 text-sm"><span>{busy}</span>{(busy==="Searching selected documents locally…" || busy==="Indexing documents locally…") && <Button variant="ghost" onClick={()=>{reset();setError("Operation stopped. Completed documents stay in the library.");void cache.invalidateQueries({queryKey:localDocumentsKey});}}>Stop</Button>}</div>}
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           {results && <section aria-label="Local search results" className="grid gap-3">
             <Button variant="outline" disabled={!!busy||!chosen.length} onClick={()=>void copySelected()}>Copy selected text</Button>{copied&&<p role="status" className="text-sm">Selected source text copied.</p>}
+            {results.hits.length===0&&<p role="status" className="text-sm text-muted-foreground">No passages meet the current similarity filter. Lower the minimum or try a more specific question.</p>}
             <h3 className="font-semibold">{results.hits.length} results · {results.elapsed_ms} ms</h3><p className="text-sm text-muted-foreground">Similarity is a ranking signal, not a confidence score. Open the cited lines or pages to check the original text.</p>
             {results.hits.map((hit,index)=><article key={`${hit.document_id}:${hit.ordinal}`} className="grid gap-3 rounded-xl border border-border p-4"><label className="flex items-start gap-3"><Checkbox  className="mt-1 " disabled={!!busy} checked={chosen.includes(index)} onCheckedChange={()=>setChosen(current=>current.includes(index)?current.filter(value=>value!==index):[...current,index])}/><span className="text-sm font-medium">{hit.source.name} · {hit.source.sections.map(section=>section.id).join(", ")} · similarity {hit.score.toFixed(3)}</span></label><p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{hit.text}</p><Button variant="link" className="h-auto justify-start p-0" onClick={()=>setPreview(hit.source)}>View cited source sections</Button></article>)}
             {onUseSources ? <><p className="text-sm text-muted-foreground">Search runs on this Mac. Only selected original sections are attached; your chosen answer model receives them when you send. Other chat and project context may also be included.</p><Button disabled={!!busy || !chosen.length} onClick={()=>void attach()}>Use selected results in chat</Button></> : <p className="text-sm text-muted-foreground">Open a conversation to use selected results in chat.</p>}

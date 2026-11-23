@@ -141,9 +141,11 @@ const (
 	EventStopped     EventType = "stopped"
 	EventFailed      EventType = "failed"
 	EventWebActivity EventType = "web_activity"
+	EventActivity    EventType = "activity"
 )
 
 type GenerationEvent struct {
+	Activity       string                        `json:"activity,omitempty"`
 	WebActivity    string                        `json:"web_activity,omitempty"`
 	Reset          bool                          `json:"reset,omitempty"`
 	EventID        string                        `json:"event_id"`
@@ -278,7 +280,7 @@ func (service *Service) StartGeneration(ctx context.Context, input SendInput) (G
 		ConversationID: input.ConversationID, ClientRequestID: input.ClientRequestID,
 		Body: input.Body, Snapshot: snapshot,
 		ConfigurationSnapshot: persistence.GenerationConfigurationSnapshot{
-			SystemPrompt: input.SystemPrompt, GenerationParameters: input.GenerationParameters,
+			SystemPrompt: input.SystemPrompt, GenerationParameters: effectiveGenerationParameters(input.GenerationParameters, profile.Kind),
 		},
 	})
 	if err != nil {
@@ -595,6 +597,9 @@ func (service *Service) runGeneration(ctx context.Context, generation persistenc
 	stream, err := service.provider.Stream(ctx, provider.CompletionInput{
 		Profile: profile, Secret: secret, Messages: messages,
 		GenerationParameters: providerGenerationParameters(configuration.GenerationParameters),
+		Activity: func(activity string) {
+			service.publish(GenerationEvent{GenerationID: generation.ID, Type: EventActivity, Activity: activity})
+		},
 	})
 	if err != nil {
 		if ctx.Err() != nil {

@@ -146,3 +146,13 @@ test("a failed Batch event keeps its actionable Provider error details", () => {
     errorMessage: expect.any(String),
   });
 });
+
+
+test("local processing activity updates only its target and preserves answer text",()=>{
+ const turn=createLiveTurn("conversation","Hello","request",[{providerId:"cove-local",modelId:"qwen"}]);
+ turn.batchId="batch";turn.targets![0].targetId="target";turn.targets![0].assistantBody="Keep answer";
+ const next=applyLiveTurnEvent(turn,{event_id:"activity-1",batch_id:"batch",target_id:"target",generation_id:"generation",type:"activity",activity:"Waiting for local inference…"});
+ expect(next.targets![0].activity).toBe("Waiting for local inference…");
+ expect(next.targets![0].assistantBody).toBe("Keep answer");
+ expect(next.targets![0].phase).toBe("pending");
+});

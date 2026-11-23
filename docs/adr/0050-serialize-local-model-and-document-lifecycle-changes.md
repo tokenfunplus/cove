@@ -4,6 +4,8 @@ Date: 2026-11-22
 
 Status: Accepted
 
+[ADR 0058](0058-improve-local-capability-feedback-and-recovery.md) updates interrupted download recovery, inference memory retention, and local capability feedback.
+
 This refines the lifecycle guarantees in [managed local inference](0048-add-managed-local-inference-and-document-retrieval.md). No database or public API schema change is required.
 
 Local chat-model removal shares Chat's Generation admission lock. It checks active work after acquiring that lock, preventing a new Generation from being admitted between the busy check and weight removal. Native inference leases and library operations reject contexts that are already canceled, including cancellation racing an available lease. Canceling a local chat request before response headers also terminates its native worker instead of leaving it resident until the idle timeout.

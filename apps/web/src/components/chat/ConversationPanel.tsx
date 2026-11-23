@@ -584,7 +584,7 @@ export function ConversationPanel({
                     }
                     mode={inferenceModeForSnapshot(target.snapshot)}
                   />
-                  {liveWaiting && target.webActivity && <p role="status" className="my-2 text-xs text-muted-foreground">{target.webActivity}</p>}
+                  {liveWaiting && target.activity && <p role="status" className="my-2 text-xs text-muted-foreground">{target.activity}</p>}
                   {liveWaiting && <GenerationActivity stopWhenStalledOnly={Boolean(canStopFromComposer)} phase={target.phase} body={target.assistantBody} reasoning={target.reasoningBody} onStop={target.generationId && liveBatch && onCancelTarget ? ()=>onCancelTarget(liveBatch.id,target.generationId!) : onCancel}/>}
                   {target.assistantBody || target.reasoningBody ? (
                     <AssistantMessage content={target.assistantBody} reasoning={target.reasoningBody} streaming={target.phase === "streaming"} />

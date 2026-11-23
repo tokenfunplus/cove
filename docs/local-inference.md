@@ -79,3 +79,11 @@ scripts/go -C services/local-service test ./internal/localmodels -run TestRealOf
 To exercise Qwen3 with the same offline-chat gate, set `COVE_TEST_CHAT_MODEL=qwen3-abliterated-chat` for the second test command. The default remains Qwen2.5. Each selected model is downloaded only when its verified weights are absent from the temporary data directory.
 
 The fixtures and assertions live in the corresponding `acceptance_test.go` files and `internal/retrieval/testdata/chinese-retrieval.json`. Keep this data directory separate from everyday Cove data. No Provider credentials are needed for these tests.
+
+## Recovery and result controls
+
+Interrupted model transfers can resume on retry when the pinned source supports HTTP ranges. Complete files still pass size and SHA-256 checks before installation. Cancel discards partial files; failed downloads also offer Discard partial download. Speech bundles use the same recovery policy.
+
+Document search offers a Minimum similarity filter. Zero includes all non-negative matches; higher values can return no results. This user-selected cutoff is not a confidence estimate or a calibrated answer-quality threshold. Results skip chunks whose original source sections are already represented.
+
+Local chat reports waiting, model preparation, and generation activity. Switching inference models unloads the previous worker; switching back may require loading again. See [ADR 0058](adr/0058-improve-local-capability-feedback-and-recovery.md).

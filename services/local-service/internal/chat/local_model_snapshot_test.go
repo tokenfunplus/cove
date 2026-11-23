@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"testing"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/localmodels"
@@ -20,5 +21,23 @@ func TestLocalSnapshotUsesSelectedModelArtifact(t *testing.T) {
 	}
 	if profile.LocalModel.SHA256 != original.SHA256 {
 		t.Fatal("snapshot construction mutated the shared Provider profile")
+	}
+}
+
+func TestLocalEffectiveParametersDoNotMutatePreferences(t *testing.T) {
+	for _, requested := range []int{512, 4096} {
+		inputLimit := requested
+		parameters := persistence.GenerationParameters{MaxTokens: &inputLimit}
+		effective := effectiveGenerationParameters(parameters, provider.KindLocal)
+		if *effective.MaxTokens != min(requested, localmodels.MaxOutputTokens) || *parameters.MaxTokens != requested {
+			t.Fatal("incorrect local limit")
+		}
+		remote := effectiveGenerationParameters(parameters, provider.KindOpenAICompatible)
+		if *remote.MaxTokens != requested {
+			t.Fatal("remote limit changed")
+		}
+	}
+	if *effectiveGenerationParameters(persistence.GenerationParameters{}, provider.KindLocal).MaxTokens != 1024 {
+		t.Fatal("missing default limit")
 	}
 }

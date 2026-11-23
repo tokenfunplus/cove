@@ -11,6 +11,7 @@ import (
 )
 
 const ProviderID = "cove-local"
+const MaxOutputTokens = 1024
 
 func (manager *Manager) Profile() provider.Profile {
 	p, _ := provider.NormalizeProfile(provider.Profile{ID: ProviderID, Kind: provider.KindLocal, Name: "On this Mac", Endpoint: "http://127.0.0.1", AuthMethod: provider.AuthBearer, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC()})
@@ -19,7 +20,7 @@ func (manager *Manager) Profile() provider.Profile {
 }
 func (manager *Manager) Metadata() []provider.ModelMetadata {
 	contextLength := int64(4096)
-	output := int64(1024)
+	output := int64(MaxOutputTokens)
 	if !manager.RuntimeReady() {
 		return nil
 	}
@@ -71,8 +72,14 @@ func (router RoutedProvider) Stream(ctx context.Context, input provider.Completi
 	if len(input.Tools) > 0 {
 		return nil, errors.New("This local model does not support Cove Web search tools. Turn Web search off for this response.")
 	}
+	if input.Activity != nil {
+		input.Activity("Waiting for local inference…")
+	}
 	if err := manager.acquire(ctx); err != nil {
 		return nil, err
+	}
+	if input.Activity != nil {
+		input.Activity("Preparing local model…")
 	}
 	w, err := manager.startWorker(ctx, modelID)
 	if err != nil {
@@ -82,9 +89,12 @@ func (router RoutedProvider) Stream(ctx context.Context, input provider.Completi
 	input.Profile.Kind = provider.KindOpenAICompatible
 	input.Profile.Endpoint = w.endpoint
 	input.Secret = credentials.Secret{Value: w.key}
-	maxOutput := 1024
+	maxOutput := MaxOutputTokens
 	if input.GenerationParameters.MaxTokens == nil || *input.GenerationParameters.MaxTokens > maxOutput {
 		input.GenerationParameters.MaxTokens = &maxOutput
+	}
+	if input.Activity != nil {
+		input.Activity("Generating on this Mac…")
 	}
 	stream, err := provider.NewHTTPAdapter(w.client).Stream(ctx, input)
 	if err != nil {

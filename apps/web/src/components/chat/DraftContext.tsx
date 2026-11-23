@@ -78,6 +78,7 @@ export function DraftContext({
             <p className="text-sm text-muted-foreground">
               {copy.draftContextNotice}
             </p>
+            {destinations.some(destination=>destination.includes("On this Mac"))&&<p className="text-sm text-muted-foreground">Local chat supports 4,096 tokens, including up to 1,024 output tokens. Character counts are not token counts; long history or source pages may exceed this model limit.</p>}
             {destinations.length>0&&<p className="text-xs text-muted-foreground">Selected destinations: {destinations.join("; ")}</p>}
             {projectPreview && <ProjectContextUsage project={projectPreview.project_context} usage={projectPreview.usage} preview/>}
             {preview.isPending && <p role="status">{copy.loading}</p>}

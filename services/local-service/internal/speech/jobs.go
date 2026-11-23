@@ -48,6 +48,8 @@ type Job struct {
 	cleanupPending        bool
 }
 type Request struct {
+	Volume         *float64
+	Threads        *int
 	Text           string
 	ConversationID string
 	ModelID        string
@@ -103,6 +105,15 @@ func (manager *Manager) Start(ctx context.Context, owner string, input Request) 
 	}
 	settings, err := manager.Settings(ctx)
 	if err != nil {
+		return JobStatus{}, err
+	}
+	if input.Volume != nil {
+		settings.Volume = *input.Volume
+	}
+	if input.Threads != nil {
+		settings.Threads = *input.Threads
+	}
+	if err := ValidateSettings(&settings); err != nil {
 		return JobStatus{}, err
 	}
 	text, err := PlainText(input.Text, settings.IncludeCode)

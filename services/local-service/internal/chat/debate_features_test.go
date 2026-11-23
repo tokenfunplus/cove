@@ -308,3 +308,41 @@ func TestDebateControlsValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalDebateSummaryRecordsTheEffectiveOutputLimit(t *testing.T) {
+	for _, requested := range []int{512, 2048} {
+		t.Run(strconv.Itoa(requested), func(t *testing.T) {
+			upstream := &summarizingDebateProvider{}
+			service, _ := newDebateTest(t, &upstream.debateTestProvider)
+			service.provider = upstream
+			service.profiles = fakeProviderSource{profile: provider.Profile{ID: "fixture", Kind: provider.KindLocal, Name: "Local fixture", Model: "model-a"}}
+			input := debateInput()
+			input.Rules.MaxTokens = requested
+			inRate, outRate, budget := 2.0, 4.0, 0.0002
+			input.Controls = persistence.DebateControls{SummaryEvery: 1, SummarySeat: 1, AutoPause: true, CostBudgetUSD: &budget, Rates: []persistence.DebateRate{{InputPerMillion: &inRate, OutputPerMillion: &outRate}, {InputPerMillion: &inRate, OutputPerMillion: &outRate}}}
+			session, err := service.StartDebate(context.Background(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			waitDebate(t, service, session.ID, func(view persistence.DebateView) bool {
+				return view.Session.Status != "running" && !service.debateBusy()
+			})
+			view, err := service.ReadDebate(context.Background(), session.ID, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, turn := range view.Turns {
+				if turn.Kind == "summary" {
+					found = true
+					if turn.Configuration.MaxTokens == nil || *turn.Configuration.MaxTokens != 1024 {
+						t.Fatal("local summary saved the pre-adapter limit")
+					}
+				}
+			}
+			if !found {
+				t.Fatal("summary was not scheduled")
+			}
+		})
+	}
+}

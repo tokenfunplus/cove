@@ -328,9 +328,10 @@ type GenerationTarget struct {
 }
 
 type GenerationTargetInput struct {
-	ProviderID string
-	ModelID    string
-	Snapshot   ProviderSnapshot
+	GenerationParameters *GenerationParameters
+	ProviderID           string
+	ModelID              string
+	Snapshot             ProviderSnapshot
 }
 
 type BeginGenerationBatchInput struct {

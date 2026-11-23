@@ -57,6 +57,7 @@ type ToolCallDelta struct {
 }
 
 type CompletionInput struct {
+	Activity             func(string)
 	Profile              Profile
 	Secret               credentials.Secret
 	Messages             []ProviderMessage

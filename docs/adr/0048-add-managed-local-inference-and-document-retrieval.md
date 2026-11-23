@@ -4,6 +4,8 @@ Date: 2026-11-21
 
 Status: Accepted
 
+[ADR 0058](0058-improve-local-capability-feedback-and-recovery.md) updates interrupted download recovery, inference memory retention, and local capability feedback.
+
 [ADR 0057](0057-close-local-capability-review-boundaries.md) replaces the original loopback worker handoff with private Unix sockets and extends admission and lifecycle checks.
 
 This decision extends [local model discovery](0047-add-curated-local-model-discovery.md) and [source document snapshots](0025-snapshot-local-source-documents-for-file-chat.md). Two catalog entries now support installation: BGE Small Chinese v1.5 Q8_0 (26,472,640 bytes) for retrieval, followed by Qwen2.5 0.5B Instruct Q4_K_M (491,400,032 bytes) for offline chat. Other entries remain discovery metadata.
