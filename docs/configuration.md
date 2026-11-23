@@ -80,7 +80,7 @@ Search queries go to the search service, page reads contact source websites, and
 | Estimated-cost rates | Response details → Model pricing | Optional browser-local USD input/output rates per million tokens, keyed by Provider/model. Advertised catalog prices do not overwrite them. |
 | Working Draft and undo history | Edit in workbench | Window memory only; up to 120,000 UTF-16 code units and 20 undo steps. Copy or download before reloading. |
 | Launch at Login | Native Launcher menu | Managed through macOS login-item registration; enabling it may require system approval. |
-| Control-Option-Space | Native Launcher menu | Optional global shortcut, off until enabled. Conflicts are reported by the Launcher. |
+| Quick Panel shortcut | Launcher Settings → Quick Panel Shortcut | Control-Option-Space opens the Quick Panel when enabled. The shortcut is off by default. Conflicts are reported by the Launcher. |
 
 Browser preferences, manual rates, combinations, and bookmarks are not part of a database backup or conversation export. Clearing browser data removes them; using another browser profile or port uses separate storage. If storage is unavailable, changes use session memory, and the bookmark preview reports that status. Provider Keys and message content are excluded from these preferences. See the [user guide](user-guide.md#focus-and-timeline-bookmarks) for reading and navigation behavior.
 

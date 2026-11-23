@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { EditPromptDialog } from "./EditPromptDialog";
 import { ChatExperienceContext, GenerationActivity, FailureActions } from "./ChatExperience";
 import { AnswerActions } from "@/components/chat/AnswerActions";
@@ -56,6 +56,9 @@ export function ConversationPanel({
   execution,
   webSearch,
   focusMode = false,
+  quickPanel = false,
+  quickPanelModelControl,
+  connectionReady = true,
   composerId,
   attachmentDraft,
   view,
@@ -90,6 +93,9 @@ export function ConversationPanel({
   execution?: Parameters<typeof ChatComposer>[0]["execution"];
   webSearch?: Parameters<typeof ChatComposer>[0]["webSearch"];
   focusMode?: boolean;
+  quickPanel?: boolean;
+  quickPanelModelControl?: ReactNode;
+  connectionReady?: boolean;
   attachmentDraft?: AttachmentDraft;
   view: ConversationView | undefined;
   copy?: ApplicationCopy;
@@ -146,6 +152,7 @@ export function ConversationPanel({
     generation,
     isLoading,
     navigation,
+    quickPanel,
   });
 
   if (isLoading) {
@@ -200,7 +207,7 @@ export function ConversationPanel({
   const catalogLoading = providerStatus === "catalog-loading";
   const showComposer =
     !view.archived &&
-    (providerStatus === "ready" || catalogLoading) &&
+    (quickPanel || providerStatus === "ready" || catalogLoading) &&
     onSend &&
     onDraftChange;
   const canStopFromComposer = showComposer && isSending && onCancel;
@@ -348,6 +355,18 @@ export function ConversationPanel({
     liveBatch && comparisonFirstAssistantMessageID.has(liveBatch.id),
   );
   const timelineEntries = conversationTimeline(view, liveTurn);
+  const latestButton = showReturnToLatest && (
+    <Button
+      variant={quickPanel ? "ghost" : "outline"}
+      size={quickPanel ? "xs" : "default"}
+      className={quickPanel ? "mx-3 self-end text-muted-foreground" : chatStyles.conversationPanel_latest}
+      style={quickPanel ? undefined : { bottom: footerHeight + 12 }}
+      onClick={returnToLatest}
+      type="button"
+    >
+      ↓ {copy.returnToLatest}{updatedReplies > 0 ? ` · ${updatedReplies} updated ${updatedReplies === 1 ? "answer" : "answers"}` : ""}
+    </Button>
+  );
 
   return (
     <SourceDocuments batches={allGenerationBatches} messages={view.messages}>
@@ -356,11 +375,13 @@ export function ConversationPanel({
         className={cn(
           chatStyles.conversationPanel,
           `conversation-panel${hasMessages ? "" : " conversation-panel--empty"}`,
+          quickPanel && !hasMessages && "justify-center",
         )}
         aria-label={view.title}
         data-workspace-chat-style="nearai"
         data-workspace-region="conversation"
         data-workspace-empty={hasMessages ? undefined : "true"}
+        data-quick-panel-conversation={quickPanel || undefined}
       >
         {view.branch && <p className="mx-5 my-2 text-xs text-muted-foreground" role="status">Branch of {view.branch.source_title}. Earlier messages are copied context from the edited turn.</p>}
         {editing && onEditPrompt && <EditPromptDialog key={editing.batch.id} batch={editing.batch} body={editing.body} targets={activeModelSet} profiles={profiles} busy={isSending || navigationBusy} error={editError} onCancelSubmission={onCancel} onClose={()=>{setEditing(undefined);setEditError(undefined);}} onSubmit={(body,targets)=>{setEditError(undefined);onEditPrompt(editing.batch.id,body,targets,{onAccepted:()=>setEditing(undefined),onFailure:setEditError});}}/>}
@@ -368,7 +389,7 @@ export function ConversationPanel({
           <p className={chatStyles.conversationPanel_archived} role="status">
             {copy.archivedConversationNotice}
           </p>
-        ) : providerStatus !== "ready" &&
+        ) : connectionReady && providerStatus !== "ready" &&
           providerStatus !== "catalog-loading" ? (
           <ProviderStatusNotice
             onOpenSettings={onOpenSettings}
@@ -376,24 +397,27 @@ export function ConversationPanel({
             copy={copy}
           />
         ) : null}
-        <div className={timelineStyles.viewport}>
+        <div className={cn(timelineStyles.viewport, quickPanel && !hasMessages && "hidden")}>
           <div
           ref={messageListRef}
           onScroll={handleMessageScroll}
           className={cn(
             chatStyles.messageList,
             focusMode && chatStyles.focusMessages,
-            timelineEntries.length > 0 && timelineStyles.messages,
+            quickPanel && "[&_.message]:mb-4",
+            !quickPanel && timelineEntries.length > 0 && timelineStyles.messages,
             `message-list${view.messages.length === 0 && liveTargets.length === 0 && !liveTurn ? " message-list--empty" : ""}`,
           )}
           aria-label={copy.conversationMessages}
+          role={quickPanel ? "region" : undefined}
+          tabIndex={quickPanel && hasMessages ? 0 : undefined}
           data-workspace-region="messages"
         >
           <div ref={contentRef} className="flow-root min-w-0" data-message-content>
           {view.messages.length === 0 &&
           liveTargets.length === 0 &&
           !liveTurn ? (
-            <ConversationWelcome copy={copy} onSelectPrompt={onDraftChange} />
+            !quickPanel && <ConversationWelcome copy={copy} onSelectPrompt={onDraftChange} />
           ) : view.messages.length === 0 ? null : (
             view.messages.map((message) => {
               const snapshot = message.provider_snapshot;
@@ -445,6 +469,7 @@ export function ConversationPanel({
                   )}
                   data-generation-target={generationTarget?.target.id}
                   data-timeline-anchor={message.role === "user" ? message.id : undefined}
+                  data-quick-panel-question={quickPanel && message.role === "user" ? "" : undefined}
                   key={message.id}
                 >
                   {message.role === "user" ? (
@@ -522,6 +547,7 @@ export function ConversationPanel({
           {liveTurn && !liveUserAlreadyPersisted ? (
             <article
               data-timeline-anchor={liveTurn.userMessageId}
+              data-quick-panel-question={quickPanel ? "" : undefined}
               className={cn(
                 messagesStyles.message,
                 "message--user message--live",
@@ -719,26 +745,16 @@ export function ConversationPanel({
           ))}
           </div>
           </div>
-          <ConversationTimeline
+          {!quickPanel && <ConversationTimeline
             key={view.id}
             conversationId={view.id}
             entries={timelineEntries}
             scrollRef={messageListRef}
             onNavigate={scrollToMessage}
             copy={copy}
-          />
+          />}
         </div>
-        {showReturnToLatest ? (
-          <Button
-            variant="outline"
-            className={chatStyles.conversationPanel_latest}
-            style={{ bottom: footerHeight + 12 }}
-            onClick={returnToLatest}
-            type="button"
-          >
-            ↓ {copy.returnToLatest}{updatedReplies>0 ? ` · ${updatedReplies} updated ${updatedReplies===1?"answer":"answers"}` : ""}
-          </Button>
-        ) : null}
+        {!quickPanel && latestButton}
         <p
           className={baseStyles.chatStatusLive}
           role="status"
@@ -751,6 +767,7 @@ export function ConversationPanel({
               : ""}
         </p>
         <div ref={footerRef} className="flex shrink-0 flex-col" data-workspace-region="composer">
+          {quickPanel && latestButton}
           {contextDispositionBatch && onSkipContext ? (
             <div className={cn(chatStyles.noteBand, focusMode && chatStyles.focusNoteBand)}>
               <div className={cn(chatStyles.noteBand_inner, focusMode && chatStyles.focusNoteInner)}>
@@ -779,6 +796,9 @@ export function ConversationPanel({
               webSearch={webSearch}
               composerId={composerId}
               compact={focusMode}
+              quickPanel={quickPanel}
+              quickPanelModelControl={quickPanelModelControl}
+              connectionReady={connectionReady}
               attachmentDraft={attachmentDraft}
               view={view}
               copy={copy}
@@ -790,7 +810,7 @@ export function ConversationPanel({
               onCancel={onCancel}
               isSending={isSending}
               navigationBusy={navigationBusy}
-              catalogLoading={catalogLoading}
+              catalogLoading={quickPanel ? providerStatus !== "ready" : catalogLoading}
               privateMode={privateMode}
               composerRef={composerRef}
               requiresContextChoice={Boolean(contextDispositionBatch)}

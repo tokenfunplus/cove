@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	codeberg.org/readeck/go-readability/v2 v2.1.3
+	github.com/google/uuid v1.6.0
 	github.com/keybase/go-keychain v0.0.1
 	github.com/ledongthuc/pdf v0.0.0-20261020125853-5e46805f718e
 	github.com/yuin/goldmark v1.7.13
@@ -16,7 +17,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-shiori/dom v0.0.0-20230515143342-73569d674e1c // indirect
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/itlightning/dateparse v0.2.1 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

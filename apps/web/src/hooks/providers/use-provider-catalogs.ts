@@ -19,12 +19,14 @@ export function useProviderCatalogs(
   profiles: ProviderProfile[],
   targets: ActiveModelSet,
   localOnly = false,
+  enabled = true,
 ) {
   const configured = profiles.filter((profile) => profile.configured && (!localOnly || profile.kind === "local"));
   const queries = useQueries({
-    queries: configured.map((profile) =>
-      providerCatalogQueryOptions(profile.id),
-    ),
+    queries: configured.map((profile) => {
+      const options = providerCatalogQueryOptions(profile.id);
+      return { ...options, enabled: enabled && options.enabled };
+    }),
   });
   const catalogs: ModelCatalogs = {};
   for (const [index, profile] of configured.entries()) {

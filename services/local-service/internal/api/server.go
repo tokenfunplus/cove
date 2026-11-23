@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
@@ -272,10 +273,20 @@ func (server *Server) launch(writer http.ResponseWriter, request *http.Request) 
 	// The browser consumes the fragment locally. Other loopback ports never
 	// receive an ambient credential from loading this page.
 	fragment := url.Values{"cove-session": {session.ID}}
-	if intent := request.URL.Query().Get("intent"); intent == "settings" || intent == "new-chat" || intent == "provider-setup" {
+	query := request.URL.Query()
+	destination := "/"
+	switch intent := query.Get("intent"); intent {
+	case "settings", "new-chat", "provider-setup":
 		fragment.Set("intent", intent)
+	case "quick-panel":
+		destination = "/?surface=quick-panel"
+	case "conversation":
+		if id, err := uuid.Parse(query.Get("conversation_id")); err == nil {
+			fragment.Set("intent", intent)
+			fragment.Set("conversation_id", id.String())
+		}
 	}
-	writer.Header().Set("Location", "/#"+fragment.Encode())
+	writer.Header().Set("Location", destination+"#"+fragment.Encode())
 	writer.WriteHeader(http.StatusSeeOther)
 }
 

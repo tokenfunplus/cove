@@ -2,7 +2,7 @@
 
 For continuous multi-model discussions, see [Debate mode](debate.md).
 
-Cove is a local-first AI chat application for Apple Silicon Macs running macOS 13 or later. Its menu-bar Launcher starts a Local Service and opens the Chat Surface in your browser. The interface is English; messages, titles, and prompts support Unicode content.
+Cove is a local-first AI chat application for Apple Silicon Macs running macOS 13 or later. Its menu-bar Launcher starts a Local Service and opens the Chat Surface in your browser or the Quick Panel. The interface is English. Messages, titles, and prompts support Unicode content.
 
 This guide follows the current source tree, including unreleased features. The published Beta 8 package follows its [release notes](releases/0.1.0-beta.8.md); see the [unreleased changelog](../CHANGELOG.md#unreleased) for newer changes.
 
@@ -12,9 +12,19 @@ Download [0.1.0-beta.8](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0
 
 For an upgrade, quit Cove from its menu-bar menu before replacing the app. Existing Cove history and settings remain in the local data directory. Provider Keys remain in macOS Keychain. Under Check for Updates, Check Stable Releases follows the stable channel; Check Beta Releases explicitly checks for newer betas, release candidates, or final versions. Builds before beta.4 can download beta updates from GitHub Releases.
 
-The Launcher menu offers Open Chat, New Chat, and Settings. When no Provider is configured, Set Up Provider opens Provider settings directly. Launcher Settings contains the optional Launch at Login and global Control-Option-Space shortcut; macOS may require approval for a login item. Login launches stay in the menu bar without opening the browser. Manual launches and reopening Cove open Chat. If the Local Service fails, choose Retry and Open Chat.
+The Launcher menu offers Open Quick Panel, Open Chat, New Chat, and Settings. When no Provider is configured, Set Up Provider opens Provider settings directly. Launcher Settings contains Launch at Login and the optional Quick Panel shortcut. macOS may require approval for a login item. Login launches stay in the menu bar without opening the browser. Manual launches and reopening Cove open Chat. If the Local Service fails, choose Retry and Open Chat.
 
 Troubleshooting contains Restart Local Service, Open Data Folder, and Copy Diagnostics. The diagnostic summary excludes credentials, launch URLs, errors, and conversations. Check for Updates groups stable and explicit beta checks. After a newer release is found, the menu displays Update Available and keeps its download link available after dismissing the alert. About Cove contains the installed version/build and a Release Notes link for that exact version, including beta releases. Help & Feedback opens the user guide or issue tracker without submitting a report.
+
+## Use the Quick Panel
+
+Choose **Open Quick Panel** from the Cove menu bar. To open it from any app, enable **Launcher Settings > Quick Panel Shortcut: ⌃⌥Space**, then press **Control-Option-Space**. When Cove is ready, the panel opens with the composer focused so you can type immediately.
+
+Type a question, paste text, or drop a supported file into the panel. Send your message and read the answer there. Use **Pin Quick Panel** to keep it above normal windows while you work. Press **Escape** or the shortcut again while the panel has focus to hide it. Hiding the panel keeps your unsent text and attachments in memory for the next time you open it. [Supported files and limits](#ask-about-files).
+
+The panel grows as you add content. Drag an edge to choose your own size for the current Launcher session. Use **Tools** for additional composer actions and check the destination below the input before sending. New replies start below their question. Scroll up to keep your reading position during a reply, or choose **Jump to latest** to follow new text.
+
+The first message starts a conversation in your local history. After the current response finishes, use **Continue in Cove** to open that conversation in your default browser. Unsent follow-up text and attachments stay in the panel. Choose **New chat** in the panel to start a separate task.
 
 ## Connect a Provider
 

@@ -25,6 +25,7 @@ import { QueryClient, QueryClientProvider, onlineManager } from "@tanstack/react
 import {
   act,
   cleanup,
+  fireEvent,
   render,
   renderHook,
   screen,
@@ -136,6 +137,7 @@ afterEach(() => {
 
   onlineManager.setOnline(true);
   vi.unstubAllGlobals();
+  window.history.replaceState(null, "", "/");
   window.localStorage.removeItem(historyFiltersStorageKey);
   for (const name of historyBrowserMethods.splice(0)) Reflect.deleteProperty(Element.prototype, name);
 });
@@ -2119,6 +2121,125 @@ test("a newly created private branch is owned by this window and is not cancelle
  expect(transport.cancelGeneration).not.toHaveBeenCalled();
  expect(transport.cancelGenerationBatch).not.toHaveBeenCalled();
  expect(transport.getGenerationBatchContext).toHaveBeenCalledWith(branchBatch.id);
+});
+
+test("a second workspace observes a running private generation without cancelling it", async () => {
+  configureNearAITarget(0, "private_tee");
+  vi.mocked(transport.getConversation).mockResolvedValue({
+    ...fixture.conversation,
+    messages: [fixture.completedView.messages[0]!],
+    active_generation_batch: fixture.pendingBatch,
+  });
+  await openWorkspace();
+  await waitFor(() => expect(transport.subscribeGenerationBatch).toHaveBeenCalledWith(fixture.pendingBatch.id));
+  expect(screen.getByRole("button", { name: "Stop generation" })).toBeTruthy();
+  expect(transport.cancelGeneration).not.toHaveBeenCalled();
+  expect(transport.cancelGenerationBatch).not.toHaveBeenCalled();
+  expect(privateInference.generate).not.toHaveBeenCalled();
+});
+
+test("Quick Panel prewarms without catalog reads and keeps a pasted draft and dropped file through first send", async () => {
+  const postMessage = vi.fn();
+  vi.stubGlobal("webkit", { messageHandlers: { coveQuickPanel: { postMessage } } });
+  window.history.replaceState(null, "", "/?surface=quick-panel");
+  vi.mocked(transport.createConversation).mockResolvedValue(fixture.conversation);
+  vi.mocked(transport.previewAttachment).mockResolvedValue({
+    id: "a".repeat(64), name: "draft.txt", media_type: "text/plain", size: 6, characters: 6,
+    extraction_version: "cove-text-v1", sections: [{ id: "L1", text: "Source" }],
+  });
+  const user = userEvent.setup();
+  render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+  const panel = screen.getByRole("main", { name: "Cove Quick Panel" });
+  const composer = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Send message" });
+  expect(document.activeElement).toBe(composer);
+  expect(screen.queryByRole("button", { name: "Continue in Cove" })).toBeNull();
+  expect(postMessage).toHaveBeenCalledWith({ action: "ready" });
+  await waitFor(() => expect(postMessage).toHaveBeenCalledWith({ action: "resize", height: 148 }));
+  await waitFor(() => expect(transport.getSettings).toHaveBeenCalled());
+  expect(transport.getProviderCatalog).not.toHaveBeenCalled();
+  expect(transport.getConversations).not.toHaveBeenCalled();
+
+  act(() => { window.dispatchEvent(new Event("cove-quick-panel-focus")); });
+  await user.paste("Explain this source");
+  fireEvent.drop(panel, { dataTransfer: { types: ["Files"], files: [new File(["Source"], "draft.txt")] } });
+  await screen.findByRole("button", { name: /Preview extracted text/ });
+  await waitFor(() => expect(postMessage).toHaveBeenCalledWith({ action: "resize", height: 224 }));
+  await user.keyboard("{Escape}");
+  expect(postMessage).toHaveBeenCalledWith({ action: "escape" });
+  composer.blur();
+  act(() => { window.dispatchEvent(new Event("cove-quick-panel-focus")); });
+  expect(document.activeElement).toBe(composer);
+  expect(composer.value).toBe("Explain this source");
+  expect(transport.createConversation).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Model · model-one" }));
+  await screen.findByRole("dialog", { name: "Active Model Set" });
+  await waitFor(() => expect(postMessage).toHaveBeenCalledWith({ action: "resize", height: 544 }));
+  postMessage.mockClear();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Active Model Set" })).toBeNull());
+  expect(postMessage).not.toHaveBeenCalledWith({ action: "escape" });
+  act(() => { window.dispatchEvent(new Event("cove-quick-panel-focus")); });
+
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(transport.createGenerationBatch).toHaveBeenCalledWith(
+    fixture.conversation.id,
+    expect.objectContaining({ body: "Explain this source", attachments: [expect.objectContaining({ name: "draft.txt" })] }),
+  ));
+  expect(transport.createConversation).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("button", { name: "Continue in Cove" })).toBeNull();
+  await waitFor(() => expect(transport.subscribeGenerationBatch).toHaveBeenCalled());
+  vi.mocked(transport.getConversation).mockResolvedValue(fixture.completedView);
+  await act(async () => { feed.close(); });
+  const continuation = await screen.findByRole("button", { name: "Continue in Cove" });
+  await user.type(composer, "Keep my follow-up");
+  await user.click(continuation);
+  expect(postMessage).toHaveBeenCalledWith({ action: "open-chat", conversationId: fixture.conversation.id });
+  expect(composer.value).toBe("Keep my follow-up");
+
+  await user.click(screen.getByRole("button", { name: "New chat" }));
+  const confirmation = await screen.findByRole("dialog", { name: "Discard unsent draft?" });
+  await user.click(within(confirmation).getByRole("button", { name: "Discard and continue" }));
+  expect(composer.value).toBe("");
+  expect(transport.createConversation).toHaveBeenCalledTimes(1);
+});
+
+test("Quick Panel groups extra tools, restores menu focus, and shows the local-only restriction", async () => {
+  const postMessage = vi.fn();
+  vi.stubGlobal("webkit", { messageHandlers: { coveQuickPanel: { postMessage } } });
+  window.history.replaceState(null, "", "/?surface=quick-panel");
+  const user = userEvent.setup();
+  render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+  act(() => { window.dispatchEvent(new Event("cove-quick-panel-focus")); });
+
+  const tools = screen.getByRole<HTMLButtonElement>("button", { name: "Tools" });
+  await waitFor(() => expect(tools.disabled).toBe(false));
+  expect(screen.getByRole("button", { name: "Attach files" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Read webpage" })).toBeNull();
+  expect(await screen.findByText("Send to Test Provider")).toBeTruthy();
+
+  tools.focus();
+  await user.keyboard("{Enter}");
+  const menu = await screen.findByRole("menu");
+  const webpage = within(menu).getByRole("menuitem", { name: "Read webpage" });
+  expect(within(menu).getByRole("menuitem", { name: "Search local documents" })).toBeTruthy();
+  await waitFor(() => expect(document.activeElement).toBe(webpage));
+  await user.keyboard("{Enter}");
+  const dialog = await screen.findByRole("dialog", { name: "Read webpage" });
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(dialog.contains(document.activeElement)).toBe(true);
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(document.activeElement).toBe(tools));
+  expect(postMessage).not.toHaveBeenCalledWith({ action: "escape" });
+
+  await user.keyboard("{Enter}");
+  await user.click(await screen.findByRole("menuitemcheckbox", { name: "Only on this Mac" }));
+  expect(await screen.findByText("Only on this Mac")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toMatch(/Choose an installed local chat model/);
+  await user.click(tools);
+  const blockedWebpage = await screen.findByRole("menuitem", { name: "Read webpage" });
+  expect(blockedWebpage.getAttribute("aria-disabled")).toBe("true");
+  await user.keyboard("{Escape}");
+  expect(postMessage).not.toHaveBeenCalledWith({ action: "escape" });
 });
 
 test("saved model combinations restore the entire model set through the workspace controls",async()=>{

@@ -13,11 +13,12 @@ function conversationListOptions(archived = false, projectId?: string) {
   };
 }
 
-export function useConversations(archived = false, projectId?: string) {
+export function useConversations(archived = false, projectId?: string, enabled = true) {
   const cache = useQueryClient();
   const previousDebateMetadata = useRef<string | undefined>(undefined);
   const query = useQuery({
     ...conversationListOptions(archived, projectId),
+    enabled,
     refetchOnWindowFocus: true,
     refetchInterval: query => query.state.data?.some(item => item.debate_status === "running" || item.debate_status === "pausing") ? 3000 : query.state.data?.some(item => item.debate_id) ? 15000 : false,
   });

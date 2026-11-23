@@ -9,6 +9,12 @@ import type { ConversationNavigation } from "@/lib/workspace-types";
 
 const latestThreshold = 24;
 
+type ScrollMode = "question" | "latest" | "reading";
+
+function distanceFromLatest(node: HTMLElement) {
+  return node.scrollHeight - node.scrollTop - node.clientHeight;
+}
+
 export function useConversationScroll({
   view,
   liveTurn,
@@ -16,6 +22,7 @@ export function useConversationScroll({
   generation,
   isLoading,
   navigation,
+  quickPanel = false,
 }: {
   view?: ConversationView;
   liveTurn?: LiveTurn;
@@ -23,6 +30,7 @@ export function useConversationScroll({
   generation?: Generation;
   isLoading?: boolean;
   navigation?: ConversationNavigation;
+  quickPanel?: boolean;
 }) {
   const hasContent = Boolean(view?.messages.length || liveTurn);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -38,7 +46,9 @@ export function useConversationScroll({
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   const [footerHeight, setFooterHeight] = useState(0);
-  const followLatestRef = useRef(true);
+  const initialScrollMode = quickPanel ? "question" : "latest";
+  const scrollModeRef = useRef<ScrollMode>(initialScrollMode);
+  const quickPanelQuestionIdRef = useRef<string | undefined>(undefined);
   const explicitNavigationRef = useRef(false);
   const navigatedRequestRef = useRef<string | undefined>(undefined);
   const scrollPositionsRef = useRef<Record<string, number>>({});
@@ -46,7 +56,7 @@ export function useConversationScroll({
 
   function rememberReadingAnchor() {
     const node = messageListRef.current;
-    if (!node || followLatestRef.current) return;
+    if (!node || scrollModeRef.current !== "reading") return;
     const top = node.getBoundingClientRect().top;
     const blocks = [
       ...node.querySelectorAll<HTMLElement>(
@@ -75,11 +85,30 @@ export function useConversationScroll({
   function preserveReadingPosition() {
     const node = messageListRef.current;
     if (!node) return;
-    if (followLatestRef.current) {
+    if (scrollModeRef.current === "latest") {
       node.scrollTop = node.scrollHeight;
+      if (quickPanel && view) scrollPositionsRef.current[view.id] = node.scrollTop;
       return;
     }
-    const anchor = readingAnchorRef.current;
+    if (scrollModeRef.current === "question") {
+      const questions = [...node.querySelectorAll<HTMLElement>("[data-quick-panel-question]")];
+      const question = questions.find(
+        (item) => item.dataset.timelineAnchor === quickPanelQuestionIdRef.current,
+      ) ?? questions.at(-1);
+      const start = question
+        ? node.scrollTop + question.getBoundingClientRect().top - node.getBoundingClientRect().top - 12
+        : 0;
+      // A short panel can grow while tokens arrive. Keep the beginning of the
+      // turn in view even if the answer briefly overflows before the resize.
+      node.scrollTop = Math.max(0, Math.min(start, node.scrollHeight - node.clientHeight));
+      if (view) scrollPositionsRef.current[view.id] = node.scrollTop;
+      setShowReturnToLatest(distanceFromLatest(node) > latestThreshold);
+      return;
+    }
+    // A native gesture can move the viewport before its scroll event arrives.
+    const userMovedViewport = quickPanel && view && performance.now() < userIntentRef.current &&
+      node.scrollTop !== scrollPositionsRef.current[view.id];
+    const anchor = userMovedViewport ? undefined : readingAnchorRef.current;
     if (anchor) {
       let element = anchor.element;
       if (!element.isConnected && anchor.key) {
@@ -101,6 +130,10 @@ export function useConversationScroll({
       }
       if (element.isConnected && element.getBoundingClientRect().height > 0)
         node.scrollTop += element.getBoundingClientRect().top - anchor.top;
+    }
+    if (quickPanel && view) {
+      scrollPositionsRef.current[view.id] = node.scrollTop;
+      setShowReturnToLatest(distanceFromLatest(node) > latestThreshold);
     }
     rememberReadingAnchor();
   }
@@ -125,28 +158,34 @@ export function useConversationScroll({
     const saved = scrollPositionsRef.current[view.id];
     explicitNavigationRef.current = false;
     readingAnchorRef.current = undefined;
+    quickPanelQuestionIdRef.current = undefined;
     lengthsRef.current.clear();
     clearUpdatedReplies();
     if (saved !== undefined) {
       node.scrollTop = saved;
-      followLatestRef.current =
-        saved >= node.scrollHeight - node.clientHeight - latestThreshold;
-      setShowReturnToLatest(!followLatestRef.current);
+      scrollModeRef.current = distanceFromLatest(node) > latestThreshold
+        ? "reading"
+        : "latest";
+      setShowReturnToLatest(scrollModeRef.current === "reading");
     } else {
-      followLatestRef.current = true;
-      node.scrollTop = view.messages.length === 0 ? 0 : node.scrollHeight;
+      scrollModeRef.current = initialScrollMode;
+      if (quickPanel) preserveReadingPosition();
+      else node.scrollTop = view.messages.length === 0 ? 0 : node.scrollHeight;
     }
   }, [view?.id, isLoading]);
 
   useEffect(() => {
     if (!liveTurn || liveTurn.restored) return;
     const node = messageListRef.current;
-    followLatestRef.current = true;
+    scrollModeRef.current = initialScrollMode;
     explicitNavigationRef.current = false;
+    readingAnchorRef.current = undefined;
+    userIntentRef.current = 0;
     setShowReturnToLatest(false);
     clearUpdatedReplies();
-    if (node) node.scrollTop = node.scrollHeight;
-    composerRef.current?.focus();
+    if (quickPanel) preserveReadingPosition();
+    else if (node) node.scrollTop = node.scrollHeight;
+    composerRef.current?.focus({ preventScroll: quickPanel });
   }, [liveTurn?.clientRequestId, liveTurn?.restored]);
 
   const savedSizes = useMemo(() => {
@@ -171,7 +210,7 @@ export function useConversationScroll({
     for (const [id, size] of sizes) {
       const previous = lengthsRef.current.get(id);
       if (
-        !followLatestRef.current &&
+        scrollModeRef.current === "reading" &&
         size > (previous ?? size) &&
         !updatedRepliesRef.current.has(id)
       )
@@ -182,6 +221,9 @@ export function useConversationScroll({
   }
   useLayoutEffect(() => recordSizes(savedSizes), [savedSizes]);
   useLayoutEffect(() => {
+    if (quickPanel && liveTurn) {
+      quickPanelQuestionIdRef.current = liveTurn.userMessageId;
+    }
     recordSizes(
       new Map(
         (liveTurn?.targets ?? []).map((target) => [
@@ -196,28 +238,37 @@ export function useConversationScroll({
   function handleMessageScroll() {
     const node = messageListRef.current;
     if (!node || !view) return;
-    const distance = node.scrollHeight - node.scrollTop - node.clientHeight;
+    const previousTop = scrollPositionsRef.current[view.id];
+    const nearLatest = distanceFromLatest(node) <= latestThreshold;
     scrollPositionsRef.current[view.id] = node.scrollTop;
     if (explicitNavigationRef.current) {
-      followLatestRef.current = false;
+      scrollModeRef.current = "reading";
       setShowReturnToLatest(true);
       return;
     }
-    const nearLatest = distance <= latestThreshold;
-    if (performance.now() < userIntentRef.current)
-      followLatestRef.current = nearLatest;
+    if (performance.now() < userIntentRef.current) {
+      if (!quickPanel) {
+        scrollModeRef.current = nearLatest ? "latest" : "reading";
+      } else if (previousTop !== undefined && node.scrollTop !== previousTop) {
+        scrollModeRef.current = nearLatest && node.scrollTop > previousTop
+          ? "latest"
+          : "reading";
+      }
+    }
     setShowReturnToLatest(
-      !followLatestRef.current && Boolean(view.messages.length || liveTurn),
+      quickPanel
+        ? !nearLatest && scrollModeRef.current !== "latest"
+        : scrollModeRef.current === "reading" && Boolean(view.messages.length || liveTurn),
     );
-    if (followLatestRef.current) clearUpdatedReplies();
-    else rememberReadingAnchor();
+    if (scrollModeRef.current === "latest") clearUpdatedReplies();
+    else if (scrollModeRef.current === "reading") rememberReadingAnchor();
   }
 
   function returnToLatest() {
     const node = messageListRef.current;
     if (!node) return;
     userIntentRef.current = 0;
-    followLatestRef.current = true;
+    scrollModeRef.current = "latest";
     explicitNavigationRef.current = false;
     setShowReturnToLatest(false);
     clearUpdatedReplies();
@@ -240,7 +291,7 @@ export function useConversationScroll({
     if (!node || !anchor || !view) return false;
     // Stop following a stream before navigating to an earlier turn.
     explicitNavigationRef.current = true;
-    followLatestRef.current = false;
+    scrollModeRef.current = "reading";
     node.scrollTo({
       top:
         node.scrollTop +
@@ -276,9 +327,16 @@ export function useConversationScroll({
         return;
       explicitNavigationRef.current = false;
       userIntentRef.current = performance.now() + 1200;
-      if (event instanceof WheelEvent && event.deltaY < 0) {
-        followLatestRef.current = false;
-        setShowReturnToLatest(true);
+      if (quickPanel && view) scrollPositionsRef.current[view.id] = node.scrollTop;
+      const scrollsUp = (event instanceof WheelEvent && event.deltaY < 0) || (
+        quickPanel && event instanceof KeyboardEvent && (
+          ["ArrowUp", "PageUp", "Home"].includes(event.key) ||
+          (event.key === " " && event.shiftKey)
+        )
+      );
+      if (scrollsUp && (!quickPanel || node.scrollHeight > node.clientHeight)) {
+        scrollModeRef.current = "reading";
+        setShowReturnToLatest(!quickPanel || distanceFromLatest(node) > latestThreshold);
         rememberReadingAnchor();
       }
     };

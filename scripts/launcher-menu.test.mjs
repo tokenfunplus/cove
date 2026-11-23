@@ -100,6 +100,21 @@ MainActor.assumeIsolated {
         precondition(url.fragment == nil)
     }
     precondition(service.minted == 4)
+    let panelURL = URLComponents(url: launcher.quickPanelLaunchURL()!, resolvingAgainstBaseURL: false)!
+    precondition(panelURL.path == "/launch" && panelURL.port == 47123)
+    precondition(panelURL.queryItems == [
+        URLQueryItem(name: "token", value: "one-time-5"),
+        URLQueryItem(name: "intent", value: "quick-panel"),
+    ])
+    precondition(browser.urls.count == 4)
+    let conversation = UUID(uuidString: "04a701f7-9f3d-4325-b93b-5515ea52512b")!
+    precondition(launcher.openConversationInBrowser(conversation))
+    let continuation = URLComponents(url: browser.urls.last!, resolvingAgainstBaseURL: false)!
+    precondition(continuation.queryItems == [
+        URLQueryItem(name: "token", value: "one-time-6"),
+        URLQueryItem(name: "intent", value: "conversation"),
+        URLQueryItem(name: "conversation_id", value: conversation.uuidString.lowercased()),
+    ])
 
     let quietService = Service()
     let quietBrowser = Browser()
@@ -122,8 +137,8 @@ MainActor.assumeIsolated {
     precondition(failedService.starts == 2 && failedService.stops == 1 && failedService.minted == 1)
     precondition(URLComponents(url: recoveredBrowser.urls.last!, resolvingAgainstBaseURL: false)!.queryItems?.last == URLQueryItem(name: "intent", value: "provider-setup"))
     recoveredLauncher.serviceExited()
-    recoveredLauncher.openChatOrRecover(destination: .newChat)
-    precondition(failedService.starts == 3 && failedService.minted == 2)
+    precondition(recoveredLauncher.quickPanelLaunchURL() != nil)
+    precondition(failedService.starts == 3 && failedService.minted == 2 && recoveredBrowser.urls.count == 1)
 
     var availability = UpdateAvailability()
     let stable = AppUpdate(version: "1.1.0", downloadURL: URL(string: "https://example.test/stable")!)

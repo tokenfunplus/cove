@@ -100,3 +100,31 @@ func TestProviderSetupIntentSurvivesOneTimeLaunchRedirect(t *testing.T) {
 		t.Fatal("Provider setup intent or Browser Session was missing")
 	}
 }
+
+func TestQuickPanelAndConversationLaunchDestinations(t *testing.T) {
+	const conversationID = "04a701f7-9f3d-4325-b93b-5515ea52512b"
+	for _, fixture := range []struct {
+		name, query, surface, intent, conversation string
+	}{
+		{name: "panel", query: "intent=quick-panel", surface: "quick-panel"},
+		{name: "conversation", query: "intent=conversation&conversation_id=" + conversationID, intent: "conversation", conversation: conversationID},
+		{name: "invalid conversation", query: "intent=conversation&conversation_id=%2F%2Fexample.test"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			server := NewServer(Config{LaunchToken: "fixture-launch"})
+			request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:47123/launch?token=fixture-launch&"+fixture.query, nil)
+			response := httptest.NewRecorder()
+			server.Handler().ServeHTTP(response, request)
+			location, err := response.Result().Location()
+			if err != nil || response.Code != http.StatusSeeOther || location.Path != "/" ||
+				location.IsAbs() || location.Host != "" || location.Query().Get("surface") != fixture.surface {
+				t.Fatal("Launcher did not redirect to the expected local surface")
+			}
+			fragment, err := url.ParseQuery(location.Fragment)
+			if err != nil || fragment.Get("cove-session") == "" || fragment.Get("intent") != fixture.intent ||
+				fragment.Get("conversation_id") != fixture.conversation {
+				t.Fatal("Launcher did not issue the expected Browser Session and destination")
+			}
+		})
+	}
+}
