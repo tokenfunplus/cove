@@ -57,3 +57,47 @@ test("Quick Panel authorization replaces the session and its CSRF proof in place
     "X-Cove-CSRF-Token": "next-csrf",
   });
 });
+
+test("a pending write obtains the new session's proof before sending", async () => {
+  window.sessionStorage.setItem("cove.browser-session", "first-session");
+  const { request, replaceBrowserSession } = await import("./client");
+  let finishFirst!: (response: Response) => void;
+  const first = new Promise<Response>(resolve => { finishFirst = resolve; });
+  const fetch = vi.fn()
+    .mockReturnValueOnce(first)
+    .mockResolvedValueOnce(Response.json({ csrf_token: "second-proof" }))
+    .mockResolvedValueOnce(Response.json({ saved: true }));
+  vi.stubGlobal("fetch", fetch);
+
+  const write = request("/api/settings", { method: "PATCH" });
+  replaceBrowserSession("second-session");
+  finishFirst(Response.json({ csrf_token: "first-proof" }));
+
+  await expect(write).resolves.toEqual({ saved: true });
+  expect(fetch.mock.calls.map(([path]) => path)).toEqual(["/api/session", "/api/session", "/api/settings"]);
+  const [, init] = fetch.mock.calls[2]!;
+  expect(init.method).toBe("PATCH");
+  expect(init.headers.get("X-Cove-Session-Token")).toBe("second-session");
+  expect(init.headers.get("X-Cove-CSRF-Token")).toBe("second-proof");
+});
+
+test("a second renewal while retrying the proof leaves the write unsent", async () => {
+  window.sessionStorage.setItem("cove.browser-session", "first-session");
+  const { request, replaceBrowserSession } = await import("./client");
+  let finishFirst!: (response: Response) => void;
+  let finishSecond!: (response: Response) => void;
+  const first = new Promise<Response>(resolve => { finishFirst = resolve; });
+  const second = new Promise<Response>(resolve => { finishSecond = resolve; });
+  const fetch = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second);
+  vi.stubGlobal("fetch", fetch);
+
+  const write = request("/api/settings", { method: "PATCH" });
+  replaceBrowserSession("second-session");
+  finishFirst(Response.json({ csrf_token: "first-proof" }));
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  replaceBrowserSession("third-session");
+  finishSecond(Response.json({ csrf_token: "second-proof" }));
+
+  await expect(write).rejects.toThrow("Could not authorize this request with the current Browser Session.");
+  expect(fetch.mock.calls.map(([path]) => path)).toEqual(["/api/session", "/api/session"]);
+});

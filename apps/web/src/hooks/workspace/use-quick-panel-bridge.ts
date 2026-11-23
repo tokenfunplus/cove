@@ -1,7 +1,7 @@
 import { observeBrowserSessionExpiry, replaceBrowserSession } from "@/api/client";
 import { conversationKeys, providerKeys, sessionKey, settingsKey } from "@/api/queryKeys";
 import { postQuickPanelMessage, quickPanelDialogSelector, quickPanelFocusEvent, quickPanelMenuSelector, quickPanelSessionEvent } from "@/lib/quick-panel";
-import { useQueryClient } from "@tanstack/react-query";
+import { matchQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 function panelPopupOpen() {
@@ -45,13 +45,19 @@ export function useQuickPanelBridge(composerId: string) {
       const token = (event as CustomEvent<{ token?: string | null }>).detail?.token;
       try {
         if (typeof token !== "string" || !token) throw new Error("Quick Panel connection failed");
+        pending.current = true;
+        setRecovery("connecting");
         replaceBrowserSession(token);
         await cache.cancelQueries();
         await cache.invalidateQueries({ queryKey: sessionKey }, { throwOnError: true });
-        await Promise.all([
-          cache.invalidateQueries({ predicate: (query) => query.state.status === "error" }),
-          cache.invalidateQueries({ queryKey: conversationKeys.all }),
-        ]);
+        // Cancellation can restore a successful result from the previous session.
+        await cache.invalidateQueries({
+          predicate: (query) =>
+            query.state.status === "error" ||
+            matchQuery({ queryKey: conversationKeys.all }, query) ||
+            matchQuery({ queryKey: providerKeys.list, exact: true }, query) ||
+            matchQuery({ queryKey: settingsKey, exact: true }, query),
+        });
         attempted.current = false;
         setRecovery(undefined);
       } catch {

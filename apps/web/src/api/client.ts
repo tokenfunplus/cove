@@ -142,7 +142,13 @@ export async function request<T>(
 ): Promise<T> {
   const method = init.method?.toUpperCase() ?? "GET";
   if (!isSafeMethod(method) && !csrfToken) {
+    const initialSession = sessionToken;
     await getSession();
+    // Session renewal can complete before the earlier proof arrives.
+    if (!csrfToken && sessionToken !== initialSession) await getSession();
+    if (!csrfToken) {
+      throw localServiceUnavailable("Could not authorize this request with the current Browser Session.");
+    }
   }
 
   const headers = new Headers(init.headers);

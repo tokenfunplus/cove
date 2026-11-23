@@ -31,6 +31,9 @@ jobs:
           cache-dependency-path: services/local-service/go.sum
       - run: pnpm install --frozen-lockfile
       - run: make check test-scripts test-contract test-web test-service test-fuzz test-lifecycle
+        env:
+          # Use an execution budget to avoid Go's timed fuzz shutdown race.
+          FUZZ_TIME: 100000x
       - name: Run production browser acceptance
         run: |
           browser_binary="$(command -v google-chrome || command -v chromium)"
