@@ -2,6 +2,8 @@
 
 | File | Content and source |
 | --- | --- |
+| `local-search-filter-desktop.png` | Local capability recovery source build, 2026-11-23, 1440 × 900: explicit document scope and user-selected similarity controls in a disposable production-browser fixture. |
+| `local-search-filter-mobile-dark.png` | The same fixture at 390 × 844 in dark mode; the document dialog scrolls within the viewport. |
 | `model-comparison.webp` | The actual Cove 0.1.0-beta.3 Chat Surface, captured at a 1440 × 1080 viewport from the CI-built Local Service at release commit `23503cd`. Two simulated models reply to a synthetic prompt, with Atlas selected for the next turn. |
 | `focus-mode.webp` | The actual Focus layout and timeline preview from UI commit `22441b6`, included in Beta 3. Reused from the product website's Beta 3 capture set. |
 | `answer-workbench.png` | Unreleased source build, 2026-11-18, 1440 × 900: review a proposed selected-passage revision before applying it to a Working Draft. |
@@ -32,3 +34,5 @@ The local-speech captures use a fresh, empty temporary `COVE_DATA_DIR` and the e
 The custom-control captures use an empty temporary data directory with dark mode configured only in that fixture. No everyday appearance preferences, model files, conversation records, or credentials were copied. Keyboard, nested disclosure, empty selection, and voice search behavior also have component regression coverage.
 
 The Debate speech captures use synthetic paused Debate sessions in temporary storage. No Provider request was made. Existing Kitten bundle files were hard-linked into that disposable fixture for real native synthesis; everyday preferences, conversations, credentials, and model selections were not copied. The audio player advanced from Lumen to Atlas, paused/resumed successfully, and stopped with Debate. Missing-model navigation retained the intervention draft.
+
+The local-search filter captures come from the `local-capabilities` scenario in `apps/web/e2e/acceptance.mjs`. They use an empty temporary workspace with no installed models or personal documents. They establish layout and control behavior, not native retrieval quality.
