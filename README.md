@@ -63,7 +63,7 @@ Additional captures: [Local math rendering](docs/images/chat-math.png) · [Revie
 
 This section describes the current source tree, including unreleased changes. See the [release notes for published downloads](docs/releases/0.1.0-beta.10.md) and the [unreleased changelog](CHANGELOG.md#unreleased) for newer work.
 
-- Open the native Quick Panel with Control-Option-Space to ask a short question, paste text, or drop a supported file. Pin it for reference or continue the same conversation in the browser.
+- Enable **Quick Panel Shortcut** under **Launcher Settings**, then press **Control-Option-Space**. Ask a short question, paste text, or drop a supported file. Pin the panel for reference or continue the same conversation in the browser.
 - Stream responses from OpenAI-compatible providers or the built-in NearAI preset.
 - Compare up to four models in one turn; select the answer used in later context.
 - Run continuous multi-model Debates with cited stage summaries, explicit pause/step/stop, saved history, and compact Focus reading.
