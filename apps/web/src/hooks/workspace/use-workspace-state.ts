@@ -16,7 +16,7 @@ import type { ConversationView, WorkspaceSettings } from "@cove/api-contract";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
-export function useWorkspaceState(showingArchived: boolean) {
+export function useWorkspaceState(showingArchived: boolean, quickPanel = false) {
   const cache = useQueryClient();
   const [selectedId, setSelectedId] = useState<string>();
   const [activeModelSet, setActiveModelSet] = useState<ActiveModelSet>([]);
@@ -24,12 +24,12 @@ export function useWorkspaceState(showingArchived: boolean) {
   selectedIdRef.current = selectedId;
   const initialized = useRef(false);
   const session = useLocalSession();
-  const list = useConversations(showingArchived);
+  const list = useConversations(showingArchived, undefined, !quickPanel);
   const providers = useProviders();
   const preferences = useSettings();
   const conversation = useConversation(selectedId);
   const [recoveredConnection, setConnection] = useState<ConnectionState>();
-  const bootQueries = [session, list, providers, preferences];
+  const bootQueries = quickPanel ? [session, providers, preferences] : [session, list, providers, preferences];
   const connection: ConnectionState =
     recoveredConnection ??
     (bootQueries.some((query) => query.isPending)
@@ -40,7 +40,7 @@ export function useWorkspaceState(showingArchived: boolean) {
 
   useEffect(() => {
     if (
-      initialized.current ||
+      quickPanel || initialized.current ||
       connection !== "ready" ||
       !list.data ||
       !providers.data ||
@@ -52,7 +52,16 @@ export function useWorkspaceState(showingArchived: boolean) {
     setActiveModelSet(
       activeModelSetFromWorkspaceSettings(preferences.data, providers.data),
     );
-  }, [connection, list.data, providers.data, preferences.data]);
+  }, [connection, list.data, providers.data, preferences.data, quickPanel]);
+
+  useEffect(() => {
+    if (
+      !quickPanel || connection !== "ready" || !providers.data || !preferences.data
+    ) return;
+    setActiveModelSet(
+      activeModelSetFromWorkspaceSettings(preferences.data, providers.data),
+    );
+  }, [connection, providers.data, preferences.data, quickPanel]);
 
   function setConversationView(view: ConversationView | undefined) {
     if (view) cache.setQueryData(conversationKeys.detail(view.id), view);

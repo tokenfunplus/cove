@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useConversationScroll } from "./use-conversation-scroll";
 import { createWorkspaceFixture } from "@/test/workspace-fixture";
 import { createLiveTurn, liveTurnFromBatch } from "@/lib/chat/live-turn";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 const originalScrollTo = HTMLElement.prototype.scrollTo;
@@ -180,4 +180,87 @@ test("restoring a conversation keeps a reader more than 24 pixels above latest p
   rerender(<Surface secondSelected={false} />);
   expect(list.scrollTop).toBe(740);
   expect(container.querySelector("output")?.textContent).toBe("true");
+});
+
+test("the Quick Panel keeps the question in view through expansion and lets the reader follow or pause the latest answer", () => {
+  const resized: (() => void)[] = [];
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(callback: () => void) { resized.push(callback); }
+    observe() {} disconnect() {}
+  });
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const top = this.dataset.top ? Number(this.dataset.top) - (this.parentElement?.scrollTop ?? 0) : 0;
+    return { top, bottom: top + 30, height: 30 } as DOMRect;
+  });
+  let height = 250;
+  let viewport = 80;
+  let top = 0;
+  HTMLElement.prototype.scrollTo = function (options?: ScrollToOptions | number) {
+    this.scrollTop = Math.min(height - viewport, typeof options === "number" ? options : options?.top ?? 0);
+  };
+  const fixture = createWorkspaceFixture();
+  function Surface({ settled = false, body }: { settled?: boolean; body: string }) {
+    const userId = fixture.pendingBatch.user_message_id;
+    const liveTurn = useMemo(() => {
+      if (settled) return undefined;
+      const turn = liveTurnFromBatch(fixture.conversation.id, "Current question", fixture.pendingBatch);
+      turn.targets![0]!.assistantBody = body;
+      return turn;
+    }, [body, settled]);
+    const scroll = useConversationScroll({ view: fixture.completedView, liveTurn, quickPanel: true });
+    return <>
+      <div ref={(node) => {
+        scroll.messageListRef.current = node;
+        if (node) Object.defineProperties(node, {
+          scrollHeight: { get: () => height, configurable: true },
+          clientHeight: { get: () => viewport, configurable: true },
+          scrollTop: {
+            get: () => Math.min(top, height - viewport),
+            set: (value: number) => { top = Math.max(0, Math.min(value, height - viewport)); },
+            configurable: true,
+          },
+        });
+      }} onScroll={scroll.handleMessageScroll}>
+        <article data-quick-panel-question data-timeline-anchor="earlier" data-top="16">Earlier question</article>
+        <article key={String(settled)} data-quick-panel-question data-timeline-anchor={userId} data-top="120">Current question</article>
+        <p data-top="158">{body}</p>
+        {height > 850 && <p data-top="732">Tail of the streamed reply</p>}
+      </div>
+      {scroll.showReturnToLatest && <button onClick={scroll.returnToLatest}>Latest</button>}
+    </>;
+  }
+  const { container, rerender, queryByRole, getByRole } = render(<Surface body="Short reply" />);
+  const list = container.querySelector("div")!;
+  expect(list.scrollTop).toBe(108);
+
+  // The native window has room to show the entire short turn after expanding.
+  viewport = 150;
+  act(() => { for (const callback of resized) callback(); });
+  expect(list.scrollTop).toBe(100);
+  rerender(<Surface body="Short reply" settled />);
+  expect(list.scrollTop).toBe(100);
+  expect(queryByRole("button", { name: "Latest" })).toBeNull();
+
+  height = 880;
+  rerender(<Surface body="A much longer response" />);
+  expect(list.scrollTop).toBe(108);
+  fireEvent.click(getByRole("button", { name: "Latest" }));
+  expect(list.scrollTop).toBe(730);
+
+  // Even a small upward wheel movement suspends following the stream.
+  fireEvent.wheel(list, { deltaY: -12 });
+  list.scrollTop = 718;
+  height = 960;
+  rerender(<Surface body="A much longer response with new streamed text" />);
+  expect(list.scrollTop).toBe(718);
+  fireEvent.scroll(list);
+  expect(getByRole("button", { name: "Latest" })).toBeTruthy();
+
+  fireEvent.wheel(list, { deltaY: 110 });
+  list.scrollTop = 810;
+  fireEvent.scroll(list);
+  height = 990;
+  rerender(<Surface body="Another update after returning to the end" />);
+  expect(list.scrollTop).toBe(840);
+  expect(queryByRole("button", { name: "Latest" })).toBeNull();
 });

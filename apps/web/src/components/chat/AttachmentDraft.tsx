@@ -11,25 +11,35 @@ import { DocumentPreview } from "@/components/chat/SourceDocuments";
 import { cn } from "@/lib/utils";
 import { englishConversationCopy as copy } from "@/messages";
 
+export type WebpageAction = { open: () => void; disabled: boolean };
+
 export function AttachmentDraft({
   localOnly = false,
   state,
   children,
   disabled,
   compact = false,
+  quickPanel = false,
   draft = "",
 }: {
   localOnly?: boolean;
   state: AttachmentDraftState;
-  children: (actions: ReactNode) => ReactNode;
+  children: (actions: ReactNode, webpageAction: WebpageAction) => ReactNode;
   disabled: boolean;
   compact?: boolean;
+  quickPanel?: boolean;
   draft?: string;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState<AttachmentSnapshot>();
   const [webOpen, setWebOpen] = useState(false);
   const [webUrl, setWebUrl] = useState("");
+  const webpageDisabled = localOnly || state.localOnly || disabled || state.attachments.length >= 4;
+
+  function openWebpage() {
+    setWebUrl(draft.match(/https?:\/\/[^\s<>"\u3000-\u303f]+/i)?.[0] ?? "");
+    setWebOpen(true);
+  }
 
   function readWebpage() {
     if (localOnly || state.localOnly || disabled || !webUrl.trim()) return;
@@ -56,7 +66,7 @@ export function AttachmentDraft({
           type="button"
           variant="ghost"
           size="icon-sm"
-          className="rounded-lg text-muted-foreground"
+          className={cn("rounded-lg", !quickPanel && "text-muted-foreground")}
           disabled={disabled || state.attachments.length >= 4}
           onClick={() => input.current?.click()}
         >
@@ -64,25 +74,22 @@ export function AttachmentDraft({
           <span className="sr-only">{copy.attachFiles}</span>
         </Button>
         </Tooltip>
-        <Tooltip suppressRestoredFocus content={<><span className="block font-medium">{copy.readWebpage}</span><span className="mt-0.5 block text-[11px] text-muted-foreground">Attach a saved copy of a public webpage.</span></>}>
+        {!quickPanel && <Tooltip suppressRestoredFocus content={<><span className="block font-medium">{copy.readWebpage}</span><span className="mt-0.5 block text-[11px] text-muted-foreground">Attach a saved copy of a public webpage.</span></>}>
         <Button
           type="button"
           variant="ghost"
           size="icon-sm"
           className="rounded-lg text-muted-foreground"
-          disabled={localOnly || state.localOnly || disabled || state.attachments.length >= 4}
-          onClick={() => {
-            setWebUrl(draft.match(/https?:\/\/[^\s<>"\u3000-\u303f]+/i)?.[0] ?? "");
-            setWebOpen(true);
-          }}
+          disabled={webpageDisabled}
+          onClick={openWebpage}
         >
           <Link aria-hidden="true" className="size-4" />
           <span className="sr-only">{copy.readWebpage}</span>
         </Button>
-        </Tooltip>
+        </Tooltip>}
       </div>
   );
-  return (
+  const details = (
     <>
       {state.selectionError && (
         <p role="alert" className={cn("mb-2 text-xs text-destructive", compact && "order-first basis-full px-1 pt-1")}>
@@ -142,7 +149,16 @@ export function AttachmentDraft({
           {copy.attachmentDisclosure}
         </p>
       )}
-      {children(actions)}
+    </>
+  );
+  return (
+    <>
+      {quickPanel && (state.selectionError || state.attachments.length > 0) ? (
+        <div className="order-first max-h-[25dvh] basis-full overflow-auto overscroll-contain" role="group" aria-label="Draft attachments">
+          {details}
+        </div>
+      ) : details}
+      {children(actions, { open: openWebpage, disabled: webpageDisabled })}
       {selected && (
         <DocumentPreview
           document={selected}
@@ -157,7 +173,7 @@ export function AttachmentDraft({
           className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
         >
           <DialogOverlay />
-          <DialogContent className="flex w-full max-w-lg flex-col gap-4 rounded-2xl p-4 sm:p-6">
+          <DialogContent className={cn("flex w-full max-w-lg flex-col gap-4 rounded-2xl p-4 sm:p-6", quickPanel && "max-h-[calc(100dvh-24px)] overflow-y-auto")}>
             <h2 className="font-semibold">{copy.readWebpage}</h2>
             <p className="text-sm text-muted-foreground">
               {copy.webpageNotice}

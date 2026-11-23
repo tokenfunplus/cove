@@ -1,6 +1,6 @@
 import * as api from "@/api";
 import { settingsKey } from "@/api/queryKeys";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 export function useSettings() {
   return useQuery({
@@ -12,12 +12,9 @@ export function useSettings() {
 }
 
 export function useUpdateSettings() {
-  const cache = useQueryClient();
+  // Cache publication belongs to the caller so it can discard superseded saves.
   return useMutation({
     mutationFn: api.updateSettings,
     retry: false,
-    onSuccess: (settings) => {
-      cache.setQueryData(settingsKey, settings);
-    },
   });
 }

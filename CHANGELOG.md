@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Open the macOS Quick Panel from the menu bar or with Control-Option-Space. Type, paste, or drop a supported file, keep the panel pinned for reference, and open the same conversation in the full workspace.
+
 ### Changed
 
 - Resume interrupted inference and speech artifact downloads on retry, with validated HTTP ranges, full integrity checks, and explicit partial-download cleanup.

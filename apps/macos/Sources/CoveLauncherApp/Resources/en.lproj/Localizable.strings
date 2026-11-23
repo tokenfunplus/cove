@@ -1,4 +1,5 @@
 "Open Chat" = "Open Chat";
+"Open Quick Panel" = "Open Quick Panel";
 "Restart Local Service" = "Restart Local Service";
 "Quit Cove" = "Quit Cove";
 "Local Service stopped" = "Local Service stopped";
@@ -16,7 +17,7 @@
 "Settings…" = "Settings…";
 "Launch at Login" = "Launch at Login";
 "Allow Launch at Login…" = "Allow Launch at Login…";
-"Global Shortcut: ⌃⌥Space" = "Global Shortcut: ⌃⌥Space";
+"Quick Panel Shortcut: ⌃⌥Space" = "Quick Panel Shortcut: ⌃⌥Space";
 "Troubleshooting" = "Troubleshooting";
 "Copy Diagnostics" = "Copy Diagnostics";
 "Open Data Folder" = "Open Data Folder";

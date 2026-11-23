@@ -4,6 +4,8 @@ The Launcher keeps its native menu and groups infrequent options under Launcher 
 
 Login-item launches start the Local Service without opening a browser. Manual launches and explicit reopen actions open Chat. Failed service startup exposes Retry and Open Chat in the main menu; chat, new-chat, settings, and the global shortcut can also recover the service. Startup remains idempotent and retries never reuse a previously minted browser token.
 
+[ADR-0059](0059-add-the-macos-quick-panel.md) updates the global shortcut to open the Quick Panel.
+
 The Launcher reads only a `provider_setup_required` boolean through `POST /internal/control/status`, protected by its existing control token and loopback checks. Provider configuration owns the decision through its existing profile listing and credential-existence checks; the Launcher does not read keys, SQLite, or conversation data. The response is not cached. The menu refreshes status asynchronously at readiness, appearance/activation, and every 15 seconds. Missing or failed status reads leave setup state unknown.
 
 When no Provider is configured, Set Up Provider opens the Provider settings section through a new allowlisted `provider-setup` intent. It retains the one-time handoff and Browser Session requirements of [ADR-0010](0010-reuse-teampulse-browser-session-limits.md), and consumes the intent once after authorization. This is local setup guidance with no website campaign content or remote account requirement.

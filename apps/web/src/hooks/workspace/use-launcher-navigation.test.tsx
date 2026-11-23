@@ -69,3 +69,21 @@ test("unrecognized fragments never dispatch launcher commands", () => {
   expect(onOpenSettings).not.toHaveBeenCalled();
   expect(window.location.hash).toBe("#delete-history");
 });
+
+test("a continued conversation opens once after authorization", () => {
+  const id = "12345678-1234-4234-9234-123456789abc";
+  window.history.replaceState(null, "", `/#conversation=${id}`);
+  const onOpenConversation = vi.fn(async () => {});
+  const onNewChat = vi.fn(async () => {});
+  const onOpenSettings = vi.fn();
+  const { rerender } = renderHook(
+    ({ ready }) => useLauncherNavigation({ connection: ready ? "ready" : "loading", onNewChat, onOpenSettings, onOpenConversation }),
+    { initialProps: { ready: false }, wrapper: StrictMode },
+  );
+  expect(onOpenConversation).not.toHaveBeenCalled();
+  rerender({ ready: true });
+  expect(onOpenConversation).toHaveBeenCalledExactlyOnceWith(id);
+  expect(window.location.hash).toBe("");
+  expect(onNewChat).not.toHaveBeenCalled();
+  expect(onOpenSettings).not.toHaveBeenCalled();
+});

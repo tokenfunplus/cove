@@ -1,11 +1,10 @@
 import { useCreateConversation } from "@/api/hooks/useConversations";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 import { useAnswerTools } from "@/hooks/chat/use-answer-tools";
-import { useCancelGeneration } from "@/api/hooks/useGenerations";
 import { useConversationSearch } from "@/api/hooks/useConversationSearch";
 import { useProviderCatalogs } from "@/hooks/providers/use-provider-catalogs";
 
-import { inferenceModeForSnapshot } from "@/components/providers/model-selection";
 import { useBatchEvents } from "@/hooks/chat/use-batch-events";
 import { useGenerationCommands } from "@/hooks/chat/use-generation-commands";
 import { useGenerationState } from "@/hooks/chat/use-generation-state";
@@ -21,18 +20,15 @@ import { useWorkspaceState } from "@/hooks/workspace/use-workspace-state";
 import { useWorkspaceUi } from "@/hooks/workspace/use-workspace-ui";
 import { useLauncherNavigation } from "@/hooks/workspace/use-launcher-navigation";
 import { liveTurnFromBatch } from "@/lib/chat/live-turn";
-import { isTerminalGenerationState } from "@/lib/generation";
 import { applicationMessages } from "@/messages";
 import { useDocumentTheme } from "@/theme/use-document-theme";
 import { useWebSearch } from "@/hooks/chat/use-web-search";
-import { useEffect } from "react";
 
-export function useChatWorkspace() {
-  const createProjectConversation = useCreateConversation().mutateAsync;
-  const cancelGeneration = useCancelGeneration().mutateAsync;
+export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } = {}) {
+  const createConversation = useCreateConversation().mutateAsync;
 
   const workspaceUi = useWorkspaceUi();
-  const workspaceState = useWorkspaceState(workspaceUi.showingArchived);
+  const workspaceState = useWorkspaceState(workspaceUi.showingArchived, quickPanel);
   const conversationSearch = useConversationSearch(
     workspaceUi.conversationSearchQuery,
     workspaceUi.showingArchived,
@@ -49,7 +45,7 @@ export function useChatWorkspace() {
   } = workspaceState;
   const { setFeedback, setMobileSidebarOpen } = workspaceUi;
   const generationState = useGenerationState();
-  const attachmentDraft = useAttachmentDraft(selectedId, workspaceUi.localOnly);
+  const attachmentDraft = useAttachmentDraft(quickPanel ? undefined : selectedId, workspaceUi.localOnly);
   const webSearch = useWebSearch(selectedId, workspaceUi.setSettingsEntry, workspaceUi.setFeedback);
   const {
     setGenerationBatch,
@@ -64,6 +60,7 @@ export function useChatWorkspace() {
 
   const pendingDraftTransfer = useRef<{ id: string; body: string } | undefined>(undefined);
   const continuingProjectDraft = useRef(false);
+  const creatingQuickChat = useRef(false);
   const narrowLayout = useNarrowLayout();
 
   const copy = applicationMessages(settings.locale);
@@ -75,7 +72,7 @@ export function useChatWorkspace() {
   }, [narrowLayout]);
 
   const { catalogs, activeSelection, catalog, selectionStatus } =
-    useProviderCatalogs(providerProfiles, activeModelSet, workspaceUi.localOnly);
+    useProviderCatalogs(providerProfiles, activeModelSet, workspaceUi.localOnly, catalogsEnabled);
 
   useEffect(() => {
     const active = conversationView?.active_generation_batch;
@@ -90,12 +87,14 @@ export function useChatWorkspace() {
   }, [conversationError, copy.unavailable]);
 
   useEffect(() => {
+    // The first Quick Panel send attaches its in-memory draft to a new conversation.
+    if (quickPanel && selectedId) return;
     setGenerationBatch(undefined);
     setLiveTurn(undefined);
     setResumeGenerationBatch(undefined);
     setDraft("");
     setIsSending(false);
-  }, [selectedId]);
+  }, [quickPanel, selectedId]);
 
   useEffect(() => {
     if (pendingDraftTransfer.current?.id === selectedId && pendingDraftTransfer.current) {
@@ -137,30 +136,8 @@ export function useChatWorkspace() {
     setGenerationBatch(resumeGenerationBatch);
     setIsSending(true);
     setResumeGenerationBatch(undefined);
-    const secureTargets = resumeGenerationBatch.targets.filter((target) =>
-      inferenceModeForSnapshot(target.generation.snapshot),
-    );
-    if (secureTargets.length > 0) {
-      void Promise.all(
-        secureTargets
-          .filter(
-            (target) => !isTerminalGenerationState(target.generation.state),
-          )
-          .map((target) => cancelGeneration(target.generation.id)),
-      )
-        .then(() => {
-          if (secureTargets.length === resumeGenerationBatch.targets.length)
-            setIsSending(false);
-          return refreshCurrentConversation();
-        })
-        .catch(() => {
-          setIsSending(false);
-        });
-      if (secureTargets.length < resumeGenerationBatch.targets.length)
-        void streamGenerationBatch(resumeGenerationBatch);
-    } else {
-      void streamGenerationBatch(resumeGenerationBatch);
-    }
+    // Private work may still be running in the Quick Panel or another window.
+    void streamGenerationBatch(resumeGenerationBatch);
   }, [conversationView, resumeGenerationBatch]);
 
   const conversationActions = useConversationActions({
@@ -177,7 +154,6 @@ export function useChatWorkspace() {
     ...generationState,
     copy,
   });
-  const { refreshCurrentConversation } = conversationActions;
   const batchEvents = useBatchEvents({
     ...workspaceState,
     ...workspaceUi,
@@ -251,9 +227,10 @@ export function useChatWorkspace() {
   });
 
   useLauncherNavigation({
-    connection: workspaceState.connection,
+    connection: quickPanel ? "loading" : workspaceState.connection,
     onNewChat: conversationLifecycle.handleCreateConversation,
     onOpenSettings: workspaceUi.setSettingsEntry,
+    onOpenConversation: conversationLifecycle.handleSelectConversation,
   });
 
   const providerActions = useProviderActions({
@@ -262,6 +239,46 @@ export function useChatWorkspace() {
     ...modelSelection,
     copy,
   });
+
+  async function handleQuickPanelSend() {
+    if (creatingQuickChat.current || workspaceUi.isNavigating || workspaceState.connection !== "ready") return;
+    const body = generationState.draft;
+    if (selectedId) {
+      await generationCommands.handleSend({ body, draftOnFailure: body });
+      return;
+    }
+    if (!body.trim() || selectionStatus !== "ready" || !attachmentDraft.validateAttachments()) return;
+    creatingQuickChat.current = true;
+    workspaceUi.setIsNavigating(true);
+    let conversationId: string;
+    try {
+      const conversation = await createConversation();
+      conversationId = conversation.id;
+      workspaceState.setConversationView({ ...conversation, messages: [] });
+      flushSync(() => workspaceState.setSelectedId(conversation.id));
+    } catch {
+      setFeedback(copy.createFailed);
+      return;
+    } finally {
+      creatingQuickChat.current = false;
+      workspaceUi.setIsNavigating(false);
+    }
+    await generationCommands.handleSend({ conversationId, body, draftOnFailure: body });
+  }
+
+  function startBlankQuickChat() {
+    async function reset() {
+      generationState.setDraft("");
+      attachmentDraft.clearAttachments();
+      workspaceState.setSelectedId(undefined);
+      setFeedback(undefined);
+    }
+    if (generationState.draft.trim() || attachmentDraft.attachments.length) {
+      workspaceUi.setConfirmation({ kind: "navigate", discardDraft: true, navigationAction: reset });
+    } else {
+      void reset();
+    }
+  }
 
   async function continueProjectDraft() {
     if (
@@ -273,7 +290,7 @@ export function useChatWorkspace() {
     const body = generationState.draft;
     const items = [...attachmentDraft.attachments];
     try {
-      const next = await createProjectConversation({ project_id: conversationView?.project_id });
+      const next = await createConversation({ project_id: conversationView?.project_id });
       workspaceUi.setShowingArchived(false);
       pendingDraftTransfer.current = { id: next.id, body };
       attachmentDraft.transferToConversation(next.id, items);
@@ -288,6 +305,8 @@ export function useChatWorkspace() {
     }
   }
   return {
+    handleQuickPanelSend,
+    startBlankQuickChat,
     continueProjectDraft,
     webSearch: {...webSearch, enabled:webSearch.enabled && !workspaceUi.localOnly},
     answerTools,

@@ -90,21 +90,47 @@ public final class LauncherStateMachine: ObservableObject {
         }
     }
 
-    public func openChatOrRecover(destination: ChatLaunchDestination = .chat) {
-        switch state {
-        case .starting:
-            return
-        case .ready:
-            openChat(destination: destination)
-        case .stopped, .failed:
-            do {
-                stop()
-                try start()
-                openChat(destination: destination)
-            } catch {
-                return
-            }
-        }
+    @discardableResult
+    public func openChatOrRecover(destination: ChatLaunchDestination = .chat) -> Bool {
+        ensureReady() && openChat(destination: destination)
+    }
+
+    public func openConversationInBrowser(_ id: UUID) -> Bool {
+        guard ensureReady(), let url = launchURL(intent: "conversation", conversationID: id) else { return false }
+        browser.open(url)
+        return true
+    }
+
+    public func quickPanelLaunchURL() -> URL? {
+        guard ensureReady() else { return nil }
+        return launchURL(intent: "quick-panel")
+    }
+
+    public func refreshQuickPanelSession(expectedOrigin: URL) async -> String? {
+        guard case let .ready(readiness) = state,
+              expectedOrigin.scheme == readiness.baseURL.scheme,
+              expectedOrigin.host == readiness.baseURL.host,
+              expectedOrigin.port == readiness.baseURL.port,
+              let launch = launchURL(intent: "quick-panel")
+        else { return nil }
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
+        let request = URLRequest(url: launch, timeoutInterval: 5)
+        guard let (_, response) = try? await session.data(for: request, delegate: LaunchRedirectObserver()),
+              state == .ready(readiness),
+              let response = response as? HTTPURLResponse,
+              response.statusCode == 303,
+              let location = response.value(forHTTPHeaderField: "Location"),
+              let parts = URLComponents(string: location),
+              parts.scheme == nil, parts.host == nil, parts.path == "/",
+              parts.query == "surface=quick-panel",
+              let fragment = parts.percentEncodedFragment
+        else { return nil }
+        var parameters = URLComponents()
+        parameters.percentEncodedQuery = fragment
+        let token = parameters.queryItems?.first { $0.name == "cove-session" }?.value
+        guard let token, decodedToken(token)?.count == 32 else { return nil }
+        return token
     }
 
     public func stop() {
@@ -121,11 +147,33 @@ public final class LauncherStateMachine: ObservableObject {
         stop()
     }
 
-    public func openChat(destination: ChatLaunchDestination = .chat) {
+    @discardableResult
+    public func openChat(destination: ChatLaunchDestination = .chat) -> Bool {
+        guard let url = launchURL(intent: destination == .chat ? nil : destination.rawValue) else { return false }
+        browser.open(url)
+        return true
+    }
+
+    private func ensureReady() -> Bool {
+        switch state {
+        case .starting: return false
+        case .ready: return true
+        case .stopped, .failed:
+            do {
+                stop()
+                try start()
+                return true
+            } catch {
+                return false
+            }
+        }
+    }
+
+    private func launchURL(intent: String?, conversationID: UUID? = nil) -> URL? {
         guard case let .ready(readiness) = state,
               var components = URLComponents(url: readiness.baseURL, resolvingAgainstBaseURL: false)
         else {
-            return
+            return nil
         }
         components.path = "/launch"
         let launchToken: String
@@ -133,16 +181,16 @@ public final class LauncherStateMachine: ObservableObject {
             launchToken = try service.mintBrowserLaunchToken()
         } catch {
             state = .failed(error.localizedDescription)
-            return
+            return nil
         }
         components.queryItems = [URLQueryItem(name: "token", value: launchToken)]
-        if destination != .chat {
-            components.queryItems?.append(URLQueryItem(name: "intent", value: destination.rawValue))
+        if let intent {
+            components.queryItems?.append(URLQueryItem(name: "intent", value: intent))
         }
-        guard let url = components.url else {
-            return
+        if let conversationID {
+            components.queryItems?.append(URLQueryItem(name: "conversation_id", value: conversationID.uuidString.lowercased()))
         }
-        browser.open(url)
+        return components.url
     }
 
     public func serviceExited() {
@@ -150,6 +198,16 @@ public final class LauncherStateMachine: ObservableObject {
             state = .failed("The Local Service stopped unexpectedly.")
             return
         }
+    }
+}
+
+private final class LaunchRedirectObserver: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        // The session fragment is only needed in the already mounted panel.
+        completionHandler(nil)
     }
 }
 

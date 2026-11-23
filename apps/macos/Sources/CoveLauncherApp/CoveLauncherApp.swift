@@ -48,6 +48,13 @@ struct CoveLauncherApp: App {
                 }
 
                 Button {
+                    desktop.showQuickPanel()
+                } label: {
+                    Label(localized("Open Quick Panel"), systemImage: "macwindow")
+                }
+                .disabled(isStarting)
+
+                Button {
                     launcher.openChatOrRecover()
                 } label: {
                     Label(localized("Open Chat"), systemImage: "bubble.left.and.bubble.right")
@@ -83,7 +90,7 @@ struct CoveLauncherApp: App {
                             SMAppService.openSystemSettingsLoginItems()
                         }
                     }
-                    Toggle(localized("Global Shortcut: ⌃⌥Space"), isOn: Binding(
+                    Toggle(localized("Quick Panel Shortcut: ⌃⌥Space"), isOn: Binding(
                         get: { desktop.shortcutEnabled },
                         set: { desktop.setShortcutEnabled($0) }
                     ))
@@ -126,7 +133,6 @@ struct CoveLauncherApp: App {
                 desktop.refreshLoginStatus()
                 desktop.refreshServiceStatus()
             }
-            .onChange(of: launcher.state) { _ in desktop.serviceStateChanged() }
             .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { _ in
                 desktop.refreshServiceStatus()
             }

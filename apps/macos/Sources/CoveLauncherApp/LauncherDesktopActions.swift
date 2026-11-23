@@ -19,6 +19,21 @@ final class LauncherDesktopActions: ObservableObject {
     private let serviceStatus: any ServiceStatusReading
     private var checkingServiceStatus = false
     private var shortcut: GlobalChatShortcut?
+    private var serviceObservation: AnyCancellable?
+    private var panelReadiness: ServiceReadiness?
+    private lazy var quickPanel = QuickPanelController(
+        launchURL: { [weak launcher] in launcher?.quickPanelLaunchURL() },
+        openChat: { [weak launcher] conversationID in
+            guard let launcher else { return false }
+            if let conversationID {
+                guard let id = UUID(uuidString: conversationID) else { return false }
+                return launcher.openConversationInBrowser(id)
+            }
+            return launcher.openChatOrRecover()
+        },
+        openProviderSettings: { [weak launcher] in launcher?.openChatOrRecover(destination: .providerSetup) ?? false },
+        reauthorize: { [weak launcher] origin in await launcher?.refreshQuickPanelSession(expectedOrigin: origin) }
+    )
 
     init(launcher: LauncherStateMachine, browser: BrowserOpening, resources: Bundle,
          serviceStatus: any ServiceStatusReading, updates: UpdateChecker? = nil) {
@@ -32,8 +47,8 @@ final class LauncherDesktopActions: ObservableObject {
                 ?? "https://github.com/tokenfunplus/cove/releases/latest/download/update.json")!,
             requester: URLSessionUpdateRequester()
         )
-        shortcut = GlobalChatShortcut { [weak launcher] in
-            launcher?.openChatOrRecover()
+        shortcut = GlobalChatShortcut { [weak self] in
+            self?.quickPanel.toggle()
         }
         if UserDefaults.standard.bool(forKey: "GlobalChatShortcutEnabled") {
             do {
@@ -42,6 +57,12 @@ final class LauncherDesktopActions: ObservableObject {
             } catch {
                 // Keep the saved preference so a temporary conflict can recover on restart.
                 shortcutEnabled = false
+            }
+        }
+        serviceObservation = launcher.$state.removeDuplicates().sink { [weak self] state in
+            Task { @MainActor in
+                guard let self, self.launcher.state == state else { return }
+                self.serviceStateChanged()
             }
         }
     }
@@ -73,10 +94,23 @@ final class LauncherDesktopActions: ObservableObject {
         }
     }
 
-    func serviceStateChanged() {
+    private func serviceStateChanged() {
         providerSetupRequired = nil
+        if case let .ready(readiness) = launcher.state {
+            if let previous = panelReadiness, previous != readiness, previous.baseURL == readiness.baseURL {
+                quickPanel.serviceDidChange(baseURL: nil)
+            }
+            panelReadiness = readiness
+            quickPanel.serviceDidChange(baseURL: readiness.baseURL)
+            if shortcutEnabled { quickPanel.prepare() }
+        } else {
+            panelReadiness = nil
+            quickPanel.serviceDidChange(baseURL: nil)
+        }
         refreshServiceStatus()
     }
+
+    func showQuickPanel() { quickPanel.show() }
 
     func setLaunchAtLogin(_ enabled: Bool) {
         do {
@@ -96,6 +130,7 @@ final class LauncherDesktopActions: ObservableObject {
             else { shortcut?.disable() }
             shortcutEnabled = enabled
             UserDefaults.standard.set(enabled, forKey: "GlobalChatShortcutEnabled")
+            if enabled, case .ready = launcher.state { quickPanel.prepare() }
         } catch {
             showNotice("Shortcut unavailable.", detail: "Control-Option-Space may already be used by another app.")
         }

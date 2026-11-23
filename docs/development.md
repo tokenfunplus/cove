@@ -52,6 +52,8 @@ Login-item launch detection uses the launch Apple event; automatic login starts 
 
 Launch at Login uses `SMAppService.mainApp` and reports pending system approval. The optional global shortcut uses Carbon hot-key registration for Control-Option-Space, stays off by default, and reports key conflicts without requesting Accessibility access. Troubleshooting diagnostics contain only version/build, macOS, architecture, and bounded service/option statuses; they exclude runtime URLs, tokens, keys, errors, and conversation data. The script tests exercise native icon rendering, authenticated destinations, release-tag mapping, and diagnostic privacy with Command Line Tools; the XCTest suite still requires full Xcode.
 
+To check the Quick Panel on macOS, enable its shortcut and switch to another app. Press Control-Option-Space and type without clicking. Press Escape and reopen the panel to verify that the draft and focus return. Drop a supported file from Finder, submit a question, then use Continue in Cove to open the saved conversation in the browser. Test pinning by switching apps with the panel visible. See [Quick Panel](adr/0059-add-the-macos-quick-panel.md).
+
 ## History search and update discovery
 
 Schema version 16 builds a local FTS5 trigram index for existing message bodies. See [ADR-0031](adr/0031-index-local-history-substring-search.md) for migration, short-query fallback, and storage compatibility. To measure synthetic phrase searches, run `cd services/local-service && ../../scripts/go test ./internal/persistence -run '^$' -bench BenchmarkConversationSearchIndexed -benchtime=5x -benchmem`.

@@ -12,6 +12,7 @@ SwiftUI Launcher
             ↑
 React Chat Surface
   ├─ manages the workspace and live generation presentation
+  ├─ runs in the full browser workspace and the Launcher's compact Quick Panel
   └─ performs supported NearAI encryption, attestation, and receipt verification
 ```
 
@@ -19,7 +20,7 @@ React Chat Surface
 
 | Path | Responsibility |
 | --- | --- |
-| `apps/macos/` | Launcher lifecycle, bundled process management, updates, menu-bar UI |
+| `apps/macos/` | Launcher lifecycle, bundled process management, updates, menu-bar UI, Quick Panel |
 | `apps/web/` | React Chat Surface, transport, exports, NearAI verification |
 | `packages/api-contract/` | Shared types, JSON schemas, and fixtures |
 | `services/local-service/internal/api/` | Session-authorized HTTP adapter and static serving |
@@ -36,6 +37,8 @@ React Chat Surface
 ## Frontend boundaries
 
 `App.tsx` mounts `pages/ChatPage.tsx`. The page composes the workspace shell, conversation surface, and overlays. Domain presentation lives in `components/chat`, `conversations`, `providers`, `settings`, and `verification`. `components/ui` contains generic controls.
+
+The Quick Panel hosts a compact Chat Surface in AppKit. It uses the same session authorization, chat commands, attachment preparation, Generation lifecycle, and saved history as the browser workspace. The Launcher owns window behavior and opens the full workspace with an authenticated handoff. See [Quick Panel](adr/0059-add-the-macos-quick-panel.md).
 
 `api/client.ts` owns local HTTP/session adaptation and error decoding. Domain endpoint modules retain the shared contract types. `api/hooks` exposes TanStack Query queries and mutations, with scoped keys in `api/queryKeys.ts`. Mutations explicitly disable automatic retries. Conversation refreshes and generation batch reads use the same cache keys as mounted queries. The SSE adapter remains a stream rather than a cached query.
 

@@ -1,5 +1,5 @@
 import { ProjectContextUsage } from "./ProjectContextUsage";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { usePreviewGenerationContext } from "@/api/hooks/useGenerations";
 import { LocalServiceError } from "@/api";
 import type { AttachmentDraft } from "@/hooks/chat/use-attachment-draft";
@@ -16,6 +16,7 @@ export function DraftContext({
   disabled,
   compact = false,
   destinations = [],
+  renderTrigger,
 }: {
   conversationId: string;
   body: string;
@@ -23,9 +24,11 @@ export function DraftContext({
   disabled: boolean;
   compact?: boolean;
   destinations?: string[];
+  renderTrigger?: (open: () => void, disabled: boolean) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const preview = usePreviewGenerationContext();
+  const triggerDisabled = disabled || attachments.invalid;
   function review() {
     setOpen(true);
     preview.mutate({
@@ -47,19 +50,19 @@ export function DraftContext({
   );
   return (
     <>
-      <Tooltip content={copy.reviewContext} suppressRestoredFocus>
+      {renderTrigger ? renderTrigger(review, triggerDisabled) : <Tooltip content={copy.reviewContext} suppressRestoredFocus>
       <Button
         type="button"
         variant="ghost"
         size={compact ? "icon-sm" : "sm"}
         className={compact ? "rounded-lg text-muted-foreground" : undefined}
-        disabled={disabled || attachments.invalid}
+        disabled={triggerDisabled}
         onClick={review}
       >
         {compact && <ListFilter aria-hidden="true" size={16} />}
         <span className={compact ? "sr-only" : undefined}>{copy.reviewContext}</span>
       </Button>
-      </Tooltip>
+      </Tooltip>}
       {open && (
         <Dialog
           open

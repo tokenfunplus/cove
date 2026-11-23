@@ -18,6 +18,9 @@ _Avoid_: WKWebView, embedded native view
 
 The Chat Surface follows a familiar ChatGPT-like conversation workspace for layout and interaction, while Cove's Provider Snapshot remains visible in each assistant message header.
 
+**Quick Panel**:
+The Launcher-owned macOS window that hosts a compact Chat Surface for short tasks. It focuses the composer when opened and can open the current Conversation in the full Chat Surface.
+
 **Provider Profile**:
 A user-configured, non-secret description of a model provider connection, including its endpoint and transport metadata. It does not select a model; model targets belong to the Active Model Set.
 _Avoid_: API key, provider account
