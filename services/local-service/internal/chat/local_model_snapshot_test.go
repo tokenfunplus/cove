@@ -26,7 +26,8 @@ func TestLocalSnapshotUsesSelectedModelArtifact(t *testing.T) {
 
 func TestLocalEffectiveParametersDoNotMutatePreferences(t *testing.T) {
 	for _, requested := range []int{512, 4096} {
-		parameters := persistence.GenerationParameters{MaxTokens: &requested}
+		inputLimit := requested
+		parameters := persistence.GenerationParameters{MaxTokens: &inputLimit}
 		effective := effectiveGenerationParameters(parameters, provider.KindLocal)
 		if *effective.MaxTokens != min(requested, localmodels.MaxOutputTokens) || *parameters.MaxTokens != requested {
 			t.Fatal("incorrect local limit")

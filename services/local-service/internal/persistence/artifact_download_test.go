@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -110,5 +111,28 @@ func TestSpeechBundleRetryReusesVerifiedAssetsAndResumesOnlyTheInterruptedFile(t
 	}
 	if _, err = os.Stat(filepath.Join(filepath.Dir(files.Path(bundle)), ".resume-"+bundle.SHA256)); !os.IsNotExist(err) {
 		t.Fatal("successful install retained compressed cache")
+	}
+}
+
+func TestAlreadyCanceledRetryDiscardsSavedPartialWithoutFetching(t *testing.T) {
+	files := ModelFiles{Root: t.TempDir()}
+	data := []byte("saved interrupted bytes")
+	digest := fmt.Sprintf("%x", sha256.Sum256(data))
+	partial := filepath.Join(filepath.Dir(files.Path("fixture", digest)), ".download-"+digest+".partial")
+	if err := os.MkdirAll(filepath.Dir(partial), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(partial, data[:5], 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	fetched := false
+	err := files.Download(ctx, "fixture", digest, int64(len(data)), func(int64) (io.ReadCloser, bool, error) { fetched = true; return nil, false, nil }, nil)
+	if !errors.Is(err, context.Canceled) || fetched {
+		t.Fatal("canceled retry fetched bytes or lost cancellation", err)
+	}
+	if _, err = os.Stat(partial); !os.IsNotExist(err) {
+		t.Fatal("already canceled retry retained partial", err)
 	}
 }

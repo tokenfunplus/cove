@@ -20,24 +20,25 @@ func downloadArtifact(ctx context.Context, directory, digest string, size int64,
 	if !modelDigest.MatchString(digest) || size <= 0 || size > 1<<30 {
 		return "", errModelIdentity
 	}
-	if err := ctx.Err(); err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(directory, 0700); err != nil {
-		return "", err
-	}
+	// Cancellation must also clear bytes retained by an earlier failed attempt.
 	name := filepath.Join(directory, ".download-"+digest+".partial")
-	file, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
 	discard := false
 	defer func() {
 		if discard || errors.Is(ctx.Err(), context.Canceled) {
 			_ = os.Remove(name)
 		}
 	}()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return "", err
+	}
+	file, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
 		return "", err

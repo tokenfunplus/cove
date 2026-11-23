@@ -13,7 +13,7 @@ import { useLocalSpeech, SpeechPlaybackControls } from "@/components/chat/LocalS
 import { FrontSelect } from "@/components/ui/front-select";
 import { Slider } from "@/components/ui/slider";
 
-export function SpeechSettingsPanel({onDiscover,initialModelId,active=true}:{onDiscover:()=>void;initialModelId?:string;active?:boolean}){
+export function SpeechSettingsPanel({onDiscover,initialModelId,active=true,selectionRevision=0}:{onDiscover:()=>void;initialModelId?:string;active?:boolean;selectionRevision?:number}){
   const configuration=useSpeechConfiguration();const cache=useQueryClient();const speech=useLocalSpeech();
   const [draft,setDraft]=useState<SpeechSettings>();const speechRef=useRef(speech);speechRef.current=speech;
   const [editing,setEditing]=useState(initialModelId??"");const [preview,setPreview]=useState<string>();
@@ -21,7 +21,7 @@ export function SpeechSettingsPanel({onDiscover,initialModelId,active=true}:{onD
   const baseline=useRef<SpeechSettings | undefined>(undefined);const draftRef=useRef(draft);draftRef.current=draft;
   const dirty=Boolean(draft&&JSON.stringify(draft)!==JSON.stringify(baseline.current));const dirtyRef=useRef(dirty);dirtyRef.current=dirty;
   useEffect(()=>{if(configuration.data&&!dirtyRef.current){baseline.current=structuredClone(configuration.data.settings);setDraft(structuredClone(configuration.data.settings));}},[configuration.data]);
-  useEffect(()=>{if(initialModelId){setEditing(initialModelId);setPreview(undefined);}},[initialModelId]);
+  useEffect(()=>{if(initialModelId){setEditing(initialModelId);setPreview(undefined);}},[initialModelId,selectionRevision]);
   useEffect(()=>{if(!active&&speechRef.current?.playback?.kind==="preview")speechRef.current.stop();},[active]);
   useEffect(()=>()=>{if(speechRef.current?.playback?.kind==="preview")speechRef.current.stop();},[]);
   if(configuration.isLoading)return <p role="status">Loading speech settings…</p>;

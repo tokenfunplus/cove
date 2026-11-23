@@ -177,7 +177,8 @@ func TestPreviewOverridesValidateWithoutSavingPreferences(t *testing.T) {
 		}
 	}
 	invalidThreads := 5
-	if _, err = manager.Start(context.Background(), "owner", Request{Text: "Preview", Threads: &invalidThreads}); err == nil {
+	var required *ModelRequiredError
+	if _, err = manager.Start(context.Background(), "owner", Request{Text: "Preview", Threads: &invalidThreads}); err == nil || errors.As(err, &required) {
 		t.Fatal("invalid thread count accepted")
 	}
 	settings, err := manager.Settings(context.Background())
