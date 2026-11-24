@@ -4,11 +4,11 @@ For continuous multi-model discussions, see [Debate mode](debate.md).
 
 Cove is a local-first AI chat application for Apple Silicon Macs running macOS 13 or later. Its menu-bar Launcher starts a Local Service and opens the Chat Surface in your browser or the Quick Panel. The interface is English. Messages, titles, and prompts support Unicode content.
 
-This guide follows the current source tree, including unreleased features. See the [Beta 10 release notes](releases/0.1.0-beta.10.md) for the published package and the [unreleased changelog](../CHANGELOG.md#unreleased) for newer changes.
+This guide follows the current source tree, including unreleased features. See the [Beta 11 release notes](releases/0.1.0-beta.11.md) for the published package and the [unreleased changelog](../CHANGELOG.md#unreleased) for newer changes.
 
 ## Install and upgrade
 
-Download [0.1.0-beta.10](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.10), open the DMG, and drag Cove to Applications. A checksum file accompanies the download. Check the release page for Apple signing and notarization status.
+Download [0.1.0-beta.11](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.11), open the DMG, and drag Cove to Applications. A checksum file accompanies the download. Check the release page for Apple signing and notarization status.
 
 For an upgrade, quit Cove from its menu-bar menu before replacing the app. Existing Cove history and settings remain in the local data directory. Provider Keys remain in macOS Keychain. Under Check for Updates, Check Stable Releases follows the stable channel; Check Beta Releases explicitly checks for newer betas, release candidates, or final versions. Builds before beta.4 can download beta updates from GitHub Releases.
 
@@ -202,7 +202,7 @@ Deleting a conversation or clearing history removes its saved attachment records
 
 Start with the [FAQ and troubleshooting guide](faq.md) for installation, Keychain access, unavailable models, and Local Service recovery.
 
-Read the [beta release notes](releases/0.1.0-beta.10.md), use [GitHub Issues](https://github.com/tokenfunplus/cove/issues) for reproducible problems, or join the [Cove Discord community](https://discord.gg/7jdddhG8ZG) for setup discussion. Include the app and macOS versions in bug reports, and remove credentials, launch URLs, and private content from diagnostics.
+Read the [beta release notes](releases/0.1.0-beta.11.md), use [GitHub Issues](https://github.com/tokenfunplus/cove/issues) for reproducible problems, or join the [Cove Discord community](https://discord.gg/7jdddhG8ZG) for setup discussion. Include the app and macOS versions in bug reports, and remove credentials, launch URLs, and private content from diagnostics.
 
 ## Let a model search the web
 
