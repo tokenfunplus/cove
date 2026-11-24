@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Bring selected text into the Quick Panel with Ask Cove in macOS Services.
+
 ## 0.1.0-beta.11 - 2026-11-24
 
 ### Added

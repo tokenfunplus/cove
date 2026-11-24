@@ -78,13 +78,13 @@ public final class LauncherStateMachine: ObservableObject {
         startAtLaunch(isLoginItem: false)
     }
 
-    public func startAtLaunch(isLoginItem: Bool) {
+    public func startAtLaunch(isLoginItem: Bool, opensChat: Bool = true) {
         guard case .stopped = state else {
             return
         }
         do {
             try start()
-            if !isLoginItem { openChat() }
+            if !isLoginItem && opensChat { openChat() }
         } catch {
             return
         }

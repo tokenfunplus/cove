@@ -40,6 +40,8 @@ React Chat Surface
 
 The Quick Panel hosts a compact Chat Surface in AppKit. It uses the same session authorization, chat commands, attachment preparation, Generation lifecycle, and saved history as the browser workspace. The Launcher owns window behavior and opens the full workspace with an authenticated handoff. See [Quick Panel](adr/0059-add-the-macos-quick-panel.md).
 
+Ask Cove in macOS Services sends selected plain text to the Launcher. The Launcher validates it and hands it off in memory to the trusted local Quick Panel page. The Chat Surface owns draft review and submission. See [selected text imports](adr/0061-import-macos-content-into-quick-panel-drafts.md).
+
 `api/client.ts` owns local HTTP/session adaptation and error decoding. Domain endpoint modules retain the shared contract types. `api/hooks` exposes TanStack Query queries and mutations, with scoped keys in `api/queryKeys.ts`. Mutations explicitly disable automatic retries. Conversation refreshes and generation batch reads use the same cache keys as mounted queries. The SSE adapter remains a stream rather than a cached query.
 
 `api/queryClient.ts` keeps loopback queries and commands active when the browser reports no internet. Actual Local Service failures still use ordinary error handling; remote Providers and downloads require reachable destinations. See [offline loopback requests](adr/0049-keep-loopback-requests-active-without-internet.md).

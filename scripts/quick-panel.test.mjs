@@ -39,6 +39,21 @@ MainActor.assumeIsolated {
             if !mayCaptureFocus { return nil }
             return { restorations += 1 }
         }, isApplicationActive: { coveActive })
+    let selection = "Selected \\u{4F60} text\\nSecond line"
+    let pending = try! DesktopImport(text: selection)
+    precondition(pending.bridgeValue["text"] == selection, "The bridge must preserve the selection verbatim")
+    try! controller.stageImport(pending)
+    try! controller.stageImport(pending)
+    for _ in 1..<4 {
+        try! controller.stageImport(DesktopImport(text: "Another selection"))
+    }
+    do {
+        try controller.stageImport(DesktopImport(text: "One more selection"))
+        preconditionFailure("The import queue must stay bounded")
+    } catch DesktopIntakeError.queueFull {
+    } catch {
+        preconditionFailure("Expected an import queue error")
+    }
     controller.prepare()
     RunLoop.main.run(until: Date().addingTimeInterval(0.1))
     let panel = app.windows.first { $0.title == "Cove Quick Panel" }!
@@ -78,7 +93,9 @@ MainActor.assumeIsolated {
 }
 `);
     const executable = path.join(directory, "check-panel");
-    run("swiftc", ["-target", "arm64-apple-macosx13.0", path.join(root, "apps/macos/Sources/CoveLauncherApp/QuickPanelController.swift"), main, "-o", executable]);
+    const appSources = path.join(root, "apps/macos/Sources/CoveLauncherApp");
+    run("swiftc", ["-target", "arm64-apple-macosx13.0", path.join(appSources, "QuickPanelController.swift"),
+      path.join(appSources, "DesktopImport.swift"), main, "-o", executable]);
     run(executable, []);
   } finally {
     await rm(directory, { recursive: true, force: true });

@@ -56,6 +56,8 @@ To check the Quick Panel on macOS, enable its shortcut and switch to another app
 
 On an Apple Silicon Mac with a WindowServer session, run `COVE_TEST_QUICK_PANEL=1 node --test scripts/quick-panel.test.mjs` for isolated native presentation checks. It compiles the production controller directly, checks background preparation, foreground level and keyboard input, restores an offscreen frame, and verifies hide/reopen retains the mounted surface. It uses no personal Local Service or Provider connection. Also verify menu invocation, another display, full screen, and Stage Manager manually.
 
+Test **Ask Cove** with an installed Apple Silicon `Cove.app` and a temporary `COVE_DATA_DIR`. Select synthetic multiline text in TextEdit and invoke the service with Cove both quit and running. Verify that the selection appears in an editable Quick Panel draft and that the local test Provider receives it only after **Send**. With an unsent draft and an attachment already open, check that dismissal preserves both and that starting a new draft replaces them only after the user chooses that action. Check that an import waits while an answer is running and can be reviewed once the answer finishes.
+
 ## History search and update discovery
 
 Schema version 16 builds a local FTS5 trigram index for existing message bodies. See [ADR-0031](adr/0031-index-local-history-substring-search.md) for migration, short-query fallback, and storage compatibility. To measure synthetic phrase searches, run `cd services/local-service && ../../scripts/go test ./internal/persistence -run '^$' -bench BenchmarkConversationSearchIndexed -benchtime=5x -benchmem`.

@@ -115,6 +115,11 @@ final class LauncherDesktopActions: ObservableObject {
         DispatchQueue.main.async { [weak self] in self?.quickPanel.show() }
     }
 
+    func stageImport(_ input: DesktopImport) throws {
+        try quickPanel.stageImport(input)
+        showQuickPanel()
+    }
+
     func setLaunchAtLogin(_ enabled: Bool) {
         do {
             if enabled { try SMAppService.mainApp.register() }

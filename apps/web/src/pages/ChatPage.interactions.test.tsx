@@ -12,6 +12,7 @@ import { historyFiltersStorageKey, historyQueryFilter } from "@/components/conve
 import { conversationKeys } from "@/api/queryKeys";
 import { createLocalServiceQueryClient } from "@/api/queryClient";
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
+import { quickPanelFocusEvent, quickPanelImportEvent } from "@/lib/quick-panel";
 import { App } from "@/App";
 import { ProjectsPage } from "@/components/projects/ProjectsPage";
 import { WorkspaceToast } from "@/components/layout/WorkspaceToast";
@@ -2240,6 +2241,87 @@ test("Quick Panel groups extra tools, restores menu focus, and shows the local-o
   expect(blockedWebpage.getAttribute("aria-disabled")).toBe("true");
   await user.keyboard("{Escape}");
   expect(postMessage).not.toHaveBeenCalledWith({ action: "escape" });
+});
+
+test("Quick Panel imports and appends macOS text selections without sending them", async () => {
+  const textId = "00000000-0000-0000-0000-000000000001";
+  const followUpId = "00000000-0000-0000-0000-000000000002";
+  const selection = "\u4e2d\u6587\nSelection";
+  const followUp = "More selected text";
+  const deliver = (id: string, text: string) =>
+    window.dispatchEvent(new CustomEvent(quickPanelImportEvent, { cancelable: true, detail: { id, text } }));
+  const postMessage = vi.fn(({ action }) => {
+    if (action === "ready") expect(deliver(textId, selection)).toBe(false);
+  });
+  vi.stubGlobal("webkit", { messageHandlers: { coveQuickPanel: { postMessage } } });
+  window.history.replaceState(null, "", "/?surface=quick-panel");
+  const user = userEvent.setup();
+  render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+  act(() => { window.dispatchEvent(new Event(quickPanelFocusEvent)); });
+  const composer = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Send message" });
+  await waitFor(() => expect(composer.value).toBe(selection));
+  expect(postMessage).toHaveBeenCalledWith({ action: "import-received", id: textId });
+  act(() => { deliver(textId, selection); });
+  expect(screen.queryByRole("region", { name: "Content from macOS" })).toBeNull();
+
+  const oversizedId = "00000000-0000-0000-0000-000000000003";
+  act(() => { deliver(oversizedId, "\u4e2d".repeat(20_001)); });
+  expect(postMessage).toHaveBeenCalledWith({ action: "import-rejected", id: oversizedId });
+  expect(composer.value).toBe(selection);
+
+  act(() => { deliver(followUpId, followUp); });
+  const review = screen.getByRole("region", { name: "Content from macOS" });
+  expect(within(review).getByText(followUp)).toBeTruthy();
+  expect(composer.value).toBe(selection);
+  await user.click(within(review).getByRole("button", { name: "Add to Current Draft" }));
+  expect(composer.value).toBe(`${selection}\n\n${followUp}`);
+  expect(transport.createConversation).not.toHaveBeenCalled();
+  expect(transport.createGenerationBatch).not.toHaveBeenCalled();
+});
+
+test("Quick Panel stages macOS selections during generation and can start a separate draft", async () => {
+  window.history.replaceState(null, "", "/?surface=quick-panel");
+  vi.mocked(transport.createConversation).mockResolvedValue(fixture.conversation);
+  const user = userEvent.setup();
+  render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+  act(() => { window.dispatchEvent(new Event(quickPanelFocusEvent)); });
+  const composer = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Send message" });
+  await user.type(composer, "Original request");
+  const send = screen.getByRole<HTMLButtonElement>("button", { name: "Send message" });
+  await waitFor(() => expect(send.disabled).toBe(false));
+  await user.click(send);
+  await waitFor(() => expect(transport.subscribeGenerationBatch).toHaveBeenCalled());
+  fireEvent.change(composer, { target: { value: "Unsent follow-up" } });
+
+  const publish = (suffix: string, text: string) => {
+    act(() => {
+      window.dispatchEvent(new CustomEvent(quickPanelImportEvent, {
+        detail: { id: `00000000-0000-0000-0000-00000000000${suffix}`, text },
+      }));
+    });
+  };
+  publish("1", "Dismiss this selection");
+  const add = screen.getByRole<HTMLButtonElement>("button", { name: "Add to Current Draft" });
+  const startNew = screen.getByRole<HTMLButtonElement>("button", { name: "Start New Draft" });
+  expect(add.disabled).toBe(true);
+  expect(startNew.disabled).toBe(true);
+  await user.click(screen.getByRole("button", { name: "Dismiss" }));
+  expect(composer.value).toBe("Unsent follow-up");
+
+  fireEvent.change(composer, { target: { value: "" } });
+  publish("2", "Use this separately");
+  publish("3", "Keep this import waiting for review");
+  vi.mocked(transport.getConversation).mockResolvedValue(fixture.completedView);
+  await act(async () => { feed.close(); });
+  const newDraft = screen.getByRole<HTMLButtonElement>("button", { name: "Start New Draft" });
+  await waitFor(() => expect(newDraft.disabled).toBe(false));
+  await user.click(newDraft);
+  expect(composer.value).toBe("Use this separately");
+  expect(screen.getByText("Keep this import waiting for review")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Continue in Cove" })).toBeNull();
+  expect(transport.cancelGenerationBatch).not.toHaveBeenCalled();
+  expect(transport.createConversation).toHaveBeenCalledTimes(1);
+  expect(transport.createGenerationBatch).toHaveBeenCalledTimes(1);
 });
 
 test("saved model combinations restore the entire model set through the workspace controls",async()=>{

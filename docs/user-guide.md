@@ -26,6 +26,12 @@ The panel grows as you add content. Drag an edge to choose your own size for the
 
 The first message starts a conversation in your local history. After the current response finishes, use **Continue in Cove** to open that conversation in your default browser. Unsent follow-up text and attachments stay in the panel. Choose **New chat** in the panel to start a separate task.
 
+### Ask Cove about selected text
+
+Select text in an app such as TextEdit and choose **Services > Ask Cove**. If the service is hidden, look under **System Settings > Keyboard > Keyboard Shortcuts > Services**. You can also copy text and paste it into the panel.
+
+The selection fills an empty draft for a new chat. If a draft or conversation is open, choose **Add to Current Draft**, **Start New Draft**, or **Dismiss**. The selection waits while an answer is running. Review the model destination below the composer and click **Send** when ready. **Only on this Mac** in **Tools** restricts the answer to an installed Cove local model.
+
 ## Connect a Provider
 
 Open **Settings → Provider settings**, choose a Provider, enter its API key, click **Test connection**, choose a model target for initial setup, then click **Save Provider**. A connection test alone does not save the key or profile. Provider Profiles describe connections; model targets belong to the Active Model Set. Setup initializes the chosen target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; use the workspace's model controls to change its targets.
