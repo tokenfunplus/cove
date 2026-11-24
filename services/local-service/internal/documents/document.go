@@ -24,6 +24,8 @@ const (
 	MaxContextCharacters = 240000
 	MaxRequestBytes      = 24 << 20
 	MaxPDFPages          = 50
+	PDFExtractionVersion = "cove-pdf-v2"
+	pdfMediaType         = "application/pdf"
 )
 
 var ErrInvalidDocument = errors.New("invalid source document")
@@ -76,6 +78,11 @@ type Prepared struct {
 
 type Parser func(context.Context, Input) (Prepared, error)
 
+// NeedsPDFReextraction identifies saved PDFs from the older text extractor.
+func NeedsPDFReextraction(snapshot Snapshot) bool {
+	return snapshot.MediaType == pdfMediaType && (snapshot.ExtractionVersion == "cove-pdf-v1" || snapshot.ExtractionVersion == "")
+}
+
 func invalid(message string) error { return fmt.Errorf("%w: %s", ErrInvalidDocument, message) }
 
 // Parse never reads a filesystem path or contacts an external service.
@@ -99,8 +106,8 @@ func Parse(ctx context.Context, input Input) (result Prepared, err error) {
 	digest := sha256.Sum256(input.Data)
 	snapshot := Snapshot{ID: fmt.Sprintf("%x", digest), Name: name, Size: len(input.Data), MediaType: "text/plain", ExtractionVersion: "cove-text-v1"}
 	if strings.EqualFold(path.Ext(name), ".pdf") {
-		snapshot.MediaType = "application/pdf"
-		snapshot.ExtractionVersion = "cove-pdf-v1"
+		snapshot.MediaType = pdfMediaType
+		snapshot.ExtractionVersion = PDFExtractionVersion
 		reader, parseErr := pdf.NewReader(bytes.NewReader(input.Data), int64(len(input.Data)))
 		if parseErr != nil {
 			return result, invalid("The PDF is invalid or password-protected.")
@@ -113,15 +120,20 @@ func Parse(ctx context.Context, input Input) (result Prepared, err error) {
 			if err := ctx.Err(); err != nil {
 				return result, err
 			}
-			text, parseErr := reader.Page(page).GetPlainText(nil)
+			pdfPage := reader.Page(page)
+			text, parseErr := pdfPage.GetPlainText(nil)
 			if parseErr != nil {
 				return result, invalid("The PDF text could not be extracted.")
 			}
 			text = strings.TrimSpace(text)
-			snapshot.Characters += utf8.RuneCountInString(text)
-			if snapshot.Characters > MaxTextCharacters {
+			if snapshot.Characters+utf8.RuneCountInString(text) > MaxTextCharacters {
 				return result, invalid("A file may contain at most 60,000 extracted characters. Split it into smaller files.")
 			}
+			text = repairPDFGlyphLines(pdfPage, text)
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
+			snapshot.Characters += utf8.RuneCountInString(text)
 			if text != "" {
 				snapshot.Sections = append(snapshot.Sections, Section{ID: fmt.Sprintf("P%d", page), Text: text})
 			}

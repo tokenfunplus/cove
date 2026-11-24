@@ -1,6 +1,7 @@
 package persistence
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"path/filepath"
@@ -8,6 +9,62 @@ import (
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 )
+
+func TestSchema27UpgradeKeepsProjectPDFIndexes(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "schema27.sqlite")
+	store, err := OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := store.SaveProject(ctx, "", ProjectInput{Name: "Existing searchable PDF"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	section := documents.Section{ID: "P11", Text: "O\nl\nd"}
+	source := documents.Prepared{Snapshot: documents.Snapshot{
+		ID: "legacy-pdf", Name: "reference.pdf", MediaType: "application/pdf", ExtractionVersion: "cove-pdf-v1",
+		Sections: []documents.Section{section}, Characters: len(section.Text),
+	}, Data: []byte("Existing PDF bytes")}
+	project, err = store.AddProjectSource(ctx, project.ID, project.Revision, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err = store.SetProjectSourceUsage(ctx, project.ID, project.Sources[0].ID, project.Revision, "search")
+	if err != nil {
+		t.Fatal(err)
+	}
+	vector := make([]float32, 512)
+	vector[0] = 1
+	library := store.ProjectLibrary(project.ID)
+	if err = library.SaveLocalDocument(ctx, source, "model", "version", []LocalChunk{{DocumentID: source.ID, Sections: []string{section.ID}, Text: section.Text, Vector: vector}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.db.Exec(`ALTER TABLE project_source_indexes DROP COLUMN source_snapshot; PRAGMA user_version=27;`); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	library = store.ProjectLibrary(project.ID)
+	saved, err := library.ReadLocalDocument(ctx, source.ID)
+	if err != nil || !bytes.Equal(saved.Data, source.Data) || len(saved.Sections) != 1 || saved.Sections[0] != section {
+		t.Fatal("migration changed the stored PDF", err)
+	}
+	chunks, err := library.ReadLocalChunks(ctx, source.ID, "model", "version")
+	if err != nil || len(chunks) != 1 || chunks[0].Text != section.Text || chunks[0].Vector[0] != 1 {
+		t.Fatal("migration discarded the existing search index", err)
+	}
+	items, err := library.ListLocalDocuments(ctx)
+	if err != nil || len(items) != 1 || !items[0].NeedsReindex {
+		t.Fatal("legacy PDF indexing status was lost", err)
+	}
+}
 
 func TestSchema25UpgradeKeepsProjectSourcesAndFrozenInput(t *testing.T) {
 	ctx := context.Background()

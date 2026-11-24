@@ -88,7 +88,7 @@ test("search sends only selected documents and prepares selected original source
   await user.click(screen.getByRole("button",{name:"Search selected documents"}));
   const hit=await screen.findByRole("article");expect(api.searchLocalDocuments).toHaveBeenCalledWith([source.id],"How long is the recovery copy kept?",expect.any(AbortSignal),0);
   await user.click(within(hit).getByRole("checkbox"));await user.click(screen.getByRole("button",{name:"Use selected results in chat"}));
-  expect(api.prepareLocalSources).toHaveBeenCalledWith([{document_id:source.id,ordinal:1}],expect.any(AbortSignal));
+  expect(api.prepareLocalSources).toHaveBeenCalledWith([{document_id:source.id,ordinal:1,extraction_version:source.extraction_version}],expect.any(AbortSignal));
   expect(useSources).toHaveBeenCalledWith([prepared]);expect(close).toHaveBeenCalled();cache.clear();
 });
 
@@ -109,8 +109,65 @@ test("a similarity cutoff is sent and empty results explain how to recover",asyn
  render(<QueryClientProvider client={cache}><LocalDocumentsDialog onClose={()=>{}}/></QueryClientProvider>);
  const user=userEvent.setup();await user.click(await screen.findByRole("checkbox",{name:/guide.txt/}));
  await user.type(screen.getByRole("textbox",{name:"What are you looking for?"}),"unrelated question");
+ await user.click(screen.getByRole("button",{name:"Filters"}));
  const slider=screen.getByRole("slider",{name:"Minimum similarity"});slider.focus();await user.keyboard("{End}");
  await user.click(screen.getByRole("button",{name:"Search selected documents"}));
  await screen.findByText(/No passages meet the current similarity filter/);
  expect(api.searchLocalDocuments).toHaveBeenCalledWith([source.id],"unrelated question",expect.any(AbortSignal),1);
+});
+
+test("the compact PDF card keeps the original page available for preview and copying", async () => {
+  const passage = "\u6062\u590d\u8bf4\u660e\u6587\u6863";
+  const pageText = `${[...passage].join("\n")}\n\nKeep this paragraph.`;
+  const pdf: AttachmentSnapshot = { ...source, name: "guide.pdf", media_type: "application/pdf", extraction_version: "cove-pdf-v1", sections: [{ id: "P11", text: pageText }] };
+  vi.mocked(api.getLocalModels).mockResolvedValue([{ id: "bge-small-zh", state: "installed", runtime_ready: true } as never]);
+  vi.mocked(api.getLocalDocuments).mockResolvedValue([{ id: pdf.id, name: pdf.name, characters: 50, chunks: 2 }] as never);
+  vi.mocked(api.searchLocalDocuments).mockResolvedValue({ hits: [{ document_id: pdf.id, ordinal: 1, score: 0.8, text: pageText, source: pdf }], elapsed_ms: 1, model_sha256: "fixture", index_version: "fixture" });
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  render(<QueryClientProvider client={cache}><LocalDocumentsDialog onClose={() => {}} /></QueryClientProvider>);
+
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("checkbox", { name: /guide.pdf/ }));
+  await user.type(screen.getByRole("textbox", { name: "What are you looking for?" }), "recovery");
+  await user.click(screen.getByRole("button", { name: "Search selected documents" }));
+  const hit = within(await screen.findByRole("article"));
+  expect(hit.getByText((_, element) => element?.textContent === `${passage}\n\nKeep this paragraph.`).classList.contains("line-clamp-3")).toBe(true);
+  expect(hit.getByText("P11")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Documents" }).getAttribute("aria-expanded")).toBe("false");
+
+  await user.click(hit.getByRole("checkbox"));
+  const copy = screen.getByRole("button", { name: "Copy selected text" });
+  expect(copy.closest("footer")?.textContent).toContain("1 passage selected");
+  await user.click(copy);
+  expect(await navigator.clipboard.readText()).toBe(`guide.pdf · P11\n${pageText}`);
+  await user.click(hit.getByRole("button", { name: "View cited source sections" }));
+  const preview = await screen.findByRole("dialog", { name: pdf.name });
+  expect(preview.querySelector("pre")?.textContent).toBe(pageText);
+  cache.clear();
+});
+
+test("re-indexing an indexed PDF clears results while retaining search scope and query", async () => {
+  vi.mocked(api.getLocalModels).mockResolvedValue([{ id: "bge-small-zh", state: "installed", runtime_ready: true } as never]);
+  vi.mocked(api.getLocalDocuments).mockResolvedValue([{ id: source.id, name: "guide.pdf", characters: 50, chunks: 2, needs_reindex: true }] as never);
+  vi.mocked(api.searchLocalDocuments).mockResolvedValue({ hits: [{ document_id: source.id, ordinal: 1, score: 0.8, text: source.sections[0].text, source }], elapsed_ms: 1, model_sha256: "fixture", index_version: "fixture" });
+  vi.mocked(api.reindexLocalDocument).mockResolvedValue(undefined);
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  render(<QueryClientProvider client={cache}><LocalDocumentsDialog onClose={() => {}} /></QueryClientProvider>);
+
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("checkbox", { name: /guide.pdf/ }));
+  const query = screen.getByRole<HTMLInputElement>("textbox", { name: "What are you looking for?" });
+  await user.type(query, "recovery");
+  const search = screen.getByRole<HTMLButtonElement>("button", { name: "Search selected documents" });
+  await user.click(search);
+  await user.click(within(await screen.findByRole("article")).getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "Documents" }));
+  await user.click(screen.getByRole("button", { name: "Index again" }));
+
+  expect(api.reindexLocalDocument).toHaveBeenCalledWith(source.id, expect.any(AbortSignal));
+  expect(screen.queryByRole("article")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Copy selected text" })).toBeNull();
+  expect(query.value).toBe("recovery");
+  await waitFor(() => expect(search.disabled).toBe(false));
+  cache.clear();
 });

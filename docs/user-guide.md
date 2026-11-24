@@ -58,13 +58,15 @@ Downloads show progress, support cancellation, and verify pinned file sizes and 
 
 You can choose up to 32 files for a library import; each selected file is processed in order, subject to the 32-document library limit. Stop cancels the current request and prevents remaining files from starting. Closing the document dialog cancels pending work and prevents late search-source results from entering another chat draft. Search still covers only the one to four documents you select.
 
+For PDFs marked **PDF text update available**, open **Documents** and choose **Index again** to rebuild the index from Cove's saved original. Search again after the update to review the refreshed excerpts and page text. Selected Project materials are updated when you search them. Saved conversations continue to use the source snapshots captured when those turns were submitted.
+
 Five supported speech bundles can also be installed and used with Read aloud; see [local speech](local-speech.md). Unsupported catalog entries remain discovery-only. **View files** and **About this model** open external source websites. File sizes exclude runtimes and working memory. The discovery list itself works without a model-hub request. See [local inference acceptance](local-inference.md) for observed smoke-test results and their limits.
 
 Hugging Face and publisher GitHub repositories provide the listed files. ModelScope is another hub to inspect individually; a matching name does not establish the same revision or artifact. Local tools can still supply results to a remote Provider when that Provider generates the final answer.
 
 ### Use local capabilities in a chat
 
-Open **Tools > Search local documents** in the composer. If document search is not installed, download BGE in that dialog; your chat draft is retained. Select documents, search, inspect original passages, then choose **Copy selected text** or **Use selected results in chat**. The tool can run independently of the selected answer model. The execution line distinguishes **Search: On this Mac** from each answer destination.
+Open **Tools > Search local documents** in the composer. If document search is not installed, download BGE in that dialog; your chat draft is retained. Select documents and search. The results show a short excerpt and the original page or line numbers. Open **View cited source sections** for the full passage. The actions at the bottom copy the selected text or add those sources to your chat draft. The execution line distinguishes **Search: On this Mac** from each answer destination.
 
 **On this Mac** beside the model picker opens capability management. **Installed** shows downloaded tools and chat models; **Discover** includes additional candidates with their integration state. After downloading Qwen, **Use in this chat** explicitly selects its target without replacing the draft. Installing a model alone does not change your selection. OCR, transcription, unsupported speech candidates, and other explore-only entries still require integration.
 

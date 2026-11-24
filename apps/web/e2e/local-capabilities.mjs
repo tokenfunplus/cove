@@ -32,6 +32,7 @@ export async function runLocalCapabilitiesAcceptance({ api, cdp, evaluate, until
   await cdp('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   await click('button[aria-label="Tools"]');
   await button('Search local documents');
+  await button('Filters');
   await until("!!document.querySelector('[role=slider][aria-label=\"Minimum similarity\"]')");
   await click('[role="slider"][aria-label="Minimum similarity"]');
   await cdp('Input.dispatchKeyEvent', { type: 'keyDown', key: 'End', code: 'End' });
