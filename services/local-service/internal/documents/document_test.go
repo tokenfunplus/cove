@@ -110,6 +110,7 @@ func TestPDFExtractionUsesGlyphSpacingConservatively(t *testing.T) {
 		{"word gap", "BT /F1 12 Tf 72 720 Td (A) Tj ET\nBT /F1 12 Tf 79.2 720 Td (B) Tj ET\nBT /F1 12 Tf 89.4 720 Td (C) Tj ET\n", "AB C"},
 		{"explicit whitespace", "BT /F1 12 Tf 72 720 Td (A ) Tj ET\nBT /F1 12 Tf 79.2 720 Td (B) Tj ET\nBT /F1 12 Tf 89.4 720 Td (C) Tj ET\n", "A \nB\nC"},
 		{"vertical glyphs", "BT /F1 12 Tf 72 720 Td (A) Tj ET\nBT /F1 12 Tf 72 708 Td (B) Tj ET\nBT /F1 12 Tf 72 696 Td (C) Tj ET\n", "A\nB\nC"},
+		{"skewed text", "BT /F1 12 Tf 1 0.1 0 1 72 720 Tm (A) Tj ET\nBT /F1 12 Tf 1 0.1 0 1 79 720 Tm (B) Tj ET\nBT /F1 12 Tf 1 0.1 0 1 86 720 Tm (C) Tj ET\n", "A\nB\nC"},
 		{"columns or table cells", "BT /F1 12 Tf 72 720 Td (A) Tj ET\nBT /F1 12 Tf 144 720 Td (B) Tj ET\nBT /F1 12 Tf 216 720 Td (C) Tj ET\n", "A\nB\nC"},
 		{"geometry decoder error", "cm\nBT /F1 12 Tf 72 720 Td (A) Tj ET\nBT /F1 12 Tf 79 720 Td (B) Tj ET\nBT /F1 12 Tf 86 720 Td (C) Tj ET\n", "A\nB\nC"},
 	} {
@@ -147,7 +148,11 @@ func makePDF(withText bool) []byte {
 }
 
 func makePDFWithStreams(font string, streams ...string) []byte {
-	objects := []string{"<< /Type /Catalog /Pages 2 0 R >>", "", font}
+	return makePDFWithFontObjects([]string{font}, streams...)
+}
+
+func makePDFWithFontObjects(fontObjects []string, streams ...string) []byte {
+	objects := append([]string{"<< /Type /Catalog /Pages 2 0 R >>", ""}, fontObjects...)
 	var kids strings.Builder
 	for _, stream := range streams {
 		page := len(objects) + 1

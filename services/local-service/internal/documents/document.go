@@ -121,7 +121,8 @@ func Parse(ctx context.Context, input Input) (result Prepared, err error) {
 				return result, err
 			}
 			pdfPage := reader.Page(page)
-			text, parseErr := pdfPage.GetPlainText(nil)
+			fonts := pdfPageFonts(pdfPage)
+			text, parseErr := pdfPage.GetPlainText(fonts)
 			if parseErr != nil {
 				return result, invalid("The PDF text could not be extracted.")
 			}
@@ -129,7 +130,7 @@ func Parse(ctx context.Context, input Input) (result Prepared, err error) {
 			if snapshot.Characters+utf8.RuneCountInString(text) > MaxTextCharacters {
 				return result, invalid("A file may contain at most 60,000 extracted characters. Split it into smaller files.")
 			}
-			text = repairPDFGlyphLines(pdfPage, text)
+			text = repairPDFGlyphLines(ctx, pdfPage, fonts, text)
 			if err := ctx.Err(); err != nil {
 				return result, err
 			}

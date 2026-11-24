@@ -2,7 +2,7 @@
 
 This extends [source document snapshots](0025-snapshot-local-source-documents-for-file-chat.md), [managed document retrieval](0048-add-managed-local-inference-and-document-retrieval.md), and [searchable Project materials](0053-integrate-local-capabilities-into-chat-and-projects.md).
 
-PDF pages can draw a horizontal line as many independent text objects. The plain text decoder inserts a line break for each object. PDF extraction uses glyph geometry to reconstruct clearly horizontal fragments when the plain text is excessively broken. Ambiguous layouts retain the decoder's text. Extracted sections use the original page numbers and the existing file, page, text, and worker limits. New PDF snapshots record the extraction version `cove-pdf-v2`.
+PDF pages can draw a horizontal line as many independent text objects. The plain text decoder inserts a line break for each object. PDF extraction uses glyph geometry to reconstruct clearly horizontal fragments when the plain text is excessively broken. The geometry pass reuses each font decoder within the page and checks for cancellation between PDF operations. Ambiguous layouts retain the decoder's text. Extracted sections use the original page numbers and the existing file, page, text, and worker limits. New PDF snapshots record the extraction version `cove-pdf-v2`.
 
 The search dialog keeps the query and selection actions visible independently of the scrolling results. Result cards show compact excerpts. The original-section preview, copy action, and attachment preparation read the selected source snapshot. Display formatting belongs to the result card.
 

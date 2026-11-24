@@ -1,6 +1,7 @@
 package documents
 
 import (
+	"context"
 	"math"
 	"sort"
 	"strings"
@@ -15,7 +16,7 @@ const minimumPDFGlyphRun = 3
 // GetPlainText inserts a hard break for every PDF text object, including text
 // objects that draw individual characters on a shared baseline. Repair only
 // contiguous single-character lines with an unambiguous horizontal layout.
-func repairPDFGlyphLines(page pdf.Page, plain string) string {
+func repairPDFGlyphLines(ctx context.Context, page pdf.Page, fonts map[string]*pdf.Font, plain string) string {
 	lines := strings.Split(plain, "\n")
 	fragments := make([]bool, len(lines))
 	run, longest := 0, 0
@@ -31,7 +32,7 @@ func repairPDFGlyphLines(page pdf.Page, plain string) string {
 	if longest < minimumPDFGlyphRun {
 		return plain
 	}
-	geometry, matched := matchPDFGlyphs(lines, positionedPDFGlyphs(page))
+	geometry, matched := matchPDFGlyphs(lines, positionedPDFGlyphs(ctx, page, fonts))
 	if !matched {
 		return plain
 	}
@@ -67,16 +68,6 @@ func isSinglePDFGlyph(line string) bool {
 	// Keep scripts with right-to-left reading order in plain extraction order.
 	return unicode.In(char, unicode.Latin, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul) ||
 		unicode.IsDigit(char) || unicode.IsPunct(char) || unicode.IsSymbol(char)
-}
-
-func positionedPDFGlyphs(page pdf.Page) (glyphs []pdf.Text) {
-	// The geometry decoder can panic on operators that plain extraction ignores.
-	defer func() {
-		if recover() != nil {
-			glyphs = nil
-		}
-	}()
-	return page.Content().Text
 }
 
 // Align decoded glyphs with plain extraction before trusting their coordinates.
