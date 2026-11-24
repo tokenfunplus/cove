@@ -58,6 +58,7 @@ type View struct {
 }
 
 type Target struct{ Name, URL string }
+type proxyResolver func(context.Context, *url.URL) ([]*url.URL, bool, error)
 
 type Service struct {
 	mu       sync.RWMutex
@@ -65,7 +66,7 @@ type Service struct {
 	settings Settings
 	loadErr  error
 	targets  []Target
-	resolve  func(context.Context, *url.URL) (*url.URL, bool, error)
+	resolve  proxyResolver
 }
 
 func New(store Store, targets []Target) *Service {

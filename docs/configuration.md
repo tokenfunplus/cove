@@ -172,4 +172,6 @@ System mode follows macOS proxy configuration, including PAC and bypass rules. I
 
 The owner-only file `download-network.json` in the application data directory stores this machine preference. Missing settings default to System. Unreadable or invalid settings block downloads until a new configuration is saved in the UI. This file is separate from database backups and conversation exports. Provider inference, Web Research, webpage reading, and Launcher updates keep their existing routing.
 
+System/PAC routes are tried in order after connection failures before a response arrives. A failed proxy can fall back to a direct connection only when the system explicitly lists DIRECT. Resolution errors stop the request; HTTP responses and interrupted response bodies are not silently replayed through another route.
+
 ![Download connection settings and successful source checks](images/download-network-settings.jpg)

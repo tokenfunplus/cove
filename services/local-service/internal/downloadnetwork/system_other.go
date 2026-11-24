@@ -9,4 +9,4 @@ import (
 
 const systemProxySupported = false
 
-func systemProxy(context.Context, *url.URL) (*url.URL, bool, error) { return nil, false, nil }
+func systemProxy(context.Context, *url.URL) ([]*url.URL, bool, error) { return nil, false, nil }

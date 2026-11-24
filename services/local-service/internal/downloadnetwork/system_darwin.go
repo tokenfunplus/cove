@@ -21,24 +21,27 @@ import (
 
 const systemProxySupported = true
 
-func nativeProxy(result C.CoveDownloadProxy) (*url.URL, bool, error) {
-	if result.host != nil {
-		defer C.free(unsafe.Pointer(result.host))
-	}
-	if result.failed != 0 {
+func nativeProxies(result C.CoveDownloadProxies) ([]*url.URL, bool, error) {
+	defer C.cove_download_free_proxies(result)
+	if result.failed != 0 || result.count == 0 {
 		return nil, true, errors.New("System proxy resolution failed.")
 	}
-	if result.kind == 0 {
-		return nil, result.configured != 0, nil
+	routes := make([]*url.URL, int(result.count))
+	for index := range routes {
+		route := result.routes[index]
+		if route.kind == 0 {
+			continue
+		}
+		scheme := "http"
+		if route.kind == 3 {
+			scheme = "socks5"
+		}
+		routes[index] = &url.URL{Scheme: scheme, Host: net.JoinHostPort(C.GoString(route.host), strconv.Itoa(int(route.port)))}
 	}
-	scheme := "http"
-	if result.kind == 3 {
-		scheme = "socks5"
-	}
-	return &url.URL{Scheme: scheme, Host: net.JoinHostPort(C.GoString(result.host), strconv.Itoa(int(result.port)))}, true, nil
+	return routes, result.configured != 0, nil
 }
 
-func systemProxy(ctx context.Context, target *url.URL) (*url.URL, bool, error) {
+func systemProxy(ctx context.Context, target *url.URL) ([]*url.URL, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, true, err
 	}
@@ -48,16 +51,16 @@ func systemProxy(ctx context.Context, target *url.URL) (*url.URL, bool, error) {
 	}
 	text := C.CString(target.String())
 	defer C.free(unsafe.Pointer(text))
-	proxy, configured, err := nativeProxy(C.cove_download_system_proxy(text, C.double(timeout.Seconds())))
+	proxy, configured, err := nativeProxies(C.cove_download_system_proxy(text, C.double(timeout.Seconds())))
 	if ctx.Err() != nil {
 		return nil, true, ctx.Err()
 	}
 	return proxy, configured, err
 }
 
-func proxyForPAC(script string, target *url.URL) (*url.URL, bool, error) {
+func proxyForPAC(script string, target *url.URL) ([]*url.URL, bool, error) {
 	source, text := C.CString(script), C.CString(target.String())
 	defer C.free(unsafe.Pointer(source))
 	defer C.free(unsafe.Pointer(text))
-	return nativeProxy(C.cove_download_pac_proxy(source, text))
+	return nativeProxies(C.cove_download_pac_proxy(source, text))
 }

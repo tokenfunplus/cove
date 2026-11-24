@@ -12,7 +12,8 @@
 
 ### Fixed
 
-- Bring the Quick Panel forward after menu invocation, support other apps' full screen and Stage Manager spaces, and recover its position when reopening on another display.
+- Bring the Quick Panel forward after menu invocation, support other apps' full screen and Stage Manager spaces, recover its position when reopening on another display, and return focus on dismissal.
+- Honor ordered system/PAC proxy fallbacks without inventing direct routes, bound connection probe bodies across redirects, and associate proxy validation errors with their input.
 
 ## 0.1.0-beta.10 - 2026-11-24
 

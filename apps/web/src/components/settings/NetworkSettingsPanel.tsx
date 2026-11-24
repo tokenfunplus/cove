@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import type { DownloadNetworkSettings, DownloadNetworkTest, DownloadNetworkView } from "@cove/api-contract";
 import { getDownloadNetwork, saveDownloadNetwork, testDownloadNetwork } from "@/api/download-network";
+import { LocalServiceError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FrontSelect } from "@/components/ui/front-select";
@@ -21,6 +22,7 @@ export function NetworkSettingsPanel() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"test" | "save">();
   const [error, setError] = useState("");
+  const [proxyError, setProxyError] = useState("");
   const [notice, setNotice] = useState("");
   const [result, setResult] = useState<DownloadNetworkTest>();
   const [reload, setReload] = useState(0);
@@ -36,7 +38,7 @@ export function NetworkSettingsPanel() {
     return () => { active = false; };
   }, [reload]);
   const draft = (): DownloadNetworkSettings => ({ mode, proxy_url: mode === "manual" ? proxy.trim() : "" });
-  const clearFeedback = () => { setError(""); setNotice(""); setResult(undefined); };
+  const clearFeedback = () => { setError(""); setProxyError(""); setNotice(""); setResult(undefined); };
   const changed = JSON.stringify(draft()) !== JSON.stringify(view?.configuration ?? defaults);
   async function run(kind: "test" | "save") {
     clearFeedback(); setBusy(kind);
@@ -49,7 +51,8 @@ export function NetworkSettingsPanel() {
         setNotice("Saved. Retry the download to use these settings. Downloads already in progress keep their current connection.");
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The network operation failed. Try again.");
+      if (mode === "manual" && cause instanceof LocalServiceError && cause.envelope.error.code === "validation") setProxyError(cause.message);
+      else setError(cause instanceof Error ? cause.message : "The network operation failed. Try again.");
     } finally { setBusy(undefined); }
   }
   return <section className="grid max-w-2xl gap-5" aria-labelledby={`${id}-title`}>
@@ -62,8 +65,9 @@ export function NetworkSettingsPanel() {
         {mode === "direct" && <p className="text-sm text-muted-foreground">Connects directly to model sources without a proxy.</p>}
         {mode === "manual" && <div className="grid gap-2">
           <label htmlFor={`${id}-proxy`} className="text-sm font-medium">Proxy address</label>
-          <Input id={`${id}-proxy`} value={proxy} onChange={event => { setProxy(event.target.value); clearFeedback(); }} placeholder="http://127.0.0.1:7890" autoComplete="off" spellCheck={false} required aria-describedby={`${id}-hint`} />
+          <Input id={`${id}-proxy`} value={proxy} onChange={event => { setProxy(event.target.value); clearFeedback(); }} placeholder="http://127.0.0.1:7890" autoComplete="off" spellCheck={false} required aria-invalid={Boolean(proxyError)} aria-describedby={`${id}-hint${proxyError ? ` ${id}-proxy-error` : ""}`} />
           <p id={`${id}-hint`} className="text-xs text-muted-foreground">Use HTTP, HTTPS, or SOCKS5 with a host and port. For a local proxy app, copy its proxy address here and keep that app running. Proxies requiring a username or password are not supported.</p>
+          {proxyError && <p id={`${id}-proxy-error`} role="alert" className="text-sm text-destructive">{proxyError}</p>}
         </div>}
       </fieldset>
       <div className="rounded-xl bg-muted p-4 text-sm text-muted-foreground">Applies to model downloads only. Cove's local service and inference workers always connect directly. Provider connections, web search, and app updates keep their existing network settings.</div>

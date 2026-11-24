@@ -6,6 +6,8 @@ The Launcher owns focusing, hiding, and pinning the panel. Hiding it keeps the c
 
 Presentation correction (2026-11-24): explicit invocation activates the Launcher and brings the panel forward above other apps, including full screen and Stage Manager sets. Menu invocation presents after the menu action returns. Reopening on another display or after losing a display position relocates the panel to the screen under the pointer. The focused panel floats; an unpinned panel returns to the normal window level when focus leaves, while pinning keeps it floating.
 
+Dismissal returns focus to the external application captured before activation when Cove is still active and has no other visible window that can accept keyboard focus. Repeated invocation preserves that return target. Another Cove window keeps focus when present; an already active external app is left alone, and terminated return targets are ignored.
+
 Shortcut change (2026-11-24): Control-Option-C replaces Control-Option-Space. The existing opt-in preference and conflict reporting are preserved. This supersedes the key chord in ADR 0043; no Shift modifier is required.
 
 When the shortcut is enabled, the Launcher prepares the panel as soon as the Local Service is ready. Provider catalog requests wait until the panel receives focus for the first time.

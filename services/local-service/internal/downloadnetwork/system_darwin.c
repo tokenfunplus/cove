@@ -62,61 +62,71 @@ static CFArrayRef resolve_pac(CFURLRef source, CFStringRef script, CFURLRef targ
     return state.result;
 }
 
-static CoveDownloadProxy select_proxy(CFArrayRef proxies, CFURLRef target, double timeout, int depth) {
-    CoveDownloadProxy result = {.configured = 1, .failed = 1};
-    if (!proxies || depth > 2) return result;
+static int append_proxies(CoveDownloadProxies *result, CFArrayRef proxies, CFURLRef target, CFAbsoluteTime deadline, int depth) {
+    if (!proxies || CFGetTypeID(proxies) != CFArrayGetTypeID() || depth > 2) return 0;
+    int start = result->count;
     for (CFIndex i = 0; i < CFArrayGetCount(proxies); i++) {
         CFDictionaryRef entry = CFArrayGetValueAtIndex(proxies, i);
         if (!entry || CFGetTypeID(entry) != CFDictionaryGetTypeID()) continue;
         CFStringRef type = CFDictionaryGetValue(entry, kCFProxyTypeKey);
         if (!type || CFGetTypeID(type) != CFStringGetTypeID()) continue;
-        if (CFEqual(type, kCFProxyTypeNone)) { result.failed = 0; return result; }
-        if (CFEqual(type, kCFProxyTypeAutoConfigurationURL)) {
-            CFURLRef source = CFDictionaryGetValue(entry, kCFProxyAutoConfigurationURLKey);
-            CFArrayRef resolved = source ? resolve_pac(source, NULL, target, timeout) : NULL;
-            result = select_proxy(resolved, target, timeout, depth + 1);
+        if (CFEqual(type, kCFProxyTypeAutoConfigurationURL) || CFEqual(type, kCFProxyTypeAutoConfigurationJavaScript)) {
+            double remaining = deadline - CFAbsoluteTimeGetCurrent();
+            if (remaining <= 0) return 0;
+            CFArrayRef resolved = NULL;
+            if (CFEqual(type, kCFProxyTypeAutoConfigurationURL)) {
+                CFURLRef source = CFDictionaryGetValue(entry, kCFProxyAutoConfigurationURLKey);
+                if (source && CFGetTypeID(source) == CFURLGetTypeID()) resolved = resolve_pac(source, NULL, target, remaining);
+            } else {
+                CFStringRef script = CFDictionaryGetValue(entry, kCFProxyAutoConfigurationJavaScriptKey);
+                if (script && CFGetTypeID(script) == CFStringGetTypeID()) resolved = resolve_pac(NULL, script, target, remaining);
+            }
+            int valid = append_proxies(result, resolved, target, deadline, depth + 1);
             if (resolved) CFRelease(resolved);
-            return result;
+            if (!valid) return 0;
+            continue;
         }
-        if (CFEqual(type, kCFProxyTypeAutoConfigurationJavaScript)) {
-            CFStringRef script = CFDictionaryGetValue(entry, kCFProxyAutoConfigurationJavaScriptKey);
-            CFArrayRef resolved = script ? resolve_pac(NULL, script, target, timeout) : NULL;
-            result = select_proxy(resolved, target, timeout, depth + 1);
-            if (resolved) CFRelease(resolved);
-            return result;
+        if (CFEqual(type, kCFProxyTypeNone)) {
+            if (result->count == COVE_MAX_PROXY_ROUTES) return 0;
+            result->routes[result->count++] = (CoveDownloadProxy){0};
+            continue;
         }
         // macOS Secure Web Proxy is an HTTP CONNECT proxy for HTTPS requests.
         int kind = (CFEqual(type, kCFProxyTypeHTTP) || CFEqual(type, kCFProxyTypeHTTPS)) ? 1 : CFEqual(type, kCFProxyTypeSOCKS) ? 3 : 0;
         if (!kind) continue;
-        CFStringRef user = CFDictionaryGetValue(entry, kCFProxyUsernameKey);
-        CFStringRef password = CFDictionaryGetValue(entry, kCFProxyPasswordKey);
-        if ((user && CFStringGetLength(user)) || (password && CFStringGetLength(password))) return result;
+        CFTypeRef user = CFDictionaryGetValue(entry, kCFProxyUsernameKey);
+        CFTypeRef password = CFDictionaryGetValue(entry, kCFProxyPasswordKey);
+        if ((user && (CFGetTypeID(user) != CFStringGetTypeID() || CFStringGetLength(user))) ||
+            (password && (CFGetTypeID(password) != CFStringGetTypeID() || CFStringGetLength(password)))) return 0;
         CFStringRef host = CFDictionaryGetValue(entry, kCFProxyHostNameKey);
         CFNumberRef port = CFDictionaryGetValue(entry, kCFProxyPortNumberKey);
-        if (!host || !port || CFGetTypeID(host) != CFStringGetTypeID() || CFGetTypeID(port) != CFNumberGetTypeID()) return result;
-        CFNumberGetValue(port, kCFNumberIntType, &result.port);
+        if (!host || !port || CFGetTypeID(host) != CFStringGetTypeID() || CFGetTypeID(port) != CFNumberGetTypeID()) return 0;
+        int number = 0;
+        if (!CFNumberGetValue(port, kCFNumberIntType, &number)) return 0;
         CFIndex size = CFStringGetMaximumSizeForEncoding(CFStringGetLength(host), kCFStringEncodingUTF8) + 1;
-        if (size > 4096 || result.port < 1 || result.port > 65535) return result;
-        result.host = calloc((size_t)size, 1);
-        if (!result.host || !CFStringGetCString(host, result.host, size, kCFStringEncodingUTF8)) {
-            free(result.host); result.host = NULL; return result;
+        if (size < 2 || size > 4096 || number < 1 || number > 65535 || result->count == COVE_MAX_PROXY_ROUTES) return 0;
+        char *name = calloc((size_t)size, 1);
+        if (!name || !CFStringGetCString(host, name, size, kCFStringEncodingUTF8) || !name[0] || strpbrk(name, " \t\r\n/\\")) {
+            free(name); return 0;
         }
-        result.kind = kind;
-        result.failed = 0;
-        return result;
+        result->routes[result->count++] = (CoveDownloadProxy){.host = name, .port = number, .kind = kind};
     }
-    return result;
+    return result->count > start;
 }
 
-CoveDownloadProxy cove_download_system_proxy(const char *url, double timeout) {
-    CoveDownloadProxy result = {0};
+void cove_download_free_proxies(CoveDownloadProxies proxies) {
+    for (int i = 0; i < proxies.count; i++) free(proxies.routes[i].host);
+}
+
+CoveDownloadProxies cove_download_system_proxy(const char *url, double timeout) {
+    CoveDownloadProxies result = {.configured = 1, .failed = 1};
     CFStringRef text = CFStringCreateWithCString(NULL, url, kCFStringEncodingUTF8);
     CFURLRef target = text ? CFURLCreateWithString(NULL, text, NULL) : NULL;
     CFDictionaryRef settings = CFNetworkCopySystemProxySettings();
-    if (!target || !settings) { result.failed = 1; goto done; }
+    if (!target || !settings) goto done;
     CFArrayRef proxies = CFNetworkCopyProxiesForURL(target, settings);
-    result = select_proxy(proxies, target, timeout, 0);
-    if (!result.kind && !configured(settings, 0)) result.configured = 0;
+    result.failed = !append_proxies(&result, proxies, target, CFAbsoluteTimeGetCurrent() + timeout, 0);
+    if (!result.failed && result.count == 1 && result.routes[0].kind == 0 && !configured(settings, 0)) result.configured = 0;
     if (proxies) CFRelease(proxies);
 done:
     if (settings) CFRelease(settings);
@@ -125,12 +135,14 @@ done:
     return result;
 }
 
-CoveDownloadProxy cove_download_pac_proxy(const char *source, const char *url) {
+CoveDownloadProxies cove_download_pac_proxy(const char *source, const char *url) {
+    CoveDownloadProxies result = {.configured = 1, .failed = 1};
     CFStringRef script = CFStringCreateWithCString(NULL, source, kCFStringEncodingUTF8);
     CFStringRef text = CFStringCreateWithCString(NULL, url, kCFStringEncodingUTF8);
     CFURLRef target = text ? CFURLCreateWithString(NULL, text, NULL) : NULL;
+    CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 3;
     CFArrayRef proxies = script && target ? resolve_pac(NULL, script, target, 3) : NULL;
-    CoveDownloadProxy result = select_proxy(proxies, target, 3, 0);
+    result.failed = !append_proxies(&result, proxies, target, deadline, 0);
     if (proxies) CFRelease(proxies);
     if (script) CFRelease(script);
     if (target) CFRelease(target);

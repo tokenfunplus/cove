@@ -10,8 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/net/http/httpproxy"
 )
 
 func loopback(host string) bool {
@@ -28,32 +26,17 @@ func (service *Service) client(template *http.Client, value Settings) (*http.Cli
 	if base == nil {
 		base = http.DefaultTransport
 	}
+	if routed, ok := base.(*routeTransport); ok {
+		base = routed.base
+	}
 	transport, ok := base.(*http.Transport)
 	if !ok {
 		return nil, nil, errors.New("The download transport does not support proxy configuration.")
 	}
-	transport = transport.Clone()
-	environment := httpproxy.FromEnvironment().ProxyFunc()
-	manual, _ := url.Parse(value.ProxyURL)
-	transport.Proxy = func(request *http.Request) (*url.URL, error) {
-		if loopback(request.URL.Hostname()) || value.Mode == "direct" {
-			return nil, nil
-		}
-		if value.Mode == "manual" {
-			return manual, nil
-		}
-		resolved, configured, err := service.resolve(request.Context(), request.URL)
-		if err != nil {
-			return nil, errors.New("The macOS proxy configuration could not be resolved. Test the connection in Settings > Network or choose Manual proxy.")
-		}
-		if configured {
-			return resolved, nil
-		}
-		return environment(request.URL)
-	}
+	routed := newRouteTransport(transport, value, service.resolve)
 	client := *template
-	client.Transport = transport
-	return &client, transport.CloseIdleConnections, nil
+	client.Transport = routed
+	return &client, routed.CloseIdleConnections, nil
 }
 
 type Check struct {
@@ -73,17 +56,25 @@ func allowedHost(host string) bool {
 
 // Test only visits fixed registry targets, reads at most 64 bytes per source,
 // and does not persist the draft settings or start an installation.
+func testRedirect(request *http.Request, via []*http.Request) error {
+	// Client.Do otherwise drains up to 2 KiB from each redirect before following it.
+	// Redirect bodies use zero bytes of the shared 64-byte source budget.
+	if request.Response != nil && request.Response.Body != nil {
+		_ = request.Response.Body.Close()
+		request.Response.Body = http.NoBody
+	}
+	if len(via) > 8 || request.URL.Scheme != "https" || !allowedHost(request.URL.Hostname()) {
+		return errors.New("The download source redirected to an unsupported destination.")
+	}
+	request.Header.Del("Authorization")
+	return nil
+}
+
 func (service *Service) Test(ctx context.Context, value Settings) (TestResult, error) {
 	if len(service.targets) == 0 {
 		return TestResult{}, errors.New("Connection test sources are unavailable.")
 	}
-	client, closeClient, err := service.client(&http.Client{Timeout: 12 * time.Second, CheckRedirect: func(request *http.Request, via []*http.Request) error {
-		if len(via) > 8 || request.URL.Scheme != "https" || !allowedHost(request.URL.Hostname()) {
-			return errors.New("The download source redirected to an unsupported destination.")
-		}
-		request.Header.Del("Authorization")
-		return nil
-	}}, value)
+	client, closeClient, err := service.client(&http.Client{Timeout: 12 * time.Second, CheckRedirect: testRedirect}, value)
 	if err != nil {
 		return TestResult{}, err
 	}

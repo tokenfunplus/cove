@@ -56,7 +56,7 @@ func TestNormalize(t *testing.T) {
 func TestSettingsSnapshotAndFailedSave(t *testing.T) {
 	store := &memoryStore{value: Defaults()}
 	service := New(store, nil)
-	service.resolve = func(context.Context, *url.URL) (*url.URL, bool, error) { return nil, true, nil }
+	service.resolve = func(context.Context, *url.URL) ([]*url.URL, bool, error) { return []*url.URL{nil}, true, nil }
 	client, closeOld, err := service.Client(&http.Client{Timeout: time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }})
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +67,7 @@ func TestSettingsSnapshotAndFailedSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	request, _ := http.NewRequest("GET", "https://huggingface.co/model", nil)
-	old, err := client.Transport.(*http.Transport).Proxy(request)
+	old, err := singleRoute(client, request)
 	if err != nil || old != nil || client.Timeout != time.Minute || client.CheckRedirect(request, nil) != http.ErrUseLastResponse {
 		t.Fatal("snapshot or client policy changed")
 	}
@@ -76,7 +76,7 @@ func TestSettingsSnapshotAndFailedSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cleanup()
-	route, err := next.Transport.(*http.Transport).Proxy(request)
+	route, err := singleRoute(next, request)
 	if err != nil || route.String() != manual.ProxyURL {
 		t.Fatal("new settings not applied")
 	}
@@ -116,21 +116,21 @@ func TestSystemPrecedenceAndLoopbackBypass(t *testing.T) {
 		{false, "", false, "http://environment.example:8123", false}, {true, "", false, "", false},
 		{true, "http://system.example:8080", false, "http://system.example:8080", false}, {true, "", true, "", true},
 	} {
-		service.resolve = func(context.Context, *url.URL) (*url.URL, bool, error) {
+		service.resolve = func(context.Context, *url.URL) ([]*url.URL, bool, error) {
 			if scenario.fail {
 				return nil, true, errors.New("private-pac-url")
 			}
 			if scenario.route == "" {
-				return nil, scenario.configured, nil
+				return []*url.URL{nil}, scenario.configured, nil
 			}
 			u, _ := url.Parse(scenario.route)
-			return u, scenario.configured, nil
+			return []*url.URL{u}, scenario.configured, nil
 		}
 		client, cleanup, err := service.Client(&http.Client{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		u, err := client.Transport.(*http.Transport).Proxy(request)
+		u, err := singleRoute(client, request)
 		cleanup()
 		if (err != nil) != scenario.wantErr {
 			t.Fatal("wrong system error behavior")
@@ -156,7 +156,7 @@ func TestSystemPrecedenceAndLoopbackBypass(t *testing.T) {
 		}
 		for _, host := range []string{"localhost", "127.0.0.1", "[::1]", "worker.localhost"} {
 			r, _ := http.NewRequest("GET", "http://"+host+":1234/", nil)
-			u, err := client.Transport.(*http.Transport).Proxy(r)
+			u, err := singleRoute(client, r)
 			if err != nil || u != nil {
 				t.Fatal("loopback was proxied")
 			}
@@ -302,4 +302,40 @@ func TestConnectionProbeBoundsAndSafeErrors(t *testing.T) {
 	if result.OK || strings.Contains(result.Checks[0].Message, "private-token") {
 		t.Fatal("unsafe failure")
 	}
+}
+
+func TestConnectionProbeDoesNotDrainRedirectBodies(t *testing.T) {
+	for _, allowed := range []bool{true, false} {
+		redirect, final := &countedBody{}, &countedBody{}
+		calls := 0
+		client := &http.Client{CheckRedirect: testRedirect, Transport: roundTrip(func(request *http.Request) (*http.Response, error) {
+			calls++
+			if calls == 1 {
+				location := "https://cdn.hf.co/model"
+				if !allowed {
+					location = "https://untrusted.invalid/model"
+				}
+				return &http.Response{StatusCode: 302, ContentLength: 128, Header: http.Header{"Location": {location}}, Body: redirect}, nil
+			}
+			return &http.Response{StatusCode: 206, Header: make(http.Header), Body: final}, nil
+		})}
+		result := testSources(context.Background(), client, []Target{{"Model source", "https://huggingface.co/model"}})
+		if result.OK != allowed || redirect.read != 0 || !redirect.closed {
+			t.Fatalf("redirect body escaped the probe budget: allowed=%v read=%d closed=%v", allowed, redirect.read, redirect.closed)
+		}
+		if allowed && (calls != 2 || final.read != 64 || !final.closed) {
+			t.Fatal("final source budget changed")
+		}
+		if !allowed && calls != 1 {
+			t.Fatal("unsupported redirect was followed")
+		}
+	}
+}
+
+func singleRoute(client *http.Client, request *http.Request) (*url.URL, error) {
+	routes, err := client.Transport.(*routeTransport).routes(request)
+	if err != nil {
+		return nil, err
+	}
+	return routes[0], nil
 }
