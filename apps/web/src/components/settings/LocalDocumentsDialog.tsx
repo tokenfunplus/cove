@@ -118,12 +118,32 @@ export function LocalDocumentsDialog({onClose,onUseSources,projectId}:{onClose:(
       ? reindexProjectDocument(projectId, id, signal)
       : reindexLocalDocument(id, signal));
   }
-  async function search(){
-    const current=++epoch.current;const controller=new AbortController();active.current?.abort();active.current=controller;setBusy(searchingLabel);setError("");
+  async function search() {
+    const current = ++epoch.current;
+    const controller = new AbortController();
+    active.current?.abort();
+    active.current = controller;
+    setBusy(searchingLabel);
+    setError("");
     setOptions(undefined);
     clearResults();
     if (searchBody.current) searchBody.current.scrollTop = 0;
-    try{const value=await (projectId?searchProjectDocuments(projectId,selected,query,controller.signal,minimum):searchLocalDocuments(selected,query,controller.signal,minimum));if(current===epoch.current)setResults(value);}catch(error){if(current===epoch.current && !controller.signal.aborted)setError(error instanceof Error?error.message:"Local search failed.");}finally{if(current===epoch.current)setBusy("");}
+    try {
+      const value = await (projectId
+        ? searchProjectDocuments(projectId, selected, query, controller.signal, minimum)
+        : searchLocalDocuments(selected, query, controller.signal, minimum));
+      if (current === epoch.current) setResults(value);
+    } catch (error) {
+      if (current === epoch.current && !controller.signal.aborted) {
+        setError(error instanceof Error ? error.message : "Local search failed.");
+      }
+    } finally {
+      // A Project search can refresh one document before a later document fails.
+      if (projectId) {
+        void cache.invalidateQueries({ queryKey: [...localDocumentsKey, "project", projectId], exact: true });
+      }
+      if (current === epoch.current) setBusy("");
+    }
   }
   async function attach(){
     if(!onUseSources || !results)return;

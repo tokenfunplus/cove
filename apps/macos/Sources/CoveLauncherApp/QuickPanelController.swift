@@ -27,7 +27,9 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
     private var reauthorization: Task<Void, Never>?
     private var needsReauthorization = false
     private var pendingImports: [DesktopImport] = []
+    private var stagedImports = Set<UUID>()
     private var importDelivery: UUID?
+    private var importPageReady = false
     private var hasPositionedWindow = false
     private var focusOnActivation = false
     private var pinned = false
@@ -349,7 +351,7 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         reauthorization?.cancel()
         reauthorization = nil
         needsReauthorization = false
-        importDelivery = nil
+        resetImportDelivery()
         origin = nil
         pendingLaunch = nil
         navigation = nil
@@ -390,9 +392,16 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         )
     }
 
+    private func resetImportDelivery() {
+        stagedImports.removeAll()
+        importDelivery = nil
+        importPageReady = false
+    }
+
     private func deliverPendingImport() {
-        guard state == .ready, panel.isVisible, !needsReauthorization, importDelivery == nil,
-              let input = pendingImports.first, let origin, let url = webView.url, isQuickPanelPage(url) else { return }
+        guard state == .ready, importPageReady, panel.isVisible, !needsReauthorization, importDelivery == nil,
+              let input = pendingImports.first(where: { !stagedImports.contains($0.id) }),
+              let origin, let url = webView.url, isQuickPanelPage(url) else { return }
         let attempt = UUID()
         importDelivery = attempt
         webView.callAsyncJavaScript(
@@ -407,8 +416,13 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
             in: .page
         ) { [weak self] result in
             guard let self, importDelivery == attempt else { return }
-            if case let .success(value) = result, value as? Bool == true { return }
             importDelivery = nil
+            if case let .success(value) = result, value as? Bool == true {
+                // A receiver can apply a selection before the JavaScript call returns.
+                if pendingImports.contains(where: { $0.id == input.id }) { stagedImports.insert(input.id) }
+                deliverPendingImport()
+                return
+            }
             guard panel.isVisible, panel.attachedSheet == nil else { return }
             let alert = NSAlert()
             alert.messageText = "Import is waiting."
@@ -422,19 +436,22 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
               let payload = message.body as? [String: Any], let action = payload["action"] as? String else { return }
 
         switch action {
-        case "ready" where state == .loading:
-            loadTimeout?.cancel()
-            loadTimeout = nil
-            navigation = nil
-            display(.ready)
-            if panel.isVisible { resizeToPreferredHeight() }
+        case "ready" where state == .loading || state == .ready:
+            if state == .loading {
+                loadTimeout?.cancel()
+                loadTimeout = nil
+                navigation = nil
+                display(.ready)
+                if panel.isVisible { resizeToPreferredHeight() }
+            }
+            importPageReady = true
             focusComposer()
             deliverPendingImport()
-        case "import-received", "import-rejected":
-            guard state == .ready, importDelivery != nil, let id = payload["id"] as? String,
-                  pendingImports.first?.id.uuidString.lowercased() == id else { return }
-            pendingImports.removeFirst()
-            importDelivery = nil
+        case "import-consumed", "import-rejected":
+            guard let rawID = payload["id"] as? String, let id = UUID(uuidString: rawID),
+                  let index = pendingImports.firstIndex(where: { $0.id == id }) else { return }
+            pendingImports.remove(at: index)
+            stagedImports.remove(id)
             deliverPendingImport()
         case "resize" where state == .loading || state == .ready:
             guard let height = payload["height"] as? CGFloat, height.isFinite, height > 0 else { return }
@@ -520,6 +537,12 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         let securityOrigin = frame.securityOrigin
         return frame.isMainFrame && securityOrigin.protocol == "http" && securityOrigin.host == "127.0.0.1"
             && securityOrigin.port == origin?.port && frame.request.url.map(isQuickPanelPage) == true
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        // The old view's queue is gone. Replay selections still awaiting a decision.
+        resetImportDelivery()
+        if panel.isKeyWindow { focusOnActivation = true }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

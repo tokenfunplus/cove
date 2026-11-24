@@ -123,16 +123,19 @@ func joinPDFGlyphs(glyphs []pdf.Text) (string, bool) {
 		if !(size > 0 && advance >= size*0.12 && advance <= size*1.6) {
 			return "", false
 		}
+		previousChar, _ := utf8.DecodeRuneInString(previous.S)
+		currentChar, _ := utf8.DecodeRuneInString(current.S)
 		if previous.W > size*0.1 && previous.W <= size*1.4 {
 			gap := advance - previous.W
 			if gap > size*0.6 {
 				return "", false
 			}
-			previousChar, _ := utf8.DecodeRuneInString(previous.S)
-			currentChar, _ := utf8.DecodeRuneInString(current.S)
 			if gap >= size*0.22 && isLatinWordGlyph(previousChar) && isLatinWordGlyph(currentChar) {
 				line.WriteByte(' ')
 			}
+		} else if isLatinWordGlyph(previousChar) || isLatinWordGlyph(currentChar) {
+			// Without a reliable width, a Latin word boundary cannot be inferred.
+			return "", false
 		}
 		line.WriteString(current.S)
 	}

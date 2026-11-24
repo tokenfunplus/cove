@@ -26,10 +26,7 @@ export function useQuickPanelImport(onError: (message: string) => void) {
       const id = detail?.id;
       if (typeof id !== "string" || !importIdPattern.test(id)) return;
       event.preventDefault();
-      if (received.has(id) || queueRef.current.some(item => item.id === id)) {
-        postQuickPanelMessage({ action: "import-received", id });
-        return;
-      }
+      if (received.has(id) || queueRef.current.some(item => item.id === id)) return;
       const text = detail.text;
       if (typeof text !== "string" || text.length > maximumTextBytes || !text.trim() ||
           new TextEncoder().encode(text).length > maximumTextBytes) {
@@ -45,7 +42,6 @@ export function useQuickPanelImport(onError: (message: string) => void) {
       received.add(id);
       if (received.size > maximumRecentImports) received.delete(received.values().next().value!);
       updateQueue([...queueRef.current, { id, text }]);
-      postQuickPanelMessage({ action: "import-received", id });
     }
     window.addEventListener(quickPanelImportEvent, receive);
     return () => window.removeEventListener(quickPanelImportEvent, receive);
@@ -55,6 +51,7 @@ export function useQuickPanelImport(onError: (message: string) => void) {
     if (queueRef.current[0]?.id !== id) return;
     const [item, ...rest] = queueRef.current;
     updateQueue(rest);
+    postQuickPanelMessage({ action: "import-consumed", id });
     return item;
   }
 

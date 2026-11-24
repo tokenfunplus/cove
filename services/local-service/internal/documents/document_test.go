@@ -125,6 +125,18 @@ func TestPDFExtractionUsesGlyphSpacingConservatively(t *testing.T) {
 	}
 }
 
+func TestPDFExtractionPreservesLatinBreaksWithoutGlyphWidths(t *testing.T) {
+	const font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+	const stream = "BT /F1 12 Tf 72 720 Td (A) Tj ET\nBT /F1 12 Tf 80 720 Td (B) Tj ET\nBT /F1 12 Tf 94 720 Td (C) Tj ET\n"
+	parsed, err := Parse(context.Background(), Input{Name: "fixture.pdf", Data: makePDFWithStreams(font, stream)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Sections) != 1 || parsed.Sections[0].Text != "A\nB\nC" {
+		t.Fatalf("unexpected PDF text: %#v", parsed.Sections)
+	}
+}
+
 // makePDF constructs a synthetic, self-contained PDF with correct xref offsets.
 func makePDF(withText bool) []byte {
 	stream := ""

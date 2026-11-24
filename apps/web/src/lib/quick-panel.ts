@@ -6,7 +6,7 @@ export const quickPanelMenuSelector = '[role="menu"][data-state="open"]';
 
 type QuickPanelMessage =
   | { action: "ready" | "escape" | "reauthorize" | "open-provider-settings" }
-  | { action: "import-received" | "import-rejected"; id: string }
+  | { action: "import-consumed" | "import-rejected"; id: string }
   | { action: "resize"; height: number }
   | { action: "open-chat"; conversationId?: string };
 

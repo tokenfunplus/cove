@@ -1,15 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+const appSources = path.join(root, "apps/macos/Sources/CoveLauncherApp");
+const controllerSources = ["QuickPanelController.swift", "DesktopImport.swift"].map(file => path.join(appSources, file));
+const skipNative = process.platform !== "darwin" || process.arch !== "arm64" || process.env.COVE_TEST_QUICK_PANEL !== "1";
 
 test("Quick Panel presents above other apps and recovers an offscreen window", {
-  skip: process.platform !== "darwin" || process.arch !== "arm64" || process.env.COVE_TEST_QUICK_PANEL !== "1",
+  skip: skipNative,
 }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "cove-panel-test-"));
   function run(command, args) {
@@ -93,11 +98,86 @@ MainActor.assumeIsolated {
 }
 `);
     const executable = path.join(directory, "check-panel");
-    const appSources = path.join(root, "apps/macos/Sources/CoveLauncherApp");
-    run("swiftc", ["-target", "arm64-apple-macosx13.0", path.join(appSources, "QuickPanelController.swift"),
-      path.join(appSources, "DesktopImport.swift"), main, "-o", executable]);
+    run("swiftc", ["-target", "arm64-apple-macosx13.0", ...controllerSources, main, "-o", executable]);
     run(executable, []);
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Quick Panel replays only pending selections after its WebKit page reloads", { skip: skipNative }, async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "cove-panel-reload-"));
+  const deliveries = [];
+  let page = 0;
+  const server = createServer((request, response) => {
+    if (request.url === "/launch") {
+      response.writeHead(303, { Location: "/?surface=quick-panel" }).end();
+    } else if (request.url === "/?surface=quick-panel") {
+      response.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" });
+      response.end(`<!doctype html><script>
+        const page = ${++page};
+        const bridge = webkit.messageHandlers.coveQuickPanel;
+        window.addEventListener('cove-quick-panel-import', async (event) => {
+          event.preventDefault();
+          const { id, text } = event.detail;
+          if (text === 'Applied selection') bridge.postMessage({ action: 'import-consumed', id });
+          await fetch('/delivery', { method: 'POST', body: JSON.stringify({ page, text }) });
+          if (page === 1 && text === 'Pending selection') location.reload();
+        });
+        window.addEventListener('load', () => bridge.postMessage({ action: 'ready' }));
+      </script>`);
+    } else if (request.method === "POST" && request.url === "/delivery") {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", chunk => { body += chunk; });
+      request.on("end", () => {
+        deliveries.push(JSON.parse(body));
+        response.writeHead(204).end();
+      });
+    } else {
+      response.writeHead(404).end();
+    }
+  });
+  try {
+    const main = path.join(directory, "main.swift");
+    const executable = path.join(directory, "reload-panel");
+    await writeFile(main, `import AppKit
+
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    app.finishLaunching()
+    let controller = QuickPanelController(launchURL: { URL(string: CommandLine.arguments[1]) },
+        openChat: { _ in false }, openProviderSettings: { false }, reauthorize: { _ in nil })
+    try! controller.stageImport(DesktopImport(text: "Applied selection"))
+    try! controller.stageImport(DesktopImport(text: "Pending selection"))
+    controller.show()
+    RunLoop.main.run(until: Date().addingTimeInterval(7))
+    withExtendedLifetime(controller) {}
+}
+`);
+    const build = spawnSync("swiftc", ["-target", "arm64-apple-macosx13.0", ...controllerSources, main, "-o", executable], {
+      encoding: "utf8", timeout: 60_000,
+    });
+    assert.ifError(build.error);
+    assert.equal(build.status, 0, build.stderr);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const launch = `http://127.0.0.1:${server.address().port}/launch`;
+    const child = spawn(executable, [launch], {
+      env: { ...process.env, COVE_DATA_DIR: path.join(directory, "data") },
+      stdio: ["ignore", "ignore", "pipe"], timeout: 15_000,
+    });
+    let stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    const [status] = await once(child, "close");
+    assert.equal(status, 0, stderr);
+    assert.equal(page, 2);
+    assert.deepEqual(deliveries.filter(item => item.page === 1).map(item => item.text).sort(), ["Applied selection", "Pending selection"]);
+    assert.deepEqual(deliveries.filter(item => item.page === 2).map(item => item.text), ["Pending selection"]);
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
   }
 });

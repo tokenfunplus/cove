@@ -6,6 +6,7 @@
 | `cove-quick-panel-answer.png` | The same AppKit and WebKit fixture at 1240 × 1304. The window grows to show the synthetic prompt, reply, and browser handoff. |
 | `local-search-filter-desktop.png` | Local capability recovery source build, 2026-11-23, 1440 × 900: explicit document scope and user-selected similarity controls in a disposable production-browser fixture. |
 | `local-search-filter-mobile-dark.png` | The same fixture at 390 × 844 in dark mode; the document dialog scrolls within the viewport. |
+| `local-document-search-results.png` | Local document search source build, 2026-11-24, 1636 × 1620. A disposable browser fixture shows compact synthetic Chinese PDF excerpts, page references, and the fixed selection actions. |
 | `model-comparison.webp` | The actual Cove 0.1.0-beta.3 Chat Surface, captured at a 1440 × 1080 viewport from the CI-built Local Service at release commit `23503cd`. Two simulated models reply to a synthetic prompt, with Atlas selected for the next turn. |
 | `focus-mode.webp` | The actual Focus layout and timeline preview from UI commit `22441b6`, included in Beta 3. Reused from the product website's Beta 3 capture set. |
 | `answer-workbench.png` | Unreleased source build, 2026-11-18, 1440 × 900: review a proposed selected-passage revision before applying it to a Working Draft. |

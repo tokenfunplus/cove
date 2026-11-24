@@ -2260,7 +2260,7 @@ test("Quick Panel imports and appends macOS text selections without sending them
   act(() => { window.dispatchEvent(new Event(quickPanelFocusEvent)); });
   const composer = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Send message" });
   await waitFor(() => expect(composer.value).toBe(selection));
-  expect(postMessage).toHaveBeenCalledWith({ action: "import-received", id: textId });
+  expect(postMessage).toHaveBeenCalledWith({ action: "import-consumed", id: textId });
   act(() => { deliver(textId, selection); });
   expect(screen.queryByRole("region", { name: "Content from macOS" })).toBeNull();
 
@@ -2273,13 +2273,17 @@ test("Quick Panel imports and appends macOS text selections without sending them
   const review = screen.getByRole("region", { name: "Content from macOS" });
   expect(within(review).getByText(followUp)).toBeTruthy();
   expect(composer.value).toBe(selection);
+  expect(postMessage).not.toHaveBeenCalledWith({ action: "import-consumed", id: followUpId });
   await user.click(within(review).getByRole("button", { name: "Add to Current Draft" }));
   expect(composer.value).toBe(`${selection}\n\n${followUp}`);
+  expect(postMessage).toHaveBeenCalledWith({ action: "import-consumed", id: followUpId });
   expect(transport.createConversation).not.toHaveBeenCalled();
   expect(transport.createGenerationBatch).not.toHaveBeenCalled();
 });
 
 test("Quick Panel stages macOS selections during generation and can start a separate draft", async () => {
+  const postMessage = vi.fn();
+  vi.stubGlobal("webkit", { messageHandlers: { coveQuickPanel: { postMessage } } });
   window.history.replaceState(null, "", "/?surface=quick-panel");
   vi.mocked(transport.createConversation).mockResolvedValue(fixture.conversation);
   const user = userEvent.setup();
@@ -2306,6 +2310,7 @@ test("Quick Panel stages macOS selections during generation and can start a sepa
   expect(add.disabled).toBe(true);
   expect(startNew.disabled).toBe(true);
   await user.click(screen.getByRole("button", { name: "Dismiss" }));
+  expect(postMessage).toHaveBeenCalledWith({ action: "import-consumed", id: "00000000-0000-0000-0000-000000000001" });
   expect(composer.value).toBe("Unsent follow-up");
 
   fireEvent.change(composer, { target: { value: "" } });
