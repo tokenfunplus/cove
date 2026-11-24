@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0-beta.11 - 2026-11-24
+
 ### Added
 
 - Configure system, manual HTTP/HTTPS/SOCKS5, or direct model download connections in Settings > Network. Test download sources in the app and open network settings from a failed download.

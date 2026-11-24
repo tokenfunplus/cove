@@ -21,14 +21,14 @@ Requires an Apple Silicon Mac running macOS 13 or later.
 
 > 🎁 **NEAR AI starter key** · [Sign in to Cove Web](https://www.hicove.io/account) to claim an API key with a $1 spending limit. One key per verified account, while supplies last.
 
-1. Download [Cove 0.1.0-beta.10 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.10/Cove-0.1.0-beta.10-arm64.dmg).
+1. Download [Cove 0.1.0-beta.11 for Mac](https://github.com/tokenfunplus/cove/releases/download/v0.1.0-beta.11/Cove-0.1.0-beta.11-arm64.dmg).
 2. Quit an earlier Cove instance, open the DMG, and drag **Cove.app** to **Applications**.
 3. Launch Cove, open **Settings → Provider settings**, enter your Provider key, click **Test connection**, choose a model for your initial Active Model Set, then click **Save Provider**.
 4. Confirm the Provider/model target in the workspace, then send your first message. Use **Model comparison** to select up to four targets.
 
 Provider Profiles describe connections; model targets belong to the Active Model Set. Initial setup adds the chosen target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; change its targets through the workspace's model controls.
 
-Check the release page for Apple signing and notarization status. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.10) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English and supports Unicode messages, titles, and prompts.
+Check the release page for Apple signing and notarization status. [Release notes and checksums](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.11) accompany the download. Existing history, file attachments, and settings are retained when upgrading. The interface is English and supports Unicode messages, titles, and prompts.
 
 See the [user guide](docs/user-guide.md) for file chat, Focus mode, and timeline bookmarks, or the [configuration reference](docs/configuration.md) for Provider and generation settings.
 
@@ -61,7 +61,7 @@ Additional captures: [Local math rendering](docs/images/chat-math.png) · [Revie
 
 ## Features
 
-This section describes the current source tree, including unreleased changes. See the [release notes for published downloads](docs/releases/0.1.0-beta.10.md) and the [unreleased changelog](CHANGELOG.md#unreleased) for newer work.
+This section describes the current source tree, including unreleased changes. See the [release notes for published downloads](docs/releases/0.1.0-beta.11.md) and the [unreleased changelog](CHANGELOG.md#unreleased) for newer work.
 
 - Enable **Quick Panel Shortcut** under **Launcher Settings**, then press **Control-Option-C**. Ask a short question, paste text, or drop a supported file. Pin the panel for reference or continue the same conversation in the browser.
 - Stream responses from OpenAI-compatible providers or the built-in NearAI preset.
@@ -114,7 +114,7 @@ Browse the [full FAQ](docs/faq.md) for language and support questions. For build
 make dmg
 ```
 
-The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.10-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials. See [releasing](docs/releasing.md) for how to sign a CI-built app with Command Line Tools.
+The build produces `.artifacts/Cove.app`, `Cove-0.1.0-beta.11-arm64.dmg`, and a SHA-256 checksum. App packages are ad-hoc signed unless `COVE_SIGNING_IDENTITY` is configured. Developer ID signing and notarization require your own Apple credentials. See [releasing](docs/releasing.md) for how to sign a CI-built app with Command Line Tools.
 
 ## Community
 
