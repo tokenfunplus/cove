@@ -15,6 +15,9 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
     private let openChat: @MainActor (String?) -> Bool
     private let openProviderSettings: @MainActor () -> Bool
     private let reauthorize: @MainActor (URL) async -> String?
+    private let captureFocusReturn: @MainActor () -> (@MainActor () -> Void)?
+    private let isApplicationActive: @MainActor () -> Bool
+    private var returnFocus: (@MainActor () -> Void)?
     private var state = LoadState.idle
     private var origin: URL?
     private var pendingLaunch: URL?
@@ -40,12 +43,28 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         launchURL: @escaping @MainActor () -> URL?,
         openChat: @escaping @MainActor (String?) -> Bool,
         openProviderSettings: @escaping @MainActor () -> Bool,
-        reauthorize: @escaping @MainActor (URL) async -> String?
+        reauthorize: @escaping @MainActor (URL) async -> String?,
+        captureFocusReturn: @escaping @MainActor () -> (@MainActor () -> Void)? = {
+            guard let application = NSWorkspace.shared.frontmostApplication,
+                  application.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
+            return {
+                guard !application.isTerminated else { return }
+                if #available(macOS 14, *) {
+                    NSApp.yieldActivation(to: application)
+                    application.activate(options: [])
+                } else {
+                    application.activate(options: [.activateIgnoringOtherApps])
+                }
+            }
+        },
+        isApplicationActive: @escaping @MainActor () -> Bool = { NSApp.isActive }
     ) {
         self.launchURL = launchURL
         self.openChat = openChat
         self.openProviderSettings = openProviderSettings
         self.reauthorize = reauthorize
+        self.captureFocusReturn = captureFocusReturn
+        self.isApplicationActive = isApplicationActive
     }
 
     func prepare() {
@@ -54,8 +73,10 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
     }
 
     func show() {
-        if !hasPositionedWindow {
-            let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        // Repeated invocation while Cove is active must keep the original return target.
+        if let restore = captureFocusReturn() { returnFocus = restore }
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        if !hasPositionedWindow || panel.screen != screen || screen?.visibleFrame.intersects(panel.frame) != true {
             if let area = screen?.visibleFrame {
                 let top = area.maxY - min(160, area.height / 4)
                 panel.setFrameOrigin(NSPoint(x: area.midX - panel.frame.width / 2, y: top - panel.frame.height))
@@ -64,7 +85,15 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         }
         resizeToPreferredHeight()
         focusOnActivation = true
+        panel.level = .floating
+        if #available(macOS 14, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
         panel.makeKeyAndOrderFront(nil)
+        // The Launcher may still be inactive while a menu-bar invocation ends.
+        panel.orderFrontRegardless()
         switch state {
         case .idle, .failed:
             startLoad()
@@ -105,7 +134,14 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         }
     }
 
-    func windowDidBecomeKey(_ notification: Notification) { focusComposer() }
+    func windowDidBecomeKey(_ notification: Notification) {
+        panel.level = .floating
+        focusComposer()
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        if !pinned { panel.level = .normal }
+    }
 
     func windowWillStartLiveResize(_ notification: Notification) {
         liveResizeStartSize = panel.frame.size
@@ -139,7 +175,20 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
 
     private func hide() {
         focusOnActivation = false
+        let wasActive = isApplicationActive()
+        let restore = returnFocus
+        returnFocus = nil
         panel.orderOut(nil)
+        guard wasActive, isApplicationActive() else { return }
+        // orderedWindows excludes panels, including native dialogs and utility windows.
+        let candidates = [NSApp.keyWindow, NSApp.mainWindow].compactMap { $0 } + NSApp.windows
+        if let other = candidates.first(where: {
+            $0 !== panel && $0.isVisible && !$0.isMiniaturized && $0.canBecomeKey
+        }) {
+            other.makeKeyAndOrderFront(nil)
+        } else {
+            restore?()
+        }
     }
 
     private func resizeToPreferredHeight() {
@@ -175,7 +224,7 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        panel.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.onDismiss = { [weak self] in self?.hide() }
 
         let accessory = NSTitlebarAccessoryViewController()
@@ -243,7 +292,7 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
 
     @objc private func togglePin() {
         pinned.toggle()
-        panel.level = pinned ? .floating : .normal
+        panel.level = pinned || panel.isKeyWindow ? .floating : .normal
         updatePinButton()
     }
 

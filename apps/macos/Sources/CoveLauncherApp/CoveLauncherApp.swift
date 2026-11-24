@@ -90,7 +90,7 @@ struct CoveLauncherApp: App {
                             SMAppService.openSystemSettingsLoginItems()
                         }
                     }
-                    Toggle(localized("Quick Panel Shortcut: ⌃⌥Space"), isOn: Binding(
+                    Toggle(localized("Quick Panel Shortcut: ⌃⌥C"), isOn: Binding(
                         get: { desktop.shortcutEnabled },
                         set: { desktop.setShortcutEnabled($0) }
                     ))

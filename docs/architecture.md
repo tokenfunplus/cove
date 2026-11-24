@@ -92,6 +92,8 @@ Schema 23 stores Projects, current instructions/background and fixed sources in 
 
 ## Managed local inference and document retrieval
 
+`internal/downloadnetwork` owns model-download routing and bounded source checks; persistence owns its private machine preference file. HTTP handlers adapt authenticated settings requests. Download clients capture the configured mode per installation; native worker traffic remains direct. See [download proxy settings](adr/0060-configure-model-download-proxies-in-settings.md).
+
 `internal/localmodels` owns verified downloads and authenticated native worker lifecycles; workers have no browser sessions, Provider Keys, or persistence responsibilities. The managed local Provider uses ordinary Chat Generations and immutable model-artifact provenance. A single lease bounds concurrent native inference, cancellation terminates local chat work, and idle workers unload.
 
 Installed chat artifacts share the managed Provider but retain independent model targets, workers, and saved artifact revisions/hashes. Model selection, local-only admission, and removal honor the chosen target. Qwen3 Abliterated runs its embedded template in non-thinking mode. See [multiple local chat targets](adr/0054-add-qwen3-abliterated-local-chat.md).

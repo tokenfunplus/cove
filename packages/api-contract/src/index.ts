@@ -650,3 +650,17 @@ export interface ProjectContextEnvelope {
 
 /** Conversation responses intern immutable project payloads by their content hash. */
 export type ConversationWireView = ConversationView & { project_contexts?: Record<string, ProjectContext> };
+
+/** Machine-local routing for verified model and speech downloads. */
+export interface DownloadNetworkSettings {
+  mode: "system" | "manual" | "direct";
+  proxy_url: string;
+}
+export interface DownloadNetworkView {
+  configuration: DownloadNetworkSettings;
+  system_proxy_supported: boolean;
+}
+export interface DownloadNetworkTest {
+  ok: boolean;
+  checks: { source: string; ok: boolean; message: string }[];
+}

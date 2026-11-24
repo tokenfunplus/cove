@@ -18,7 +18,7 @@ Troubleshooting contains Restart Local Service, Open Data Folder, and Copy Diagn
 
 ## Use the Quick Panel
 
-Choose **Open Quick Panel** from the Cove menu bar. To open it from any app, enable **Launcher Settings > Quick Panel Shortcut: ⌃⌥Space**, then press **Control-Option-Space**. When Cove is ready, the panel opens with the composer focused so you can type immediately.
+Choose **Open Quick Panel** from the Cove menu bar. To open it from any app, enable **Launcher Settings > Quick Panel Shortcut: ⌃⌥C**, then press **Control-Option-C**. When Cove is ready, the panel opens with the composer focused so you can type immediately.
 
 Type a question, paste text, or drop a supported file into the panel. Send your message and read the answer there. Use **Pin Quick Panel** to keep it above normal windows while you work. Press **Escape** or the shortcut again while the panel has focus to hide it. Hiding the panel keeps your unsent text and attachments in memory for the next time you open it. [Supported files and limits](#ask-about-files).
 
@@ -169,6 +169,16 @@ Empty, binary, password-protected, scanned-only, unsupported, and oversized inpu
 On submission, Cove saves the original bytes and an immutable extracted-text snapshot with the turn. Providers receive extracted text through the selected transport. Comparisons, retries, and later selected context use the saved snapshot even if the original file changes on disk.
 
 Open an answer's source citations to navigate saved lines or pages. Citations are navigation aids, not independent proof that a model's claim is correct. Original files can be downloaded from the saved source view. Conversation exports contain source text and metadata, but not original file bytes.
+
+## Recover a model download
+
+If a local chat, document search, or speech model cannot reach its source, choose **Network settings…** on the failed download, or open **Settings > Network**.
+
+1. Use **System proxy** to follow macOS network settings, or choose **Manual proxy** and paste the HTTP or SOCKS5 address shown by your proxy app, including its port. Keep that app running. Proxy usernames and passwords are not supported.
+2. Choose **Test connection**. Cove checks Hugging Face and GitHub using the current values without saving them or downloading a model.
+3. Choose **Save settings**, return to **On this Mac**, and retry the download. Retry resumes a retained partial file when supported, then checks the complete file before installation.
+
+**Direct connection** bypasses proxies for these downloads. Changes apply to the next download or retry without restarting Cove. See [download connection details](configuration.md#model-download-connections) for scope and storage.
 
 ## Appearance and local data
 

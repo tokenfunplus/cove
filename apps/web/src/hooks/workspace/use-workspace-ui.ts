@@ -50,7 +50,7 @@ export function useWorkspaceUi() {
   const [projectRemoval, setProjectRemoval] = useState<{ project: Project; deleteConversations: boolean }>();
   const [projectContextPreview, setProjectContextPreview] = useState<ProjectContextPreview>();
 
-  const [settingsEntry, setSettingsEntry] = useState<"general" | "provider" | "web-search" | "local-models" | "chat-data">();
+  const [settingsEntry, setSettingsEntry] = useState<"general" | "provider" | "web-search" | "local-models" | "chat-data" | "network">();
   const [localCapabilityEntry, setLocalCapabilityEntry] = useState<{tab:"installed"|"discover"|"speech";purpose?:"speak";modelId?:string}>();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);

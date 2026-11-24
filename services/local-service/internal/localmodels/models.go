@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tokenfunplus/cove/services/local-service/internal/downloadnetwork"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 )
 
@@ -61,6 +62,7 @@ type Manager struct {
 	files            persistence.ModelFiles
 	executable       string
 	client           *http.Client
+	network          *downloadnetwork.Service
 	embeddingTimeout time.Duration
 	mu               sync.Mutex
 	mutations        sync.Mutex
@@ -137,6 +139,14 @@ func (manager *Manager) Installed(id string) bool {
 	m, err := Lookup(id)
 	return err == nil && manager.files.Installed(id, m.SHA256, m.Bytes)
 }
+
+// SetDownloadNetwork installs the shared download routing service before use.
+func (manager *Manager) SetDownloadNetwork(network *downloadnetwork.Service) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	manager.network = network
+}
+
 func (manager *Manager) Install(id string) error {
 	manager.mutations.Lock()
 	defer manager.mutations.Unlock()
@@ -155,14 +165,22 @@ func (manager *Manager) Install(id string) error {
 	if manager.Installed(id) {
 		return nil
 	}
+	client, cleanup := manager.client, func() {}
+	if manager.network != nil {
+		client, cleanup, err = manager.network.Client(client)
+		if err != nil {
+			return err
+		}
+	}
 	ctx, cancel := context.WithTimeout(manager.lifetime, 10*time.Minute)
 	job := &download{cancel: cancel, done: make(chan struct{}), status: Status{Model: m, State: "downloading"}}
 	manager.jobs[id] = job
 	go func() {
 		defer close(job.done)
 		defer cancel()
+		defer cleanup()
 		err := manager.files.Download(ctx, id, m.SHA256, m.Bytes, func(offset int64) (io.ReadCloser, bool, error) {
-			return FetchArtifact(ctx, manager.client, m.URL, m.Bytes, offset)
+			return FetchArtifact(ctx, client, m.URL, m.Bytes, offset)
 		}, func(n int64) { manager.mu.Lock(); job.status.Downloaded = n; manager.mu.Unlock() })
 		manager.mu.Lock()
 		defer manager.mu.Unlock()

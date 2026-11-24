@@ -3,11 +3,13 @@ import { Progress } from "@/components/ui/progress";
 import { useState } from "react";
 import { useLocalModelAction, useLocalModels } from "@/api/hooks/useLocalModels";
 import { Button } from "@/components/ui/button";
+import { useSettingsNavigation } from "./settings-navigation";
 import { useLocalSpeech } from "@/components/chat/LocalSpeech";
 
 export function LocalModelControl({id,onUse,useLabel="Use in this chat",useDisabled=false,compact=false}:{id:string;onUse?:()=>void;useLabel?:string;useDisabled?:boolean;compact?:boolean}) {
   const catalog=useLocalModels();const action=useLocalModelAction();const [confirm,setConfirm]=useState(false);
   const speech=useLocalSpeech();
+  const navigate=useSettingsNavigation();
   const model=catalog.data?.find(item=>item.id===id);
   if (!model) return catalog.isError ? <p className="mt-4 text-sm text-destructive">Local model status could not be loaded.</p> : null;
   const run=(kind:"install"|"cancel"|"remove")=>{if(kind==="remove"&&model.role==="tts")speech?.stop();setConfirm(false);action.mutate({id,action:kind});};
@@ -20,6 +22,7 @@ export function LocalModelControl({id,onUse,useLabel="Use in this chat",useDisab
     </> : <Button disabled={action.isPending || !model.runtime_ready} onClick={()=>run("install")}>{action.isPending?"Starting download…":`${model.state==="failed"?"Retry or resume download":"Download and install"} · ${(model.bytes/1e6).toFixed(1)} MB`}</Button>}
     {model.state==="failed"&&<Button variant="ghost" disabled={action.isPending} onClick={()=>run("remove")}>Discard partial download</Button>}
     {model.state==="failed"&&<p className="text-xs text-muted-foreground">Retry resumes interrupted downloads when supported. Complete files are checked before installation. Cancel discards partial files.</p>}
+    {(model.state==="failed" || action.error) && navigate && <Button variant="outline" onClick={()=>navigate("network")}>Network settings…</Button>}
     {(action.error || model.error) && <p role="alert" className="text-destructive">{action.error?.message ?? model.error}</p>}
     {!compact && <Disclosure className="text-muted-foreground"><DisclosureTrigger className="cursor-pointer">Installed artifact details</DisclosureTrigger><DisclosureContent><p className="mt-2 break-all">{model.filename}<br/>Revision: {model.revision}<br/>SHA-256: {model.sha256}<br/>Runtime: {model.runtime_version}</p></DisclosureContent></Disclosure>}
   </div>;

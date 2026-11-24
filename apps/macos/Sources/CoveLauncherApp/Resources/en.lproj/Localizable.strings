@@ -17,7 +17,7 @@
 "Settings…" = "Settings…";
 "Launch at Login" = "Launch at Login";
 "Allow Launch at Login…" = "Allow Launch at Login…";
-"Quick Panel Shortcut: ⌃⌥Space" = "Quick Panel Shortcut: ⌃⌥Space";
+"Quick Panel Shortcut: ⌃⌥C" = "Quick Panel Shortcut: ⌃⌥C";
 "Troubleshooting" = "Troubleshooting";
 "Copy Diagnostics" = "Copy Diagnostics";
 "Open Data Folder" = "Open Data Folder";
@@ -30,7 +30,7 @@
 "Launch at Login unavailable." = "Launch at Login unavailable.";
 "Manage Cove in System Settings > General > Login Items." = "Manage Cove in System Settings > General > Login Items.";
 "Shortcut unavailable." = "Shortcut unavailable.";
-"Control-Option-Space may already be used by another app." = "Control-Option-Space may already be used by another app.";
+"Control-Option-C may already be used by another app." = "Control-Option-C may already be used by another app.";
 "Local Service unavailable." = "Local Service unavailable.";
 "Try restarting Cove." = "Try restarting Cove.";
 "Check for Beta Updates…" = "Check for Beta Updates…";

@@ -110,7 +110,10 @@ final class LauncherDesktopActions: ObservableObject {
         refreshServiceStatus()
     }
 
-    func showQuickPanel() { quickPanel.show() }
+    func showQuickPanel() {
+        // Present after the menu action returns so closing it cannot take focus back.
+        DispatchQueue.main.async { [weak self] in self?.quickPanel.show() }
+    }
 
     func setLaunchAtLogin(_ enabled: Bool) {
         do {
@@ -132,7 +135,7 @@ final class LauncherDesktopActions: ObservableObject {
             UserDefaults.standard.set(enabled, forKey: "GlobalChatShortcutEnabled")
             if enabled, case .ready = launcher.state { quickPanel.prepare() }
         } catch {
-            showNotice("Shortcut unavailable.", detail: "Control-Option-Space may already be used by another app.")
+            showNotice("Shortcut unavailable.", detail: "Control-Option-C may already be used by another app.")
         }
     }
 

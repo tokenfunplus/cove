@@ -80,7 +80,7 @@ Search queries go to the search service, page reads contact source websites, and
 | Estimated-cost rates | Response details → Model pricing | Optional browser-local USD input/output rates per million tokens, keyed by Provider/model. Advertised catalog prices do not overwrite them. |
 | Working Draft and undo history | Edit in workbench | Window memory only; up to 120,000 UTF-16 code units and 20 undo steps. Copy or download before reloading. |
 | Launch at Login | Native Launcher menu | Managed through macOS login-item registration; enabling it may require system approval. |
-| Quick Panel shortcut | Launcher Settings → Quick Panel Shortcut | Control-Option-Space opens the Quick Panel when enabled. The shortcut is off by default. Conflicts are reported by the Launcher. |
+| Quick Panel shortcut | Launcher Settings → Quick Panel Shortcut | Control-Option-C opens the Quick Panel when enabled. The shortcut is off by default. Conflicts are reported by the Launcher. |
 
 Browser preferences, manual rates, combinations, and bookmarks are not part of a database backup or conversation export. Clearing browser data removes them; using another browser profile or port uses separate storage. If storage is unavailable, changes use session memory, and the bookmark preview reports that status. Provider Keys and message content are excluded from these preferences. See the [user guide](user-guide.md#focus-and-timeline-bookmarks) for reading and navigation behavior.
 
@@ -163,3 +163,15 @@ Projects hold current instructions, one editable background text, and up to thre
 Project input is saved separately from replayable user-turn text. Each accepted Batch freezes exact project text, source sections and original-byte references. Every target and retry uses those saved project inputs. Base System Prompt and generation parameters retain the existing per-attempt retry behavior. Editing live project settings affects new Batches. Original bytes are stored once per SHA-256 with references from fixed sources and historical Batches.
 
 `Clear chat history` retains Projects and their current fixed sources. Dissolving a Project keeps its Conversations and historical snapshots; deleting a Project and its Conversations removes its current members. Historical copies in moved/branched Conversations outside the Project remain until those Conversations are deleted. The confirmation shows that scope.
+
+## Model download connections
+
+Open **Settings > Network** to select **System proxy**, **Manual proxy**, or **Direct connection** for local inference, document search, and speech model downloads. Use **Test connection** before saving to check Hugging Face and GitHub with the current draft. Tests do not install a model or change saved settings. After saving, retry a failed download; an active download keeps its captured configuration.
+
+System mode follows macOS proxy configuration, including PAC and bypass rules. If no system proxy is configured, it falls back to proxy environment variables. Builds without native macOS proxy support use the environment fallback. Manual mode accepts `http://`, `https://`, `socks5://`, or `socks5h://` addresses with a host and explicit port. Proxy usernames and passwords are not supported. Local service and inference connections always bypass download proxies.
+
+The owner-only file `download-network.json` in the application data directory stores this machine preference. Missing settings default to System. Unreadable or invalid settings block downloads until a new configuration is saved in the UI. This file is separate from database backups and conversation exports. Provider inference, Web Research, webpage reading, and Launcher updates keep their existing routing.
+
+System/PAC routes are tried in order after connection failures before a response arrives. A failed proxy can fall back to a direct connection only when the system explicitly lists DIRECT. Resolution errors stop the request; HTTP responses and interrupted response bodies are not silently replayed through another route.
+
+![Download connection settings and successful source checks](images/download-network-settings.jpg)
