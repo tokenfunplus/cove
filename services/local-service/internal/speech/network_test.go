@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 )
 
 func TestSpeechInstallUsesConfiguredDownloadProxy(t *testing.T) {
-	if !localmodels.PlatformSupported() {
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" || !localmodels.PlatformSupported() {
 		t.Skip("native speech is unsupported")
 	}
 	root := t.TempDir()
