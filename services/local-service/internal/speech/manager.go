@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tokenfunplus/cove/services/local-service/internal/downloadnetwork"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localmodels"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 )
@@ -32,6 +33,7 @@ type Manager struct {
 	store      SettingsStore
 	runtime    string
 	client     *http.Client
+	network    *downloadnetwork.Service
 	mu         sync.Mutex
 	operations sync.Mutex
 	installs   map[string]*installJob
@@ -99,6 +101,14 @@ func (manager *Manager) Statuses() []localmodels.Status {
 	}
 	return result
 }
+
+// SetDownloadNetwork installs the shared download routing service before use.
+func (manager *Manager) SetDownloadNetwork(network *downloadnetwork.Service) {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	manager.network = network
+}
+
 func (manager *Manager) Install(id string) error {
 	manager.operations.Lock()
 	defer manager.operations.Unlock()
@@ -120,12 +130,20 @@ func (manager *Manager) Install(id string) error {
 	if manager.files.Installed(model.Bundle()) {
 		return nil
 	}
+	client, cleanup := manager.client, func() {}
+	if manager.network != nil {
+		client, cleanup, err = manager.network.Client(client)
+		if err != nil {
+			return err
+		}
+	}
 	ctx, cancel := context.WithTimeout(manager.ctx, 15*time.Minute)
 	job := &installJob{cancel: cancel, done: make(chan struct{}), status: localmodels.Status{Model: model.Model, State: "downloading"}}
 	manager.installs[id] = job
 	go func() {
 		defer close(job.done)
 		defer cancel()
+		defer cleanup()
 		err := manager.files.InstallResumable(ctx, model.Bundle(), func(asset persistence.BundleArtifact, offset int64) (io.ReadCloser, bool, error) {
 			var source string
 			for _, item := range model.Artifacts {
@@ -137,7 +155,7 @@ func (manager *Manager) Install(id string) error {
 			if source == "" {
 				return nil, false, errors.New("The speech download manifest is incomplete.")
 			}
-			return localmodels.FetchArtifact(ctx, manager.client, source, asset.Bytes, offset)
+			return localmodels.FetchArtifact(ctx, client, source, asset.Bytes, offset)
 		}, func(n int64) { manager.mu.Lock(); job.status.Downloaded = n; manager.mu.Unlock() })
 		manager.mu.Lock()
 		defer manager.mu.Unlock()

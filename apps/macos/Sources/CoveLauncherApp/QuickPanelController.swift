@@ -54,8 +54,8 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
     }
 
     func show() {
-        if !hasPositionedWindow {
-            let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        if !hasPositionedWindow || panel.screen != screen || screen?.visibleFrame.intersects(panel.frame) != true {
             if let area = screen?.visibleFrame {
                 let top = area.maxY - min(160, area.height / 4)
                 panel.setFrameOrigin(NSPoint(x: area.midX - panel.frame.width / 2, y: top - panel.frame.height))
@@ -64,7 +64,15 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         }
         resizeToPreferredHeight()
         focusOnActivation = true
+        panel.level = .floating
+        if #available(macOS 14, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
         panel.makeKeyAndOrderFront(nil)
+        // The Launcher may still be inactive while a menu-bar invocation ends.
+        panel.orderFrontRegardless()
         switch state {
         case .idle, .failed:
             startLoad()
@@ -105,7 +113,14 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         }
     }
 
-    func windowDidBecomeKey(_ notification: Notification) { focusComposer() }
+    func windowDidBecomeKey(_ notification: Notification) {
+        panel.level = .floating
+        focusComposer()
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        if !pinned { panel.level = .normal }
+    }
 
     func windowWillStartLiveResize(_ notification: Notification) {
         liveResizeStartSize = panel.frame.size
@@ -175,7 +190,7 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        panel.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary, .transient, .ignoresCycle]
         panel.onDismiss = { [weak self] in self?.hide() }
 
         let accessory = NSTitlebarAccessoryViewController()
@@ -243,7 +258,7 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
 
     @objc private func togglePin() {
         pinned.toggle()
-        panel.level = pinned ? .floating : .normal
+        panel.level = pinned || panel.isKeyWindow ? .floating : .normal
         updatePinButton()
     }
 

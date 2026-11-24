@@ -1,6 +1,7 @@
 import { ConversationDownloadDialog } from "@/components/conversations/ConversationDownloadDialog";
 import { ConversationRenameDialog } from "@/components/conversations/ConversationRenameDialog";
 import { ProviderSettings } from "@/components/providers/ProviderSettings";
+import { NetworkSettingsPanel } from "@/components/settings/NetworkSettingsPanel";
 import { WebSearchSettingsPanel } from "@/components/settings/WebSearchSettingsPanel";
 import { ChatDataPanel } from "@/components/settings/ChatDataPanel";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
@@ -168,6 +169,7 @@ export function WorkspaceOverlays({ workspace }: Props) {
         <div aria-labelledby="settings-tab-local-models" className="settings-dialog__section settings-section" data-settings-section="local-models" id="settings-local-models" role="tabpanel">
           <LocalModelsPanel entry={workspace.localCapabilityEntry} onUseChat={async(modelId)=>{if(isSending)return false;const changed=await workspace.handleApplyModelSet([{providerId:"cove-local",modelId}]);if(changed)setSettingsEntry(undefined);return changed;}} manage={Boolean(settingsEntry)} onUseSources={conversationView ? sources=>{const added=workspace.attachmentDraft.addRetrievedSources(sources);if(added)setSettingsEntry(undefined);return added;} : undefined}/>
         </div>
+        <div aria-labelledby="settings-tab-network" className="settings-dialog__section settings-section" data-settings-section="network" id="settings-network" role="tabpanel"><NetworkSettingsPanel /></div>
         <div aria-labelledby="settings-tab-web-search" className="settings-dialog__section settings-section" data-settings-section="web-search" id="settings-web-search" role="tabpanel">
           {settingsEntry && <WebSearchSettingsPanel onSaved={workspace.webSearch.configured} />}
         </div>

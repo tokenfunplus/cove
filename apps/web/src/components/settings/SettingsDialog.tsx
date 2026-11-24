@@ -9,12 +9,12 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Cpu, Database, Globe, Settings2, SlidersHorizontal, X } from "lucide-react";
+import { Cpu, Database, Globe, Network, Settings2, SlidersHorizontal, X } from "lucide-react";
 import { localModelsCopy } from "@/messages/local-models";
 import { Portal } from "@headlessui/react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Children, isValidElement, cloneElement, type ReactNode, useEffect, useRef, useState } from "react";
 
-type SettingsDialogSection = "general" | "provider" | "chat-data" | "web-search" | "local-models";
+import { SettingsNavigation, type SettingsSection as SettingsDialogSection } from "./settings-navigation";
 
 export function SettingsDialog({
   open,
@@ -102,6 +102,7 @@ export function SettingsDialogContent({
     { id: "general" as const, icon: SlidersHorizontal, label: copy.general },
     { id: "provider" as const, icon: Settings2, label: copy.providerSettings },
     { id: "local-models" as const, icon: Cpu, label: localModelsCopy.navigation },
+    { id: "network" as const, icon: Network, label: "Network" },
     { id: "web-search" as const, icon: Globe, label: "Web search" },
     { id: "chat-data" as const, icon: Database, label: copy.chatData },
   ];
@@ -181,7 +182,14 @@ export function SettingsDialogContent({
           className={settingsStyles.settingsDialog_sections}
           data-active-settings-section={activeSection}
         >
-          {children}
+          <SettingsNavigation.Provider value={section => {
+            setActiveSection(section); onSectionChange?.(section);
+            tabRefs.current[sections.findIndex(item => item.id === section)]?.focus();
+          }}>{Children.map(children, child => {
+            if (!isValidElement<{ "data-settings-section"?: SettingsDialogSection; hidden?: boolean; inert?: boolean }>(child) || !child.props["data-settings-section"]) return child;
+            const inactive = child.props["data-settings-section"] !== activeSection;
+            return cloneElement(child, { hidden: inactive, inert: inactive });
+          })}</SettingsNavigation.Provider>
         </div>
       </div>
     </>

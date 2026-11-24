@@ -1,8 +1,12 @@
 # Add the macOS Quick Panel
 
-Short tasks should take one shortcut to a focused composer when the Local Service is ready. The Launcher opens a compact Chat Surface in an AppKit `NSPanel`. Control-Option-Space uses the existing optional global registration and now opens the Quick Panel. This supersedes the shortcut destination in [ADR-0043](0043-streamline-launcher-menu-and-onboarding.md). The Launcher menu also opens the panel, while Open Chat opens the full browser workspace. [Apple NSPanel documentation](https://developer.apple.com/documentation/appkit/nspanel)
+Short tasks should take one shortcut to a focused composer when the Local Service is ready. The Launcher opens a compact Chat Surface in an AppKit `NSPanel`. Control-Option-C uses the existing optional global registration and now opens the Quick Panel. This supersedes the shortcut destination in [ADR-0043](0043-streamline-launcher-menu-and-onboarding.md). The Launcher menu also opens the panel, while Open Chat opens the full browser workspace. [Apple NSPanel documentation](https://developer.apple.com/documentation/appkit/nspanel)
 
 The Launcher owns focusing, hiding, and pinning the panel. Hiding it keeps the compact Chat Surface mounted so unsent text and pending attachments can stay in memory across invocations. The compact composer uses the same file validation and attachment previews as the full workspace. See [draft state](0029-keep-history-search-and-draft-navigation-local.md) and [source attachment limits](0025-snapshot-local-source-documents-for-file-chat.md).
+
+Presentation correction (2026-11-24): explicit invocation activates the Launcher and brings the panel forward above other apps, including full screen and Stage Manager sets. Menu invocation presents after the menu action returns. Reopening on another display or after losing a display position relocates the panel to the screen under the pointer. The focused panel floats; an unpinned panel returns to the normal window level when focus leaves, while pinning keeps it floating.
+
+Shortcut change (2026-11-24): Control-Option-C replaces Control-Option-Space. The existing opt-in preference and conflict reporting are preserved. This supersedes the key chord in ADR 0043; no Shift modifier is required.
 
 When the shortcut is enabled, the Launcher prepares the panel as soon as the Local Service is ready. Provider catalog requests wait until the panel receives focus for the first time.
 

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- Configure system, manual HTTP/HTTPS/SOCKS5, or direct model download connections in Settings > Network. Test download sources in the app and open network settings from a failed download.
+
+### Changed
+
+- Use Control-Option-C for the optional Quick Panel shortcut, preserving its enabled or disabled setting.
+
+### Fixed
+
+- Bring the Quick Panel forward after menu invocation, support other apps' full screen and Stage Manager spaces, and recover its position when reopening on another display.
+
 ## 0.1.0-beta.10 - 2026-11-24
 
 ### Added

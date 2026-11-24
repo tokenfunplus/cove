@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/downloadnetwork"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
@@ -32,6 +33,7 @@ const maxNvidiaEvidenceBytes = 2 << 20
 
 type Config struct {
 	SearchService   *websearch.Service
+	DownloadNetwork *downloadnetwork.Service
 	Security        *localsecurity.Manager
 	LaunchToken     string
 	ControlToken    string
@@ -47,6 +49,7 @@ type Config struct {
 
 type Server struct {
 	searchService   *websearch.Service
+	downloadNetwork *downloadnetwork.Service
 	security        *localsecurity.Manager
 	controlToken    string
 	shutdown        func()
@@ -92,7 +95,7 @@ func NewServer(config Config) *Server {
 	if nvidiaNRASProxy == nil {
 		nvidiaNRASProxy = provider.NewNvidiaNRASProxy(nil)
 	}
-	return &Server{searchService: config.SearchService, security: security, controlToken: config.ControlToken, shutdown: shutdown, settings: settings, chat: chatService, providerSetup: config.ProviderSetup, nearAIProxy: config.NearAIProxy, nvidiaNRASProxy: nvidiaNRASProxy}
+	return &Server{searchService: config.SearchService, downloadNetwork: config.DownloadNetwork, security: security, controlToken: config.ControlToken, shutdown: shutdown, settings: settings, chat: chatService, providerSetup: config.ProviderSetup, nearAIProxy: config.NearAIProxy, nvidiaNRASProxy: nvidiaNRASProxy}
 }
 
 func (server *Server) Handler() http.Handler {
@@ -151,6 +154,9 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("POST /api/local-documents/prepare", browserSession(http.HandlerFunc(server.localDocumentCommand)))
 	mux.Handle("POST /api/local-documents/{document}/{action}", browserSession(http.HandlerFunc(server.localDocumentCommand)))
 	mux.Handle("DELETE /api/local-documents/{document}", browserSession(http.HandlerFunc(server.localDocumentCommand)))
+	mux.Handle("GET /api/network/settings", browserSession(http.HandlerFunc(server.networkSettings)))
+	mux.Handle("PUT /api/network/settings", browserSession(http.HandlerFunc(server.saveNetworkSettings)))
+	mux.Handle("POST /api/network/test", browserSession(http.HandlerFunc(server.testNetwork)))
 	mux.Handle("POST /api/web-search/test", browserSession(http.HandlerFunc(server.testWebSearchConnection)))
 	mux.Handle("GET /api/web-search/settings", browserSession(http.HandlerFunc(server.webSearchSettings)))
 	mux.Handle("PUT /api/web-search/settings", browserSession(http.HandlerFunc(server.saveWebSearchSettings)))

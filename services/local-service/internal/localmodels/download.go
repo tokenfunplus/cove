@@ -21,7 +21,7 @@ func FetchArtifact(ctx context.Context, client *http.Client, source string, size
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, false, errors.New("The model source could not be reached. Check your connection and retry to resume.")
+		return nil, false, errors.New("The model source could not be reached. Open Settings > Network to test your connection or configure a proxy, then retry to resume.")
 	}
 	if response.StatusCode == http.StatusPartialContent && offset > 0 && response.Header.Get("Content-Range") == fmt.Sprintf("bytes %d-%d/%d", offset, size-1, size) {
 		return response.Body, true, nil

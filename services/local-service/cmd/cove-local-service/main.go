@@ -18,6 +18,7 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/downloadnetwork"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localmodels"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
@@ -103,8 +104,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	chatDownload, err := localmodels.Lookup(localmodels.ChatID)
+	if err != nil {
+		return err
+	}
+	network := downloadnetwork.New(persistence.DownloadNetworkFile{Root: applicationDataDirectory}, []downloadnetwork.Target{
+		{Name: "Hugging Face · chat models", URL: chatDownload.URL},
+		{Name: "GitHub · speech models", URL: speech.Registry[0].Artifacts[0].URL},
+	})
 	localModels := localmodels.New(applicationDataDirectory, localmodels.DefaultRuntime(executable))
 	defer localModels.Close()
+	localModels.SetDownloadNetwork(network)
 	providerSetup.SetLocalProvider(localModels)
 	chatService := chat.NewServiceWithSettings(store, providerSetup, localmodels.RoutedProvider{Local: localModels, Remote: provider.NewHTTPAdapter(nil)}, store)
 	chatService.SetLocalModels(localModels, store)
@@ -114,6 +124,7 @@ func run() error {
 	}
 	localSpeech := speech.New(applicationDataDirectory, speechDirectory, store)
 	defer localSpeech.Close()
+	localSpeech.SetDownloadNetwork(network)
 	chatService.SetSpeech(localSpeech)
 	searchService := websearch.NewService(store, secretStore, nil)
 	chatService.SetWebSearchService(searchService)
@@ -147,7 +158,7 @@ func run() error {
 		handlers.Wait()
 	}()
 	chatService.SetDocumentParser(documents.ProcessParser(executable))
-	localAPI := api.NewServer(api.Config{SearchService: searchService,
+	localAPI := api.NewServer(api.Config{SearchService: searchService, DownloadNetwork: network,
 		Security:      security,
 		ControlToken:  controlToken,
 		Store:         store,

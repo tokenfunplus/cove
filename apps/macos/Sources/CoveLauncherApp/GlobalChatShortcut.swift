@@ -46,7 +46,7 @@ final class GlobalChatShortcut {
         )
         guard installStatus == noErr else { throw ShortcutError.unavailable }
         let registerStatus = RegisterEventHotKey(
-            UInt32(kVK_Space), UInt32(controlKey | optionKey),
+            UInt32(kVK_ANSI_C), UInt32(controlKey | optionKey),
             EventHotKeyID(signature: 0x436F7665, id: 1),
             GetApplicationEventTarget(), 0, &hotKey
         )
