@@ -52,20 +52,57 @@ func TestPDFGlyphGeometryStopsDuringTraversal(t *testing.T) {
 			cancel()
 		}
 	}
-	if got := positionedPDFGlyphs(ctx, page, fonts); len(got) != 0 || !errors.Is(ctx.Err(), context.Canceled) {
+	if got := positionedPDFGlyphs(ctx, page, fonts, MaxTextCharacters); len(got) != 0 || !errors.Is(ctx.Err(), context.Canceled) {
 		t.Fatalf("cancelled traversal returned %d glyphs with context error %v", len(got), ctx.Err())
+	}
+}
+
+func TestPDFGlyphGeometryBoundsRetainedRecords(t *testing.T) {
+	const font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+	data := makePDFWithStreams(font, "BT /F1 12 Tf 72 720 Td (A ) Tj [(B) -10 (C)] TJ ET\n")
+	page := readPDFGeometryPage(t, bytes.NewReader(data), len(data))
+	fonts := pdfPageFonts(page)
+	ctx := context.Background()
+	if got := positionedPDFGlyphs(ctx, page, fonts, 4); len(got) != 4 || got[1].char != ' ' || got[3].char != 'C' {
+		t.Fatalf("geometry within budget: %#v", got)
+	}
+	if got := positionedPDFGlyphs(ctx, page, fonts, 3); got != nil {
+		t.Fatalf("over-budget traversal returned partial geometry: %#v", got)
 	}
 }
 
 func TestPDFGlyphGeometryUsesWordSpacingWithPageScale(t *testing.T) {
 	font := "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 32 /LastChar 66 /Widths [250 " + strings.Repeat("0 ", 32) + "600 600] >>"
 	for _, show := range []string{`4 Tw (A B) Tj`, `4 0 (A B) "`} {
-		data := makePDFWithStreams(font, "q 2 0 0 3 5 7 cm BT /F1 10 Tf 72 720 Td "+show+" ET Q\n")
+		data := makePDFWithStreams(font, "q 2 0 0 3 5 7 cm BT /F1 10 Tf 125 Tz 72 720 Td "+show+" ET Q\n")
 		page := readPDFGeometryPage(t, bytes.NewReader(data), len(data))
-		glyphs := positionedPDFGlyphs(context.Background(), page, pdfPageFonts(page))
-		if len(glyphs) != 3 || glyphs[2].S != "B" || glyphs[2].X != 174 || glyphs[2].Y != 2167 || glyphs[2].FontSize != 20 {
+		glyphs := positionedPDFGlyphs(context.Background(), page, pdfPageFonts(page), MaxTextCharacters)
+		want := pdfGlyph{x: 180.25, y: 2167, width: 15, horizontalSize: 25, verticalSize: 30, char: 'B'}
+		if len(glyphs) != 3 || glyphs[2] != want {
 			t.Fatalf("scaled geometry for %s: %#v", show, glyphs)
 		}
+	}
+}
+
+func TestPDFGlyphGeometryKeepsDistinctBaselines(t *testing.T) {
+	font := "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 65 /LastChar 67 /Widths [600 600 600] >>"
+	for _, tt := range []struct {
+		name, middleY, want string
+	}{
+		{"common baseline", "720", "ABC"},
+		{"separate baselines", "717", "A\nB\nC"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			content := fmt.Sprintf("BT /F1 12 Tf 200 Tz 72 720 Td (A) Tj ET\n"+
+				"BT 86 %s Td (B) Tj ET\nBT 100 %s Td (C) Tj ET\n", tt.middleY, tt.middleY)
+			parsed, err := Parse(context.Background(), Input{Name: "lettering.pdf", Data: makePDFWithStreams(font, content)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := parsed.Sections[0].Text; got != tt.want {
+				t.Fatalf("extracted text = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

@@ -46,10 +46,16 @@ type pdfTextState struct {
 	characterSpacing, wordSpacing float64
 }
 
+type pdfGlyph struct {
+	x, y, width                  float64
+	horizontalSize, verticalSize float64
+	char                         rune
+}
+
 // positionedPDFGlyphs walks text positioning operators with the same cached
-// fonts used by GetPlainText. An unreadable geometry stream leaves the plain
-// extraction available to the caller.
-func positionedPDFGlyphs(ctx context.Context, page pdf.Page, fonts map[string]*pdf.Font) (glyphs []pdf.Text) {
+// fonts used by GetPlainText. Unreadable or over-budget geometry leaves the
+// plain extraction available to the caller.
+func positionedPDFGlyphs(ctx context.Context, page pdf.Page, fonts map[string]*pdf.Font, glyphLimit int) (glyphs []pdfGlyph) {
 	defer func() {
 		if recover() != nil {
 			glyphs = nil
@@ -85,6 +91,10 @@ func positionedPDFGlyphs(ctx context.Context, page pdf.Page, fonts map[string]*p
 		index := 0
 		for _, char := range decoded {
 			checkContext()
+			if len(glyphs) >= glyphLimit {
+				// Stop the optional geometry pass without returning partial positions.
+				panic("PDF glyph limit exceeded")
+			}
 			var width float64
 			spacing := state.characterSpacing
 			if state.font != nil && index < len(raw) {
@@ -99,8 +109,13 @@ func positionedPDFGlyphs(ctx context.Context, page pdf.Page, fonts map[string]*p
 			if !(position.a > 0 && position.d > 0 && state.scale > 0) || position.b != 0 || position.c != 0 {
 				panic("ambiguous PDF text orientation")
 			}
-			size := state.fontSize * state.scale * position.a
-			glyphs = append(glyphs, pdf.Text{FontSize: size, X: position.x, Y: position.y, W: width * size, S: string(char)})
+			horizontalSize := state.fontSize * state.scale * position.a
+			glyphs = append(glyphs, pdfGlyph{
+				x: position.x, y: position.y, width: width * horizontalSize,
+				horizontalSize: horizontalSize,
+				verticalSize:   state.fontSize * position.d,
+				char:           char,
+			})
 			state.text = state.text.translate((width*state.fontSize+spacing)*state.scale, 0)
 		}
 	}

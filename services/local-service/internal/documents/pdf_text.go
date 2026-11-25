@@ -32,7 +32,11 @@ func repairPDFGlyphLines(ctx context.Context, page pdf.Page, fonts map[string]*p
 	if longest < minimumPDFGlyphRun {
 		return plain
 	}
-	geometry, matched := matchPDFGlyphs(lines, positionedPDFGlyphs(ctx, page, fonts))
+	glyphs := positionedPDFGlyphs(ctx, page, fonts, MaxTextCharacters)
+	if glyphs == nil {
+		return plain
+	}
+	geometry, matched := matchPDFGlyphs(lines, glyphs)
 	if !matched {
 		return plain
 	}
@@ -47,7 +51,7 @@ func repairPDFGlyphLines(ctx context.Context, page pdf.Page, fonts map[string]*p
 		}
 		if end-start >= minimumPDFGlyphRun {
 			glyphs := geometry[start:end]
-			sort.Slice(glyphs, func(i, j int) bool { return glyphs[i].X < glyphs[j].X })
+			sort.Slice(glyphs, func(i, j int) bool { return glyphs[i].x < glyphs[j].x })
 			if line, ok := joinPDFGlyphs(glyphs); ok {
 				repaired = append(repaired, line)
 				start = end
@@ -71,19 +75,19 @@ func isSinglePDFGlyph(line string) bool {
 }
 
 // Align decoded glyphs with plain extraction before trusting their coordinates.
-// The coordinate decoder may also emit whitespace for PDF positioning operators.
-func matchPDFGlyphs(lines []string, glyphs []pdf.Text) ([]pdf.Text, bool) {
-	positions := make([]pdf.Text, len(lines))
+// Whitespace can differ between the plain decoder and the geometry pass.
+func matchPDFGlyphs(lines []string, glyphs []pdfGlyph) ([]pdfGlyph, bool) {
+	positions := make([]pdfGlyph, len(lines))
 	next := 0
 	for row, line := range lines {
 		for _, char := range line {
 			if unicode.IsSpace(char) {
 				continue
 			}
-			for next < len(glyphs) && strings.TrimSpace(glyphs[next].S) == "" {
+			for next < len(glyphs) && unicode.IsSpace(glyphs[next].char) {
 				next++
 			}
-			if next == len(glyphs) || glyphs[next].S != string(char) {
+			if next == len(glyphs) || glyphs[next].char != char {
 				return nil, false
 			}
 			positions[row] = glyphs[next]
@@ -91,44 +95,44 @@ func matchPDFGlyphs(lines []string, glyphs []pdf.Text) ([]pdf.Text, bool) {
 		}
 	}
 	for _, glyph := range glyphs[next:] {
-		if strings.TrimSpace(glyph.S) != "" {
+		if !unicode.IsSpace(glyph.char) {
 			return nil, false
 		}
 	}
 	return positions, true
 }
 
-func samePDFBaseline(first, next pdf.Text) bool {
-	size := min(first.FontSize, next.FontSize)
-	return size > 0 && !math.IsInf(size, 0) && math.Abs(first.Y-next.Y) <= size*0.18
+func samePDFBaseline(first, next pdfGlyph) bool {
+	size := min(first.verticalSize, next.verticalSize)
+	return size > 0 && !math.IsInf(size, 0) && math.Abs(first.y-next.y) <= size*0.18
 }
 
-func joinPDFGlyphs(glyphs []pdf.Text) (string, bool) {
+func joinPDFGlyphs(glyphs []pdfGlyph) (string, bool) {
 	var line strings.Builder
-	line.WriteString(glyphs[0].S)
+	line.WriteRune(glyphs[0].char)
 	for i := 1; i < len(glyphs); i++ {
 		previous, current := glyphs[i-1], glyphs[i]
-		size := min(previous.FontSize, current.FontSize)
-		advance := current.X - previous.X
+		size := min(previous.horizontalSize, current.horizontalSize)
+		advance := current.x - previous.x
 		// A preserved gap keeps separate columns and cells from being joined.
 		if !(size > 0 && advance >= size*0.12 && advance <= size*1.6) {
 			return "", false
 		}
-		previousChar, _ := utf8.DecodeRuneInString(previous.S)
-		currentChar, _ := utf8.DecodeRuneInString(current.S)
-		if previous.W > size*0.1 && previous.W <= size*1.4 {
-			gap := advance - previous.W
+		previousWord := isLatinWordGlyph(previous.char)
+		currentWord := isLatinWordGlyph(current.char)
+		if previous.width > size*0.1 && previous.width <= size*1.4 {
+			gap := advance - previous.width
 			if gap > size*0.6 {
 				return "", false
 			}
-			if gap >= size*0.22 && isLatinWordGlyph(previousChar) && isLatinWordGlyph(currentChar) {
+			if gap >= size*0.22 && previousWord && currentWord {
 				line.WriteByte(' ')
 			}
-		} else if isLatinWordGlyph(previousChar) || isLatinWordGlyph(currentChar) {
+		} else if previousWord || currentWord {
 			// Without a reliable width, a Latin word boundary cannot be inferred.
 			return "", false
 		}
-		line.WriteString(current.S)
+		line.WriteRune(current.char)
 	}
 	return line.String(), true
 }
