@@ -12,6 +12,7 @@
 | Attached source text | Selected Providers, as part of the prompt and later selected context; original file bytes stay local |
 | Explicit webpage reading | The supplied website and its public redirects receive a credential-free HTTP request from your Mac |
 | Prepared webpage text and metadata | Bounded Local Service memory until release or service exit; preview tokens become unavailable after fifteen minutes |
+| Unsent Ask Cove selections | Launcher and Quick Panel memory |
 | Submitted webpage bytes, source URLs, read time, and extracted text | Local SQLite source snapshots; extracted text and metadata also enter model input and exports |
 | NearAI encrypted protocol traffic | Fixed NearAI staging service, through the Local Service |
 | Intel TDX verification collateral | `https://pccs.phala.network` |
@@ -40,6 +41,8 @@ Cove does not encrypt its SQLite database or exports. Filesystem permissions and
 After a successful Keychain authorization, the Local Service reuses that Provider Key in process memory until it exits, rotates the key, deletes it, or observes that the Keychain item is absent. Concurrent requests share the initial read. A key changed outside that running service may require a restart before ordinary requests use the new value. This avoids repeated system authorization dialogs without changing Keychain access controls or copying keys to browser storage. See [authorized Keychain reads](adr/0026-reuse-authorized-keychain-reads-without-passive-retries.md).
 
 Attachment and draft-context previews are parsed locally without contacting a Provider or persisting the draft. Accepted file turns save the original bytes and immutable extracted text; removing their conversation or clearing history removes these records. Markdown and JSON exports include extracted text and source metadata, so handle them like the conversation itself. Draft attachments are lost on navigation or reload. Source citations open saved text; they do not independently verify the document or the answer.
+
+Ask Cove receives the plain-text selection that the source app supplies to macOS Services when the user invokes it. The Quick Panel displays the execution destination before Send. Only on this Mac applies the same restrictions to imported and typed drafts.
 
 `COVE_INSECURE_FILE_SECRET_STORE=1` stores keys as plaintext in an owner-only test file. It is disabled by default and rejected when `COVE_RELEASE=1`. The service warns when this mode is used.
 

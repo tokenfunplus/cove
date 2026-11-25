@@ -4,11 +4,11 @@ For continuous multi-model discussions, see [Debate mode](debate.md).
 
 Cove is a local-first AI chat application for Apple Silicon Macs running macOS 13 or later. Its menu-bar Launcher starts a Local Service and opens the Chat Surface in your browser or the Quick Panel. The interface is English. Messages, titles, and prompts support Unicode content.
 
-This guide follows the current source tree, including unreleased features. See the [Beta 11 release notes](releases/0.1.0-beta.11.md) for the published package and the [unreleased changelog](../CHANGELOG.md#unreleased) for newer changes.
+This guide follows the current source tree, including unreleased features. See the [Beta 12 release notes](releases/0.1.0-beta.12.md) for the published package and the [unreleased changelog](../CHANGELOG.md#unreleased) for newer changes.
 
 ## Install and upgrade
 
-Download [0.1.0-beta.11](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.11), open the DMG, and drag Cove to Applications. A checksum file accompanies the download. Check the release page for Apple signing and notarization status.
+Download [0.1.0-beta.12](https://github.com/tokenfunplus/cove/releases/tag/v0.1.0-beta.12), open the DMG, and drag Cove to Applications. A checksum file accompanies the download. Check the release page for Apple signing and notarization status.
 
 For an upgrade, quit Cove from its menu-bar menu before replacing the app. Existing Cove history and settings remain in the local data directory. Provider Keys remain in macOS Keychain. Under Check for Updates, Check Stable Releases follows the stable channel; Check Beta Releases explicitly checks for newer betas, release candidates, or final versions. Builds before beta.4 can download beta updates from GitHub Releases.
 
@@ -25,6 +25,12 @@ Type a question, paste text, or drop a supported file into the panel. Send your 
 The panel grows as you add content. Drag an edge to choose your own size for the current Launcher session. Use **Tools** for additional composer actions and check the destination below the input before sending. New replies start below their question. Scroll up to keep your reading position during a reply, or choose **Jump to latest** to follow new text.
 
 The first message starts a conversation in your local history. After the current response finishes, use **Continue in Cove** to open that conversation in your default browser. Unsent follow-up text and attachments stay in the panel. Choose **New chat** in the panel to start a separate task.
+
+### Ask Cove about selected text
+
+Select text in an app such as TextEdit and choose **Services > Ask Cove**. If the service is hidden, look under **System Settings > Keyboard > Keyboard Shortcuts > Services**. You can also copy text and paste it into the panel.
+
+The selection fills an empty draft for a new chat. If a draft or conversation is open, choose **Add to Current Draft**, **Start New Draft**, or **Dismiss**. The selection waits while an answer is running. Review the model destination below the composer and click **Send** when ready. **Only on this Mac** in **Tools** restricts the answer to an installed Cove local model.
 
 ## Connect a Provider
 
@@ -52,13 +58,15 @@ Downloads show progress, support cancellation, and verify pinned file sizes and 
 
 You can choose up to 32 files for a library import; each selected file is processed in order, subject to the 32-document library limit. Stop cancels the current request and prevents remaining files from starting. Closing the document dialog cancels pending work and prevents late search-source results from entering another chat draft. Search still covers only the one to four documents you select.
 
+For PDFs marked **PDF text update available**, open **Documents** and choose **Index again** to rebuild the index from Cove's saved original. Search again after the update to review the refreshed excerpts and page text. Selected Project materials are updated when you search them. Saved conversations continue to use the source snapshots captured when those turns were submitted.
+
 Five supported speech bundles can also be installed and used with Read aloud; see [local speech](local-speech.md). Unsupported catalog entries remain discovery-only. **View files** and **About this model** open external source websites. File sizes exclude runtimes and working memory. The discovery list itself works without a model-hub request. See [local inference acceptance](local-inference.md) for observed smoke-test results and their limits.
 
 Hugging Face and publisher GitHub repositories provide the listed files. ModelScope is another hub to inspect individually; a matching name does not establish the same revision or artifact. Local tools can still supply results to a remote Provider when that Provider generates the final answer.
 
 ### Use local capabilities in a chat
 
-Open **Tools > Search local documents** in the composer. If document search is not installed, download BGE in that dialog; your chat draft is retained. Select documents, search, inspect original passages, then choose **Copy selected text** or **Use selected results in chat**. The tool can run independently of the selected answer model. The execution line distinguishes **Search: On this Mac** from each answer destination.
+Open **Tools > Search local documents** in the composer. If document search is not installed, download BGE in that dialog; your chat draft is retained. Select documents and search. The results show a short excerpt and the original page or line numbers. Open **View cited source sections** for the full passage. The actions at the bottom copy the selected text or add those sources to your chat draft. The execution line distinguishes **Search: On this Mac** from each answer destination.
 
 **On this Mac** beside the model picker opens capability management. **Installed** shows downloaded tools and chat models; **Discover** includes additional candidates with their integration state. After downloading Qwen, **Use in this chat** explicitly selects its target without replacing the draft. Installing a model alone does not change your selection. OCR, transcription, unsupported speech candidates, and other explore-only entries still require integration.
 
@@ -216,7 +224,7 @@ Deleting a conversation or clearing history removes its saved attachment records
 
 Start with the [FAQ and troubleshooting guide](faq.md) for installation, Keychain access, unavailable models, and Local Service recovery.
 
-Read the [beta release notes](releases/0.1.0-beta.11.md), use [GitHub Issues](https://github.com/tokenfunplus/cove/issues) for reproducible problems, or join the [Cove Discord community](https://discord.gg/7jdddhG8ZG) for setup discussion. Include the app and macOS versions in bug reports, and remove credentials, launch URLs, and private content from diagnostics.
+Read the [beta release notes](releases/0.1.0-beta.12.md), use [GitHub Issues](https://github.com/tokenfunplus/cove/issues) for reproducible problems, or join the [Cove Discord community](https://discord.gg/7jdddhG8ZG) for setup discussion. Include the app and macOS versions in bug reports, and remove credentials, launch URLs, and private content from diagnostics.
 
 ## Let a model search the web
 

@@ -12,7 +12,7 @@ Controls are enabled after completion and server-side validation. Partial, faile
 
 ## State and admission
 
-Schema 28 adds an interactive Batch flag and per-Generation card runs with immutable definitions, current values/check records, revisions, and a consumed Batch reference. Records use Conversation/Generation cascade ownership. Selection changes enqueue a local save immediately; dirty cards and optional questions participate in the existing leave-draft guard. Saving uses a compare-and-swap revision, cannot modify a consumed run, and does not call a Provider. Quiz outcome text is resolved from the saved definition. Changing a selection invalidates its checked feedback.
+Schema 29 adds an interactive Batch flag and per-Generation card runs with immutable definitions, current values/check records, revisions, and a consumed Batch reference. Records use Conversation/Generation cascade ownership. Selection changes enqueue a local save immediately; dirty cards and optional questions participate in the existing leave-draft guard. Saving uses a compare-and-swap revision, cannot modify a consumed run, and does not call a Provider. Quiz outcome text is resolved from the saved definition. Changing a selection invalidates its checked feedback.
 
 Continue validates a card against the current tail's exact Selected Answer, including existing NearAI selectability requirements. Persistence rechecks source, Conversation ownership, revision, and consumption in the transaction that creates the new Batch. A consumed run cannot produce another turn through a different request identity. An identical request can replay its result after the source becomes stale; a changed request fingerprint is rejected. All existing target, local-only, Private TEE, Project, context-limit, and active-work checks still apply.
 
@@ -29,3 +29,5 @@ Structured alternative-choice branch overrides, staged composer references, slid
 This extends ADR 0014, ADR 0021, and ADR 0035 while preserving their Generation, context, and branch ownership. It does not change the window-local Working Draft policy in ADR 0032 or the Quick Panel authorization model in ADR 0059. The full design remains the roadmap; this decision records the concrete initial subset.
 
 ADR 0064 extends this initial subset with [local editing controls and the v2 contract](0064-extend-interactive-cards-with-local-editing.md), while retaining v1 definitions and their saved behavior.
+
+Migration 29 follows main's project search snapshot migration 28. It also preserves data from unreleased interactive previews that had previously used 28, by completing the project snapshot column before retaining their existing interactive runs.

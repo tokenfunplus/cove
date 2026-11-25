@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 28
+const schemaVersion = 29
 
 const defaultConversationTitle = "New conversation"
 
@@ -804,8 +804,14 @@ PRAGMA user_version=22;`); err != nil {
 		version = 27
 	}
 	if version == 27 {
-		if err := migrateInteractive(tx); err != nil {
+		if _, err := tx.Exec(projectSearchSnapshotsMigration); err != nil {
 			return fmt.Errorf("apply SQLite migration 28: %w", err)
+		}
+		version = 28
+	}
+	if version == 28 {
+		if err := migrateInteractive(tx); err != nil {
+			return fmt.Errorf("apply SQLite migration 29: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

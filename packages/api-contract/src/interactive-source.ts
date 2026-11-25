@@ -39,7 +39,7 @@ export function cardBlock(content: string): CardBlock | undefined {
     if (end < 0) return;
     offset = end + tag[1].length + 3;
   }
-  const scanningStart=offset;
+  const scanningStart = offset;
   let fence = "",
     label = "",
     start = 0,
@@ -104,7 +104,10 @@ export function cardBlock(content: string): CardBlock | undefined {
     const starts = [
       ...content.matchAll(/^[ \t]*\{[ \t]*"cove_ui"[ \t]*:[ \t]*1/gm),
     ];
-    if (starts.length === 1 && !content.slice(scanningStart,starts[0].index).trim()) {
+    if (
+      starts.length === 1 &&
+      !content.slice(scanningStart, starts[0].index).trim()
+    ) {
       const start = starts[0].index!;
       let depth = 0,
         quoted = false,
@@ -163,7 +166,7 @@ export function cardFallback(json: string): string | undefined {
       return m.title;
   } catch {
     if (json.length <= 32768) {
-      if([...json.matchAll(/"(?:fallback|title)"\s*:/g)].length>1)return;
+      if ([...json.matchAll(/"(?:fallback|title)"\s*:/g)].length > 1) return;
       const match = /"(?:fallback|title)"\s*:\s*("(?:\\.|[^"\\])*")/.exec(json);
       if (match)
         try {

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.1.0-beta.12 - 2026-11-25
+
+### Added
+
+- Bring selected text into the Quick Panel with Ask Cove in macOS Services.
+- Animate the Continuum welcome ribbon while it is visible and motion is enabled.
+
+### Changed
+
+- Upgrade SQLite to schema 28 for refreshed Project PDF indexes. Saved conversation snapshots and original files are retained.
+
+### Fixed
+
+- Keep local document search and result actions visible while reviewing compact excerpts. Recover horizontal PDF text split into single glyphs and offer to update older local PDF indexes from their saved originals.
+
 ## 0.1.0-beta.11 - 2026-11-24
 
 ### Added

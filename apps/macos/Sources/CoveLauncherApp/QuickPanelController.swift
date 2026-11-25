@@ -8,6 +8,7 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
     }
 
     private static let bridgeName = "coveQuickPanel"
+    private static let maximumPendingImports = 4
     private static let compactContentHeight: CGFloat = 148
     private static let maximumAutomaticContentHeight: CGFloat = 620
 
@@ -25,6 +26,10 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
     private var loadTimeout: Task<Void, Never>?
     private var reauthorization: Task<Void, Never>?
     private var needsReauthorization = false
+    private var pendingImports: [DesktopImport] = []
+    private var stagedImports = Set<UUID>()
+    private var importDelivery: UUID?
+    private var importPageReady = false
     private var hasPositionedWindow = false
     private var focusOnActivation = false
     private var pinned = false
@@ -72,6 +77,14 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         startLoad()
     }
 
+    func stageImport(_ input: DesktopImport) throws {
+        guard !pendingImports.contains(where: { $0.id == input.id }) else { return }
+        guard pendingImports.count < Self.maximumPendingImports else {
+            throw DesktopIntakeError.queueFull
+        }
+        pendingImports.append(input)
+    }
+
     func show() {
         // Repeated invocation while Cove is active must keep the original return target.
         if let restore = captureFocusReturn() { returnFocus = restore }
@@ -100,6 +113,7 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         case .ready:
             focusComposer()
             if needsReauthorization { refreshSession() }
+            else { deliverPendingImport() }
         case .loading:
             break
         }
@@ -337,6 +351,7 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         reauthorization?.cancel()
         reauthorization = nil
         needsReauthorization = false
+        resetImportDelivery()
         origin = nil
         pendingLaunch = nil
         navigation = nil
@@ -363,6 +378,7 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
             reauthorization = nil
             needsReauthorization = token == nil
             dispatchSession(token)
+            if token != nil { deliverPendingImport() }
         }
     }
 
@@ -376,18 +392,67 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         )
     }
 
+    private func resetImportDelivery() {
+        stagedImports.removeAll()
+        importDelivery = nil
+        importPageReady = false
+    }
+
+    private func deliverPendingImport() {
+        guard state == .ready, importPageReady, panel.isVisible, !needsReauthorization, importDelivery == nil,
+              let input = pendingImports.first(where: { !stagedImports.contains($0.id) }),
+              let origin, let url = webView.url, isQuickPanelPage(url) else { return }
+        let attempt = UUID()
+        importDelivery = attempt
+        webView.callAsyncJavaScript(
+            """
+            if (location.origin !== origin || location.pathname !== '/' || location.search !== '?surface=quick-panel') {
+                return false;
+            }
+            return !window.dispatchEvent(new CustomEvent('cove-quick-panel-import', { detail: input, cancelable: true }));
+            """,
+            arguments: ["origin": origin.absoluteString, "input": input.bridgeValue],
+            in: nil,
+            in: .page
+        ) { [weak self] result in
+            guard let self, importDelivery == attempt else { return }
+            importDelivery = nil
+            if case let .success(value) = result, value as? Bool == true {
+                // A receiver can apply a selection before the JavaScript call returns.
+                if pendingImports.contains(where: { $0.id == input.id }) { stagedImports.insert(input.id) }
+                deliverPendingImport()
+                return
+            }
+            guard panel.isVisible, panel.attachedSheet == nil else { return }
+            let alert = NSAlert()
+            alert.messageText = "Import is waiting."
+            alert.informativeText = "Reopen Quick Panel to retry the import."
+            alert.beginSheetModal(for: panel)
+        }
+    }
+
     fileprivate func receive(_ message: WKScriptMessage) {
         guard message.name == Self.bridgeName, message.webView === webView, isQuickPanelFrame(message.frameInfo),
               let payload = message.body as? [String: Any], let action = payload["action"] as? String else { return }
 
         switch action {
-        case "ready" where state == .loading:
-            loadTimeout?.cancel()
-            loadTimeout = nil
-            navigation = nil
-            display(.ready)
-            if panel.isVisible { resizeToPreferredHeight() }
+        case "ready" where state == .loading || state == .ready:
+            if state == .loading {
+                loadTimeout?.cancel()
+                loadTimeout = nil
+                navigation = nil
+                display(.ready)
+                if panel.isVisible { resizeToPreferredHeight() }
+            }
+            importPageReady = true
             focusComposer()
+            deliverPendingImport()
+        case "import-consumed", "import-rejected":
+            guard let rawID = payload["id"] as? String, let id = UUID(uuidString: rawID),
+                  let index = pendingImports.firstIndex(where: { $0.id == id }) else { return }
+            pendingImports.remove(at: index)
+            stagedImports.remove(id)
+            deliverPendingImport()
         case "resize" where state == .loading || state == .ready:
             guard let height = payload["height"] as? CGFloat, height.isFinite, height > 0 else { return }
             preferredContentHeight = min(max(ceil(height), Self.compactContentHeight), Self.maximumAutomaticContentHeight)
@@ -472,6 +537,12 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
         let securityOrigin = frame.securityOrigin
         return frame.isMainFrame && securityOrigin.protocol == "http" && securityOrigin.host == "127.0.0.1"
             && securityOrigin.port == origin?.port && frame.request.url.map(isQuickPanelPage) == true
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        // The old view's queue is gone. Replay selections still awaiting a decision.
+        resetImportDelivery()
+        if panel.isKeyWindow { focusOnActivation = true }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

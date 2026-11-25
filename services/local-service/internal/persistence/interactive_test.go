@@ -298,3 +298,33 @@ func TestLocalOnlyCardCannotInitiateModelTurn(t *testing.T) {
 		t.Fatal("local-only source admitted", err)
 	}
 }
+
+func TestUnreleasedPreviewSchema28RetainsCardsWhenMainMigrationIsAdded(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "preview.sqlite")
+	s, err := OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, run := seedCard(t, s)
+	if _, err = s.db.Exec(`ALTER TABLE project_source_indexes DROP COLUMN source_snapshot; PRAGMA user_version=28`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s, err = OpenSQLite(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if pragmaInt(t, s.db, "user_version") != 29 {
+		t.Fatal("preview not upgraded")
+	}
+	rows, err := s.db.Query(`SELECT source_snapshot FROM project_source_indexes LIMIT 0`)
+	if err != nil {
+		t.Fatal("main migration missing", err)
+	}
+	rows.Close()
+	if _, err = s.MaterializeCard(ctx, run.GenerationID); err != nil {
+		t.Fatal("preview run lost", err)
+	}
+}

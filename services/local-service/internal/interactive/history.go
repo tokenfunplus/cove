@@ -23,10 +23,26 @@ func HistoryText(body string) string {
 		return body
 	}
 	prose := body
+	removed := false
 	for _, span := range displayBlock.FindAllStringIndex(body, -1) {
 		if _, err := Extract(body[span[0]:span[1]]); err == nil {
 			prose = body[:span[0]] + body[span[1]:]
+			removed = true
 			break
+		}
+	}
+	if !removed {
+		// Extract also accepts a marked root object without Markdown fences.
+		// Remove its bytes before adding the same bounded semantic summary.
+		for _, span := range unfencedUI.FindAllStringIndex(body, -1) {
+			decoder := json.NewDecoder(strings.NewReader(body[span[0]:]))
+			var raw json.RawMessage
+			if decoder.Decode(&raw) == nil {
+				if _, err := Normalize(raw); err == nil {
+					prose = body[:span[0]] + body[span[0]+int(decoder.InputOffset()):]
+					break
+				}
+			}
 		}
 	}
 	lines := []string{strings.TrimSpace(prose), "Interactive card: " + stringValue(d.Spec.Elements[d.Spec.Root].Props["title"])}

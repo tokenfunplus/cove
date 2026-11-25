@@ -56,6 +56,8 @@ To check the Quick Panel on macOS, enable its shortcut and switch to another app
 
 On an Apple Silicon Mac with a WindowServer session, run `COVE_TEST_QUICK_PANEL=1 node --test scripts/quick-panel.test.mjs` for isolated native presentation checks. It compiles the production controller directly, checks background preparation, foreground level and keyboard input, restores an offscreen frame, and verifies hide/reopen retains the mounted surface. It uses no personal Local Service or Provider connection. Also verify menu invocation, another display, full screen, and Stage Manager manually.
 
+Test **Ask Cove** with an installed Apple Silicon `Cove.app` and a temporary `COVE_DATA_DIR`. Select synthetic multiline text in TextEdit and invoke the service with Cove both quit and running. Verify that the selection appears in an editable Quick Panel draft and that the local test Provider receives it only after **Send**. With an unsent draft and an attachment already open, check that dismissal preserves both and that starting a new draft replaces them only after the user chooses that action. Check that an import waits while an answer is running and can be reviewed once the answer finishes.
+
 ## History search and update discovery
 
 Schema version 16 builds a local FTS5 trigram index for existing message bodies. See [ADR-0031](adr/0031-index-local-history-substring-search.md) for migration, short-query fallback, and storage compatibility. To measure synthetic phrase searches, run `cd services/local-service && ../../scripts/go test ./internal/persistence -run '^$' -bench BenchmarkConversationSearchIndexed -benchtime=5x -benchmem`.
@@ -66,7 +68,7 @@ Local search uses `GET /api/conversations/search?q=...&archived=...` behind the 
 
 ## Chat storage and rendering compatibility
 
-Current source builds migrate the schema 16 database through schema 27. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Schema 23 adds Projects, independent project context snapshots, fixed-source blobs and owning references. Schema 24 indexes project provenance and blob ownership lookups. Schema 25 adds the explicit local document library and embedding indexes. Schema 26 adds Project material use, scoped vector indexes, and saved local-only execution policy. Schema 27 adds independent local speech preferences and per-model voice profiles. Selected answers retain cited web source text in later context. See [Debate mode](debate.md) and [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md).
+Current source builds migrate the schema 16 database through schema 28. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Schema 23 adds Projects, independent project context snapshots, fixed-source blobs and owning references. Schema 24 indexes project provenance and blob ownership lookups. Schema 25 adds the explicit local document library and embedding indexes. Schema 26 adds Project material use, scoped vector indexes, and saved local-only execution policy. Schema 27 adds independent local speech preferences and per-model voice profiles. Schema 28 stores refreshed PDF page text with its Project search index. Selected answers retain cited web source text in later context. See [Debate mode](debate.md), [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md), and [ADR-0062](adr/0062-improve-pdf-extraction-and-local-search-review.md).
 
 | Schema | Added data | Historical behavior |
 | --- | --- | --- |
@@ -80,6 +82,8 @@ Current source builds migrate the schema 16 database through schema 27. Schema 2
 | 24 | Indexed project provenance and blob references | Existing payloads remain byte-for-byte unchanged. |
 | 25 | Local document originals and embedding indexes | Projects and historical payloads remain unchanged; unreleased local-only schema-23 previews also upgrade without discarding their library. |
 | 26 | Project material use, scoped vectors and local-only Batch policy | Existing materials stay Always include; frozen payloads remain unchanged. |
+| 27 | Local speech preferences and per-model voice profiles | Existing databases start with default speech settings. |
+| 28 | Refreshed PDF source snapshots for Project search indexes | Existing indexes use the saved Project source snapshot until refreshed. Saved conversations and original files are retained. |
 
 Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
@@ -170,7 +174,7 @@ Integration fixtures configure temporary directories. Never point tests at perso
 
 ## Troubleshooting
 
-For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.11](releases/0.1.0-beta.11.md).
+For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.12](releases/0.1.0-beta.12.md).
 
 - **Expired browser session:** reopen with `make start-local` or the Launcher. Restarting the service invalidates sessions.
 - **Provider unavailable:** verify endpoint, authentication, model catalog, and availability. The NearAI preset uses a fixed staging endpoint.

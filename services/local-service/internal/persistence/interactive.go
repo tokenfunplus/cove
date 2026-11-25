@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS interactive_runs (
  definition TEXT NOT NULL, values_json TEXT NOT NULL, checks_json TEXT NOT NULL DEFAULT '{}',
  revision INTEGER NOT NULL DEFAULT 0, submitted_batch_id TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL DEFAULT ''
 );
-PRAGMA user_version=28;`
+PRAGMA user_version=29;`
 
 type InteractiveStore interface {
 	MaterializeCard(context.Context, string) (interactive.Run, error)
@@ -188,6 +188,16 @@ func admitCardTx(ctx context.Context, tx *sql.Tx, input BeginGenerationBatchInpu
 	return nil
 }
 func migrateInteractive(tx *sql.Tx) error {
+	// Unreleased interactive previews used schema 28 before main reserved it for
+	// project search snapshots. Preserve those previews while completing main's schema.
+	projectRows, projectErr := tx.Query(`SELECT source_snapshot FROM project_source_indexes LIMIT 0`)
+	if projectErr == nil {
+		projectRows.Close()
+	} else {
+		if _, err := tx.Exec(`ALTER TABLE project_source_indexes ADD COLUMN source_snapshot TEXT`); err != nil {
+			return err
+		}
+	}
 	rows, e := tx.Query(`SELECT interactive FROM generation_batches LIMIT 0`)
 	migration := interactiveMigration
 	if e == nil {

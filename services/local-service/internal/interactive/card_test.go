@@ -206,6 +206,11 @@ func TestModelInputNormalization(t *testing.T) {
 	}
 }
 func TestHistoryProjectionBoundsAndRetainsMeaning(t *testing.T) {
+	bare := `{"cove_ui":1,"title":"A quiet afternoon","children":[{"type":"Choice","label":"Activity","options":["Walk","Read"]}]} ` + "\nA closing sentence."
+	bareSummary := HistoryText(bare)
+	if strings.Contains(bareSummary, "cove_ui") || !strings.Contains(bareSummary, "Activity") || !strings.Contains(bareSummary, "A closing sentence.") {
+		t.Fatal("unfenced card history not compacted", bareSummary)
+	}
 	raw, _ := os.ReadFile("../../../../packages/api-contract/fixtures/interactive-cards.json")
 	var f struct{ Valid []struct{ Source string } }
 	json.Unmarshal(raw, &f)

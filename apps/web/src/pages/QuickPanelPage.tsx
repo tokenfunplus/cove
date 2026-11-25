@@ -16,6 +16,7 @@ import {
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 import { useQuickPanelBridge } from "@/hooks/workspace/use-quick-panel-bridge";
 import { useQuickPanelHeight } from "@/hooks/workspace/use-quick-panel-height";
+import { useQuickPanelImport } from "@/hooks/workspace/use-quick-panel-import";
 import { postQuickPanelMessage } from "@/lib/quick-panel";
 
 const composerId = "quick-panel-input";
@@ -52,11 +53,22 @@ export function QuickPanelPage() {
     selectedId,
     selectionStatus,
   } = workspace;
+  const { pending, take } = useQuickPanelImport(workspace.setFeedback);
   const connectionReady = workspace.connection === "ready" && !recovery;
   const busy =
     isSending ||
     isNavigating ||
     Boolean(conversationView?.active_generation_batch);
+  const hasDraft = Boolean(
+    workspace.draft || workspace.attachmentDraft.attachments.length,
+  );
+  const canImport =
+    connectionReady &&
+    !busy &&
+    !workspace.isClearingChatData &&
+    !workspace.confirmation &&
+    !workspace.settingsEntry &&
+    !modelsOpen;
   const canContinue = Boolean(
     selectedId && conversationView?.messages.length && !busy,
   );
@@ -68,6 +80,29 @@ export function QuickPanelPage() {
   useLayoutEffect(() => {
     if (!selectedId && !workspace.confirmation) focusComposer();
   }, [focusComposer, selectedId, workspace.confirmation]);
+
+  useLayoutEffect(() => {
+    if (pending && canImport && !selectedId && !hasDraft) applyImport(false);
+  });
+
+  function dismissImport() {
+    if (pending && take(pending.id)) focusComposer();
+  }
+
+  function applyImport(startNew: boolean) {
+    if (!pending || !canImport) return;
+    const incoming = take(pending.id);
+    if (!incoming) return;
+
+    if (startNew) {
+      workspace.resetQuickChat(incoming.text);
+    } else {
+      workspace.setDraft((body) =>
+        body ? `${body}\n\n${incoming.text}` : incoming.text,
+      );
+    }
+    focusComposer();
+  }
 
   function handleDrop(event: DragEvent<HTMLElement>) {
     if (!event.dataTransfer.types.includes("Files")) return;
@@ -157,6 +192,53 @@ export function QuickPanelPage() {
             </Button>
           )}
         </div>
+      )}
+      {pending && (
+        <section
+          aria-label="Content from macOS"
+          className="max-h-[55dvh] min-w-0 shrink-0 space-y-1.5 overflow-auto overscroll-contain border-b border-border bg-muted px-3 py-2 text-xs"
+        >
+          <p role="status" className="font-medium">
+            Content from macOS
+          </p>
+          <p className="max-h-14 overflow-auto whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {pending.text}
+          </p>
+          {hasDraft && (
+            <p className="text-muted-foreground">
+              Starting a new draft discards your current unsent text and
+              attachments.
+            </p>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={!canImport}
+              onClick={() => applyImport(false)}
+            >
+              Add to Current Draft
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              disabled={!canImport}
+              onClick={() => applyImport(true)}
+            >
+              Start New Draft
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={dismissImport}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </section>
       )}
       <ConversationPanel
         interactive={{

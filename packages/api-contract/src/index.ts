@@ -470,8 +470,9 @@ export interface SpeechPreview {text: string; model_id: string; profile: SpeechP
 export interface DebateSpeechInput {debate_id: string; turn_id: string}
 export interface LocalDocument {
   id: string; name: string; characters: number; chunks: number; model_sha256: string; index_version: string; indexed_at: string;
+  needs_reindex?: boolean;
 }
-export interface LocalSearchSelection { document_id: string; ordinal: number }
+export interface LocalSearchSelection { document_id: string; ordinal: number; extraction_version?: string }
 export interface LocalSearchHit extends LocalSearchSelection { score: number; text: string; source: AttachmentSnapshot }
 export interface LocalSearchResults { hits: LocalSearchHit[]; elapsed_ms: number; model_sha256: string; index_version: string }
 

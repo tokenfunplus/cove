@@ -17,13 +17,33 @@
   <key>CFBundleShortVersionString</key>
   <string>0.1.0</string>
   <key>CFBundleVersion</key>
-  <string>11</string>
+  <string>12</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>
   <true/>
+  <key>NSServices</key>
+  <array>
+    <dict>
+      <key>NSMenuItem</key>
+      <dict>
+        <key>default</key>
+        <string>Ask Cove</string>
+      </dict>
+      <key>NSMessage</key>
+      <string>askCove</string>
+      <key>NSPortName</key>
+      <string>Cove</string>
+      <key>NSRequiredContext</key>
+      <dict/>
+      <key>NSSendTypes</key>
+      <array>
+        <string>public.utf8-plain-text</string>
+      </array>
+    </dict>
+  </array>
   <key>CoveReleaseVersion</key>
-  <string>0.1.0-beta.11</string>
+  <string>0.1.0-beta.12</string>
   <key>CoveUpdateManifestURL</key>
   <string>https://github.com/tokenfunplus/cove/releases/latest/download/update.json</string>
 </dict>

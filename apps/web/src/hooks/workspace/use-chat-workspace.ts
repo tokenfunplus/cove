@@ -60,6 +60,7 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
   } = generationState;
 
   const pendingDraftTransfer = useRef<{ id: string; body: string } | undefined>(undefined);
+  const quickChatDraftWasReset = useRef(false);
   const continuingProjectDraft = useRef(false);
   const creatingQuickChat = useRef(false);
   const narrowLayout = useNarrowLayout();
@@ -100,7 +101,8 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
     setGenerationBatch(undefined);
     setLiveTurn(undefined);
     setResumeGenerationBatch(undefined);
-    setDraft("");
+    if (!quickChatDraftWasReset.current) setDraft("");
+    quickChatDraftWasReset.current = false;
     setIsSending(false);
   }, [quickPanel, selectedId]);
 
@@ -275,17 +277,19 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
     await generationCommands.handleSend({ conversationId, body, draftOnFailure: body });
   }
 
+  function resetQuickChat(body = "") {
+    quickChatDraftWasReset.current = Boolean(selectedId);
+    setDraft(body);
+    attachmentDraft.clearAttachments();
+    workspaceState.setSelectedId(undefined);
+    setFeedback(undefined);
+  }
+
   function startBlankQuickChat() {
-    async function reset() {
-      generationState.setDraft("");
-      attachmentDraft.clearAttachments();
-      workspaceState.setSelectedId(undefined);
-      setFeedback(undefined);
-    }
     if (generationState.draft.trim() || attachmentDraft.attachments.length) {
-      workspaceUi.setConfirmation({ kind: "navigate", discardDraft: true, navigationAction: reset });
+      workspaceUi.setConfirmation({ kind: "navigate", discardDraft: true, navigationAction: async () => resetQuickChat() });
     } else {
-      void reset();
+      resetQuickChat();
     }
   }
 
@@ -316,6 +320,7 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
   return {
     interactiveEnabled,
     handleQuickPanelSend,
+    resetQuickChat,
     startBlankQuickChat,
     continueProjectDraft,
     webSearch: {...webSearch, enabled:webSearch.enabled && !workspaceUi.localOnly},
