@@ -395,6 +395,11 @@ func (service *Service) validationConnection(ctx context.Context, input ProfileI
 			return Profile{}, credentials.Secret{}, provider.ErrInvalidProfile
 		}
 	}
+	if saved.ID != "" && sameDestination(prior, profile) {
+		// Reconstructing unchanged connection fields must retain the local
+		// revision used to associate preview metadata with this saved profile.
+		profile.UpdatedAt = prior.UpdatedAt
+	}
 	if input.Secret != "" {
 		return profile, credentials.Secret{Value: input.Secret}, nil
 	}

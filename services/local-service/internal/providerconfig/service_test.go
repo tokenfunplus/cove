@@ -282,3 +282,51 @@ func TestPreviewModelMetadataUsesOnlyLocalCatalogCache(t *testing.T) {
 		t.Fatal("offline preview required Provider", err)
 	}
 }
+
+func TestConnectionFieldValidationRetainsPreviewCatalogRevision(t *testing.T) {
+	var calls atomic.Int32
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "small", "context_length": 4096}}})
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	other := httptest.NewServer(handler)
+	defer other.Close()
+	store, err := persistence.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	s := NewService(store, credentials.NewMemoryStore(), server.Client())
+	profile, err := s.Configure(context.Background(), ProfileInput{Kind: "openai_compatible", Name: "Fixture", Endpoint: server.URL, AuthMethod: "bearer", Secret: "fixture-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, method := range []struct {
+		name string
+		run  func(context.Context, ProfileInput) (ValidationResult, error)
+	}{{"validate", s.Validate}, {"discover", s.Discover}} {
+		t.Run(method.name, func(t *testing.T) {
+			in := ProfileInput{ID: profile.ID, Kind: profile.Kind, Name: profile.Name, Endpoint: profile.Endpoint, AuthMethod: profile.AuthMethod, Model: "small"}
+			if _, err := method.run(context.Background(), in); err != nil {
+				t.Fatal(err)
+			}
+			before := calls.Load()
+			saved, metadata, err := s.PreviewModelMetadata(context.Background(), profile.ID, "small")
+			if err != nil || metadata.ContextLength == nil || *metadata.ContextLength != 4096 || calls.Load() != before || !saved.UpdatedAt.Equal(profile.UpdatedAt) {
+				t.Fatal("connection-field check lost local capacity metadata", err)
+			}
+			in.Endpoint = other.URL
+			in.Secret = "fixture-key"
+			if _, err = method.run(context.Background(), in); err != nil {
+				t.Fatal(err)
+			}
+			before = calls.Load()
+			_, metadata, err = s.PreviewModelMetadata(context.Background(), profile.ID, "small")
+			if err != nil || metadata.ContextLength != nil || calls.Load() != before {
+				t.Fatal("unsaved destination metadata used for saved profile", err)
+			}
+		})
+	}
+}
