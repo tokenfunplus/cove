@@ -68,7 +68,7 @@ Local search uses `GET /api/conversations/search?q=...&archived=...` behind the 
 
 ## Chat storage and rendering compatibility
 
-Current source builds migrate the schema 16 database through schema 27. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Schema 23 adds Projects, independent project context snapshots, fixed-source blobs and owning references. Schema 24 indexes project provenance and blob ownership lookups. Schema 25 adds the explicit local document library and embedding indexes. Schema 26 adds Project material use, scoped vector indexes, and saved local-only execution policy. Schema 27 adds independent local speech preferences and per-model voice profiles. Selected answers retain cited web source text in later context. See [Debate mode](debate.md) and [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md).
+Current source builds migrate the schema 16 database through schema 28. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Schema 23 adds Projects, independent project context snapshots, fixed-source blobs and owning references. Schema 24 indexes project provenance and blob ownership lookups. Schema 25 adds the explicit local document library and embedding indexes. Schema 26 adds Project material use, scoped vector indexes, and saved local-only execution policy. Schema 27 adds independent local speech preferences and per-model voice profiles. Schema 28 stores refreshed PDF page text with its Project search index. Selected answers retain cited web source text in later context. See [Debate mode](debate.md), [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md), and [ADR-0062](adr/0062-improve-pdf-extraction-and-local-search-review.md).
 
 | Schema | Added data | Historical behavior |
 | --- | --- | --- |
@@ -82,6 +82,8 @@ Current source builds migrate the schema 16 database through schema 27. Schema 2
 | 24 | Indexed project provenance and blob references | Existing payloads remain byte-for-byte unchanged. |
 | 25 | Local document originals and embedding indexes | Projects and historical payloads remain unchanged; unreleased local-only schema-23 previews also upgrade without discarding their library. |
 | 26 | Project material use, scoped vectors and local-only Batch policy | Existing materials stay Always include; frozen payloads remain unchanged. |
+| 27 | Local speech preferences and per-model voice profiles | Existing databases start with default speech settings. |
+| 28 | Refreshed PDF source snapshots for Project search indexes | Existing indexes use the saved Project source snapshot until refreshed. Saved conversations and original files are retained. |
 
 Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
@@ -172,7 +174,7 @@ Integration fixtures configure temporary directories. Never point tests at perso
 
 ## Troubleshooting
 
-For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.11](releases/0.1.0-beta.11.md).
+For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.12](releases/0.1.0-beta.12.md).
 
 - **Expired browser session:** reopen with `make start-local` or the Launcher. Restarting the service invalidates sessions.
 - **Provider unavailable:** verify endpoint, authentication, model catalog, and availability. The NearAI preset uses a fixed staging endpoint.
