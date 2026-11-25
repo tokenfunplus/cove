@@ -187,10 +187,12 @@ export function useGenerationCommands({
       return;
     }
     const body = submittedBody;
-    const originalAttachments =
-      override?.interaction || override?.editOfBatchId
-        ? []
-        : attachmentDraft.attachments;
+    const originalAttachments = override?.editOfBatchId
+      ? []
+      : attachmentDraft.attachments;
+    const submittedAttachments = override?.interaction
+      ? []
+      : originalAttachments;
     const clientRequestId = crypto.randomUUID();
     const submission: { cancelRequested: boolean; batchId?: string } = {
       cancelRequested: false,
@@ -261,12 +263,12 @@ export function useGenerationCommands({
             modelMetadataForTarget(catalogs, target)?.privacy_mode ===
               "private_tee",
         })),
-        ...(originalAttachments.length
+        ...(submittedAttachments.length
           ? {
-              attachments: originalAttachments.flatMap((item) =>
+              attachments: submittedAttachments.flatMap((item) =>
                 item.input ? [item.input] : [],
               ),
-              webSourceTokens: originalAttachments.flatMap((item) =>
+              webSourceTokens: submittedAttachments.flatMap((item) =>
                 item.webSourceToken ? [item.webSourceToken] : [],
               ),
             }
@@ -460,7 +462,7 @@ export function useGenerationCommands({
     } finally {
       releaseCardReference?.();
       if (accepted && !sourcesRestored) {
-        for (const item of originalAttachments) {
+        for (const item of submittedAttachments) {
           if (item.webSourceToken) {
             void releaseWebSource(item.webSourceToken).catch(() => undefined);
           }

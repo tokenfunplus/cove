@@ -133,7 +133,7 @@ export async function runInteractiveAcceptance({
   assert(
     requests
       .at(-1)
-      .messages[0].content.includes("[Cove interactive replies v2]"),
+      .messages[0].content.includes("[Cove interactive replies: cove_ui 1]"),
   );
   await cdp("Emulation.setDeviceMetricsOverride", {
     width: 390,
@@ -311,17 +311,68 @@ export async function runInteractiveAcceptance({
     "Natural greeting fixture",
     "Invalid card blocked an ordinary follow-up",
   );
-  await fill("#generation-input","Local nested UI fixture");await click(".generation-composer__send");
-  await until("document.querySelector('.message-list').textContent.includes('Local interaction. No message is sent.')");
-  const localCount=requests.length;await button("Reveal the word");
-  await until("document.querySelector('.message-list').textContent.includes('A happy accident.')");
-  assert.equal(requests.length,localCount,"Local-only card contacted a Provider");
-  await evaluate("[...document.querySelectorAll('section[aria-label=\"Interactive reply\"]')].at(-1).setAttribute('data-local-card','true')");
-  await button("Expand",'[data-local-card] button');
+  await fill("#generation-input", "Local nested UI fixture");
+  await click(".generation-composer__send");
+  await until(
+    "document.querySelector('.message-list').textContent.includes('Local interaction. No message is sent.')",
+  );
+  const localCount = requests.length;
+  await button("Reveal the word");
+  await until(
+    "document.querySelector('.message-list').textContent.includes('A happy accident.')",
+  );
+  assert.equal(
+    requests.length,
+    localCount,
+    "Local-only card contacted a Provider",
+  );
+  await evaluate(
+    "[...document.querySelectorAll('section[aria-label=\"Interactive reply\"]')].at(-1).setAttribute('data-local-card','true')",
+  );
+  await button("Expand", "[data-local-card] button");
   await until("!!document.querySelector('[role=dialog]')");
-  assert(await evaluate("Math.abs(document.querySelector('[role=dialog]').getBoundingClientRect().right-innerWidth)<2"),"Wide expansion was not a side panel");
-  await button("Close","[role=dialog] button");
-  console.log("Nested/local-only acceptance passed: compact JSON normalized, local reveal, no model request, wide side panel.");
+  assert(
+    await evaluate(
+      "Math.abs(document.querySelector('[role=dialog]').getBoundingClientRect().right-innerWidth)<2",
+    ),
+    "Wide expansion was not a side panel",
+  );
+  await button("Close", "[role=dialog] button");
+  await fill("#generation-input", "Repaired nested UI fixture");
+  await click(".generation-composer__send");
+  await until(
+    "document.querySelector('.message-list').textContent.includes('Repair a weekend choice') && !!document.querySelector('button') && !document.querySelector('.generation-composer__send[aria-label=\"Stop generation\"]')",
+  );
+  await evaluate(
+    "[...document.querySelectorAll('section[aria-label=\"Interactive reply\"]')].at(-1).setAttribute('data-repaired-card','true')",
+  );
+  await until("!!document.querySelector('[data-repaired-card] [role=radio]')");
+  assert(
+    await evaluate(
+      "document.querySelector('.message-list').textContent.includes('This paragraph survives the repair.')",
+    ),
+    "Bracket repair lost surrounding prose",
+  );
+  const beforeRepairGesture = requests.length;
+  await click("[data-repaired-card] [role=radio]");
+  await until(
+    "document.querySelector('[data-repaired-card]').textContent.includes('Saved on this Mac')",
+  );
+  assert.equal(
+    requests.length,
+    beforeRepairGesture,
+    "Selecting a repaired choice contacted a Provider",
+  );
+  await reloadPage();
+  await until(
+    "[...document.querySelectorAll('section[aria-label=\"Interactive reply\"]')].at(-1)?.querySelector('[role=radio][aria-checked=true]')?.textContent==='A gallery'",
+  );
+  console.log(
+    "Repaired model output acceptance passed: bounded bracket repair, preserved prose, interactive choice and saved reload.",
+  );
+  console.log(
+    "Nested/local-only acceptance passed: compact JSON normalized, local reveal, no model request, wide side panel.",
+  );
   console.log(
     "Malformed model output acceptance passed: streaming source hidden, safe fallback, and ordinary chat remains usable.",
   );

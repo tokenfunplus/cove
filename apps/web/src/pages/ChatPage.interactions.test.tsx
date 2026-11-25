@@ -12,6 +12,7 @@ import { historyFiltersStorageKey, historyQueryFilter } from "@/components/conve
 import { conversationKeys } from "@/api/queryKeys";
 import { createLocalServiceQueryClient } from "@/api/queryClient";
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
+import { setInteractiveDraftDirty } from "@/lib/chat/interactive-drafts";
 import { quickPanelFocusEvent, quickPanelImportEvent } from "@/lib/quick-panel";
 import { App } from "@/App";
 import { ProjectsPage } from "@/components/projects/ProjectsPage";
@@ -2765,3 +2766,83 @@ test("document search installs in place while preserving the chat draft",async()
   const batch=structuredClone(fixture.completedBatch);batch.state="failed";batch.targets[0].generation.state="failed";delete batch.targets[0].generation.assistant_message_id;fixture.conversation.generation_batches=[batch];fixture.conversation.messages=fixture.completedView.messages.slice(0,1);
   const {user}=await openWorkspace();await user.click(screen.getByRole("checkbox",{name:"Only on this Mac"}));expect(screen.getByRole<HTMLButtonElement>("button",{name:"Retry generation"}).disabled).toBe(true);expect(transport.retryGenerationTarget).not.toHaveBeenCalled();
  });
+
+
+test("project-name navigation protects an unsent interactive draft", async () => {
+  const { p } = projectNavigationFixture();
+  const { user } = await openWorkspace();
+  await user.click(screen.getByRole("button", { name: "Projects" }));
+  await user.click(
+    await screen.findByRole("button", { name: `Open project ${p.name}` }),
+  );
+  const chats = await screen.findByRole("region", { name: "Project chats" });
+  await user.click(await within(chats).findByTitle(fixture.conversation.title));
+  const controls = await screen.findByLabelText("Conversation project");
+  act(() => setInteractiveDraftDirty("project-review-draft", true));
+  try {
+    await user.click(within(controls).getByRole("button", { name: p.name }));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Discard unsent draft?",
+    });
+    await user.click(
+      within(confirmation).getByRole("button", { name: "Stay" }),
+    );
+    expect(screen.queryByRole("region", { name: "Project chats" })).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Send message" })).toBeTruthy();
+    act(() => setInteractiveDraftDirty("project-review-draft", false));
+    await user.click(within(controls).getByRole("button", { name: p.name }));
+    expect(
+      await screen.findByRole("region", { name: "Project chats" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("dialog", { name: "Discard unsent draft?" }),
+    ).toBeNull();
+  } finally {
+    act(() => setInteractiveDraftDirty("project-review-draft", false));
+  }
+});
+
+test("a failed card continuation preserves unrelated staged attachments", async () => {
+  vi.mocked(transport.previewAttachment).mockResolvedValue({
+    id: "f".repeat(64),
+    name: "retained.md",
+    media_type: "text/plain",
+    size: 6,
+    characters: 6,
+    extraction_version: "cove-text-v1",
+    sections: [{ id: "L1", text: "Source" }],
+  });
+  const { result } = mountWorkspaceController();
+  await waitFor(() => expect(result.current.conversationView?.id).toBeTruthy());
+  await act(async () => {
+    await result.current.attachmentDraft.addAttachments([
+      new File(["Source"], "retained.md", { type: "text/plain" }),
+    ]);
+  });
+  await waitFor(() =>
+    expect(result.current.attachmentDraft.attachments).toHaveLength(1),
+  );
+  vi.mocked(transport.createGenerationBatch).mockRejectedValue(
+    new Error("Synthetic admission failure"),
+  );
+  await act(async () => {
+    await result.current.handleSend({
+      body: "Continue",
+      preserveDraft: true,
+      interaction: {
+        generation_id: "review-card",
+        revision: 0,
+        values: { choice: "yes" },
+        checks: {},
+      },
+    });
+  });
+  expect(transport.createGenerationBatch).toHaveBeenCalled();
+  expect(
+    vi.mocked(transport.createGenerationBatch).mock.calls.at(-1)![1]
+      .attachments,
+  ).toBeUndefined();
+  expect(result.current.attachmentDraft.attachments.map((a) => a.name)).toEqual(
+    ["retained.md"],
+  );
+});

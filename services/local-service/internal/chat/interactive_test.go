@@ -66,7 +66,7 @@ func TestInteractiveContinuationUsesAuthoritativeInputAndReplay(t *testing.T) {
 	upstream.mu.Lock()
 	request := upstream.input
 	upstream.mu.Unlock()
-	if request.Messages[len(request.Messages)-1].Content != started.Batch.InputContent || !strings.Contains(request.Messages[0].Content, "[Cove interactive replies v2]") {
+	if request.Messages[len(request.Messages)-1].Content != started.Batch.InputContent || !strings.Contains(request.Messages[0].Content, "[Cove interactive replies: cove_ui 1]") {
 		t.Fatal("Provider did not receive captured interactive policy and snapshot")
 	}
 	contextItems, e := s.GetGenerationBatchContext(ctx, started.Batch.ID)
@@ -84,6 +84,34 @@ func TestInteractiveContinuationUsesAuthoritativeInputAndReplay(t *testing.T) {
 	input.ClientRequestID = "second-window"
 	if _, e = s.StartGenerationBatch(ctx, input); !errors.Is(e, persistence.ErrCardConflict) {
 		t.Fatal("second window reused run", e)
+	}
+}
+
+func TestOrdinaryInteractiveHintDoesNotOverrideModelSelectionErrors(t *testing.T) {
+	ctx := context.Background()
+	store, err := persistence.OpenSQLite(filepath.Join(t.TempDir(), "selection.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	targets := []persistence.ActiveModelTarget{{ProviderID: "provider-a", ModelID: "model-a"}, {ProviderID: "provider-b", ModelID: "model-b"}}
+	if err = store.UpdateSettings(ctx, persistence.Settings{Theme: "system", Locale: "en", ActiveModelSet: targets}); err != nil {
+		t.Fatal(err)
+	}
+	c, err := store.CreateConversation(ctx, "Selection change")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewServiceWithSettings(store, fakeProviderProfiles("provider-a", "provider-b"), &fakeProvider{}, store)
+	input := SendInput{ConversationID: c.ID, ClientRequestID: "stale-selection", Body: "Hello", Interactive: true, ExpectedTargets: []ExpectedGenerationTarget{{ProviderID: "provider-a", ModelID: "model-a"}}}
+	if _, err = s.StartGenerationBatch(ctx, input); !errors.Is(err, ErrGenerationSelectionChanged) {
+		t.Fatal("ordinary send lost model-selection diagnostic", err)
+	}
+	input.ExpectedTargets = nil
+	s.provider = &modelStreamsProvider{}
+	b, err := s.StartGenerationBatch(ctx, input)
+	if err != nil || b.Batch.Interactive || len(b.Batch.Targets) != 2 {
+		t.Fatal("ordinary comparison did not degrade interactive hint", err)
 	}
 }
 
@@ -111,7 +139,8 @@ func TestDiscussionPreviewMatchesProviderAndPreservesAttachments(t *testing.T) {
 	}
 	var fixtures struct{ Valid []struct{ Source string } }
 	json.Unmarshal(raw, &fixtures)
-	if err = store.CompleteGeneration(ctx, persistence.CompleteGenerationInput{GenerationID: b.Targets[0].Generation.ID, Body: "```cove-card-v1\n" + fixtures.Valid[0].Source + "\n```"}); err != nil {
+	story := strings.Repeat("A long lighthouse scene. ", 200) + "STORY-END\n"
+	if err = store.CompleteGeneration(ctx, persistence.CompleteGenerationInput{GenerationID: b.Targets[0].Generation.ID, Body: story + "```cove-card-v1\n" + fixtures.Valid[0].Source + "\n```"}); err != nil {
 		t.Fatal(err)
 	}
 	run, err := store.MaterializeCard(ctx, b.Targets[0].Generation.ID)
@@ -120,7 +149,9 @@ func TestDiscussionPreviewMatchesProviderAndPreservesAttachments(t *testing.T) {
 	}
 	upstream := &fakeProvider{stream: &fakeStream{events: []provider.Event{{Type: provider.EventStarted}, {Type: provider.EventDelta, Delta: "An explanation"}, {Type: provider.EventCompleted}}}}
 	service := NewServiceWithSettings(store, fakeProviderProfiles("provider-a"), upstream, store)
-	input := SendInput{Interactive: true, ConversationID: c.ID, ClientRequestID: "discussion", Body: "Explain these unfinished choices", Card: &interactive.Submission{Intent: "discuss", GenerationID: run.GenerationID, Revision: run.Revision, Values: run.Values, Checks: run.Checks}, Attachments: []documents.Input{{Name: "note.txt", Data: []byte("A reference note")}}}
+	question := strings.Repeat("Explain these unfinished choices. ", 140) + "QUESTION-END"
+	note := "A reference note " + strings.Repeat("A reference paragraph. ", 180) + "ATTACHMENT-END"
+	input := SendInput{Interactive: true, ConversationID: c.ID, ClientRequestID: "discussion", Body: question, Card: &interactive.Submission{Intent: "discuss", GenerationID: run.GenerationID, Revision: run.Revision, Values: run.Values, Checks: run.Checks}, Attachments: []documents.Input{{Name: "note.txt", Data: []byte(note)}}}
 	input.Card.Intent = "invalid"
 	if _, err = service.PreviewGenerationContext(ctx, input); !errors.Is(err, interactive.ErrInvalid) {
 		t.Fatal("invalid discussion intent accepted", err)
@@ -162,6 +193,17 @@ func TestDiscussionPreviewMatchesProviderAndPreservesAttachments(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("typed question was replaced by a canned selection summary")
+	}
+	later, err := service.PreviewGenerationContext(ctx, SendInput{ConversationID: c.ID, Body: "Now continue", PreviewOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := ""
+	for _, message := range later {
+		joined += message.Content + "\n"
+	}
+	if !strings.Contains(joined, story) || !strings.Contains(joined, question) || !strings.Contains(joined, note) || !strings.Contains(joined, "Card: What do you do?") || strings.Contains(joined, "definition_hash") {
+		t.Fatal("history projection lost prose, question, attachment or card summary")
 	}
 	replay, err := service.StartGenerationBatch(ctx, input)
 	if err != nil || replay.Batch.ID != started.Batch.ID {

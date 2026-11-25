@@ -119,6 +119,11 @@ const provider = http.createServer(async (request, response) => {
   }
 
   response.writeHead(200, { "Content-Type": "text/event-stream" });
+  if (prompt === "Repaired nested UI fixture") {
+    const body = 'Here are two weekend ideas.\n\n{"cove_ui":1,"title":"Repair a weekend choice","children":[{"type":"Choice","options":["A gallery","A walk"]],"continue":"Continue repaired"}}\n\nThis paragraph survives the repair.';
+    response.end("data: " + JSON.stringify({choices:[{delta:{content:body}}]}) + "\n\ndata: [DONE]\n\n");
+    return;
+  }
   if(prompt==="Local nested UI fixture"){
     const body='A small local exercise.\n```json\n'+JSON.stringify({cove_ui:1,title:"Recall locally",continue:false,children:[{type:"Reveal",label:"Reveal the word",children:[{type:"Text",content:"A happy accident."}]}]})+'\n```';
     response.end("data: "+JSON.stringify({choices:[{delta:{content:body}}]})+"\n\ndata: [DONE]\n\n");return;

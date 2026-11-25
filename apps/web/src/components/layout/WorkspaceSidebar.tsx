@@ -64,7 +64,7 @@ export function WorkspaceSidebar({ workspace }: Props) {
         />
       </div>
       <ConversationList
-        navigation={<Button variant="ghost" type="button" aria-label="Projects" aria-current={projectsActive ? "page" : undefined} className={workspaceStyles.projectNavigation} onClick={() => { exitFocusMode();workspace.setProjectPage({});setMobileSidebarOpen(false); }}><FolderClosed className={cn(historyStyles.rowIcon, projectsActive && "text-primary")} aria-hidden="true"/><span className="truncate text-[13px]">Projects</span></Button>}
+        navigation={<Button variant="ghost" type="button" aria-label="Projects" aria-current={projectsActive ? "page" : undefined} className={workspaceStyles.projectNavigation} onClick={() => { exitFocusMode();workspace.handleOpenProject();setMobileSidebarOpen(false); }}><FolderClosed className={cn(historyStyles.rowIcon, projectsActive && "text-primary")} aria-hidden="true"/><span className="truncate text-[13px]">Projects</span></Button>}
         onMoveToProject={conversation => {workspace.setProjectMoveTarget(conversation);setMobileSidebarOpen(false);}}
         revealSearch={
           focusMode

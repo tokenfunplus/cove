@@ -1,5 +1,7 @@
 # Normalize model UI and bound Chat overhead
 
+The history budget, bounded delimiter repair and model-guide refinements are specified in [ADR 0067](0067-preserve-chat-prose-and-bound-model-json-repair.md).
+
 ## Decision
 
 Model-authored UI uses a compact `cove_ui: 1` nested tree. A service-owned normalizer derives canonical component IDs, state fields, enum values, defaults, optional quiz feedback, and a Continue button. It accepts known Markdown label aliases and marked JSON blocks, ignores unrecognized properties, and reports bounded element/property paths for unsupported semantics. It never evaluates code or arbitrary actions. Duplicate JSON keys, depth/size limits, invalid graphs, unsupported component types, invalid numeric bounds, and ambiguous answer keys still fail closed. Saved definitions are always parsed through the canonical strict validator; raw provider output remains unchanged.

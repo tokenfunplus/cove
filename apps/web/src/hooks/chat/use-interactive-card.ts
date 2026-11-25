@@ -134,6 +134,7 @@ export function useInteractiveCard(id: string, questionDirty = false) {
     return () => setInteractiveDraftDirty(token, false);
   }, [questionDirty, token]);
   async function reload() {
+    const startedVersion = version.current;
     await queue.current;
     await client.cancelQueries({ queryKey: key, exact: true });
     const loaded = await loadInteractiveCard(id);
@@ -141,6 +142,7 @@ export function useInteractiveCard(id: string, questionDirty = false) {
       server.current && loaded.revision < server.current.revision
         ? server.current
         : loaded;
+    if (version.current !== startedVersion) return;
     version.current = 0;
     acknowledged.current = 0;
     server.current = next;

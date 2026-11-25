@@ -223,7 +223,7 @@ const savedProject: Project = {
 };
 
 function renderProjectDialogs(initial: Project | null) {
-  const setProjectPage = vi.fn();
+  const handleOpenProject = vi.fn();
   function Harness() {
     const [projectEditor, setProjectEditor] = useState<
       Project | null | undefined
@@ -234,7 +234,7 @@ function renderProjectDialogs(initial: Project | null) {
           {
             projectEditor,
             setProjectEditor,
-            setProjectPage,
+            handleOpenProject,
           } as unknown as ChatWorkspace
         }
       />
@@ -245,12 +245,12 @@ function renderProjectDialogs(initial: Project | null) {
       <Harness />
     </QueryClientProvider>,
   );
-  return { setProjectPage };
+  return { handleOpenProject };
 }
 
 test("creating a project closes the dialog and opens its home", async () => {
   vi.mocked(api.saveProject).mockResolvedValue(savedProject);
-  const { setProjectPage } = renderProjectDialogs(null);
+  const { handleOpenProject } = renderProjectDialogs(null);
   const user = userEvent.setup();
   await user.type(
     screen.getByRole("textbox", { name: "Project name" }),
@@ -258,7 +258,7 @@ test("creating a project closes the dialog and opens its home", async () => {
   );
   await user.click(screen.getByRole("button", { name: "Create project" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(setProjectPage).toHaveBeenCalledWith({ projectId: savedProject.id });
+  expect(handleOpenProject).toHaveBeenCalledWith(savedProject.id);
 });
 
 test("saving project edits closes the editor without changing the page", async () => {
@@ -267,7 +267,7 @@ test("saving project edits closes the editor without changing the page", async (
     description: "Updated",
     revision: 2,
   });
-  const { setProjectPage } = renderProjectDialogs(savedProject);
+  const { handleOpenProject } = renderProjectDialogs(savedProject);
   const user = userEvent.setup();
   await user.type(
     screen.getByRole("textbox", { name: "Project description" }),
@@ -275,7 +275,7 @@ test("saving project edits closes the editor without changing the page", async (
   );
   await user.click(screen.getByRole("button", { name: "Save project" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(setProjectPage).not.toHaveBeenCalled();
+  expect(handleOpenProject).not.toHaveBeenCalled();
 });
 
 test("removing a fixed source keeps the editor open with the saved revision", async () => {

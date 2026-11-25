@@ -25,7 +25,8 @@ var CatalogV2JSON string
 //go:embed catalog-v3.json
 var CatalogV3JSON string
 var ErrInvalid = errors.New("interactive card is invalid or unsupported")
-var unfencedUI = regexp.MustCompile(`(?m)^[ \t]*\{[ \t]*"cove_ui"[ \t]*:[ \t]*1`)
+var unfencedUI = regexp.MustCompile(`^[ \t]*\{[ \t\r\n]*"cove_ui"[ \t\r\n]*:[ \t\r\n]*1(?:[,} \t\r\n]|$)`)
+var partialUIMarker = regexp.MustCompile(`^[ \t\r\n]*\{[ \t\r\n]*"(?:cove_ui"[ \t\r\n]*:[ \t\r\n]*1(?:[,} \t\r\n]|$)|version"[ \t\r\n]*:[ \t\r\n]*"cove-card-v)`)
 var openingFence = regexp.MustCompile("^(`{3,}|~{3,})(.*)$")
 var identifier = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
 var fieldIdentifier = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
@@ -171,7 +172,14 @@ func object(v any, allowed string) (map[string]any, error) {
 		return nil, ErrInvalid
 	}
 	for k := range m {
-		if !strings.Contains(" "+allowed+" ", " "+k+" ") {
+		matched := false
+		for _, name := range strings.Fields(allowed) {
+			if k == name {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return nil, ErrInvalid
 		}
 	}
@@ -549,6 +557,9 @@ func (d Definition) validateTree() error {
 }
 func sorted(s []string) []string { c := append([]string{}, s...); sort.Strings(c); return c }
 func (d Definition) ValidateValues(values map[string]any, checks map[string]string, required bool) error {
+	if checks == nil {
+		checks = map[string]string{}
+	}
 	b, _ := json.Marshal([]any{values, checks})
 	if len(b) > 16384 || len(values) != len(d.StateSchema) {
 		return ErrInvalid
@@ -627,75 +638,11 @@ func (d Definition) ValidateValues(values map[string]any, checks map[string]stri
 	return nil
 }
 func Extract(body string) (Definition, error) {
-	for {
-		trimmed := strings.TrimLeft(body, " \t\r\n")
-		removed := false
-		for _, tag := range []string{"think", "reasoning", "analysis"} {
-			if !strings.HasPrefix(trimmed, "<"+tag+">") {
-				continue
-			}
-			end := strings.Index(trimmed, "</"+tag+">")
-			if end < 0 {
-				return Definition{}, ErrInvalid
-			}
-			body = trimmed[end+len(tag)+3:]
-			removed = true
-			break
-		}
-		if !removed {
-			break
-		}
+	block, err := modelBlock(body)
+	if err != nil {
+		return Definition{}, err
 	}
-	lines := strings.Split(body, "\n")
-	start, end, count := -1, -1, 0
-	fence, label := "", ""
-	candidate := -1
-	for i, raw := range lines {
-		line := strings.TrimRight(raw, " \t\r")
-		if fence != "" {
-			if len(line) >= len(fence) && strings.Trim(line, string(fence[0])) == "" {
-				if candidate >= 0 {
-					payload := []byte(strings.Join(lines[candidate:i], "\n"))
-					if label != "json" || markedUI(payload) {
-						start, end = candidate, i
-						count++
-					}
-				}
-				fence, label = "", ""
-				candidate = -1
-			}
-			continue
-		}
-		opened := openingFence.FindStringSubmatch(line)
-		if opened == nil {
-			continue
-		}
-		fence = opened[1]
-		label = strings.ToLower(strings.TrimSpace(opened[2]))
-		if fence == "```" && (label == "cove-ui" || label == "json" || label == "cove-card-v1" || label == "cove-card-v2" || label == "cove-card-v3") {
-			candidate = i + 1
-		}
-	}
-	if count == 0 && candidate < 0 {
-		spans := unfencedUI.FindAllStringIndex(body, -1)
-		if len(spans) == 1 && strings.TrimSpace(body[:spans[0][0]]) == "" {
-			tail := body[spans[0][0]:]
-			decoder := json.NewDecoder(strings.NewReader(tail))
-			var raw json.RawMessage
-			if err := decoder.Decode(&raw); err != nil {
-				return Definition{}, invalidAt("/json", "incomplete or malformed UI JSON")
-			}
-			remaining := strings.TrimSpace(tail[decoder.InputOffset():])
-			if strings.HasPrefix(remaining, "}") || strings.HasPrefix(remaining, "]") {
-				return Definition{}, invalidAt("/json", "unexpected trailing JSON delimiter")
-			}
-			return Normalize(raw)
-		}
-	}
-	if count != 1 || start < 0 || end < start || candidate >= 0 {
-		return Definition{}, invalidAt("/fence", "expected one complete marked UI block")
-	}
-	return Normalize([]byte(strings.Join(lines[start:end], "\n")))
+	return Normalize([]byte(block.json))
 }
 
 func Fingerprint(input Submission, question string, extra ...any) string {
@@ -822,4 +769,4 @@ func sortedKeys(m map[string]any) []string {
 //go:embed guide.txt
 var guide string
 
-func Prompt() string { return "\n\n[Cove interactive replies v2]\n" + guide }
+func Prompt() string { return "\n\n[Cove interactive replies: cove_ui 1]\n" + guide }

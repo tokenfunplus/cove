@@ -29,6 +29,14 @@ func cloneMap(v any) map[string]any {
 	return m
 }
 
+var inputComponentRules = func() map[string]map[string]string {
+	var catalog struct{ Components map[string]map[string]string }
+	if err := json.Unmarshal([]byte(CatalogV3JSON), &catalog); err != nil {
+		panic("invalid bundled card catalog")
+	}
+	return catalog.Components
+}()
+
 type normalizer struct {
 	extras         map[string][]string
 	elements       map[string]Element
@@ -40,6 +48,8 @@ type normalizer struct {
 	optionIDs      map[string]map[string]string
 	aliases        map[string]string
 	fields         map[string]string
+	elementFields  map[string]string
+	reserved       map[string]bool
 	visited        map[string]bool
 	count          int
 	paths          []any
@@ -48,7 +58,7 @@ type normalizer struct {
 
 // Normalize is the permissive model-input adapter. Parse remains strict for storage.
 func Normalize(raw []byte) (Definition, error) {
-	v, err := Decode(raw)
+	v, err := decodeModelJSON(raw)
 	if err != nil {
 		return Definition{}, invalidAt("/", "invalid, duplicate-key, oversized, or incomplete JSON")
 	}
@@ -56,12 +66,15 @@ func Normalize(raw []byte) (Definition, error) {
 	if !ok {
 		return Definition{}, invalidAt("/", "expected an object")
 	}
-	n := normalizer{extras: map[string][]string{}, elements: map[string]Element{}, schema: map[string]Field{}, state: map[string]any{}, optionIDs: map[string]map[string]string{}, aliases: map[string]string{}, fields: map[string]string{}, visited: map[string]bool{}}
+	n := normalizer{extras: map[string][]string{}, elements: map[string]Element{}, schema: map[string]Field{}, state: map[string]any{}, optionIDs: map[string]map[string]string{}, aliases: map[string]string{}, fields: map[string]string{}, elementFields: map[string]string{}, reserved: map[string]bool{}, visited: map[string]bool{}}
 	var root string
 	var title string
 	local := m["continue"] == false
 	if marker, ok := boundedInteger(m["cove_ui"]); ok && marker == 1 {
 		title = stringValue(m["title"])
+		if title == "REPLACE_WITH_TOPIC" {
+			return Definition{}, invalidAt("/title", "replace guide placeholders with conversation-specific content")
+		}
 		if title == "" {
 			title = "Interactive reply"
 		}
@@ -90,6 +103,9 @@ func Normalize(raw []byte) (Definition, error) {
 		}
 		spec := cloneMap(m["spec"])
 		n.sourceElements = cloneMap(spec["elements"])
+		for key := range n.sourceElements {
+			n.reserved[key] = true
+		}
 		n.sourceSchema = cloneMap(m["stateSchema"])
 		n.sourceState = cloneMap(spec["state"])
 		root = stringValue(spec["root"])
@@ -113,7 +129,7 @@ func Normalize(raw []byte) (Definition, error) {
 			binding := stringValue(node.Props["field"])
 			delete(node.Props, "field")
 			if binding != "" {
-				field := n.fields[binding]
+				field := n.fieldRef(binding)
 				if field == "" {
 					return Definition{}, invalidAt("/elements/"+key+"/field", "unknown TextInput")
 				}
@@ -124,7 +140,7 @@ func Normalize(raw []byte) (Definition, error) {
 			if refs, ok := node.Props["fields"].([]any); ok {
 				paths := []any{}
 				for _, ref := range refs {
-					field := n.fields[stringValue(ref)]
+					field := n.fieldRef(stringValue(ref))
 					if field == "" {
 						return Definition{}, invalidAt("/elements/"+key+"/fields", "unknown Slider")
 					}
@@ -157,8 +173,10 @@ func Normalize(raw []byte) (Definition, error) {
 			node.Props["cases"] = clean
 		}
 		if a, ok := node.On["press"]; ok && a.Action == "continue_chat" {
-			a.Params = map[string]any{"paths": n.paths}
-			node.On["press"] = a
+			if _, declared := a.Params["paths"]; !declared {
+				a.Params["paths"] = n.paths
+				node.On["press"] = a
+			}
 		}
 		n.elements[key] = node
 	}
@@ -207,17 +225,15 @@ func Normalize(raw []byte) (Definition, error) {
 	}
 	parsed, err := Parse(b)
 	if err != nil {
-		var catalog struct{ Components map[string]map[string]string }
-		json.Unmarshal([]byte(CatalogV3JSON), &catalog)
 		for _, key := range sortedElementIDs(d) {
 			node := d.Spec.Elements[key]
-			names := make([]string, 0, len(catalog.Components[node.Type]))
-			for name := range catalog.Components[node.Type] {
+			names := make([]string, 0, len(inputComponentRules[node.Type]))
+			for name := range inputComponentRules[node.Type] {
 				names = append(names, name)
 			}
 			sort.Strings(names)
 			for _, name := range names {
-				rule := catalog.Components[node.Type][name]
+				rule := inputComponentRules[node.Type][name]
 				v, exists := node.Props[name]
 				if (!exists && strings.HasSuffix(rule, "!")) || (exists && !validateRule(v, rule)) {
 					return Definition{}, invalidAt("/elements/"+key+"/props/"+name, "expected "+strings.TrimSuffix(rule, "!"))
@@ -231,11 +247,18 @@ func Normalize(raw []byte) (Definition, error) {
 func (n *normalizer) fresh(prefix string) string {
 	for i := 0; ; i++ {
 		key := fmt.Sprintf("%s_%d", prefix, i)
-		if _, ok := n.elements[key]; !ok {
+		if _, ok := n.elements[key]; !ok && !n.reserved[key] {
 			n.elements[key] = Element{}
 			return key
 		}
 	}
+}
+
+func (n *normalizer) fieldRef(ref string) string {
+	if field := n.elementFields[ref]; field != "" {
+		return field
+	}
+	return n.fields[ref]
 }
 func (n *normalizer) node(value any, key, location string, depth int) (string, error) {
 	if depth > 4 || n.count >= 29 {
@@ -259,9 +282,7 @@ func (n *normalizer) node(value any, key, location string, depth int) (string, e
 		props = m
 	}
 	typ := stringValue(m["type"])
-	var catalog struct{ Components map[string]map[string]string }
-	json.Unmarshal([]byte(CatalogV3JSON), &catalog)
-	rules, known := catalog.Components[typ]
+	rules, known := inputComponentRules[typ]
 	if !known {
 		return "", invalidAt(location+"/type", "unsupported component")
 	}
@@ -314,7 +335,7 @@ func (n *normalizer) node(value any, key, location string, depth int) (string, e
 			return "", invalidAt(location+"/value", "field has more than one writer")
 		}
 		if rawID != "" {
-			n.fields[rawID] = binding
+			n.elementFields[rawID] = binding
 		}
 		n.fields[binding] = binding
 		original := n.sourceState[binding]
@@ -351,6 +372,19 @@ func (n *normalizer) node(value any, key, location string, depth int) (string, e
 			}
 			clean, values := []any{}, []string{}
 			mapping := map[string]string{}
+			reserved, used := map[string]bool{}, map[string]bool{}
+			for _, option := range options {
+				o := cloneMap(option)
+				raw := stringValue(o["value"])
+				if s, ok := option.(string); ok {
+					raw = s
+				} else if raw == "" {
+					raw = stringValue(o["label"])
+				}
+				if id(raw) {
+					reserved[raw] = true
+				}
+			}
 			for i, option := range options {
 				o := cloneMap(option)
 				if s, ok := option.(string); ok {
@@ -367,12 +401,13 @@ func (n *normalizer) node(value any, key, location string, depth int) (string, e
 				canonical := fmt.Sprintf("option_%d", i+1)
 				if id(raw) {
 					canonical = raw
-				}
-				for _, seen := range values {
-					if seen == canonical {
-						canonical = fmt.Sprintf("option_%d_%d", i+1, n.count)
+				} else {
+					base := canonical
+					for suffix := 1; reserved[canonical] || used[canonical]; suffix++ {
+						canonical = fmt.Sprintf("%s_%d", base, suffix)
 					}
 				}
+				used[canonical] = true
 				mapping[raw] = canonical
 				values = append(values, canonical)
 				item := map[string]any{"value": canonical, "label": label}
@@ -432,7 +467,18 @@ func (n *normalizer) node(value any, key, location string, depth int) (string, e
 			if original == nil {
 				original = min
 			}
-			n.state[binding] = original
+			value, ok := boundedInteger(original)
+			if !ok {
+				return "", invalidAt(location+"/value", "expected a bounded integer")
+			}
+			// Snap initial model values only; saved state and later edits stay strict.
+			if value < min {
+				value = min
+			}
+			if value > max {
+				value = max
+			}
+			n.state[binding] = min + ((value-min+step/2)/step)*step
 		case "TextInput":
 			max := numberOr(oldField["maxLength"], numberOr(props["maxLength"], 1000))
 			field = Field{Type: "string", MaxLength: &max}
@@ -445,7 +491,7 @@ func (n *normalizer) node(value any, key, location string, depth int) (string, e
 			}
 		}
 		if p["label"] == nil && typ != "Choice" {
-			p["label"] = binding
+			p["label"] = map[string]string{"Slider": "Value", "Ranking": "Order", "TextInput": "Text"}[typ]
 		}
 		n.schema[binding] = field
 		n.paths = append(n.paths, "/"+binding)
@@ -526,9 +572,9 @@ func (d Definition) HasContinuation() bool {
 	return false
 }
 func markedUI(raw []byte) bool {
-	v, err := Decode(raw)
+	v, err := decodeModelJSON(raw)
 	if err != nil {
-		return false
+		return partialUIMarker.Match(raw)
 	}
 	m, ok := v.(map[string]any)
 	if !ok {

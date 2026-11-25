@@ -1114,5 +1114,159 @@
     "source": "{\"version\":\"cove-card-v99\",\"catalogVersion\":\"cove-interactive-v1\",\"fallback\":\"Choose whether to follow the footprints or examine the radio.\",\"stateSchema\":{\"next_action\":{\"type\":\"string\",\"enum\":[\"\",\"footprints\",\"radio\"]}},\"spec\":{\"root\":\"scene\",\"state\":{\"next_action\":\"\"},\"elements\":{\"scene\":{\"type\":\"Card\",\"props\":{\"title\":\"What do you do?\"},\"children\":[\"action-choice\",\"continue\"]},\"action-choice\":{\"type\":\"Choice\",\"props\":{\"value\":{\"$bindState\":\"/next_action\"},\"mode\":\"single\",\"required\":true,\"options\":[{\"value\":\"footprints\",\"label\":\"Follow the footprints\"},{\"value\":\"radio\",\"label\":\"Examine the abandoned radio\"}]},\"children\":[]},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Continue story\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/next_action\"]}}}}}}}",
     "valid": false,
     "diagnostic": "Interactive card /version: expected a supported version or cove_ui:1"
+  },
+  {
+    "name": "missing child brace and extra root closer",
+    "source": "{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]]}}",
+    "valid": true,
+    "canonical": {
+      "version": "cove-card-v2",
+      "catalogVersion": "cove-interactive-v2",
+      "fallback": "Pick",
+      "stateSchema": {
+        "field_1": {
+          "type": "string",
+          "enum": [
+            "",
+            "One",
+            "Two"
+          ]
+        }
+      },
+      "spec": {
+        "root": "root",
+        "state": {
+          "field_1": ""
+        },
+        "elements": {
+          "continue_0": {
+            "type": "Button",
+            "props": {
+              "label": "Continue"
+            },
+            "children": [],
+            "on": {
+              "press": {
+                "action": "continue_chat",
+                "params": {
+                  "paths": [
+                    "/field_1"
+                  ]
+                }
+              }
+            }
+          },
+          "element_0": {
+            "type": "Choice",
+            "props": {
+              "mode": "single",
+              "options": [
+                {
+                  "label": "One",
+                  "value": "One"
+                },
+                {
+                  "label": "Two",
+                  "value": "Two"
+                }
+              ],
+              "required": false,
+              "value": {
+                "$bindState": "/field_1"
+              }
+            },
+            "children": []
+          },
+          "root": {
+            "type": "Card",
+            "props": {
+              "title": "Pick"
+            },
+            "children": [
+              "element_0",
+              "continue_0"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "off-step initial slider and human label",
+    "source": "{\"cove_ui\": 1, \"title\": \"Budget\", \"children\": [{\"type\": \"Slider\", \"min\": -10, \"max\": 20, \"step\": 3, \"value\": 4}]}",
+    "valid": true,
+    "canonical": {
+      "version": "cove-card-v2",
+      "catalogVersion": "cove-interactive-v2",
+      "fallback": "Budget",
+      "stateSchema": {
+        "field_1": {
+          "type": "integer",
+          "minimum": -10,
+          "maximum": 20,
+          "step": 3
+        }
+      },
+      "spec": {
+        "root": "root",
+        "state": {
+          "field_1": 5
+        },
+        "elements": {
+          "continue_0": {
+            "type": "Button",
+            "props": {
+              "label": "Continue"
+            },
+            "children": [],
+            "on": {
+              "press": {
+                "action": "continue_chat",
+                "params": {
+                  "paths": [
+                    "/field_1"
+                  ]
+                }
+              }
+            }
+          },
+          "element_0": {
+            "type": "Slider",
+            "props": {
+              "label": "Value",
+              "value": {
+                "$bindState": "/field_1"
+              }
+            },
+            "children": []
+          },
+          "root": {
+            "type": "Card",
+            "props": {
+              "title": "Budget"
+            },
+            "children": [
+              "element_0",
+              "continue_0"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "copied guide placeholder",
+    "source": "{\"cove_ui\":1,\"title\":\"REPLACE_WITH_TOPIC\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}",
+    "valid": false
+  },
+  {
+    "name": "duplicate keys after repair",
+    "source": "{\"cove_ui\":1,\"title\":\"Pick\",\"title\":\"Other\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]]}}",
+    "valid": false
+  },
+  {
+    "name": "truncated model object",
+    "source": "{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]",
+    "valid": false
   }
 ]

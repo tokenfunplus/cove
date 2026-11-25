@@ -10,7 +10,10 @@ vi.mock("@/api/interactive", () => ({
   loadInteractiveCard: vi.fn(),
   saveInteractiveCard: vi.fn(),
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.resetAllMocks();
+});
 test("an older in-flight refetch must not overwrite an acknowledged card edit", async () => {
   const old = {
     generation_id: "review-probe",
@@ -69,4 +72,62 @@ test("an older in-flight refetch must not overwrite an acknowledged card edit", 
     client.getQueryData<CardRun>(["interactive-card", "review-probe"])
       ?.revision,
   ).toBe(1);
+});
+
+test("reload cannot replace an edit made while its read is pending", async () => {
+  const old = {
+    generation_id: "reload-race",
+    values: { choice: "old" },
+    checks: {},
+    revision: 0,
+    can_continue: true,
+    definition: {} as CardRun["definition"],
+  };
+  const saved = { ...old, values: { choice: "new" }, revision: 1 };
+  let finishReload!: (run: CardRun) => void;
+  vi.mocked(api.loadInteractiveCard)
+    .mockResolvedValueOnce(old)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishReload = resolve;
+        }),
+    );
+  vi.mocked(api.saveInteractiveCard).mockResolvedValue(saved);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const { result } = renderHook(() => useInteractiveCard("reload-race"), {
+    wrapper,
+  });
+  await waitFor(() => expect(result.current.draft?.values.choice).toBe("old"));
+  let reload!: Promise<void>;
+  act(() => {
+    reload = result.current.reload();
+  });
+  await waitFor(() => expect(api.loadInteractiveCard).toHaveBeenCalledTimes(2));
+  act(() => result.current.edit({ choice: "new" }, {}));
+  await waitFor(() => expect(result.current.run?.revision).toBe(1));
+  await act(async () => {
+    finishReload(old);
+    await reload;
+    await result.current.flush();
+  });
+  expect(result.current.draft?.values.choice).toBe("new");
+  expect(result.current.dirty).toBe(false);
+  expect(api.saveInteractiveCard).toHaveBeenCalledTimes(1);
+  // A later deliberate reload without intervening edits still replaces state.
+  vi.mocked(api.loadInteractiveCard).mockResolvedValueOnce({
+    ...saved,
+    revision: 2,
+    values: { choice: "from-other-window" },
+  });
+  await act(async () => {
+    await result.current.reload();
+  });
+  expect(result.current.draft?.values.choice).toBe("from-other-window");
+  expect(result.current.dirty).toBe(false);
 });

@@ -2,11 +2,8 @@ package interactive
 
 import (
 	"encoding/json"
-	"regexp"
 	"strings"
 )
-
-var displayBlock = regexp.MustCompile("(?ims)^```[ \\t]*(?:cove-ui|cove-card-v[123]|json)[ \\t]*\\r?\\n.*?^```[ \\t]*\\r?$")
 
 func boundedText(s string, n int) string {
 	r := []rune(s)
@@ -18,34 +15,16 @@ func boundedText(s string, n int) string {
 
 // Provider history projection only. Original message bodies and evidence stay intact.
 func HistoryText(body string) string {
-	d, err := Extract(body)
+	block, err := modelBlock(body)
 	if err != nil {
 		return body
 	}
-	prose := body
-	removed := false
-	for _, span := range displayBlock.FindAllStringIndex(body, -1) {
-		if _, err := Extract(body[span[0]:span[1]]); err == nil {
-			prose = body[:span[0]] + body[span[1]:]
-			removed = true
-			break
-		}
+	d, err := Normalize([]byte(block.json))
+	if err != nil {
+		return body
 	}
-	if !removed {
-		// Extract also accepts a marked root object without Markdown fences.
-		// Remove its bytes before adding the same bounded semantic summary.
-		for _, span := range unfencedUI.FindAllStringIndex(body, -1) {
-			decoder := json.NewDecoder(strings.NewReader(body[span[0]:]))
-			var raw json.RawMessage
-			if decoder.Decode(&raw) == nil {
-				if _, err := Normalize(raw); err == nil {
-					prose = body[:span[0]] + body[span[0]+int(decoder.InputOffset()):]
-					break
-				}
-			}
-		}
-	}
-	lines := []string{strings.TrimSpace(prose), "Interactive card: " + stringValue(d.Spec.Elements[d.Spec.Root].Props["title"])}
+	prose := body[:block.start] + body[block.end:]
+	lines := []string{"Interactive card: " + stringValue(d.Spec.Elements[d.Spec.Root].Props["title"])}
 	var visit func(string)
 	visit = func(key string) {
 		n := d.Spec.Elements[key]
@@ -67,7 +46,7 @@ func HistoryText(body string) string {
 		}
 	}
 	visit(d.Spec.Root)
-	return boundedText(strings.TrimSpace(strings.Join(lines, "\n")), 2000)
+	return prose + "\n\n" + boundedText(strings.Join(lines, "\n"), 2000)
 }
 
 func CompactReference(body string) string {
@@ -84,7 +63,7 @@ func CompactReference(body string) string {
 	if (version != "interaction-v1" && version != "interaction-v2") || len(stringValue(m["definition_hash"])) != 64 || stringValue(m["source_generation_id"]) == "" {
 		return body
 	}
-	lines := []string{body[:at], "Card: " + stringValue(m["question"])}
+	lines := []string{"Card: " + stringValue(m["question"])}
 	if labels, ok := m["selected_labels"].([]any); ok {
 		for _, label := range labels {
 			lines = append(lines, stringValue(label))
@@ -103,5 +82,5 @@ func CompactReference(body string) string {
 			lines = append(lines, "Allocation: "+string(raw))
 		}
 	}
-	return boundedText(strings.Join(lines, "\n"), 2000)
+	return body[:at] + "\n\n" + boundedText(strings.Join(lines, "\n"), 2000)
 }

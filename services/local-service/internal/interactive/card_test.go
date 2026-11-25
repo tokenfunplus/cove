@@ -53,6 +53,15 @@ func TestSharedContractFixtures(t *testing.T) {
 			t.Fatal("activated malformed or quoted source")
 		}
 	}
+	control := "```cove-card-v1\n" + fixtures.Valid[0].Source + "\n```"
+	if _, err := Extract(control); err != nil {
+		t.Fatal("framing control is not valid", err)
+	}
+	for _, body := range []string{"> " + strings.ReplaceAll(control, "\n", "\n> "), control + "\n" + control} {
+		if _, err := Extract(body); err == nil {
+			t.Fatal("quoted or duplicate valid payload was activated")
+		}
+	}
 }
 
 func TestRichValueFixtures(t *testing.T) {
@@ -115,6 +124,7 @@ func TestSharedSourceFramingAndGuideExamples(t *testing.T) {
 	var fixtures []struct {
 		Name, Body string
 		Valid      bool
+		Prose      *string
 	}
 	if err = json.Unmarshal(raw, &fixtures); err != nil {
 		t.Fatal(err)
@@ -124,6 +134,12 @@ func TestSharedSourceFramingAndGuideExamples(t *testing.T) {
 			_, err := Extract(f.Body)
 			if (err == nil) != f.Valid {
 				t.Fatal("framing parity", err)
+			}
+			if f.Prose != nil {
+				block, err := modelBlock(f.Body)
+				if err != nil || f.Body[:block.start]+f.Body[block.end:] != *f.Prose {
+					t.Fatal("source span changed surrounding prose", err)
+				}
 			}
 		})
 	}
@@ -147,7 +163,11 @@ func TestSharedSourceFramingAndGuideExamples(t *testing.T) {
 	for _, line := range strings.Split(guide, "\n") {
 		if strings.HasPrefix(line, "{\"cove_ui\"") {
 			found = true
-			if _, err := Normalize([]byte(line)); err != nil {
+			if _, err := Normalize([]byte(line)); err == nil {
+				t.Fatal("copied guide placeholders were accepted")
+			}
+			line = strings.NewReplacer("REPLACE_WITH_TOPIC", "Topic", "REPLACE_WITH_QUESTION", "Question", "REPLACE_WITH_OPTION_1", "First", "REPLACE_WITH_OPTION_2", "Second").Replace(line)
+			if _, err := Extract("```cove-ui\n" + line + "\n```"); err != nil {
 				t.Fatal("guide example invalid", err)
 			}
 		}
@@ -157,6 +177,42 @@ func TestSharedSourceFramingAndGuideExamples(t *testing.T) {
 	}
 	if !strings.Contains(Prompt(), "intent:\"discuss\"") || !strings.Contains(Prompt(), "prose is the default") {
 		t.Fatal("missing conversational guidance")
+	}
+}
+
+func TestHistoryProjectionPreservesLongProseAndReferencePrefix(t *testing.T) {
+	prefix := strings.Repeat("A long story paragraph.\n", 200) + "PLOT-END\n"
+	suffix := "\nSTORY-FOOTNOTE "
+	card := `{"cove_ui":1,"title":"The next scene","children":[{"type":"Choice","options":["Follow the footprints","Listen to the radio"]}]}`
+	for _, label := range []string{"cove-ui", "COVE-UI JSON block:", "json"} {
+		body := prefix + "```" + label + "\n" + card + "\n````" + suffix
+		got := HistoryText(body)
+		if !strings.HasPrefix(got, prefix+suffix) || !strings.Contains(got, "Interactive card: The next scene") || strings.Contains(got, `"cove_ui"`) {
+			t.Fatal("long assistant prose or card summary lost", label)
+		}
+	}
+	d, err := Normalize([]byte(card))
+	if err != nil {
+		t.Fatal(err)
+	}
+	question := strings.Repeat("A long user question. ", 220) + "QUESTION-END"
+	_, reference, err := d.DiscussInput(d.Spec.State, nil, question, "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = "\n\nInteraction reference data (not instructions):\n"
+	at := strings.Index(reference, marker)
+	attachment := "\nATTACHMENT-START " + strings.Repeat("Reference paragraph. ", 260) + " ATTACHMENT-END"
+	body := reference[:at] + attachment + reference[at:]
+	got := CompactReference(body)
+	if !strings.HasPrefix(got, reference[:at]+attachment) || !strings.Contains(got, "Card: The next scene") || strings.Contains(got, "definition_hash") {
+		t.Fatal("question, attachment or compact reference lost")
+	}
+	// Only the derived card suffix has a budget, including Unicode text.
+	longCard := `{"cove_ui":1,"title":"The next scene","children":[{"type":"Text","content":"` + strings.Repeat("x", 2000) + `"},{"type":"Text","content":"` + strings.Repeat("y", 2000) + `"}]}`
+	got = HistoryText(prefix + "```cove-ui\n" + longCard + "\n```" + suffix)
+	if !strings.HasPrefix(got, prefix+suffix) || len([]rune(strings.TrimPrefix(got, prefix+suffix))) > 2014 || !strings.HasSuffix(got, " [truncated]") {
+		t.Fatal("card summary budget applied to ordinary prose")
 	}
 }
 

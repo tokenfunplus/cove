@@ -6,13 +6,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/tokenfunplus/cove/services/local-service/internal/interactive"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/tokenfunplus/cove/services/local-service/internal/interactive"
 )
 
 type testCase struct {
@@ -48,7 +50,7 @@ var cases = []testCase{
 
 func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "normalize" || os.Args[1] == "extract") {
-		raw, err := io.ReadAll(io.LimitReader(os.Stdin, 32769))
+		raw, err := readEvaluationInput(os.Args[1], os.Stdin)
 		if err == nil {
 			var d interactive.Definition
 			if os.Args[1] == "extract" {
@@ -78,15 +80,18 @@ func run() error {
 	if endpoint == "" {
 		endpoint = "http://127.0.0.1:11434/api/chat"
 	}
-	output := os.Getenv("COVE_EVAL_OUTPUT")
-	if output == "" {
-		output = filepath.Join(os.TempDir(), "cove-interactive-evaluation")
-	}
-	if err := os.MkdirAll(output, 0700); err != nil {
+	key := os.Getenv("COVE_EVAL_API_KEY")
+	endpoint, err := validateEvaluationEndpoint(endpoint, key)
+	if err != nil {
 		return err
 	}
+	output, err := evaluationOutputDirectory(os.Getenv("COVE_EVAL_OUTPUT"))
+	if err != nil {
+		return err
+	}
+	fmt.Println("Evaluation output:", output)
 	records := []result{}
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := evaluationClient()
 	request := func(prompt, guide string) (string, int, int, error) {
 		messages := []map[string]string{}
 		if guide != "" {
@@ -107,7 +112,7 @@ func run() error {
 			return "", 0, 0, err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if key := os.Getenv("COVE_EVAL_API_KEY"); key != "" {
+		if key != "" {
 			req.Header.Set("Authorization", "Bearer "+key)
 		}
 		response, err := client.Do(req)
@@ -150,7 +155,7 @@ func run() error {
 		if err != nil {
 			r.Error = err.Error()
 		} else {
-			r.Attempted = strings.Contains(strings.ToLower(body), "cove-ui") || strings.Contains(body, "cove_ui") || strings.Contains(strings.ToLower(body), "cove-card-")
+			r.Attempted = interactive.HasCandidate(body)
 			_, parseErr := interactive.Extract(body)
 			r.Valid = parseErr == nil
 			if r.Attempted && parseErr != nil {
@@ -172,4 +177,44 @@ func run() error {
 		fmt.Printf("%s expected_card=%t attempted=%t valid=%t tokens=%d+%d baseline=%d+%d\n", c.ID, c.Card, r.Attempted, r.Valid, r.PromptTokens, r.OutputTokens, r.BaselinePromptTokens, r.BaselineOutputTokens)
 	}
 	return nil
+}
+
+func evaluationOutputDirectory(output string) (string, error) {
+	if output == "" {
+		return os.MkdirTemp("", "cove-interactive-evaluation-")
+	}
+	if err := os.MkdirAll(output, 0700); err != nil {
+		return "", err
+	}
+	return output, nil
+}
+
+func validateEvaluationEndpoint(endpoint, key string) (string, error) {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", fmt.Errorf("evaluation endpoint must be an HTTP or HTTPS URL without user information")
+	}
+	if key != "" && u.Scheme != "https" {
+		return "", fmt.Errorf("credentialed evaluation requires HTTPS")
+	}
+	return endpoint, nil
+}
+
+func evaluationClient() *http.Client {
+	return &http.Client{Timeout: 120 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+func readEvaluationInput(mode string, input io.Reader) ([]byte, error) {
+	limit := int64(32768)
+	if mode == "extract" {
+		limit = 1 << 20
+	}
+	raw, err := io.ReadAll(io.LimitReader(input, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("evaluation input exceeds %d bytes", limit)
+	}
+	return raw, nil
 }

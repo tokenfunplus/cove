@@ -103,7 +103,7 @@ export function parseCardJSON(source: string): unknown {
   if (bytes(source) > 32768) fail();
   let pos = 0;
   const ws = () => {
-    while (/\s/.test(source[pos] ?? "") && pos < source.length) pos++;
+    while (pos < source.length && " \t\r\n".includes(source[pos])) pos++;
   };
   const read = (depth: number): unknown => {
     ws();
@@ -249,7 +249,12 @@ export function validateCardValues(
   required = false,
 ): void {
   if (
-    bytes(JSON.stringify([values, checks])) > 16384 ||
+    bytes(
+      JSON.stringify([values, checks]).replace(
+        /[<>&\u2028\u2029]/g,
+        (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"),
+      ),
+    ) > 16384 ||
     Object.keys(values).length !== Object.keys(d.stateSchema).length
   )
     fail();

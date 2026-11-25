@@ -6,12 +6,8 @@ import { parseCard } from "./interactive";
 for (const fixture of sources)
   test(`card framing: ${fixture.name}`, () => {
     const block = cardBlock(fixture.body);
-    const valid = () => {
-      if (!block || !block.complete) throw new Error("No complete block");
-      if(JSON.parse(block.json).cove_ui!==1)parseCard(block.json);
-    };
-    if (fixture.valid) expect(valid).not.toThrow();
-    else expect(valid).toThrow();
+    expect(Boolean(block?.complete)).toBe(fixture.valid);
+    if ("prose" in fixture) expect(block?.prose).toBe(fixture.prose);
   });
 for (const example of examples)
   test(`legacy canonical example: ${example.name}`, () =>
@@ -26,4 +22,18 @@ test("bounded fallback is readable without enabling unsupported definitions", ()
   expect(
     cardFallback('{"fallback":"' + "x".repeat(2001) + '"}'),
   ).toBeUndefined();
+});
+
+test("large trailing whitespace keeps fence rules without backtracking", () => {
+  const tabs = "\t".repeat(100000);
+  const block = cardBlock(
+    "Prose" +
+      tabs +
+      "\n```cove-ui\n" +
+      '{"cove_ui":1,"title":"Recall","continue":false,"children":[{"type":"Text","content":"A word"}]}' +
+      "\n```" +
+      tabs,
+  );
+  expect(block?.complete).toBe(true);
+  expect(block?.prose).toBe("Prose" + tabs + "\n");
 });

@@ -218,6 +218,24 @@ export function useConversationLifecycle({
     navigateToConversation(id, messageId);
   }
 
+  function handleOpenProject(projectId?: string) {
+    if (isNavigating) return;
+    const open = async () => {
+      setProjectPage(projectId ? { projectId } : {});
+      setMobileSidebarOpen(false);
+    };
+    if (interactiveDirty) {
+      setConfirmation({
+        kind: "navigate",
+        discardDraft: true,
+        stopGeneration: activeGeneration,
+        navigationAction: open,
+      });
+      return;
+    }
+    void open();
+  }
+
   function handleDeleteConversation(id: string) {
     if (isSending) return;
     setConfirmation({ kind: "delete", conversationId: id });
@@ -342,6 +360,7 @@ export function useConversationLifecycle({
     handleConversationListMode,
     handleUpdateConversation,
     handleSelectConversation,
+    handleOpenProject,
     handleDeleteConversation,
     deleteConfirmedConversation,
     handleClearChatData,

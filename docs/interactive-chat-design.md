@@ -4,6 +4,8 @@ Status: Design roadmap, updated 2026-11-25. [ADR 0066](adr/0066-normalize-model-
 
 ## Purpose
 
+[ADR 0067](adr/0067-preserve-chat-prose-and-bound-model-json-repair.md) adds bounded delimiter repair and preserves all ordinary prose, user questions and attachments while limiting only derived history summaries.
+
 Make conversations more enjoyable by letting people choose, reveal, experiment, and shape the next response directly inside an assistant message. A useful first interaction should take one or two clicks. The experience should feel like a conversation with something to explore, with ordinary typing always available.
 
 The initial product is an interactive card embedded in Chat. A larger canvas is an expanded view of the same card and state. Form rendering is one building block. The first release focuses on choices, playful learning, and collaborative stories rather than business workflows or a general application builder.

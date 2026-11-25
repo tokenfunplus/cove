@@ -40,7 +40,8 @@ for (const fixture of fixtures.values)
     const d = parseCard(
       fixtures.valid.find((f) => f.name === fixture.definition)!.source,
     );
-    const check = () => validateCardValues(d, fixture.values as CardValues);
+    const check = () =>
+      validateCardValues(d, fixture.values as unknown as CardValues);
     if (fixture.valid) expect(check).not.toThrow();
     else expect(check).toThrow();
   });

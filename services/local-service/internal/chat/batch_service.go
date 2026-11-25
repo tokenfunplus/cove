@@ -69,11 +69,11 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 	if err != nil {
 		return GenerationBatchStart{}, err
 	}
-	if (input.Interactive || input.Card != nil) && len(activeModelSet) != 1 {
-		return GenerationBatchStart{}, interactive.ErrInvalid
-	}
 	if err := matchExpectedTargets(activeModelSet, input.ExpectedTargets); err != nil {
 		return GenerationBatchStart{}, err
+	}
+	if input.Card != nil && len(activeModelSet) != 1 {
+		return GenerationBatchStart{}, interactive.ErrInvalid
 	}
 
 	if input.LocalOnly {
