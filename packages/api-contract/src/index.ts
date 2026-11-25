@@ -394,6 +394,8 @@ export interface ExpectedGenerationTarget {
 }
 
 export interface GenerationInput {
+  interactive?: boolean;
+  interaction?: import("./interactive").CardSubmission;
   local_only?: boolean;
   expected_project?: ProjectExpectation;
   web_search_enabled?: boolean;
@@ -527,6 +529,7 @@ export interface GenerationPromptMessage {
 }
 
 export interface GenerationBatch {
+  interactive?: boolean;
   local_only?: boolean;
   project_context_id?: string;
   project_context?: ProjectContext;
@@ -664,3 +667,6 @@ export interface DownloadNetworkTest {
   ok: boolean;
   checks: { source: string; ok: boolean; message: string }[];
 }
+
+export * from "./interactive";
+export * from "./interactive-source";

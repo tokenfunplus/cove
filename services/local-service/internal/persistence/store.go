@@ -15,13 +15,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/interactive"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 	"github.com/tokenfunplus/cove/services/local-service/internal/websearch"
 
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 27
+const schemaVersion = 28
 
 const defaultConversationTitle = "New conversation"
 
@@ -285,6 +286,7 @@ const (
 )
 
 type GenerationBatch struct {
+	Interactive     bool                 `json:"interactive"`
 	LocalOnly       bool                 `json:"local_only,omitempty"`
 	ProjectContext  *ProjectContext      `json:"project_context,omitempty"`
 	WebSearch       *websearch.Policy    `json:"web_search,omitempty"`
@@ -335,6 +337,9 @@ type GenerationTargetInput struct {
 }
 
 type BeginGenerationBatchInput struct {
+	Interactive          bool
+	Card                 *interactive.Submission
+	CardFingerprint      string
 	LocalOnly            bool
 	ExpectedProject      *ProjectExpectation
 	WebSearch            *websearch.Policy
@@ -796,6 +801,12 @@ PRAGMA user_version=22;`); err != nil {
 		if _, err := tx.Exec(speechMigration); err != nil {
 			return fmt.Errorf("apply SQLite migration 27: %w", err)
 		}
+		version = 27
+	}
+	if version == 27 {
+		if err := migrateInteractive(tx); err != nil {
+			return fmt.Errorf("apply SQLite migration 28: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit SQLite migration: %w", err)
@@ -1053,8 +1064,8 @@ func validateGenerationParameters(parameters GenerationParameters) error {
 }
 
 func validateGenerationConfigurationSnapshot(snapshot GenerationConfigurationSnapshot) error {
-	if utf8.RuneCountInString(snapshot.SystemPrompt) > 8192 {
-		return errors.New("system prompt exceeds 8192 characters")
+	if utf8.RuneCountInString(snapshot.SystemPrompt) > 32768 {
+		return errors.New("captured system prompt exceeds 32768 characters")
 	}
 	return validateGenerationParameters(snapshot.GenerationParameters)
 }

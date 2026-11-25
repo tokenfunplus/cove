@@ -13,6 +13,7 @@ import (
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/interactive"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localmodels"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
@@ -45,6 +46,8 @@ type ExpectedGenerationTarget struct {
 }
 
 type SendInput struct {
+	Interactive          bool
+	Card                 *interactive.Submission
 	LocalOnly            bool
 	previewProject       *persistence.ProjectContext
 	previewProjectSet    bool

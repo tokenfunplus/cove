@@ -1,0 +1,427 @@
+{
+  "valid": [
+    {
+      "name": "story",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "quiz",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"check\", \"feedback\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}, \"check\": {\"type\": \"Button\", \"props\": {\"label\": \"Check answer\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"check_answer\", \"params\": {\"feedbackElement\": \"feedback\"}}}}, \"feedback\": {\"type\": \"Feedback\", \"props\": {\"choiceElement\": \"action-choice\", \"cases\": [{\"value\": \"footprints\", \"outcome\": \"incorrect\", \"text\": \"Look for the warm clue.\"}, {\"value\": \"radio\", \"outcome\": \"correct\", \"text\": \"The radio was recently used.\"}]}, \"children\": []}}}}"
+    },
+    {
+      "name": "recall",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"reveal\", \"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}, \"reveal\": {\"type\": \"Reveal\", \"props\": {\"label\": \"Show answer\"}, \"children\": [\"answer\"]}, \"answer\": {\"type\": \"Text\", \"props\": {\"content\": \"A lighthouse guides ships.\"}, \"children\": []}}}}"
+    },
+    {
+      "name": "remix-multiple",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"array\", \"items\": {\"type\": \"string\", \"enum\": [\"footprints\", \"radio\"]}, \"maxItems\": 2, \"uniqueItems\": true}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": []}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"multiple\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "ranking",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Arrange your afternoon\",\"stateSchema\":{\"order\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"walk\",\"lunch\",\"gallery\"]},\"uniqueItems\":true,\"maxItems\":3}},\"spec\":{\"root\":\"card\",\"state\":{\"order\":[\"walk\",\"lunch\",\"gallery\"]},\"elements\":{\"order\":{\"type\":\"Ranking\",\"props\":{\"label\":\"Afternoon itinerary\",\"value\":{\"$bindState\":\"/order\"},\"options\":[{\"value\":\"walk\",\"label\":\"Walk by the river\",\"description\":\"Start slowly and get some fresh air.\"},{\"value\":\"lunch\",\"label\":\"Lunch with a friend\"},{\"value\":\"gallery\",\"label\":\"Explore a small gallery\"}]},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/order\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Arrange your afternoon\"},\"children\":[\"order\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "allocation",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Try a weekend budget\",\"stateSchema\":{\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5}},\"spec\":{\"root\":\"card\",\"state\":{\"food\":30,\"travel\":20},\"elements\":{\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/food\",\"/travel\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Try a weekend budget\"},\"children\":[\"food\",\"travel\",\"budget\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "editor",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Make this invitation yours\",\"stateSchema\":{\"draft\":{\"type\":\"string\",\"maxLength\":400}},\"spec\":{\"root\":\"card\",\"state\":{\"draft\":\"Join me for a slow Saturday afternoon.\"},\"elements\":{\"draft\":{\"type\":\"TextInput\",\"props\":{\"label\":\"Invitation text\",\"value\":{\"$bindState\":\"/draft\"},\"required\":true,\"placeholder\":\"Write your invitation\\u2026\"},\"children\":[]},\"preview\":{\"type\":\"TextPreview\",\"props\":{\"label\":\"Invitation preview\",\"value\":{\"$bindState\":\"/draft\"}},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/draft\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Make this invitation yours\"},\"children\":[\"draft\",\"preview\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "playground",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Shape a weekend together\",\"stateSchema\":{\"order\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"walk\",\"lunch\",\"gallery\"]},\"uniqueItems\":true,\"maxItems\":3},\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"draft\":{\"type\":\"string\",\"maxLength\":400}},\"spec\":{\"root\":\"card\",\"state\":{\"order\":[\"walk\",\"lunch\",\"gallery\"],\"food\":30,\"travel\":20,\"draft\":\"Join me for a slow Saturday afternoon.\"},\"elements\":{\"order\":{\"type\":\"Ranking\",\"props\":{\"label\":\"Afternoon itinerary\",\"value\":{\"$bindState\":\"/order\"},\"options\":[{\"value\":\"walk\",\"label\":\"Walk by the river\",\"description\":\"Start slowly and get some fresh air.\"},{\"value\":\"lunch\",\"label\":\"Lunch with a friend\"},{\"value\":\"gallery\",\"label\":\"Explore a small gallery\"}]},\"children\":[]},\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"draft\":{\"type\":\"TextInput\",\"props\":{\"label\":\"Invitation text\",\"value\":{\"$bindState\":\"/draft\"},\"required\":true,\"placeholder\":\"Write your invitation\\u2026\"},\"children\":[]},\"preview\":{\"type\":\"TextPreview\",\"props\":{\"label\":\"Invitation preview\",\"value\":{\"$bindState\":\"/draft\"}},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/order\",\"/food\",\"/travel\",\"/draft\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Shape a weekend together\"},\"children\":[\"order\",\"food\",\"travel\",\"budget\",\"draft\",\"preview\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "local-reveal",
+      "source": "{\"version\":\"cove-card-v3\",\"catalogVersion\":\"cove-interactive-v3\",\"fallback\":\"Recall\",\"stateSchema\":{},\"spec\":{\"root\":\"root\",\"state\":{},\"elements\":{\"element_0\":{\"type\":\"Reveal\",\"props\":{\"label\":\"Reveal answer\"},\"children\":[\"element_1\"]},\"element_1\":{\"type\":\"Text\",\"props\":{\"content\":\"A happy accident.\"},\"children\":[]},\"root\":{\"type\":\"Card\",\"props\":{\"title\":\"Recall\"},\"children\":[\"element_0\"]}}}}"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "unknown-component",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Script\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "dangling-child",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\", \"missing\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "cycle",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\", \"scene\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "shared-child",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\", \"action-choice\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "unknown-property",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\", \"onClick\": \"fetch\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "unknown-action",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"http\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "invalid-binding",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/other/field\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "invalid-default",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"unknown\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "hidden-required-field",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}, \"hidden\": {\"type\": \"string\", \"enum\": [\"\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "no-continuation",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": []}}}}"
+    },
+    {
+      "name": "missing-required-path",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": []}}}}}}}"
+    },
+    {
+      "name": "future-contract",
+      "source": "{\"version\": \"cove-card-v2\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "prototype-field",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}, \"constructor\": {\"type\": \"string\", \"enum\": [\"\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "extra-state-schema-property",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"], \"custom\": true}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "duplicate-enum",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "duplicate-json-key",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\":\"ignored\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "trailing-data",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}} {}"
+    },
+    {
+      "name": "malformed-unicode",
+      "source": "{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"\\ud800\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}"
+    },
+    {
+      "name": "deep-json",
+      "source": "[[[[[[[[[[[[[[[[[[0]]]]]]]]]]]]]]]]]]"
+    },
+    {
+      "name": "v1 cannot enable rich controls",
+      "source": "{\"version\":\"cove-card-v1\",\"catalogVersion\":\"cove-interactive-v1\",\"fallback\":\"Arrange your afternoon\",\"stateSchema\":{\"order\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"walk\",\"lunch\",\"gallery\"]},\"uniqueItems\":true,\"maxItems\":3}},\"spec\":{\"root\":\"card\",\"state\":{\"order\":[\"walk\",\"lunch\",\"gallery\"]},\"elements\":{\"order\":{\"type\":\"Ranking\",\"props\":{\"label\":\"Afternoon itinerary\",\"value\":{\"$bindState\":\"/order\"},\"options\":[{\"value\":\"walk\",\"label\":\"Walk by the river\",\"description\":\"Start slowly and get some fresh air.\"},{\"value\":\"lunch\",\"label\":\"Lunch with a friend\"},{\"value\":\"gallery\",\"label\":\"Explore a small gallery\"}]},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/order\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Arrange your afternoon\"},\"children\":[\"order\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "mismatched catalog",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v1\",\"fallback\":\"Arrange your afternoon\",\"stateSchema\":{\"order\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"walk\",\"lunch\",\"gallery\"]},\"uniqueItems\":true,\"maxItems\":3}},\"spec\":{\"root\":\"card\",\"state\":{\"order\":[\"walk\",\"lunch\",\"gallery\"]},\"elements\":{\"order\":{\"type\":\"Ranking\",\"props\":{\"label\":\"Afternoon itinerary\",\"value\":{\"$bindState\":\"/order\"},\"options\":[{\"value\":\"walk\",\"label\":\"Walk by the river\",\"description\":\"Start slowly and get some fresh air.\"},{\"value\":\"lunch\",\"label\":\"Lunch with a friend\"},{\"value\":\"gallery\",\"label\":\"Explore a small gallery\"}]},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/order\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Arrange your afternoon\"},\"children\":[\"order\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "incomplete initial ranking",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Arrange your afternoon\",\"stateSchema\":{\"order\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"walk\",\"lunch\",\"gallery\"]},\"uniqueItems\":true,\"maxItems\":3}},\"spec\":{\"root\":\"card\",\"state\":{\"order\":[\"walk\",\"lunch\"]},\"elements\":{\"order\":{\"type\":\"Ranking\",\"props\":{\"label\":\"Afternoon itinerary\",\"value\":{\"$bindState\":\"/order\"},\"options\":[{\"value\":\"walk\",\"label\":\"Walk by the river\",\"description\":\"Start slowly and get some fresh air.\"},{\"value\":\"lunch\",\"label\":\"Lunch with a friend\"},{\"value\":\"gallery\",\"label\":\"Explore a small gallery\"}]},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/order\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Arrange your afternoon\"},\"children\":[\"order\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "ranking schema cannot omit an option",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Arrange your afternoon\",\"stateSchema\":{\"order\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"walk\",\"lunch\",\"gallery\"]},\"uniqueItems\":true,\"maxItems\":2}},\"spec\":{\"root\":\"card\",\"state\":{\"order\":[\"walk\",\"lunch\",\"gallery\"]},\"elements\":{\"order\":{\"type\":\"Ranking\",\"props\":{\"label\":\"Afternoon itinerary\",\"value\":{\"$bindState\":\"/order\"},\"options\":[{\"value\":\"walk\",\"label\":\"Walk by the river\",\"description\":\"Start slowly and get some fresh air.\"},{\"value\":\"lunch\",\"label\":\"Lunch with a friend\"},{\"value\":\"gallery\",\"label\":\"Explore a small gallery\"}]},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/order\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Arrange your afternoon\"},\"children\":[\"order\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "zero step",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Try a weekend budget\",\"stateSchema\":{\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":0},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5}},\"spec\":{\"root\":\"card\",\"state\":{\"food\":30,\"travel\":20},\"elements\":{\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/food\",\"/travel\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Try a weekend budget\"},\"children\":[\"food\",\"travel\",\"budget\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "negative step",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Try a weekend budget\",\"stateSchema\":{\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":-1},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5}},\"spec\":{\"root\":\"card\",\"state\":{\"food\":30,\"travel\":20},\"elements\":{\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/food\",\"/travel\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Try a weekend budget\"},\"children\":[\"food\",\"travel\",\"budget\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "indivisible range",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Try a weekend budget\",\"stateSchema\":{\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":3},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5}},\"spec\":{\"root\":\"card\",\"state\":{\"food\":30,\"travel\":20},\"elements\":{\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/food\",\"/travel\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Try a weekend budget\"},\"children\":[\"food\",\"travel\",\"budget\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "unbounded slider",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Try a weekend budget\",\"stateSchema\":{\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":1000001,\"step\":5},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5}},\"spec\":{\"root\":\"card\",\"state\":{\"food\":30,\"travel\":20},\"elements\":{\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/food\",\"/travel\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Try a weekend budget\"},\"children\":[\"food\",\"travel\",\"budget\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "equal slider bounds",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Try a weekend budget\",\"stateSchema\":{\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":0,\"step\":5},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5}},\"spec\":{\"root\":\"card\",\"state\":{\"food\":30,\"travel\":20},\"elements\":{\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/food\",\"/travel\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Try a weekend budget\"},\"children\":[\"food\",\"travel\",\"budget\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "off-step initial slider",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Try a weekend budget\",\"stateSchema\":{\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5}},\"spec\":{\"root\":\"card\",\"state\":{\"food\":31,\"travel\":20},\"elements\":{\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/food\",\"/travel\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Try a weekend budget\"},\"children\":[\"food\",\"travel\",\"budget\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "summary references non-slider",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Shape a weekend together\",\"stateSchema\":{\"order\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"walk\",\"lunch\",\"gallery\"]},\"uniqueItems\":true,\"maxItems\":3},\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"draft\":{\"type\":\"string\",\"maxLength\":400}},\"spec\":{\"root\":\"card\",\"state\":{\"order\":[\"walk\",\"lunch\",\"gallery\"],\"food\":30,\"travel\":20,\"draft\":\"Join me for a slow Saturday afternoon.\"},\"elements\":{\"order\":{\"type\":\"Ranking\",\"props\":{\"label\":\"Afternoon itinerary\",\"value\":{\"$bindState\":\"/order\"},\"options\":[{\"value\":\"walk\",\"label\":\"Walk by the river\",\"description\":\"Start slowly and get some fresh air.\"},{\"value\":\"lunch\",\"label\":\"Lunch with a friend\"},{\"value\":\"gallery\",\"label\":\"Explore a small gallery\"}]},\"children\":[]},\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/draft\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"draft\":{\"type\":\"TextInput\",\"props\":{\"label\":\"Invitation text\",\"value\":{\"$bindState\":\"/draft\"},\"required\":true,\"placeholder\":\"Write your invitation\\u2026\"},\"children\":[]},\"preview\":{\"type\":\"TextPreview\",\"props\":{\"label\":\"Invitation preview\",\"value\":{\"$bindState\":\"/draft\"}},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/order\",\"/food\",\"/travel\",\"/draft\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Shape a weekend together\"},\"children\":[\"order\",\"food\",\"travel\",\"budget\",\"draft\",\"preview\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "negative allocation total",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Try a weekend budget\",\"stateSchema\":{\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5}},\"spec\":{\"root\":\"card\",\"state\":{\"food\":30,\"travel\":20},\"elements\":{\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":-1,\"unit\":\"USD\"},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/food\",\"/travel\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Try a weekend budget\"},\"children\":[\"food\",\"travel\",\"budget\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "preview references non-text",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Shape a weekend together\",\"stateSchema\":{\"order\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"walk\",\"lunch\",\"gallery\"]},\"uniqueItems\":true,\"maxItems\":3},\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"draft\":{\"type\":\"string\",\"maxLength\":400}},\"spec\":{\"root\":\"card\",\"state\":{\"order\":[\"walk\",\"lunch\",\"gallery\"],\"food\":30,\"travel\":20,\"draft\":\"Join me for a slow Saturday afternoon.\"},\"elements\":{\"order\":{\"type\":\"Ranking\",\"props\":{\"label\":\"Afternoon itinerary\",\"value\":{\"$bindState\":\"/order\"},\"options\":[{\"value\":\"walk\",\"label\":\"Walk by the river\",\"description\":\"Start slowly and get some fresh air.\"},{\"value\":\"lunch\",\"label\":\"Lunch with a friend\"},{\"value\":\"gallery\",\"label\":\"Explore a small gallery\"}]},\"children\":[]},\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"draft\":{\"type\":\"TextInput\",\"props\":{\"label\":\"Invitation text\",\"value\":{\"$bindState\":\"/draft\"},\"required\":true,\"placeholder\":\"Write your invitation\\u2026\"},\"children\":[]},\"preview\":{\"type\":\"TextPreview\",\"props\":{\"label\":\"Invitation preview\",\"value\":{\"$bindState\":\"/food\"}},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/order\",\"/food\",\"/travel\",\"/draft\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Shape a weekend together\"},\"children\":[\"order\",\"food\",\"travel\",\"budget\",\"draft\",\"preview\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "oversized initial edit",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Make this invitation yours\",\"stateSchema\":{\"draft\":{\"type\":\"string\",\"maxLength\":400}},\"spec\":{\"root\":\"card\",\"state\":{\"draft\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"},\"elements\":{\"draft\":{\"type\":\"TextInput\",\"props\":{\"label\":\"Invitation text\",\"value\":{\"$bindState\":\"/draft\"},\"required\":true,\"placeholder\":\"Write your invitation\\u2026\"},\"children\":[]},\"preview\":{\"type\":\"TextPreview\",\"props\":{\"label\":\"Invitation preview\",\"value\":{\"$bindState\":\"/draft\"}},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/draft\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Make this invitation yours\"},\"children\":[\"draft\",\"preview\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "text length must be bounded",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Make this invitation yours\",\"stateSchema\":{\"draft\":{\"type\":\"string\",\"maxLength\":0}},\"spec\":{\"root\":\"card\",\"state\":{\"draft\":\"Join me for a slow Saturday afternoon.\"},\"elements\":{\"draft\":{\"type\":\"TextInput\",\"props\":{\"label\":\"Invitation text\",\"value\":{\"$bindState\":\"/draft\"},\"required\":true,\"placeholder\":\"Write your invitation\\u2026\"},\"children\":[]},\"preview\":{\"type\":\"TextPreview\",\"props\":{\"label\":\"Invitation preview\",\"value\":{\"$bindState\":\"/draft\"}},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/draft\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Make this invitation yours\"},\"children\":[\"draft\",\"preview\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "rich input omitted from continuation",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Try a weekend budget\",\"stateSchema\":{\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5}},\"spec\":{\"root\":\"card\",\"state\":{\"food\":30,\"travel\":20},\"elements\":{\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"USD\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/food\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Try a weekend budget\"},\"children\":[\"food\",\"travel\",\"budget\",\"reset\",\"continue\"]}}}}"
+    },
+    {
+      "name": "allocation unit mismatch",
+      "source": "{\"version\":\"cove-card-v2\",\"catalogVersion\":\"cove-interactive-v2\",\"fallback\":\"Try a weekend budget\",\"stateSchema\":{\"food\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5},\"travel\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":100,\"step\":5}},\"spec\":{\"root\":\"card\",\"state\":{\"food\":30,\"travel\":20},\"elements\":{\"food\":{\"type\":\"Slider\",\"props\":{\"label\":\"Food\",\"value\":{\"$bindState\":\"/food\"},\"unit\":\"USD\"},\"children\":[]},\"travel\":{\"type\":\"Slider\",\"props\":{\"label\":\"Travel\",\"value\":{\"$bindState\":\"/travel\"},\"unit\":\"hours\"},\"children\":[]},\"budget\":{\"type\":\"AllocationSummary\",\"props\":{\"label\":\"Weekend budget\",\"paths\":[\"/food\",\"/travel\"],\"total\":100,\"unit\":\"USD\"},\"children\":[]},\"reset\":{\"type\":\"Button\",\"props\":{\"label\":\"Reset\"},\"children\":[],\"on\":{\"press\":{\"action\":\"reset\",\"params\":{}}}},\"continue\":{\"type\":\"Button\",\"props\":{\"label\":\"Use my changes\"},\"children\":[],\"on\":{\"press\":{\"action\":\"continue_chat\",\"params\":{\"paths\":[\"/food\",\"/travel\"]}}}},\"card\":{\"type\":\"Card\",\"props\":{\"title\":\"Try a weekend budget\"},\"children\":[\"food\",\"travel\",\"budget\",\"reset\",\"continue\"]}}}}"
+    }
+  ],
+  "values": [
+    {
+      "name": "reordered values",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "gallery",
+          "walk",
+          "lunch"
+        ],
+        "food": 30,
+        "travel": 20,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": true
+    },
+    {
+      "name": "zero slider value",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": 0,
+        "travel": 20,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": true
+    },
+    {
+      "name": "over-budget is an explicit valid tradeoff",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": 100,
+        "travel": 100,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": true
+    },
+    {
+      "name": "edited Unicode text",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": 30,
+        "travel": 20,
+        "draft": "\u4f60\u597d\ud83c\udf0d"
+      },
+      "valid": true
+    },
+    {
+      "name": "empty edit can save locally",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": 30,
+        "travel": 20,
+        "draft": ""
+      },
+      "valid": true
+    },
+    {
+      "name": "missing rank",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch"
+        ],
+        "food": 30,
+        "travel": 20,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": false
+    },
+    {
+      "name": "duplicate rank",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "walk",
+          "gallery"
+        ],
+        "food": 30,
+        "travel": 20,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown rank",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "unknown"
+        ],
+        "food": 30,
+        "travel": 20,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": false
+    },
+    {
+      "name": "off-step slider",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": 31,
+        "travel": 20,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": false
+    },
+    {
+      "name": "string slider",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": "30",
+        "travel": 20,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": false
+    },
+    {
+      "name": "fractional slider",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": 30.5,
+        "travel": 20,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": false
+    },
+    {
+      "name": "negative slider",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": -5,
+        "travel": 20,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": false
+    },
+    {
+      "name": "oversized slider",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": 105,
+        "travel": 20,
+        "draft": "Join me for a slow Saturday afternoon."
+      },
+      "valid": false
+    },
+    {
+      "name": "oversized edit",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": 30,
+        "travel": 20,
+        "draft": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "valid": false
+    },
+    {
+      "name": "code point text limit",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": 30,
+        "travel": 20,
+        "draft": "\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d"
+      },
+      "valid": true
+    },
+    {
+      "name": "code point text overflow",
+      "definition": "playground",
+      "values": {
+        "order": [
+          "walk",
+          "lunch",
+          "gallery"
+        ],
+        "food": 30,
+        "travel": 20,
+        "draft": "\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d\ud83c\udf0d"
+      },
+      "valid": false
+    }
+  ]
+}

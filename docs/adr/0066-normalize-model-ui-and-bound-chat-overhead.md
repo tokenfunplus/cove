@@ -1,0 +1,19 @@
+# Normalize model UI and bound Chat overhead
+
+## Decision
+
+Model-authored UI uses a compact `cove_ui: 1` nested tree. A service-owned normalizer derives canonical component IDs, state fields, enum values, defaults, optional quiz feedback, and a Continue button. It accepts known Markdown label aliases and marked JSON blocks, ignores unrecognized properties, and reports bounded element/property paths for unsupported semantics. It never evaluates code or arbitrary actions. Duplicate JSON keys, depth/size limits, invalid graphs, unsupported component types, invalid numeric bounds, and ambiguous answer keys still fail closed. Saved definitions are always parsed through the canonical strict validator; raw provider output remains unchanged.
+
+Legacy v1/v2 model output also passes through a bounded repair step before canonical validation: missing leaf children, fallback, Choice required flags, the empty single-choice enum value, absent Continue, orphan elements, and non-ASCII option values can be normalized deterministically. This is an input adapter, not a weakening of existing saved v1/v2 contracts. Explicit unknown versions are rejected; a known mismatched legacy catalog is selected from the supported component set.
+
+A new immutable v3 canonical catalog permits zero continuation buttons and an empty state schema for local-only cards. Compact input `continue:false` selects it; existing v1/v2 readers retain their original strict rules. Such cards support reveal, practice, reset, and saved local state without a model turn. Their lack of continuation is explicit in API eligibility and the UI.
+
+The model guide is compact and contains one complete nested example rather than duplicating a full catalog and multiple canonical specs on every turn. Managed built-in local models receive no interactive guide and cannot opt themselves into card generation. Providers advertising context windows below 8,192 tokens are also excluded. Unknown external capabilities remain eligible for empirical evaluation, not a compatibility guarantee. The workspace follows the same conservative policy, with server enforcement at admission and retry. Model-specific tokenizer limits remain enforced by the runtime; a character estimate is not represented as an exact token budget.
+
+Live assistant presentation masks recognized card payloads from the first detected header and shows a preparation status. Interrupted or unsupported output has an escaped source disclosure and readable fallback, never active partial controls. Provider history uses a bounded deterministic summary of prior cards and submitted reference data; raw messages, source hashes, selected-answer ownership, and stored input are retained for local inspection. A summary is a Provider-context projection, not a change to original answers or evidence.
+
+Composer card references now default off. Explicitly including one opts into the existing discussion snapshot and one-time source consumption; the interface explains that Send saves and locks the card. Ordinary unrelated messages do not consume it. Button Continue has an immediate local summary rather than a temporary canned user message. These changes supersede the defaults and model-facing output guidance in ADR 0063 through ADR 0065.
+
+## Validation
+
+Shared normalization fixtures cover model mistakes and canonical outputs; Go validates normalization while TypeScript validates the same canonical fixtures. Shared framing tests cover aliases, marked JSON, ordinary JSON, interrupted streams, and nested examples. Tests cover local-only cards, ineligible model policy, history size reduction, opt-in reference semantics, rendering, state admission, and browser behavior. Real-model evaluation records per-case outcomes and Provider-reported tokens separately from scripted acceptance. No blanket parameter-count compatibility claim is made.

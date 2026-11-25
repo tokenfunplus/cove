@@ -191,6 +191,10 @@
     },
     "local_only": {
       "type": "boolean"
+    },
+    "interactive": {
+      "type": "boolean",
+      "description": "This Batch admitted versioned interactive reply instructions."
     }
   },
   "additionalProperties": false

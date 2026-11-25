@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
+	"github.com/tokenfunplus/cove/services/local-service/internal/interactive"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
@@ -20,17 +21,19 @@ func (server *Server) previewGenerationContext(writer http.ResponseWriter, reque
 	}
 	request.Body = http.MaxBytesReader(writer, request.Body, documents.MaxRequestBytes)
 	var input struct {
-		ProjectID       *json.RawMessage  `json:"project_id"`
-		Body            string            `json:"body"`
-		Attachments     []documents.Input `json:"attachments"`
-		WebSourceTokens []string          `json:"web_source_tokens"`
+		Card            *interactive.Submission `json:"interaction"`
+		Interactive     bool                    `json:"interactive"`
+		ProjectID       *json.RawMessage        `json:"project_id"`
+		Body            string                  `json:"body"`
+		Attachments     []documents.Input       `json:"attachments"`
+		WebSourceTokens []string                `json:"web_source_tokens"`
 	}
 	if err := decodeJSON(request, &input); err != nil || input.ProjectID != nil {
 		writeError(writer, http.StatusBadRequest, "invalid_attachment", "The context preview request is invalid or too large.")
 		return
 	}
 	session, _ := localsecurity.SessionFromRequest(request)
-	send := chat.SendInput{ConversationID: request.PathValue("id"), Body: strings.TrimSpace(input.Body), Attachments: input.Attachments, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID}
+	send := chat.SendInput{Card: input.Card, Interactive: input.Interactive, ConversationID: request.PathValue("id"), Body: strings.TrimSpace(input.Body), Attachments: input.Attachments, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID}
 	if request.URL.Query().Get("format") == "project-v1" {
 		if p, ok := server.chat.(chat.ProjectChat); ok {
 			preview, e := p.PreviewProjectGenerationContext(request.Context(), send)

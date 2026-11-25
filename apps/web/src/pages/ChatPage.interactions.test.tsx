@@ -732,10 +732,13 @@ test("Focus transitions retain locally previewed attachments without reparsing",
 
 test("a streamed answer reconciles with saved history without appearing twice", async () => {
   const { composer } = await sendPrompt();
+  expect(screen.queryByRole("checkbox", { name: "Interactive replies" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Story" })).toBeNull();
   expect(transport.createGenerationBatch).toHaveBeenCalledWith(
     fixture.conversation.id,
     {
       body: "A test prompt",
+      interactive: true,
       clientRequestId: expect.any(String),
       expectedTargets: [{ provider_id: "provider-one", model_id: "model-one", require_private_tee: false }],
     },

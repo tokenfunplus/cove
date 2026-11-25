@@ -1,0 +1,38 @@
+{
+  "version": "cove-card-v1",
+  "catalogVersion": "cove-interactive-v1",
+  "components": {
+    "Card": {
+      "title": "text!"
+    },
+    "Text": {
+      "content": "text!"
+    },
+    "Choice": {
+      "value": "binding!",
+      "mode": "mode!",
+      "required": "boolean!",
+      "options": "options!",
+      "label": "text"
+    },
+    "Reveal": {
+      "label": "text!"
+    },
+    "Feedback": {
+      "choiceElement": "id!",
+      "cases": "cases!"
+    },
+    "Button": {
+      "label": "text!"
+    }
+  },
+  "actions": {
+    "continue_chat": {
+      "paths": "paths!"
+    },
+    "check_answer": {
+      "feedbackElement": "id!"
+    },
+    "reset": {}
+  }
+}

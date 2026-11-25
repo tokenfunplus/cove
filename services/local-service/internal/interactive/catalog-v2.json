@@ -1,0 +1,64 @@
+{
+  "version": "cove-card-v2",
+  "catalogVersion": "cove-interactive-v2",
+  "components": {
+    "Card": {
+      "title": "text!"
+    },
+    "Text": {
+      "content": "text!"
+    },
+    "Choice": {
+      "value": "binding!",
+      "mode": "mode!",
+      "required": "boolean!",
+      "options": "options!",
+      "label": "text"
+    },
+    "Reveal": {
+      "label": "text!"
+    },
+    "Feedback": {
+      "choiceElement": "id!",
+      "cases": "cases!"
+    },
+    "Button": {
+      "label": "text!"
+    },
+    "Ranking": {
+      "value": "binding!",
+      "label": "text!",
+      "options": "options!"
+    },
+    "Slider": {
+      "value": "binding!",
+      "label": "text!",
+      "unit": "text"
+    },
+    "AllocationSummary": {
+      "label": "text!",
+      "paths": "paths!",
+      "total": "integer!",
+      "unit": "text"
+    },
+    "TextInput": {
+      "value": "binding!",
+      "label": "text!",
+      "required": "boolean!",
+      "placeholder": "text"
+    },
+    "TextPreview": {
+      "value": "binding!",
+      "label": "text!"
+    }
+  },
+  "actions": {
+    "continue_chat": {
+      "paths": "paths!"
+    },
+    "check_answer": {
+      "feedbackElement": "id!"
+    },
+    "reset": {}
+  }
+}

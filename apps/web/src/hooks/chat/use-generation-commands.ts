@@ -1,3 +1,4 @@
+import { prepareComposerCard } from "@/lib/chat/interactive-context";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ProjectExpectation } from "@cove/api-contract";
 import { flushSync } from "react-dom";
@@ -68,6 +69,7 @@ type Dependencies = Pick<
     catalogs: ModelCatalogs;
     copy: ApplicationCopy;
     attachmentDraft: AttachmentDraft;
+    interactiveEnabled?: boolean;
     webSearchEnabled?: boolean;
     localOnly?: boolean;
     setSelectedId?: WorkspaceState["setSelectedId"];
@@ -75,6 +77,7 @@ type Dependencies = Pick<
 
 export function useGenerationCommands({
   localOnly = false,
+  interactiveEnabled,
   webSearchEnabled,
   attachmentDraft,
   setSelectedId,
@@ -120,8 +123,11 @@ export function useGenerationCommands({
   const { loadBatch: getGenerationBatch } = useGenerationCache();
 
   async function handleSend(override?: {
+    interactive?: boolean;
+    interaction?: import("@cove/api-contract").CardSubmission;
     body: string;
-    expectedProject?:ProjectExpectation;
+    optimisticBody?: string;
+    expectedProject?: ProjectExpectation;
     editOfBatchId?: string;
     onAccepted?: () => void;
     onFailure?: (message: string) => void;
@@ -147,9 +153,10 @@ export function useGenerationCommands({
     );
     if (
       isSending ||
-      !attachmentDraft.validateAttachments() ||
+      pendingSubmissionRef.current ||
+      (!override?.interaction && !attachmentDraft.validateAttachments()) ||
       !conversationId ||
-      !submittedBody ||
+      (!submittedBody && !override?.interaction) ||
       selectionStatus !== "ready" ||
       selectedTargets.length !== requestedTargets.length ||
       selectedTargets.length === 0
@@ -159,28 +166,84 @@ export function useGenerationCommands({
       );
       return;
     }
-    if (localOnly && (webSearchEnabled || selectedTargets.some(target => target.providerId !== "cove-local"))) {
-      const message="Only on this Mac requires a local answer model and Web search turned off.";setFeedback(message);override?.onFailure?.(message);return;
+    if (
+      localOnly &&
+      (webSearchEnabled ||
+        selectedTargets.some((target) => target.providerId !== "cove-local"))
+    ) {
+      const message =
+        "Only on this Mac requires a local answer model and Web search turned off.";
+      setFeedback(message);
+      override?.onFailure?.(message);
+      return;
+    }
+    const interactive = override?.interactive ?? interactiveEnabled ?? false;
+    if (
+      (interactive || override?.interaction) &&
+      selectedTargets.length !== 1
+    ) {
+      override?.onFailure?.("Interactive replies require one selected model.");
+      setFeedback("Interactive replies require one selected model.");
+      return;
     }
     const body = submittedBody;
-    const originalAttachments = override?.editOfBatchId
-      ? []
-      : attachmentDraft.attachments;
+    const originalAttachments =
+      override?.interaction || override?.editOfBatchId
+        ? []
+        : attachmentDraft.attachments;
     const clientRequestId = crypto.randomUUID();
-    const submission: { cancelRequested: boolean; batchId?: string } = { cancelRequested: false };
+    const submission: { cancelRequested: boolean; batchId?: string } = {
+      cancelRequested: false,
+    };
     pendingSubmissionRef.current = submission;
     if (!override?.preserveDraft) setDraft("");
     setFeedback(undefined);
     setIsSending(true);
     setLiveTurn(
-      createLiveTurn(conversationId, body, clientRequestId, selectedTargets),
+      createLiveTurn(
+        conversationId,
+        override?.optimisticBody ?? body,
+        clientRequestId,
+        selectedTargets,
+      ),
     );
     let accepted = false;
     let sourcesRestored = false;
+    let releaseCardReference: (() => void) | undefined;
     try {
+      const preparedReference =
+        !override?.interaction &&
+        !override?.editOfBatchId &&
+        interactive &&
+        selectedTargets.length === 1
+          ? await prepareComposerCard(conversationId)
+          : undefined;
+      const { release, ...cardReference } = preparedReference ?? {};
+      releaseCardReference = release;
+      if (submission.cancelRequested)
+        throw new Error("Sending was cancelled before contacting the model.");
+      const interaction =
+        override?.interaction ??
+        (preparedReference
+          ? (cardReference as import("@cove/api-contract").CardSubmission)
+          : undefined);
       const selection = {
-        ...(localOnly ? {localOnly:true}:{}),
- ...(override?.expectedProject ? {expectedProject:override.expectedProject} : conversationView?.project_id || conversationView?.membership_revision ? {expectedProject:{project_id:conversationView.project_id??"",project_revision:conversationView.project_revision??0,membership_revision:conversationView.membership_revision??0}} : {}),
+        ...(interactive ? { interactive: true } : {}),
+        ...(interaction ? { interaction } : {}),
+        ...(localOnly ? { localOnly: true } : {}),
+        ...(override?.expectedProject
+          ? { expectedProject: override.expectedProject }
+          : conversationView?.project_id ||
+              conversationView?.membership_revision
+            ? {
+                expectedProject: {
+                  project_id: conversationView.project_id ?? "",
+                  project_revision: conversationView.project_revision ?? 0,
+                  membership_revision:
+                    conversationView.membership_revision ?? 0,
+                },
+              }
+            : {}),
         ...(webSearchEnabled ? { webSearchEnabled: true } : {}),
         ...(override?.editOfBatchId
           ? { editOfBatchId: override.editOfBatchId }
@@ -222,6 +285,24 @@ export function useGenerationCommands({
           selection: selection,
         });
       }
+      if (interaction)
+        projectCache.setQueryData<import("@cove/api-contract").CardRun>(
+          ["interactive-card", interaction.generation_id],
+          (current) =>
+            current
+              ? {
+                  ...current,
+                  values: interaction.values,
+                  checks: interaction.checks,
+                  revision: Math.max(
+                    current.revision,
+                    interaction.revision + 1,
+                  ),
+                  submitted_batch_id: next.id,
+                  can_continue: false,
+                }
+              : current,
+        );
       const privacyMismatch = selection.expectedTargets.some(
         (target) =>
           target.require_private_tee &&
@@ -270,7 +351,9 @@ export function useGenerationCommands({
           ),
         );
         setGenerationBatch(next);
-        setLiveTurn(current => current ? hydrateLiveTurnBatch(current, next) : current);
+        setLiveTurn((current) =>
+          current ? hydrateLiveTurnBatch(current, next) : current,
+        );
         let branchView;
         try {
           branchView = await getConversation(conversationId);
@@ -278,7 +361,9 @@ export function useGenerationCommands({
           const stopped = await cancelGenerationBatch(next.id);
           if (selectedIdRef.current === conversationId) {
             setGenerationBatch(stopped);
-            setLiveTurn(current => current ? hydrateLiveTurnBatch(current, stopped) : current);
+            setLiveTurn((current) =>
+              current ? hydrateLiveTurnBatch(current, stopped) : current,
+            );
             setIsSending(false);
             setFeedback(generationErrorMessage(error, copy));
           }
@@ -291,7 +376,7 @@ export function useGenerationCommands({
         setConversationView(branchView);
       }
       setGenerationBatch(next);
-      attachmentDraft.clearAttachments(false);
+      if (!override?.interaction) attachmentDraft.clearAttachments(false);
       setLiveTurn((current) =>
         current ? hydrateLiveTurnBatch(current, next) : current,
       );
@@ -354,17 +439,26 @@ export function useGenerationCommands({
           : current,
       );
       setFeedback(generationErrorMessage(error, copy));
-      if (error instanceof LocalServiceError && error.envelope.error.code === "project_context_changed") {
+      if (
+        error instanceof LocalServiceError &&
+        error.envelope.error.code === "project_context_changed"
+      ) {
         // Recovery of local input must not depend on a subsequent network read.
         const refreshed = await Promise.allSettled([
           refreshCurrentConversation(),
           projectCache.invalidateQueries({ queryKey: ["projects"] }),
         ]);
-        if (selectedIdRef.current === conversationId && refreshed.some(result => result.status === "rejected")) {
-          setFeedback("Project context changed, but refreshed context could not be loaded. Your draft and attachments are preserved. Review context before sending again.");
+        if (
+          selectedIdRef.current === conversationId &&
+          refreshed.some((result) => result.status === "rejected")
+        ) {
+          setFeedback(
+            "Project context changed, but refreshed context could not be loaded. Your draft and attachments are preserved. Review context before sending again.",
+          );
         }
       }
     } finally {
+      releaseCardReference?.();
       if (accepted && !sourcesRestored) {
         for (const item of originalAttachments) {
           if (item.webSourceToken) {
@@ -388,7 +482,11 @@ export function useGenerationCommands({
         const stopped = await cancelGenerationBatch(submission.batchId);
         if (pendingSubmissionRef.current === submission) {
           setGenerationBatch(stopped);
-          setLiveTurn(current => current?.batchId === stopped.id ? hydrateLiveTurnBatch(current, stopped) : current);
+          setLiveTurn((current) =>
+            current?.batchId === stopped.id
+              ? hydrateLiveTurnBatch(current, stopped)
+              : current,
+          );
         }
         return true;
       } catch (error) {
@@ -462,10 +560,16 @@ export function useGenerationCommands({
 
   async function handleRetry(batchID: string, targetID: string) {
     if (isSending) return;
-    const target = [generationBatch, ...(conversationView?.generation_batches ?? [])]
-      .find(batch => batch?.id === batchID)?.targets.find(target => target.id === targetID);
+    const target = [
+      generationBatch,
+      ...(conversationView?.generation_batches ?? []),
+    ]
+      .find((batch) => batch?.id === batchID)
+      ?.targets.find((target) => target.id === targetID);
     if (localOnly && (!target || target.provider_id !== "cove-local")) {
-      setFeedback("Only on this Mac cannot retry a remote model. Turn off the restriction to retry this answer.");
+      setFeedback(
+        "Only on this Mac cannot retry a remote model. Turn off the restriction to retry this answer.",
+      );
       return;
     }
     setFeedback(undefined);
@@ -474,7 +578,7 @@ export function useGenerationCommands({
     try {
       const next = await retryGenerationTarget({
         targetId: targetID,
-        ...(localOnly ? {localOnly:true} : {}),
+        ...(localOnly ? { localOnly: true } : {}),
         clientRequestId: clientRequestId,
       });
       const batch = await getGenerationBatch(batchID);

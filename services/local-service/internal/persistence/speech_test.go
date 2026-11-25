@@ -83,7 +83,7 @@ func TestSchema26SpeechUpgradePreservesChatAndPreferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if pragmaInt(t, store.db, "user_version") != 27 {
+	if pragmaInt(t, store.db, "user_version") != schemaVersion {
 		t.Fatal("speech migration missing")
 	}
 	if _, err = store.LoadConversation(ctx, conversation.ID); err != nil {

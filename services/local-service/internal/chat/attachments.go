@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/interactive"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 )
@@ -47,10 +48,25 @@ func (service *Service) PreviewGenerationContext(ctx context.Context, input Send
 		}
 		systemPrompt = settings.SystemPrompt
 	}
+	if input.Interactive {
+		targets, _, _, err := service.activeModelSet(ctx, input)
+		if err == nil && !service.interactiveTargets(ctx, targets) {
+			input.Interactive = false
+		}
+	}
+	if input.Interactive {
+		systemPrompt += interactive.Prompt()
+	}
+	body, cardInput, err := service.prepareCardInput(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	input.Body = body
 	attachments, content, err := service.prepareAttachments(ctx, input, systemPrompt)
 	if err != nil {
 		return nil, err
 	}
+	content = mergeCardInput(input.Body, content, cardInput)
 	items, err := service.store.LoadBatchContext(ctx, input.ConversationID)
 	if err != nil {
 		return nil, err

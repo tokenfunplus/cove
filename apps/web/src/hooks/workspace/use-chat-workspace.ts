@@ -1,3 +1,4 @@
+import { modelMetadataForTarget } from "@/components/providers/model-selection";
 import { useCreateConversation } from "@/api/hooks/useConversations";
 import { useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
@@ -73,6 +74,13 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
 
   const { catalogs, activeSelection, catalog, selectionStatus } =
     useProviderCatalogs(providerProfiles, activeModelSet, workspaceUi.localOnly, catalogsEnabled);
+  const interactiveContext = activeModelSet[0]
+    ? modelMetadataForTarget(catalogs, activeModelSet[0])?.context_length
+    : undefined;
+  const interactiveEnabled = activeModelSet.length === 1
+    && activeModelSet[0].providerId !== "cove-local"
+    && (interactiveContext == null || interactiveContext >= 8192);
+
 
   useEffect(() => {
     const active = conversationView?.active_generation_batch;
@@ -188,6 +196,7 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
   });
 
   const generationCommands = useGenerationCommands({
+    interactiveEnabled,
     webSearchEnabled: webSearch.enabled && !workspaceUi.localOnly,
     attachmentDraft,
     ...workspaceState,
@@ -305,6 +314,7 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
     }
   }
   return {
+    interactiveEnabled,
     handleQuickPanelSend,
     startBlankQuickChat,
     continueProjectDraft,

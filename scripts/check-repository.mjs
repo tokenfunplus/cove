@@ -4,7 +4,19 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const ignored = new Set([".git", "node_modules", ".build", ".swiftpm", ".artifacts", ".scratch", "local-notes", "dist", "coverage", ".idea", ".vscode"]);
+const ignored = new Set([
+  ".git",
+  "node_modules",
+  ".build",
+  ".swiftpm",
+  ".artifacts",
+  ".scratch",
+  "local-notes",
+  "dist",
+  "coverage",
+  ".idea",
+  ".vscode",
+]);
 const errors = [];
 
 async function inspect(directory) {
@@ -17,7 +29,8 @@ async function inspect(directory) {
       continue;
     }
     if (!entry.isFile()) continue;
-    if (/\p{Script=Han}/u.test(relative)) errors.push(`${relative}: use English filenames`);
+    if (/\p{Script=Han}/u.test(relative))
+      errors.push(`${relative}: use English filenames`);
     if (entry.name === ".DS_Store") {
       errors.push(`${relative}: remove machine-specific metadata`);
       continue;
@@ -25,14 +38,19 @@ async function inspect(directory) {
     const bytes = await readFile(absolute);
     if (bytes.includes(0)) continue;
     const content = bytes.toString("utf8");
-    if (/\p{Script=Han}/u.test(content)) errors.push(`${relative}: project text must use English`);
-    if (/\/Users\/[\w.-]+\//.test(content)) errors.push(`${relative}: replace machine-specific paths`);
+    if (/\p{Script=Han}/u.test(content))
+      errors.push(`${relative}: project text must use English`);
+    if (/\/Users\/[\w.-]+\//.test(content))
+      errors.push(`${relative}: replace machine-specific paths`);
     if (entry.name.endsWith(".md")) {
       for (const match of content.matchAll(/\[[^\]]*\]\(([^\s)]+)\)/g)) {
         const target = match[1];
-        if (/^[a-z][a-z\d+.-]*:/i.test(target) || target.startsWith("#")) continue;
+        if (/^[a-z][a-z\d+.-]*:/i.test(target) || target.startsWith("#"))
+          continue;
         try {
-          await access(path.resolve(directory, decodeURIComponent(target.split("#")[0])));
+          await access(
+            path.resolve(directory, decodeURIComponent(target.split("#")[0])),
+          );
         } catch {
           errors.push(`${relative}: missing local link target ${target}`);
         }
@@ -42,28 +60,91 @@ async function inspect(directory) {
 }
 
 await inspect(root);
-const metadata = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
-const plist = await readFile(path.join(root, "apps/macos/Resources/Info.plist"), "utf8");
-const release = plist.match(/<key>CoveReleaseVersion<\/key>\s*<string>([^<]+)<\/string>/)?.[1];
-if (metadata.version !== release) errors.push("Root package and macOS release versions must match");
+const cardCatalog = await readFile(
+  path.join(root, "packages/api-contract/catalogs/interactive-v1.json"),
+  "utf8",
+);
+const embeddedCardCatalog = await readFile(
+  path.join(root, "services/local-service/internal/interactive/catalog.json"),
+  "utf8",
+);
+if (cardCatalog !== embeddedCardCatalog)
+  errors.push(
+    "Interactive catalog drift: update the service catalog from packages/api-contract/catalogs/interactive-v1.json",
+  );
+const cardCatalogV2 = await readFile(
+  path.join(root, "packages/api-contract/catalogs/interactive-v2.json"),
+  "utf8",
+);
+const embeddedCardCatalogV2 = await readFile(
+  path.join(
+    root,
+    "services/local-service/internal/interactive/catalog-v2.json",
+  ),
+  "utf8",
+);
+if (cardCatalogV2 !== embeddedCardCatalogV2)
+  errors.push(
+    "Interactive v2 catalog drift: update the service catalog from packages/api-contract/catalogs/interactive-v2.json",
+  );
+
+const cardCatalogV3 = await readFile(
+  path.join(root, "packages/api-contract/catalogs/interactive-v3.json"),
+  "utf8",
+);
+const embeddedCardCatalogV3 = await readFile(
+  path.join(
+    root,
+    "services/local-service/internal/interactive/catalog-v3.json",
+  ),
+  "utf8",
+);
+if (cardCatalogV3 !== embeddedCardCatalogV3)
+  errors.push("Interactive v3 catalog drift");
+const metadata = JSON.parse(
+  await readFile(path.join(root, "package.json"), "utf8"),
+);
+const plist = await readFile(
+  path.join(root, "apps/macos/Resources/Info.plist"),
+  "utf8",
+);
+const release = plist.match(
+  /<key>CoveReleaseVersion<\/key>\s*<string>([^<]+)<\/string>/,
+)?.[1];
+if (metadata.version !== release)
+  errors.push("Root package and macOS release versions must match");
 for (const workspace of ["apps/web", "packages/api-contract"]) {
-  const pkg = JSON.parse(await readFile(path.join(root, workspace, "package.json"), "utf8"));
-  if (pkg.version !== metadata.version) errors.push(`${workspace}: version must match root package`);
-  if (pkg.license !== "MIT") errors.push(`${workspace}: expected MIT license metadata`);
+  const pkg = JSON.parse(
+    await readFile(path.join(root, workspace, "package.json"), "utf8"),
+  );
+  if (pkg.version !== metadata.version)
+    errors.push(`${workspace}: version must match root package`);
+  if (pkg.license !== "MIT")
+    errors.push(`${workspace}: expected MIT license metadata`);
 }
 for (const entry of await readdir(path.join(root, "scripts"))) {
   if (entry.endsWith(".mjs")) {
-    const result = spawnSync(process.execPath, ["--check", path.join(root, "scripts", entry)], { encoding: "utf8" });
-    if (result.error || result.status !== 0) errors.push(`${entry}: ${result.error?.message ?? result.stderr}`);
+    const result = spawnSync(
+      process.execPath,
+      ["--check", path.join(root, "scripts", entry)],
+      { encoding: "utf8" },
+    );
+    if (result.error || result.status !== 0)
+      errors.push(`${entry}: ${result.error?.message ?? result.stderr}`);
     continue;
   }
   if (!entry.endsWith(".sh") && entry !== "go") continue;
-  const result = spawnSync("sh", ["-n", path.join(root, "scripts", entry)], { encoding: "utf8" });
-  if (result.error || result.status !== 0) errors.push(`${entry}: ${result.error?.message ?? result.stderr}`);
+  const result = spawnSync("sh", ["-n", path.join(root, "scripts", entry)], {
+    encoding: "utf8",
+  });
+  if (result.error || result.status !== 0)
+    errors.push(`${entry}: ${result.error?.message ?? result.stderr}`);
 }
 if (errors.length) {
   console.error(errors.join("\n"));
   process.exitCode = 1;
 } else {
-  console.log("Repository text, links, release metadata, and script syntax checks passed.");
+  console.log(
+    "Repository text, links, release metadata, and script syntax checks passed.",
+  );
 }
