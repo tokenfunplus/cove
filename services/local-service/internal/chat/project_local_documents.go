@@ -33,7 +33,9 @@ func (service *Service) ReindexProjectDocument(ctx context.Context, project, id 
 	if err != nil {
 		return err
 	}
-	return service.retrieval.Exclusive(ctx, func() error { return service.retrieval.WithStore(library).Reindex(ctx, id) })
+	return service.retrieval.Exclusive(ctx, func() error {
+		return service.retrieval.WithStore(library).Reindex(ctx, id, service.parseAttachment)
+	})
 }
 
 func (service *Service) SearchProjectDocuments(ctx context.Context, project string, ids []string, query string, minimum ...float64) (retrieval.Results, error) {
@@ -49,12 +51,12 @@ func (service *Service) SearchProjectDocuments(ctx context.Context, project stri
 		engine := service.retrieval.WithStore(library)
 		model, _ := localmodels.Lookup(localmodels.EmbeddingID)
 		for _, id := range ids {
-			chunks, e := library.ReadLocalChunks(ctx, id, model.SHA256, retrieval.IndexVersion)
+			needsReindex, e := library.NeedsLocalReindex(ctx, id, model.SHA256, retrieval.IndexVersion)
 			if e != nil {
 				return e
 			}
-			if len(chunks) == 0 {
-				if e = engine.Reindex(ctx, id); e != nil {
+			if needsReindex {
+				if e = engine.Reindex(ctx, id, service.parseAttachment); e != nil {
 					return e
 				}
 			}

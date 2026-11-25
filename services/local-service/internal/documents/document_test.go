@@ -77,13 +77,92 @@ func TestPDFExtractionPreservesPageNumbersAndRejectsScannedPages(t *testing.T) {
 	}
 }
 
+func TestPDFExtractionReassemblesPositionedChineseGlyphs(t *testing.T) {
+	const font = "<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 2 >> >>] >>"
+	var stream strings.Builder
+	for _, glyph := range []struct {
+		char rune
+		x, y int
+	}{
+		{'\u4e2d', 72, 720}, {'\u6bb5', 96, 720}, {'\u6587', 84, 720}, {'\u843d', 108, 720},
+		{'\u539f', 72, 702}, {'\u6587', 84, 702}, {'\u7ee7', 96, 702}, {'\u7eed', 108, 702},
+	} {
+		fmt.Fprintf(&stream, "BT /F1 12 Tf 1 0 0 1 %d %d Tm <%04X> Tj ET\n", glyph.x, glyph.y, glyph.char)
+	}
+	parsed, err := Parse(context.Background(), Input{Name: "fixture.pdf", Data: makePDFWithStreams(font, "", stream.String())})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "\u4e2d\u6587\u6bb5\u843d\n\u539f\u6587\u7ee7\u7eed"
+	if parsed.ExtractionVersion != PDFExtractionVersion || parsed.Characters != 9 ||
+		len(parsed.Sections) != 1 || parsed.Sections[0] != (Section{ID: "P2", Text: want}) {
+		t.Fatalf("PDF source sections: %#v", parsed.Snapshot)
+	}
+}
+
+func TestPDFExtractionUsesGlyphSpacingConservatively(t *testing.T) {
+	const font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 65 /LastChar 67 /Widths [600 600 600] >>"
+	for _, fixture := range []struct {
+		name   string
+		stream string
+		want   string
+	}{
+		{"word gap", "BT /F1 12 Tf 72 720 Td (A) Tj ET\nBT /F1 12 Tf 79.2 720 Td (B) Tj ET\nBT /F1 12 Tf 89.4 720 Td (C) Tj ET\n", "AB C"},
+		{"explicit whitespace", "BT /F1 12 Tf 72 720 Td (A ) Tj ET\nBT /F1 12 Tf 79.2 720 Td (B) Tj ET\nBT /F1 12 Tf 89.4 720 Td (C) Tj ET\n", "A \nB\nC"},
+		{"vertical glyphs", "BT /F1 12 Tf 72 720 Td (A) Tj ET\nBT /F1 12 Tf 72 708 Td (B) Tj ET\nBT /F1 12 Tf 72 696 Td (C) Tj ET\n", "A\nB\nC"},
+		{"skewed text", "BT /F1 12 Tf 1 0.1 0 1 72 720 Tm (A) Tj ET\nBT /F1 12 Tf 1 0.1 0 1 79 720 Tm (B) Tj ET\nBT /F1 12 Tf 1 0.1 0 1 86 720 Tm (C) Tj ET\n", "A\nB\nC"},
+		{"columns or table cells", "BT /F1 12 Tf 72 720 Td (A) Tj ET\nBT /F1 12 Tf 144 720 Td (B) Tj ET\nBT /F1 12 Tf 216 720 Td (C) Tj ET\n", "A\nB\nC"},
+		{"geometry decoder error", "cm\nBT /F1 12 Tf 72 720 Td (A) Tj ET\nBT /F1 12 Tf 79 720 Td (B) Tj ET\nBT /F1 12 Tf 86 720 Td (C) Tj ET\n", "A\nB\nC"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			parsed, err := Parse(context.Background(), Input{Name: "fixture.pdf", Data: makePDFWithStreams(font, fixture.stream)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(parsed.Sections) != 1 || parsed.Sections[0].Text != fixture.want {
+				t.Fatalf("unexpected PDF text: %#v", parsed.Sections)
+			}
+		})
+	}
+}
+
+func TestPDFExtractionPreservesLatinBreaksWithoutGlyphWidths(t *testing.T) {
+	const font = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
+	const stream = "BT /F1 12 Tf 72 720 Td (A) Tj ET\nBT /F1 12 Tf 80 720 Td (B) Tj ET\nBT /F1 12 Tf 94 720 Td (C) Tj ET\n"
+	parsed, err := Parse(context.Background(), Input{Name: "fixture.pdf", Data: makePDFWithStreams(font, stream)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.Sections) != 1 || parsed.Sections[0].Text != "A\nB\nC" {
+		t.Fatalf("unexpected PDF text: %#v", parsed.Sections)
+	}
+}
+
 // makePDF constructs a synthetic, self-contained PDF with correct xref offsets.
 func makePDF(withText bool) []byte {
 	stream := ""
 	if withText {
 		stream = "BT /F1 12 Tf 72 720 Td (Synthetic source) Tj ET\n"
 	}
-	objects := []string{"<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", fmt.Sprintf("<< /Length %d >>\nstream\n%sendstream", len(stream), stream)}
+	return makePDFWithStreams("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", stream)
+}
+
+func makePDFWithStreams(font string, streams ...string) []byte {
+	return makePDFWithFontObjects([]string{font}, streams...)
+}
+
+func makePDFWithFontObjects(fontObjects []string, streams ...string) []byte {
+	objects := append([]string{"<< /Type /Catalog /Pages 2 0 R >>", ""}, fontObjects...)
+	var kids strings.Builder
+	for _, stream := range streams {
+		page := len(objects) + 1
+		fmt.Fprintf(&kids, "%d 0 R ", page)
+		objects = append(objects,
+			fmt.Sprintf("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents %d 0 R >>", page+1),
+			fmt.Sprintf("<< /Length %d >>\nstream\n%sendstream", len(stream), stream),
+		)
+	}
+	objects[1] = fmt.Sprintf("<< /Type /Pages /Kids [%s] /Count %d >>", kids.String(), len(streams))
 	var text strings.Builder
 	text.WriteString("%PDF-1.4\n")
 	offsets := []int{0}

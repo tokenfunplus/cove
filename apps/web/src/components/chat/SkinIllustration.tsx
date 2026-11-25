@@ -1,4 +1,5 @@
 import type { Skin } from "@/theme/skin";
+import { ContinuumRibbon } from "./ContinuumRibbon";
 
 /** Small vector studies of a wave, a layered circuit, and a folded ribbon. */
 export function SkinIllustration({ skin }: { skin: Exclude<Skin, "grove"> }) {
@@ -9,16 +10,7 @@ export function SkinIllustration({ skin }: { skin: Exclude<Skin, "grove"> }) {
       aria-hidden="true"
       className="pointer-events-none w-full text-primary"
     >
-      {skin === "continuum" && (
-        <g transform="translate(9 22)" stroke="currentColor" strokeWidth="1.4">
-          {Array.from({ length: 26 }, (_, line) => (
-            <path
-              key={line}
-              d={`M ${4 + line * 1.55} ${100 + line * 1.55} C 35 ${87 + line * 1.6}, 58 ${-23 + line * 2.3}, 100 ${24 + line * 2.5} S ${147 + line * 1.4} ${96 + line}, ${158 + line * 1.45} ${44 + line * 1.85}`}
-            />
-          ))}
-        </g>
-      )}
+      {skin === "continuum" && <ContinuumRibbon />}
       {skin === "blueprint" && (
         <g stroke="currentColor" strokeLinejoin="round">
           <path

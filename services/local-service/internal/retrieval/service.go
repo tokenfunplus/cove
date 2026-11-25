@@ -35,8 +35,9 @@ type Service struct {
 	gate   chan struct{}
 }
 type Selection struct {
-	DocumentID string `json:"document_id"`
-	Ordinal    int    `json:"ordinal"`
+	DocumentID        string `json:"document_id"`
+	Ordinal           int    `json:"ordinal"`
+	ExtractionVersion string `json:"extraction_version,omitempty"`
 }
 type Hit struct {
 	Selection
@@ -135,11 +136,22 @@ func (service *Service) ImportWith(ctx context.Context, prepare func() (document
 	})
 }
 
-func (service *Service) Reindex(ctx context.Context, id string) error {
+func (service *Service) Reindex(ctx context.Context, id string, parser documents.Parser) error {
 	return service.Exclusive(ctx, func() error {
 		source, err := service.store.ReadLocalDocument(ctx, id)
 		if err != nil {
 			return err
+		}
+		if documents.NeedsPDFReextraction(source.Snapshot) {
+			refreshed, err := parser(ctx, documents.Input{Name: source.Name, Data: source.Data})
+			if err != nil {
+				return err
+			}
+			if refreshed.ID != source.ID || refreshed.ExtractionVersion != documents.PDFExtractionVersion {
+				return errors.New("The PDF could not be re-extracted from its original bytes.")
+			}
+			refreshed.Data = source.Data
+			source = refreshed
 		}
 		return service.importSource(ctx, source)
 	})
@@ -274,8 +286,26 @@ func (service *Service) Selected(ctx context.Context, selections []Selection, co
 			return errors.New("Choose between one and five search results.")
 		}
 		grouped := map[string][]persistence.LocalChunk{}
+		sources := map[string]documents.Prepared{}
 		var order []string
 		for _, selection := range selections {
+			source, ok := sources[selection.DocumentID]
+			if !ok {
+				if len(order) == 4 {
+					return errors.New("Attach results from at most four documents.")
+				}
+				var err error
+				source, err = service.store.ReadLocalDocument(ctx, selection.DocumentID)
+				if err != nil {
+					return err
+				}
+				sources[selection.DocumentID] = source
+				order = append(order, selection.DocumentID)
+			}
+			if selection.ExtractionVersion != source.ExtractionVersion &&
+				(selection.ExtractionVersion != "" || source.ExtractionVersion == documents.PDFExtractionVersion) {
+				return errors.New("The selected result belongs to a different extraction. Search again.")
+			}
 			chunks, err := service.store.ReadLocalChunks(ctx, selection.DocumentID, hash(), IndexVersion)
 			if err != nil {
 				return err
@@ -283,21 +313,11 @@ func (service *Service) Selected(ctx context.Context, selections []Selection, co
 			if selection.Ordinal < 0 || selection.Ordinal >= len(chunks) {
 				return errors.New("The selected result is no longer in the local index. Search again.")
 			}
-			if _, ok := grouped[selection.DocumentID]; !ok {
-				order = append(order, selection.DocumentID)
-			}
 			grouped[selection.DocumentID] = append(grouped[selection.DocumentID], chunks[selection.Ordinal])
-		}
-		if len(order) > 4 {
-			return errors.New("Attach results from at most four documents.")
 		}
 		prepared := make([]documents.Prepared, 0, len(order))
 		for _, id := range order {
-			source, err := service.store.ReadLocalDocument(ctx, id)
-			if err != nil {
-				return err
-			}
-			prepared = append(prepared, selectSections(source, grouped[id]))
+			prepared = append(prepared, selectSections(sources[id], grouped[id]))
 		}
 		return consume(prepared)
 	})

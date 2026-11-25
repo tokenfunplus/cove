@@ -100,7 +100,7 @@ func (service *Service) ReindexLocalDocument(ctx context.Context, id string) err
 	if service.retrieval == nil {
 		return errors.New("Local documents are unavailable.")
 	}
-	return service.retrieval.Reindex(ctx, id)
+	return service.retrieval.Reindex(ctx, id, service.parseAttachment)
 }
 func (service *Service) DeleteLocalDocument(ctx context.Context, id string) error {
 	if service.retrieval == nil {

@@ -15,7 +15,7 @@ Cove uses MedBox's Tailwind 4 and editable shadcn/Radix component pattern for th
 
 A new palette can override semantic variables under a skin selector while continuing to supply light and dark values. Components do not need palette-specific branches. Change `--radius` to scale rounded surfaces and controls, and the elevation variables to tune shadows. Add new semantic roles to the token file and Tailwind theme registration before using them in components; avoid literal palette colors in recipes.
 
-Motion is limited to surface entrances, hover/press feedback, sidebar changes, and status indicators. Streaming answer text remains stable. Reduced motion disables repeated and entrance animation and removes smooth scrolling.
+Motion is limited to surface entrances, hover/press feedback, sidebar changes, and status indicators, with one decorative exception. The Continuum welcome illustration slowly folds while it is visible. It shows a still pose when the user prefers reduced motion. Streaming answer text remains stable. Reduced motion disables repeated and entrance animation and removes smooth scrolling.
 
 ## Consequences
 

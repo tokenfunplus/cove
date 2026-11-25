@@ -40,6 +40,8 @@ React Chat Surface
 
 The Quick Panel hosts a compact Chat Surface in AppKit. It uses the same session authorization, chat commands, attachment preparation, Generation lifecycle, and saved history as the browser workspace. The Launcher owns window behavior and opens the full workspace with an authenticated handoff. See [Quick Panel](adr/0059-add-the-macos-quick-panel.md).
 
+Ask Cove in macOS Services sends selected plain text to the Launcher. The Launcher validates it and hands it off in memory to the trusted local Quick Panel page. The Chat Surface owns draft review and submission. See [selected text imports](adr/0061-import-macos-content-into-quick-panel-drafts.md).
+
 `api/client.ts` owns local HTTP/session adaptation and error decoding. Domain endpoint modules retain the shared contract types. `api/hooks` exposes TanStack Query queries and mutations, with scoped keys in `api/queryKeys.ts`. Mutations explicitly disable automatic retries. Conversation refreshes and generation batch reads use the same cache keys as mounted queries. The SSE adapter remains a stream rather than a cached query.
 
 `api/queryClient.ts` keeps loopback queries and commands active when the browser reports no internet. Actual Local Service failures still use ordinary error handling; remote Providers and downloads require reachable destinations. See [offline loopback requests](adr/0049-keep-loopback-requests-active-without-internet.md).
@@ -75,6 +77,8 @@ Completed attempts may also retain observed Generation Metrics. Chat measures or
 Provider-declared reasoning uses a separate stream/Message field and is excluded from later Selected Answer context. The frontend folds it at the end of streaming without modifying raw verification entities. Legacy explicitly tagged blocks retain a presentation fallback. See [structured reasoning](adr/0033-separate-provider-reasoning-from-answer-text.md). Provider adapters also normalize optional catalog details for model selection; locally bundled brand icons remain presentation only. See [model catalog presentation](adr/0034-show-provider-model-catalog-details-and-local-brand-icons.md).
 
 File chat saves original bytes, extracted source sections, and the augmented user input atomically with the Batch. `internal/documents` owns parsing and text formatting under Chat; persistence owns immutable snapshots and original downloads. The runnable service isolates PDF decoding in a bounded child process without initializing credentials or storage. Browser inference reads the same saved `input_content` used by ordinary Providers. Selected prior turns include that augmented input in later Context Snapshots. Draft previews remain local and ephemeral. See [source document snapshots](adr/0025-snapshot-local-source-documents-for-file-chat.md) for limits, context inspection, and citation semantics.
+
+Local search uses the same PDF extraction path. Refreshing an older PDF index uses its stored original and saves its extracted pages alongside the new vectors. Project indexes store a separately refreshed search snapshot with a reference to the existing Project original. See [PDF extraction and local search review](adr/0062-improve-pdf-extraction-and-local-search-review.md).
 
 Chat expires abandoned browser Generations after the inference timeout plus settlement grace. Slow SSE subscribers are disconnected without blocking Provider workers and can reconnect to reconcile persisted results. See [bounded lifetimes and event delivery](adr/0022-bound-browser-generation-lifetimes.md).
 

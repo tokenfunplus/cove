@@ -22,6 +22,7 @@ type LocalDocument struct {
 	Name         string    `json:"name"`
 	Characters   int       `json:"characters"`
 	Chunks       int       `json:"chunks"`
+	NeedsReindex bool      `json:"needs_reindex,omitempty"`
 	ModelHash    string    `json:"model_sha256"`
 	IndexVersion string    `json:"index_version"`
 	IndexedAt    time.Time `json:"indexed_at"`
@@ -53,6 +54,7 @@ func (store *SQLiteStore) ListLocalDocuments(ctx context.Context) ([]LocalDocume
 		}
 		item.Name = snapshot.Name
 		item.Characters = snapshot.Characters
+		item.NeedsReindex = item.Chunks > 0 && documents.NeedsPDFReextraction(snapshot)
 		item.IndexedAt, _ = time.Parse(time.RFC3339Nano, timestamp)
 		result = append(result, item)
 	}

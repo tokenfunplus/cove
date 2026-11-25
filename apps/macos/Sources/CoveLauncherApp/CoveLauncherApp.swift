@@ -22,10 +22,12 @@ struct CoveLauncherApp: App {
             }
         }
         _launcher = StateObject(wrappedValue: stateMachine)
-        _desktop = StateObject(wrappedValue: LauncherDesktopActions(
+        let desktopActions = LauncherDesktopActions(
             launcher: stateMachine, browser: browser, resources: launcherResourceBundle, serviceStatus: service
-        ))
+        )
+        _desktop = StateObject(wrappedValue: desktopActions)
         applicationDelegate.launcher = stateMachine
+        applicationDelegate.desktop = desktopActions
     }
 
     var body: some Scene {
