@@ -2,9 +2,16 @@
 
 ## Unreleased
 
+## 0.1.0-beta.12 - 2026-11-25
+
 ### Added
 
 - Bring selected text into the Quick Panel with Ask Cove in macOS Services.
+- Animate the Continuum welcome ribbon while it is visible and motion is enabled.
+
+### Changed
+
+- Upgrade SQLite to schema 28 for refreshed Project PDF indexes. Saved conversation snapshots and original files are retained.
 
 ### Fixed
 
