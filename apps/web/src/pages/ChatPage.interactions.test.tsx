@@ -2846,3 +2846,101 @@ test("a failed card continuation preserves unrelated staged attachments", async 
     ["retained.md"],
   );
 });
+
+test("failed card admission preserves an attachment preview completed during the request", async () => {
+  let finishPreview!: (
+    snapshot: Awaited<ReturnType<typeof transport.previewAttachment>>,
+  ) => void;
+  vi.mocked(transport.previewAttachment).mockReturnValue(
+    new Promise((resolve) => {
+      finishPreview = resolve;
+    }),
+  );
+  let failAdmission!: (error: Error) => void;
+  const admission = new Promise<never>((_, reject) => {
+    failAdmission = reject;
+  });
+  vi.mocked(transport.createGenerationBatch).mockReturnValue(admission);
+  const { result } = mountWorkspaceController();
+  await waitFor(() => expect(result.current.conversationView?.id).toBeTruthy());
+  let adding!: Promise<void>;
+  act(() => {
+    adding = result.current.attachmentDraft.addAttachments([
+      new File(["Source"], "pending.md", { type: "text/plain" }),
+    ]);
+  });
+  await waitFor(() => expect(transport.previewAttachment).toHaveBeenCalled());
+  expect(
+    result.current.attachmentDraft.attachments[0].snapshot,
+  ).toBeUndefined();
+  let sending!: Promise<void>;
+  act(() => {
+    sending = result.current.handleSend({
+      body: "Continue",
+      preserveDraft: true,
+      interaction: {
+        generation_id: "card",
+        revision: 0,
+        values: {},
+        checks: {},
+      },
+    });
+  });
+  await waitFor(() =>
+    expect(transport.createGenerationBatch).toHaveBeenCalled(),
+  );
+  await act(async () => {
+    finishPreview({
+      id: "a".repeat(64),
+      name: "pending.md",
+      media_type: "text/plain",
+      size: 6,
+      characters: 6,
+      extraction_version: "cove-text-v1",
+      sections: [{ id: "L1", text: "Source" }],
+    });
+    await adding;
+  });
+  expect(result.current.attachmentDraft.attachments[0].snapshot).toBeTruthy();
+  await act(async () => {
+    failAdmission(new Error("Synthetic admission failure"));
+    await sending;
+  });
+  expect(result.current.attachmentDraft.attachments[0].snapshot?.name).toBe(
+    "pending.md",
+  );
+  expect(result.current.attachmentDraft.attachments[0].input).toBeTruthy();
+});
+
+test("Quick Panel new chat and replacement imports protect a card question", async () => {
+  const { result } = renderHook(() => useChatWorkspace({ quickPanel: true }), {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    ),
+  });
+  await waitFor(() => expect(result.current.connection).toBe("ready"));
+  act(() => result.current.setSelectedId(fixture.conversation.id));
+  await waitFor(() =>
+    expect(result.current.conversationView?.id).toBe(fixture.conversation.id),
+  );
+  act(() => setInteractiveDraftDirty("quick-question", true));
+  try {
+    act(() => result.current.startBlankQuickChat());
+    expect(result.current.confirmation?.kind).toBe("navigate");
+    expect(result.current.selectedId).toBe(fixture.conversation.id);
+    act(() => result.current.setConfirmation(undefined));
+    const consume = vi.fn();
+    act(() => result.current.replaceQuickChat("Imported text", consume));
+    expect(result.current.confirmation?.discardDraft).toBe(true);
+    expect(consume).not.toHaveBeenCalled();
+    expect(result.current.selectedId).toBe(fixture.conversation.id);
+    await act(async () => {
+      await result.current.confirmRequestedAction();
+    });
+    expect(consume).toHaveBeenCalledOnce();
+    expect(result.current.selectedId).toBeUndefined();
+    expect(result.current.draft).toBe("Imported text");
+  } finally {
+    act(() => setInteractiveDraftDirty("quick-question", false));
+  }
+});

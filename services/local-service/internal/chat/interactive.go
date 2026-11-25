@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/tokenfunplus/cove/services/local-service/internal/interactive"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
+	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
 	"strings"
 )
 
@@ -49,14 +50,24 @@ func mergeCardInput(body, content, card string) string {
 	return content + strings.TrimPrefix(card, body)
 }
 
-func (s *Service) interactiveTargets(ctx context.Context, targets []persistence.ActiveModelTarget) bool {
+// Preview capability checks must never resolve credentials or contact a Provider.
+func (s *Service) previewInteractiveTargets(ctx context.Context, targets []persistence.ActiveModelTarget) bool {
 	if len(targets) != 1 || targets[0].ProviderID == "cove-local" {
 		return false
 	}
-	resolved, err := s.resolveTargets(ctx, targets)
-	if err != nil {
-		return false
+	if source, ok := s.profiles.(interface {
+		PreviewModelMetadata(context.Context, string, string) (provider.Profile, provider.ModelMetadata, error)
+	}); ok {
+		profile, metadata, err := source.PreviewModelMetadata(ctx, targets[0].ProviderID, targets[0].ModelID)
+		return err == nil && interactiveModel(profile, metadata)
 	}
-	target := resolved[0]
-	return target.profile.Kind != "local" && (target.metadata.ContextLength == nil || *target.metadata.ContextLength >= 8192)
+	return true
+}
+
+func interactiveModel(profile provider.Profile, metadata provider.ModelMetadata) bool {
+	return profile.Kind != provider.KindLocal && (metadata.ContextLength == nil || *metadata.ContextLength >= 8192)
+}
+
+func interactiveResolvedTargets(targets []resolvedTarget) bool {
+	return len(targets) == 1 && targets[0].profile.ID != "cove-local" && interactiveModel(targets[0].profile, targets[0].metadata)
 }

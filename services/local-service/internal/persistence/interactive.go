@@ -45,7 +45,7 @@ func readCard(ctx context.Context, db batchReader, id string) (interactive.Run, 
 func cardEligible(ctx context.Context, db batchReader, id string) bool {
 	var source, selected, latest, state, verification string
 	var enabled, targets int
-	err := db.QueryRowContext(ctx, `SELECT g.generation_batch_id,b.selected_generation_id,b.interactive,g.state,g.verification_snapshot,(SELECT count(*) FROM generation_targets t WHERE t.generation_batch_id=b.id),(SELECT id FROM generation_batches WHERE conversation_id=g.conversation_id ORDER BY created_at DESC,id DESC LIMIT 1) FROM generations g JOIN generation_batches b ON b.id=g.generation_batch_id WHERE g.id=? AND b.context_skipped=0`, id).Scan(&source, &selected, &enabled, &state, &verification, &targets, &latest)
+	err := db.QueryRowContext(ctx, `SELECT g.generation_batch_id,b.selected_generation_id,b.interactive,g.state,g.verification_snapshot,(SELECT count(*) FROM generation_targets t WHERE t.generation_batch_id=b.id),(SELECT id FROM generation_batches WHERE conversation_id=g.conversation_id ORDER BY created_at DESC,id DESC LIMIT 1) FROM generations g JOIN generation_batches b ON b.id=g.generation_batch_id JOIN conversations c ON c.id=g.conversation_id WHERE g.id=? AND b.context_skipped=0 AND c.archived_at IS NULL`, id).Scan(&source, &selected, &enabled, &state, &verification, &targets, &latest)
 	if err != nil || enabled != 1 || targets != 1 || selected != id || latest != source || state != string(GenerationCompleted) {
 		return false
 	}
@@ -139,13 +139,19 @@ func (s *SQLiteStore) CardReplay(ctx context.Context, in interactive.Submission,
 	if e != nil {
 		return b, false, e
 	}
-	var savedFingerprint string
-	var generation string
-	e = s.db.QueryRowContext(ctx, `SELECT generation_id,fingerprint FROM interactive_runs WHERE submitted_batch_id=?`, b.ID).Scan(&generation, &savedFingerprint)
-	if e != nil || generation != in.GenerationID || savedFingerprint != fingerprint {
-		return GenerationBatch{}, false, ErrCardConflict
+	if e = validateCardReplay(ctx, s.db, b.ID, in, fingerprint); e != nil {
+		return GenerationBatch{}, false, e
 	}
 	return b, true, nil
+}
+
+func validateCardReplay(ctx context.Context, db batchReader, batchID string, in interactive.Submission, fingerprint string) error {
+	var savedFingerprint, generation string
+	err := db.QueryRowContext(ctx, `SELECT generation_id,fingerprint FROM interactive_runs WHERE submitted_batch_id=?`, batchID).Scan(&generation, &savedFingerprint)
+	if err != nil || generation != in.GenerationID || savedFingerprint != fingerprint {
+		return ErrCardConflict
+	}
+	return nil
 }
 func admitCardTx(ctx context.Context, tx *sql.Tx, input BeginGenerationBatchInput, batchID string) error {
 	if input.Card == nil {

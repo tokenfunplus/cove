@@ -368,6 +368,7 @@ type GenerationAttemptFailure struct {
 }
 
 type ContextItem struct {
+	Interactive          bool
 	UserMessageID        string
 	SelectedGenerationID string
 	UserBody             string

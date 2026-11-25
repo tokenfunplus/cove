@@ -211,6 +211,7 @@ export function useGenerationCommands({
     );
     let accepted = false;
     let sourcesRestored = false;
+    let attachmentsCleared = false;
     let releaseCardReference: (() => void) | undefined;
     try {
       const preparedReference =
@@ -378,7 +379,10 @@ export function useGenerationCommands({
         setConversationView(branchView);
       }
       setGenerationBatch(next);
-      if (!override?.interaction) attachmentDraft.clearAttachments(false);
+      if (!override?.interaction) {
+        attachmentDraft.clearAttachments(false);
+        attachmentsCleared = true;
+      }
       setLiveTurn((current) =>
         current ? hydrateLiveTurnBatch(current, next) : current,
       );
@@ -425,8 +429,10 @@ export function useGenerationCommands({
       if (!override?.preserveDraft && !override?.editOfBatchId)
         setDraft(override?.draftOnFailure ?? body);
       if (!accepted) override?.onFailure?.(generationErrorMessage(error, copy));
-      attachmentDraft.restoreAttachments(originalAttachments);
-      sourcesRestored = true;
+      if (attachmentsCleared) {
+        attachmentDraft.restoreAttachments(originalAttachments);
+        sourcesRestored = true;
+      }
       setIsSending(false);
       setLiveTurn((current) =>
         current

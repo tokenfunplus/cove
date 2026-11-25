@@ -52,6 +52,7 @@ type normalizer struct {
 	reserved       map[string]bool
 	visited        map[string]bool
 	count          int
+	nodes          int
 	paths          []any
 	continues      int
 }
@@ -82,6 +83,7 @@ func Normalize(raw []byte) (Definition, error) {
 		if !ok {
 			return Definition{}, invalidAt("/children", "expected nested components")
 		}
+		n.nodes = 1 // The compact format has an implicit Card root.
 		ids := []string{}
 		for i, child := range children {
 			id, err := n.node(child, "", fmt.Sprintf("/children/%d", i), 2)
@@ -184,6 +186,10 @@ func Normalize(raw []byte) (Definition, error) {
 		return Definition{}, invalidAt("/continue", "a local-only card cannot contain a continuation action")
 	}
 	if n.continues == 0 && !local && len(n.paths) > 0 {
+		if n.nodes >= 30 {
+			return Definition{}, invalidAt("/continue", "component count exceeded")
+		}
+		n.nodes++
 		key := n.fresh("continue")
 		label := stringValue(m["continue"])
 		if label == "" {
@@ -261,7 +267,7 @@ func (n *normalizer) fieldRef(ref string) string {
 	return n.fields[ref]
 }
 func (n *normalizer) node(value any, key, location string, depth int) (string, error) {
-	if depth > 4 || n.count >= 29 {
+	if depth > 4 || n.nodes >= 30 {
 		return "", invalidAt(location, "component depth or count exceeded")
 	}
 	m, ok := value.(map[string]any)
@@ -277,6 +283,7 @@ func (n *normalizer) node(value any, key, location string, depth int) (string, e
 		key = n.fresh("element")
 	}
 	n.count++
+	n.nodes++
 	props := cloneMap(m["props"])
 	if _, nested := m["props"]; !nested {
 		props = m
@@ -502,6 +509,10 @@ func (n *normalizer) node(value any, key, location string, depth int) (string, e
 		if mapping[answer] == "" {
 			return "", invalidAt(location+"/answer", "answer must match an option value")
 		}
+		if n.nodes+2 > 30 {
+			return "", invalidAt(location, "component count exceeded")
+		}
+		n.nodes += 2
 		feedbackID := n.fresh("feedback")
 		buttonID := n.fresh("check")
 		cases := []any{}

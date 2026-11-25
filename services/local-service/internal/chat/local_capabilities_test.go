@@ -162,11 +162,11 @@ func TestProjectSearchPreservesFixedInputsAndRejectsOtherScopes(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := SendInput{ConversationID: unrelated.ID, Body: "Question", WebSourceOwner: "owner", WebSourceTokens: []string{selected[0].SourceToken}}
-	if _, _, err = service.prepareAttachments(ctx, input, ""); err == nil {
+	if _, _, err = service.prepareAttachments(ctx, input); err == nil {
 		t.Fatal("project source token entered an unrelated chat")
 	}
 	input.ConversationID = conversation.ID
-	if _, _, err = service.prepareAttachments(ctx, input, ""); err != nil {
+	if _, _, err = service.prepareAttachments(ctx, input); err != nil {
 		t.Fatal(err)
 	}
 	_, err = service.SetProjectSourceUsage(ctx, project.ID, project.Sources[0].ID, project.Revision, "always")

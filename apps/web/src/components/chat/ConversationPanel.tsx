@@ -638,7 +638,14 @@ export function ConversationPanel({
                                       navigationBusy ||
                                       activeModelSet.length !== 1
                                     }
-                                    onContinue={interactive?.onContinue}
+                                    onContinue={
+                                      !view.archived &&
+                                      allGenerationBatches.at(-1)
+                                        ?.selected_answer?.generation_id ===
+                                        cardGenerationId
+                                        ? interactive?.onContinue
+                                        : undefined
+                                    }
                                     destination={activeModelSet
                                       .map(
                                         (t) =>

@@ -49,6 +49,14 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 	}
 	defer tx.Rollback()
 	if existing, err := getGenerationBatchByRequestTx(ctx, tx, input.ClientRequestID); err == nil {
+		if input.Card != nil {
+			if existing.ConversationID != input.ConversationID {
+				return GenerationBatch{}, ErrCardConflict
+			}
+			if err := validateCardReplay(ctx, tx, existing.ID, *input.Card, input.CardFingerprint); err != nil {
+				return GenerationBatch{}, err
+			}
+		}
 		if err := tx.Commit(); err != nil {
 			return GenerationBatch{}, fmt.Errorf("commit idempotent generation batch: %w", err)
 		}
@@ -437,7 +445,7 @@ func (store *SQLiteStore) SkipGenerationBatchContext(ctx context.Context, batchI
 
 func (store *SQLiteStore) LoadBatchContext(ctx context.Context, conversationID string) ([]ContextItem, error) {
 	rows, err := store.db.QueryContext(ctx, `
-SELECT b.user_message_id, b.selected_generation_id, COALESCE(NULLIF(b.input_content, ''), user_message.body), COALESCE(NULLIF(assistant_message.context_body,''),assistant_message.body)
+SELECT b.user_message_id, b.selected_generation_id, COALESCE(NULLIF(b.input_content, ''), user_message.body), COALESCE(NULLIF(assistant_message.context_body,''),assistant_message.body), b.interactive
 FROM generation_batches b
 JOIN messages user_message ON user_message.id = b.user_message_id
 JOIN generations selected_generation ON selected_generation.id = b.selected_generation_id
@@ -451,7 +459,7 @@ ORDER BY b.created_at ASC, b.id ASC`, conversationID)
 	items := make([]ContextItem, 0)
 	for rows.Next() {
 		var item ContextItem
-		if err := rows.Scan(&item.UserMessageID, &item.SelectedGenerationID, &item.UserBody, &item.AssistantBody); err != nil {
+		if err := rows.Scan(&item.UserMessageID, &item.SelectedGenerationID, &item.UserBody, &item.AssistantBody, &item.Interactive); err != nil {
 			return nil, fmt.Errorf("scan batch context: %w", err)
 		}
 		items = append(items, item)
@@ -465,7 +473,7 @@ func (store *SQLiteStore) LoadGenerationBatchContext(ctx context.Context, batchI
 
 func loadGenerationBatchContext(ctx context.Context, db batchReader, batchID string) ([]ContextItem, error) {
 	rows, err := db.QueryContext(ctx, `
-SELECT item.user_message_id, item.selected_generation_id, COALESCE(NULLIF(source_batch.input_content, ''), user_message.body), COALESCE(NULLIF(assistant_message.context_body,''),assistant_message.body)
+SELECT item.user_message_id, item.selected_generation_id, COALESCE(NULLIF(source_batch.input_content, ''), user_message.body), COALESCE(NULLIF(assistant_message.context_body,''),assistant_message.body), COALESCE(source_batch.interactive,0)
 FROM batch_context_items item
 JOIN messages user_message ON user_message.id = item.user_message_id
 LEFT JOIN generation_batches source_batch ON source_batch.user_message_id = item.user_message_id
@@ -480,7 +488,7 @@ ORDER BY item.position ASC`, batchID)
 	items := make([]ContextItem, 0)
 	for rows.Next() {
 		var item ContextItem
-		if err := rows.Scan(&item.UserMessageID, &item.SelectedGenerationID, &item.UserBody, &item.AssistantBody); err != nil {
+		if err := rows.Scan(&item.UserMessageID, &item.SelectedGenerationID, &item.UserBody, &item.AssistantBody, &item.Interactive); err != nil {
 			return nil, fmt.Errorf("scan saved generation batch context: %w", err)
 		}
 		items = append(items, item)

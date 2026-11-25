@@ -223,10 +223,10 @@ func TestDiscussionPreviewMatchesProviderAndPreservesAttachments(t *testing.T) {
 func TestInteractiveModelCapacityPolicy(t *testing.T) {
 	// The managed model identity is rejected without resolving credentials or starting a worker.
 	s := &Service{}
-	if s.interactiveTargets(context.Background(), []persistence.ActiveModelTarget{{ProviderID: "cove-local", ModelID: "qwen-fixture"}}) {
+	if s.previewInteractiveTargets(context.Background(), []persistence.ActiveModelTarget{{ProviderID: "cove-local", ModelID: "qwen-fixture"}}) {
 		t.Fatal("managed tiny model received interactive guide")
 	}
-	if s.interactiveTargets(context.Background(), nil) {
+	if s.previewInteractiveTargets(context.Background(), nil) {
 		t.Fatal("empty target set eligible")
 	}
 }

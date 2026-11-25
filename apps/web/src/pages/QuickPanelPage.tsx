@@ -60,7 +60,9 @@ export function QuickPanelPage() {
     isNavigating ||
     Boolean(conversationView?.active_generation_batch);
   const hasDraft = Boolean(
-    workspace.draft || workspace.attachmentDraft.attachments.length,
+    workspace.draft ||
+      workspace.attachmentDraft.attachments.length ||
+      workspace.interactiveDirty,
   );
   const canImport =
     connectionReady &&
@@ -91,16 +93,19 @@ export function QuickPanelPage() {
 
   function applyImport(startNew: boolean) {
     if (!pending || !canImport) return;
+    if (startNew) {
+      // Consume the pending import only after the draft-discard guard succeeds.
+      workspace.replaceQuickChat(pending.text, () => {
+        take(pending.id);
+        focusComposer();
+      });
+      return;
+    }
     const incoming = take(pending.id);
     if (!incoming) return;
-
-    if (startNew) {
-      workspace.resetQuickChat(incoming.text);
-    } else {
-      workspace.setDraft((body) =>
-        body ? `${body}\n\n${incoming.text}` : incoming.text,
-      );
-    }
+    workspace.setDraft((body) =>
+      body ? `${body}\n\n${incoming.text}` : incoming.text,
+    );
     focusComposer();
   }
 
@@ -206,8 +211,8 @@ export function QuickPanelPage() {
           </p>
           {hasDraft && (
             <p className="text-muted-foreground">
-              Starting a new draft discards your current unsent text and
-              attachments.
+              Starting a new draft discards your current unsent text,
+              attachments, and card question.
             </p>
           )}
           <div className="flex flex-wrap gap-1.5">

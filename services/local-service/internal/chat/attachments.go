@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"unicode/utf8"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 	"github.com/tokenfunplus/cove/services/local-service/internal/interactive"
@@ -50,7 +49,7 @@ func (service *Service) PreviewGenerationContext(ctx context.Context, input Send
 	}
 	if input.Interactive {
 		targets, _, _, err := service.activeModelSet(ctx, input)
-		if err == nil && !service.interactiveTargets(ctx, targets) {
+		if err == nil && !service.previewInteractiveTargets(ctx, targets) {
 			input.Interactive = false
 		}
 	}
@@ -62,12 +61,17 @@ func (service *Service) PreviewGenerationContext(ctx context.Context, input Send
 		return nil, err
 	}
 	input.Body = body
-	attachments, content, err := service.prepareAttachments(ctx, input, systemPrompt)
+	attachments, content, err := service.prepareAttachments(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 	content = mergeCardInput(input.Body, content, cardInput)
-	items, err := service.store.LoadBatchContext(ctx, input.ConversationID)
+	var items []persistence.ContextItem
+	if input.EditOfBatchID != "" {
+		items, err = service.store.LoadGenerationBatchContext(ctx, input.EditOfBatchID)
+	} else {
+		items, err = service.store.LoadBatchContext(ctx, input.ConversationID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -84,9 +88,9 @@ func (service *Service) PreviewGenerationContext(ctx context.Context, input Send
 	return messages, nil
 }
 
-func (service *Service) prepareAttachments(ctx context.Context, input SendInput, systemPrompt string) ([]documents.Prepared, string, error) {
+func (service *Service) prepareAttachments(ctx context.Context, input SendInput) ([]documents.Prepared, string, error) {
 	if input.EditOfBatchID != "" {
-		return service.prepareEditedAttachments(ctx, input, systemPrompt)
+		return service.prepareEditedAttachments(ctx, input)
 	}
 	if len(input.Attachments)+len(input.WebSourceTokens) > documents.MaxFiles {
 		return nil, "", fmt.Errorf("%w: Attach at most four files or webpages per message.", documents.ErrInvalidDocument)
@@ -124,21 +128,10 @@ func (service *Service) prepareAttachments(ctx context.Context, input SendInput,
 		return nil, "", fmt.Errorf("%w: Sources may contain at most 120,000 extracted characters in total.", documents.ErrInvalidDocument)
 	}
 	content := documents.Prompt(input.Body, prepared)
-	items, err := service.store.LoadBatchContext(ctx, input.ConversationID)
-	if err != nil {
-		return nil, "", err
-	}
-	characters := utf8.RuneCountInString(content) + utf8.RuneCountInString(systemPrompt)
-	for _, item := range items {
-		characters += utf8.RuneCountInString(item.UserBody) + utf8.RuneCountInString(item.AssistantBody)
-	}
-	if characters > documents.MaxContextCharacters && !input.PreviewOnly {
-		return nil, "", documents.ErrContextLimit
-	}
 	return prepared, content, nil
 }
 
-func (service *Service) prepareEditedAttachments(ctx context.Context, input SendInput, systemPrompt string) ([]documents.Prepared, string, error) {
+func (service *Service) prepareEditedAttachments(ctx context.Context, input SendInput) ([]documents.Prepared, string, error) {
 	source, err := service.store.GetGenerationBatch(ctx, input.EditOfBatchID)
 	if err != nil {
 		return nil, "", err
@@ -151,16 +144,5 @@ func (service *Service) prepareEditedAttachments(ctx context.Context, input Send
 		return nil, "", err
 	}
 	content := documents.Prompt(input.Body, prepared)
-	items, err := service.store.LoadGenerationBatchContext(ctx, source.ID)
-	if err != nil {
-		return nil, "", err
-	}
-	characters := utf8.RuneCountInString(content) + utf8.RuneCountInString(systemPrompt)
-	for _, item := range items {
-		characters += utf8.RuneCountInString(item.UserBody) + utf8.RuneCountInString(item.AssistantBody)
-	}
-	if characters > documents.MaxContextCharacters && !input.PreviewOnly {
-		return nil, "", documents.ErrContextLimit
-	}
 	return prepared, content, nil
 }

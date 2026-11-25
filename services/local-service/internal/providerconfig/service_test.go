@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
@@ -244,5 +245,40 @@ func TestSavedKeyStaysBoundToItsNormalizedDestination(t *testing.T) {
 	}
 	if _, _, err := service.Resolve(ctx, profile.ID); !errors.Is(err, ErrUnconfigured) {
 		t.Fatalf("deleted key resolved with error %v", err)
+	}
+}
+
+func TestPreviewModelMetadataUsesOnlyLocalCatalogCache(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "small", "context_length": 4096}}})
+	}))
+	defer server.Close()
+	store, err := persistence.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	s := NewService(store, credentials.NewMemoryStore(), server.Client())
+	profile, err := s.Configure(context.Background(), ProfileInput{Kind: "openai_compatible", Name: "Fixture", Endpoint: server.URL, AuthMethod: "bearer", Secret: "fixture-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline := calls.Load()
+	_, metadata, err := s.PreviewModelMetadata(context.Background(), profile.ID, "small")
+	if err != nil || calls.Load() != baseline {
+		t.Fatal("uncached preview contacted Provider", err)
+	}
+	if _, _, _, err = s.ResolveCatalog(context.Background(), profile.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, metadata, err = s.PreviewModelMetadata(context.Background(), profile.ID, "small")
+	if err != nil || calls.Load() != baseline+1 || metadata.ContextLength == nil || *metadata.ContextLength != 4096 {
+		t.Fatal("cached preview contacted Provider or lost capacity", err)
+	}
+	server.Close()
+	if _, _, err = s.PreviewModelMetadata(context.Background(), profile.ID, "small"); err != nil || calls.Load() != baseline+1 {
+		t.Fatal("offline preview required Provider", err)
 	}
 }
