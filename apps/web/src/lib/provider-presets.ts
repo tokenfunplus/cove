@@ -6,8 +6,18 @@ export const providerPresets: ProviderPreset[] = bundledPresets as ProviderPrese
 
 export function providerPresetId(profile?: Pick<ProviderProfile, "kind" | "endpoint">): string {
   if (profile?.kind === "nearai") return "nearai";
-  const endpoint = profile?.endpoint.replace(/\/+$/, "").replace(/\/v1$/, "");
-  return providerPresets.find(preset => preset.endpoint.replace(/\/v1$/, "") === endpoint)?.id ?? "openai_compatible";
+  const endpoint = normalizedPresetEndpoint(profile?.endpoint ?? "");
+  return providerPresets.find(preset => normalizedPresetEndpoint(preset.endpoint) === endpoint)?.id ?? "openai_compatible";
+}
+
+function normalizedPresetEndpoint(endpoint: string): string {
+  try {
+    const url = new URL(endpoint);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) return "";
+    return url.origin + url.pathname.replace(/\/+$/, "").replace(/\/v1$/, "");
+  } catch {
+    return "";
+  }
 }
 
 export function allowsNoAuthentication(endpoint: string): boolean {

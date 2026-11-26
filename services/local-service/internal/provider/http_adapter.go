@@ -400,6 +400,25 @@ func (adapter *HTTPAdapter) ValidateChat(ctx context.Context, profile Profile, s
 	if err := classifyStatus(response.StatusCode); err != nil {
 		return err
 	}
+	if p, ok := presetFor(profile); ok && p.ID == "minimax" {
+		var result struct {
+			BaseResp *struct {
+				StatusCode int `json:"status_code"`
+			} `json:"base_resp"`
+		}
+		if err := decodeBoundedJSON(response.Body, &result); err != nil {
+			return fmt.Errorf("decode MiniMax validation: %w", ErrProtocol)
+		}
+		if result.BaseResp != nil {
+			switch result.BaseResp.StatusCode {
+			case 0:
+			case 1004, 2049:
+				return ErrAuthenticationFailed
+			default:
+				return ErrProtocol
+			}
+		}
+	}
 	return nil
 }
 

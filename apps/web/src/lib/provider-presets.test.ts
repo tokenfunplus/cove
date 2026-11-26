@@ -15,3 +15,26 @@ test("saved connection labels follow the endpoint rather than the editable name"
   expect(providerPresetId({ kind: "openai_compatible", endpoint: "https://other.example/v1" })).toBe("openai_compatible");
   expect(providerPresetId({ kind: "nearai", endpoint: "https://cloud-api.near.ai" })).toBe("nearai");
 });
+
+test("preset matching normalizes origins and preserves API paths", () => {
+  for (const [endpoint, expected] of [
+    ["https://api.openai.com:443/v1", "openai"],
+    ["https://API.OPENAI.COM:443/v1///", "openai"],
+    ["https://api.openai.com/", "openai"],
+    ["https://openrouter.ai:443/api/v1", "openrouter"],
+    ["https://api.minimax.cn:443/v1", "minimax"],
+    ["http://127.0.0.1:11434/v1/", "ollama"],
+    ["http://127.0.0.1:1234", "lmstudio"],
+    ["https://api.openai.com:8443/v1", "openai_compatible"],
+    ["https://api.openai.com/proxy/v1", "openai_compatible"],
+    ["https://api.openai.com/v2", "openai_compatible"],
+    ["https://api.openai.com/V1", "openai_compatible"],
+    ["https://api.openai.com/v1?route=custom", "openai_compatible"],
+    ["https://api.openai.com/v1#custom", "openai_compatible"],
+    ["https://user@api.openai.com/v1", "openai_compatible"],
+    ["https://api.openai.com.example/v1", "openai_compatible"],
+    ["not a URL", "openai_compatible"],
+  ]) {
+    expect(providerPresetId({ kind: "openai_compatible", endpoint }), endpoint).toBe(expected);
+  }
+});

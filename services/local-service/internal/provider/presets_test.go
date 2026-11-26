@@ -128,3 +128,99 @@ func TestOpenRouterChecksTheKeyBeforeItsPublicCatalog(t *testing.T) {
 		t.Fatal("OpenRouter accepted an invalid key", err)
 	}
 }
+
+func TestMiniMaxValidationChecksApplicationStatus(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		body string
+		want error
+	}{
+		{"openai response", `{"choices":[{"message":{"content":"ok"}}]}`, nil},
+		{"success", `{"base_resp":{"status_code":0}}`, nil},
+		{"unauthorized", `{"base_resp":{"status_code":1004,"status_msg":"rejected fixture"}}`, ErrAuthenticationFailed},
+		{"invalid key", `{"base_resp":{"status_code":2049}}`, ErrAuthenticationFailed},
+		{"other failure", `{"base_resp":{"status_code":1008}}`, ErrProtocol},
+		{"malformed", `not json`, ErrProtocol},
+		{"oversized", `{"padding":"` + strings.Repeat("x", 1<<20) + `","base_resp":{"status_code":1004}}`, ErrProtocol},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			adapter := NewHTTPAdapter(&http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(test.body))}, nil
+			})})
+			// Both initial catalog testing and selected-model validation must reject application errors.
+			for _, model := range []string{"", "MiniMax-M3.1-Flash"} {
+				profile, err := NewProfile(ProfileInput{Kind: KindOpenAICompatible, Endpoint: "https://api.minimax.cn/v1", AuthMethod: AuthBearer, Model: model})
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = adapter.Validate(context.Background(), ValidateInput{Profile: profile, Secret: credentials.Secret{Value: "fixture-key"}})
+				if !errors.Is(err, test.want) {
+					t.Fatalf("model %q validation = %v, want %v", model, err, test.want)
+				}
+				if err != nil && strings.Contains(err.Error(), "rejected fixture") {
+					t.Fatal("validation exposed the upstream message")
+				}
+			}
+		})
+	}
+}
+
+func TestPresetMatchingNormalizesOriginsAndPreservesAPIPaths(t *testing.T) {
+	for _, test := range []struct{ endpoint, want string }{
+		{"https://api.openai.com:443/v1", "openai"},
+		{"https://API.OPENAI.COM:443/v1///", "openai"},
+		{"https://api.openai.com/", "openai"},
+		{"https://openrouter.ai:443/api/v1", "openrouter"},
+		{"https://api.minimax.cn:443/v1", "minimax"},
+		{"http://127.0.0.1:11434/v1/", "ollama"},
+		{"http://127.0.0.1:1234", "lmstudio"},
+		{"https://api.openai.com:8443/v1", ""},
+		{"https://api.openai.com/proxy/v1", ""},
+		{"https://api.openai.com/v2", ""},
+		{"https://api.openai.com/V1", ""},
+		{"https://api.openai.com/v1?route=custom", ""},
+		{"https://api.openai.com/v1#custom", ""},
+		{"https://user@api.openai.com/v1", ""},
+		{"https://api.openai.com.example/v1", ""},
+		{"not a URL", ""},
+	} {
+		t.Run(test.endpoint, func(t *testing.T) {
+			p, ok := presetFor(Profile{Kind: KindOpenAICompatible, Endpoint: test.endpoint})
+			if p.ID != test.want || ok != (test.want != "") {
+				t.Fatalf("preset = %q, %v; want %q", p.ID, ok, test.want)
+			}
+		})
+	}
+}
+
+func TestOpenAIExplicitDefaultPortUsesCompletionTokenLimits(t *testing.T) {
+	profile, err := NewProfile(ProfileInput{Kind: KindOpenAICompatible, Endpoint: "https://api.openai.com:443/v1", AuthMethod: AuthBearer, Model: "fixture-model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	posts := 0
+	adapter := NewHTTPAdapter(&http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		posts++
+		var payload map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["max_completion_tokens"] == nil || payload["max_tokens"] != nil {
+			t.Error("explicit default port changed the OpenAI token parameter")
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: [DONE]\n\n"))}, nil
+	})})
+	secret := credentials.Secret{Value: "fixture-key"}
+	if err := adapter.ValidateChat(context.Background(), profile, secret); err != nil {
+		t.Fatal(err)
+	}
+	limit := 32
+	stream, err := adapter.Stream(context.Background(), CompletionInput{Profile: profile, Secret: secret, GenerationParameters: GenerationParameters{MaxTokens: &limit}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.Close()
+	if posts != 2 {
+		t.Fatal("validation and streaming were not both exercised")
+	}
+}

@@ -3,6 +3,7 @@ package provider
 import (
 	_ "embed"
 	"encoding/json"
+	"net/url"
 	"strings"
 )
 
@@ -29,13 +30,37 @@ func presetFor(profile Profile) (preset, bool) {
 	if profile.Kind != KindOpenAICompatible {
 		return preset{}, false
 	}
-	base := strings.TrimSuffix(strings.TrimRight(profile.Endpoint, "/"), "/v1")
+	base, ok := normalizedPresetEndpoint(profile.Endpoint)
+	if !ok {
+		return preset{}, false
+	}
 	for _, candidate := range presets {
-		if base == strings.TrimSuffix(candidate.Endpoint, "/v1") {
+		if endpoint, ok := normalizedPresetEndpoint(candidate.Endpoint); ok && base == endpoint {
 			return candidate, true
 		}
 	}
 	return preset{}, false
+}
+
+type presetEndpoint struct {
+	scheme, host, port, path string
+}
+
+func normalizedPresetEndpoint(raw string) (presetEndpoint, bool) {
+	endpoint, err := url.Parse(raw)
+	if err != nil || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
+		return presetEndpoint{}, false
+	}
+	scheme := strings.ToLower(endpoint.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return presetEndpoint{}, false
+	}
+	port := endpoint.Port()
+	if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
+		port = ""
+	}
+	path := strings.TrimSuffix(strings.TrimRight(endpoint.EscapedPath(), "/"), "/v1")
+	return presetEndpoint{scheme, strings.ToLower(endpoint.Hostname()), port, path}, true
 }
 
 func usesCompletionTokenLimit(profile Profile) bool {
