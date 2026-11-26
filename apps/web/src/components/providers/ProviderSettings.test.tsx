@@ -18,11 +18,11 @@ test("provider settings show configuration state and keep the NearAI endpoint fi
     id: "nearai",
     kind: "nearai",
     name: "NearAI",
-    endpoint: "https://cloud-stg-api.near.ai",
+    endpoint: "https://cloud-api.near.ai",
     model_id: "nearai/model-a",
     auth_method: "bearer",
     runtime_location: "NearAI cloud",
-    destination: "cloud-stg-api.near.ai",
+    destination: "cloud-api.near.ai",
     transport_security: "tls",
     privacy_notice:
       "Conversation content is sent to NearAI cloud over HTTPS/TLS.",
@@ -43,7 +43,7 @@ test("provider settings show configuration state and keep the NearAI endpoint fi
 
   expect(markup).toContain("Provider settings");
   expect(markup).toContain("Key not configured");
-  expect(markup).toContain("https://cloud-stg-api.near.ai");
+  expect(markup).toContain("https://cloud-api.near.ai");
   expect(markup).toContain('type="password"');
   expect(markup).toContain("nearai/model-a");
   expect(markup).toContain("NearAI preset");

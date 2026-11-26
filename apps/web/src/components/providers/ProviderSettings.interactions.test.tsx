@@ -74,6 +74,64 @@ function setup() {
   return { user: userEvent.setup(), probe };
 }
 
+test.each([
+  ["OpenRouter", "https://openrouter.ai/api/v1", "bearer"],
+  ["OpenAI", "https://api.openai.com/v1", "bearer"],
+  ["MiniMax", "https://api.minimax.cn/v1", "bearer"],
+  ["Ollama", "http://127.0.0.1:11434/v1", "none"],
+  ["LM Studio", "http://127.0.0.1:1234/v1", "none"],
+])("%s setup fills its endpoint and authentication", async (name, endpoint, auth) => {
+  const { user, probe } = setup();
+  await user.click(screen.getByRole("combobox", { name: "Connection type" }));
+  await user.click(screen.getByRole("option", { name }));
+  expect((screen.getByLabelText("Display name") as HTMLInputElement).value).toBe(name);
+  expect((screen.getByLabelText("Endpoint") as HTMLInputElement).value).toBe(endpoint);
+  expect(screen.queryByLabelText("API Key") === null).toBe(auth === "none");
+  await user.click(screen.getByRole("button", { name: "Test connection" }));
+  await waitFor(() => expect(probe).toHaveBeenCalledWith(expect.objectContaining({ name, endpoint, kind: "openai_compatible", auth_method: auth })));
+  expect(probe.mock.calls[0][0].secret).toBeUndefined();
+});
+
+test("changing presets discards a cloud key and the previous model catalog", async () => {
+  const { user, probe } = setup();
+  await user.click(screen.getByRole("combobox", { name: "Connection type" }));
+  await user.click(screen.getByRole("option", { name: "OpenAI" }));
+  await user.type(screen.getByLabelText("API Key"), "synthetic-cloud-key");
+  await user.click(screen.getByRole("button", { name: "Test connection" }));
+  await screen.findAllByText("Connection verified");
+  await user.click(screen.getByRole("combobox", { name: "Connection type" }));
+  await user.click(screen.getByRole("option", { name: "LM Studio" }));
+  expect(screen.queryByLabelText("API Key")).toBeNull();
+  expect((screen.getByRole("combobox", { name: "Model" }) as HTMLInputElement).value).toBe("");
+  expect(screen.queryAllByText("Connection verified")).toHaveLength(0);
+  await user.click(screen.getByRole("button", { name: "Test connection" }));
+  await waitFor(() => expect(probe).toHaveBeenCalledTimes(2));
+  expect(probe.mock.calls[1][0]).toMatchObject({ auth_method: "none", endpoint: "http://127.0.0.1:1234/v1" });
+  expect(probe.mock.calls[1][0].secret).toBeUndefined();
+});
+
+test("LM Studio can opt into Bearer authentication when its server requires a token", async () => {
+  const { user, probe } = setup();
+  await user.click(screen.getByRole("combobox", { name: "Connection type" }));
+  await user.click(screen.getByRole("option", { name: "LM Studio" }));
+  await user.click(screen.getByRole("combobox", { name: "Authentication" }));
+  await user.click(screen.getByRole("option", { name: "Bearer" }));
+  await user.type(screen.getByLabelText("API Key"), "synthetic-local-token");
+  await user.click(screen.getByRole("button", { name: "Test connection" }));
+  await waitFor(() => expect(probe).toHaveBeenCalledWith(expect.objectContaining({ auth_method: "bearer", secret: "synthetic-local-token" })));
+});
+
+test("choosing the key header preserves a key entered for the same connection", async () => {
+  const { user, probe } = setup();
+  await user.type(screen.getByLabelText("Display name"), "Header fixture");
+  await user.type(screen.getByLabelText("Endpoint"), "https://fixture.example/v1");
+  await user.type(screen.getByLabelText("API Key"), "synthetic-header-key");
+  await user.click(screen.getByRole("combobox", { name: "Authentication" }));
+  await user.click(screen.getByRole("option", { name: "X-API-Key" }));
+  await user.click(screen.getByRole("button", { name: "Test connection" }));
+  await waitFor(() => expect(probe).toHaveBeenCalledWith(expect.objectContaining({ auth_method: "x_api_key", secret: "synthetic-header-key" })));
+});
+
 test("setup without saved Providers starts with a blank OpenAI-compatible connection", () => {
   const { probe } = setup();
   expect(screen.getByRole("combobox", { name: "Connection type" }).textContent).toBe("OpenAI-compatible");
@@ -98,7 +156,7 @@ test("switching a tested NearAI draft to OpenAI-compatible clears its identity a
   await user.click(screen.getByRole("combobox", { name: "Connection type" }));
   await user.click(screen.getByRole("option", { name: "NearAI preset" }));
   expect((screen.getByLabelText("Display name") as HTMLInputElement).value).toBe("NearAI");
-  expect((screen.getByLabelText("Endpoint") as HTMLInputElement).value).toBe("https://cloud-stg-api.near.ai");
+  expect((screen.getByLabelText("Endpoint") as HTMLInputElement).value).toBe("https://cloud-api.near.ai");
   expect((screen.getByLabelText("Endpoint") as HTMLInputElement).readOnly).toBe(true);
   await user.type(screen.getByLabelText("API Key"), "synthetic-nearai-key");
   await user.click(screen.getByRole("button", { name: "Test connection" }));

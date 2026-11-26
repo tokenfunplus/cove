@@ -47,7 +47,7 @@ func TestNearAIProxyForwardsEncryptedCompletionBytesAndProtocolHeaders(t *testin
 	if upstream == nil {
 		t.Fatal("proxy did not make an upstream request")
 	}
-	if got := upstream.URL.String(); got != "https://cloud-stg-api.near.ai/v1/chat/completions?trace=fixture" {
+	if got := upstream.URL.String(); got != "https://cloud-api.near.ai/v1/chat/completions?trace=fixture" {
 		t.Fatalf("upstream URL = %q", got)
 	}
 	if got := upstream.Header.Get("Authorization"); got != "Bearer fixture-provider-key" {

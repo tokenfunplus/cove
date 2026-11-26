@@ -40,7 +40,7 @@ func TestNearAIValidationChecksTheKeyBeforeTrustingThePublicCatalog(t *testing.T
 			var paths []string
 			client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 				paths = append(paths, request.URL.Path)
-				if request.URL.Host != "cloud-stg-api.near.ai" || request.Header.Get("Authorization") != "Bearer fixture-key" {
+				if request.URL.Host != "cloud-api.near.ai" || request.Header.Get("Authorization") != "Bearer fixture-key" {
 					t.Fatal("validation must use the fixed NearAI destination and the supplied key")
 				}
 				status, body := http.StatusOK, `{}`

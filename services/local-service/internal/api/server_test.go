@@ -68,7 +68,7 @@ func TestNearAIModelMetadataPreservesEncodedModelIDsAndRequiresABrowserSession(t
 		if got := request.URL.EscapedPath(); got != "/v1/model/org%2Fprivate-model" {
 			t.Fatalf("metadata path = %q; encoded model IDs must stay one path component", got)
 		}
-		if request.URL.Host != "cloud-stg-api.near.ai" || request.Header.Get("Authorization") != "Bearer fixture-provider-key" {
+		if request.URL.Host != "cloud-api.near.ai" || request.Header.Get("Authorization") != "Bearer fixture-provider-key" {
 			t.Fatal("metadata must use the fixed provider and server-held key")
 		}
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"metadata":{"providerType":"vllm","attestationSupported":true}}`))}, nil

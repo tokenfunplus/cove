@@ -232,7 +232,7 @@ export interface ConversationView extends Conversation {
 }
 
 export type ProviderKind = "nearai" | "openai_compatible" | "local";
-export type ProviderAuthMethod = "bearer" | "x_api_key";
+export type ProviderAuthMethod = "bearer" | "x_api_key" | "none";
 
 export interface ProviderProfile {
   local_model?: { revision: string; sha256: string; runtime_version: string };

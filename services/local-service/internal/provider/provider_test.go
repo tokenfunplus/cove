@@ -21,6 +21,15 @@ func TestValidateProfileEnforcesPresetAndLoopbackTransportPolicies(t *testing.T)
 			wantErr: ErrInvalidEndpoint,
 		},
 		{
+			name: "new NearAI presets reject the former staging endpoint",
+			profile: Profile{
+				Kind:       KindNearAIPreset,
+				Endpoint:   "https://cloud-stg-api.near.ai",
+				AuthMethod: AuthBearer,
+			},
+			wantErr: ErrInvalidEndpoint,
+		},
+		{
 			name: "custom provider accepts https",
 			profile: Profile{
 				Kind:       KindOpenAICompatible,
@@ -57,7 +66,7 @@ func TestValidateProfileEnforcesPresetAndLoopbackTransportPolicies(t *testing.T)
 	}
 }
 
-func TestNormalizeNearAIPresetUsesStagingEndpoint(t *testing.T) {
+func TestNormalizeNearAIPresetUsesProductionEndpoint(t *testing.T) {
 	profile, err := NormalizeProfile(Profile{
 		Kind:       KindNearAIPreset,
 		AuthMethod: AuthBearer,
@@ -65,7 +74,7 @@ func TestNormalizeNearAIPresetUsesStagingEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NormalizeProfile error = %v", err)
 	}
-	if profile.Endpoint != "https://cloud-stg-api.near.ai" {
-		t.Fatalf("NearAI endpoint = %q, want staging endpoint", profile.Endpoint)
+	if profile.Endpoint != "https://cloud-api.near.ai" {
+		t.Fatalf("NearAI endpoint = %q, want production endpoint", profile.Endpoint)
 	}
 }

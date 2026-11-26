@@ -23,6 +23,8 @@ import {
 } from "@cove/api-contract";
 import { KeyRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { ProviderAuthMethod } from "@cove/api-contract";
+import { allowsNoAuthentication, providerPresetId, providerPresets } from "@/lib/provider-presets";
 
 export function ProviderSettings({
   id,
@@ -61,7 +63,8 @@ export function ProviderSettings({
   );
   const [name, setName] = useState(selectedProfile?.name ?? "");
   const [endpoint, setEndpoint] = useState(selectedProfile?.endpoint ?? "");
-  const [authMethod, setAuthMethod] = useState<"bearer" | "x_api_key">(
+  const [presetId, setPresetId] = useState(() => providerPresetId(selectedProfile));
+  const [authMethod, setAuthMethod] = useState<ProviderAuthMethod>(
     selectedProfile?.auth_method ?? "bearer",
   );
   const [model, setModel] = useState(selectedProfile?.model_id ?? "");
@@ -85,6 +88,8 @@ export function ProviderSettings({
     applied: profiles.some((profile) => profile.id === initialProviderId),
   });
   const busy = isTesting || isDeleting || isSaving;
+  const keyless = authMethod === "none";
+  const preset = providerPresets.find(item => item.id === providerPresetId({ kind, endpoint }));
 
   useEffect(() => {
     if (preferredSelection.current.id !== initialProviderId) {
@@ -126,6 +131,7 @@ export function ProviderSettings({
     const profile = profiles.find((candidate) => candidate.id === id);
     setSelectedProviderId(id);
     setKind(profile?.kind ?? "openai_compatible");
+    setPresetId(providerPresetId(profile));
     setName(profile?.name ?? "");
     setEndpoint(profile?.endpoint ?? "");
     setAuthMethod(profile?.auth_method ?? "bearer");
@@ -140,6 +146,7 @@ export function ProviderSettings({
   function startNewProvider() {
     setSelectedProviderId("__new__");
     setKind("openai_compatible");
+    setPresetId("openai_compatible");
     setName("");
     setEndpoint("");
     setAuthMethod("bearer");
@@ -160,10 +167,18 @@ export function ProviderSettings({
       }
     };
     return Boolean(
-      selectedProfile?.configured &&
+      !keyless && selectedProfile?.configured &&
         !secret.trim() &&
-        normalize(endpoint) !== normalize(selectedProfile.endpoint),
+        (normalize(endpoint) !== normalize(selectedProfile.endpoint) || authMethod !== selectedProfile.auth_method),
     );
+  }
+
+  function connectionFeedback(error: unknown) {
+    const result = providerErrorFeedback(error, copy);
+    if (keyless && result.text === copy.authenticationFailed) {
+      return { ...result, text: "The local server requires authentication. Choose Bearer and enter its API token." };
+    }
+    return result;
   }
 
   async function testConnection() {
@@ -192,7 +207,7 @@ export function ProviderSettings({
       setFeedback({ text: copy.providerTested, tone: "success" });
     } catch (error) {
       setConnectionTest(isLocalProviderSetupError(error) ? "idle" : "failed");
-      setFeedback(providerErrorFeedback(error, copy));
+      setFeedback(connectionFeedback(error));
     } finally {
       setIsTesting(false);
     }
@@ -223,10 +238,10 @@ export function ProviderSettings({
       setModel(saved.model_id);
       setModels(saved.model_id ? [saved.model_id] : models);
       setSecret("");
-      if (secret) setConnectionTest("verified");
+      if (secret || keyless) setConnectionTest("verified");
       setFeedback({ text: copy.providerSaved, tone: "success" });
     } catch (error) {
-      setFeedback(providerErrorFeedback(error, copy));
+      setFeedback(connectionFeedback(error));
     } finally {
       setIsSaving(false);
     }
@@ -286,7 +301,7 @@ export function ProviderSettings({
           )}
           data-connection-test={connectionTest}
         >
-          {providerConnectionLabel(
+          {keyless && connectionTest === "idle" ? (selectedProfile?.configured ? "Local service configured" : "Not tested") : providerConnectionLabel(
             connectionTest,
             selectedProfile?.configured,
             copy,
@@ -323,7 +338,7 @@ export function ProviderSettings({
               >
                 {kind === "nearai"
                   ? copy.presetConfidential
-                  : copy.customEndpoint}
+                  : preset ? `Preset · ${allowsNoAuthentication(endpoint) ? "Local service" : "Cloud"}` : copy.customEndpoint}
               </span>
               <span className={settingsStyles.prov_status}>
                 <span
@@ -332,7 +347,7 @@ export function ProviderSettings({
                     `dot${selectedProfile?.configured ? "" : " dot--grey"}`,
                   )}
                 />
-                {selectedProfile?.configured
+                {keyless ? "No API key required" : selectedProfile?.configured
                   ? copy.keyInKeychainConfigured
                   : copy.unconfigured}
               </span>
@@ -362,7 +377,7 @@ export function ProviderSettings({
                 <dl className={settingsStyles.specLine}>
                   <dt>{copy.connectionType}</dt>
                   <dd>
-                    {kind === "nearai" ? copy.nearai : copy.openaiCompatible}
+                    {kind === "nearai" ? copy.nearai : providerPresets.find(preset => preset.id === providerPresetId(selectedProfile))?.name ?? copy.openaiCompatible}
                   </dd>
                 </dl>
               ) : (
@@ -371,19 +386,22 @@ export function ProviderSettings({
                   label={copy.connectionType}
                   options={[
                     { value: "nearai", label: copy.nearai },
+                    ...providerPresets.map(preset => ({ value: preset.id, label: preset.name })),
                     {
                       value: "openai_compatible",
                       label: copy.openaiCompatible,
                     },
                   ]}
-                  value={kind}
+                  value={presetId}
                   onValueChange={(value) => {
-                    const nextKind = value as "nearai" | "openai_compatible";
-                    if (nextKind === kind) return;
+                    if (value === presetId) return;
+                    const preset = providerPresets.find(item => item.id === value);
+                    const nextKind = value === "nearai" ? "nearai" : "openai_compatible";
+                    setPresetId(value);
                     setKind(nextKind);
-                    setName(nextKind === "nearai" ? "NearAI" : "");
-                    setEndpoint(nextKind === "nearai" ? "https://cloud-stg-api.near.ai" : "");
-                    setAuthMethod("bearer");
+                    setName(nextKind === "nearai" ? "NearAI" : preset?.name ?? "");
+                    setEndpoint(nextKind === "nearai" ? "https://cloud-api.near.ai" : preset?.endpoint ?? "");
+                    setAuthMethod(preset?.auth_method ?? "bearer");
                     setSecret("");
                     setModel("");
                     setModels([]);
@@ -405,7 +423,16 @@ export function ProviderSettings({
                 <Input
                   readOnly={kind === "nearai"}
                   value={endpoint}
-                  onChange={(event) => setEndpoint(event.target.value)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setEndpoint(value);
+                    setPresetId(providerPresetId({ kind, endpoint: value }));
+                    setConnectionTest("idle");
+                    setModels([]);
+                    setMetadata({});
+                    setModel("");
+                  }}
+                  onBlur={() => { if (authMethod === "none" && !allowsNoAuthentication(endpoint)) setAuthMethod("bearer"); }}
                 />
               </label>
               <FrontSelect
@@ -415,12 +442,20 @@ export function ProviderSettings({
                 options={[
                   { value: "bearer", label: copy.bearer },
                   { value: "x_api_key", label: copy.apiKeyHeader },
+                  { value: "none", label: "None (local service)", disabled: !allowsNoAuthentication(endpoint) || kind === "nearai" },
                 ]}
                 value={authMethod}
-                onValueChange={(value) =>
-                  setAuthMethod(value as "bearer" | "x_api_key")
-                }
+                onValueChange={(value) => {
+                  setAuthMethod(value as ProviderAuthMethod);
+                  if (value === "none") setSecret("");
+                  setConnectionTest("idle");
+                  setModels([]);
+                  setMetadata({});
+                  setModel("");
+                }}
               />
+              {keyless && <p className="text-sm text-muted-foreground">Start the local server and load a model, then test the connection. Choose Bearer if the server requires an API token.</p>}
+              {presetId === "minimax" && <p className="text-sm text-muted-foreground">Models are listed from MiniMax documentation. Testing checks access with a short chat request. Use a platform API key for this endpoint.</p>}
               <ModelPicker
                 ariaLabel={copy.model}
                 label={copy.model}
@@ -434,7 +469,7 @@ export function ProviderSettings({
                 placeholder={copy.selectModel}
               />
             </div>
-            <div
+            {!keyless && <div
               className={cn(
                 settingsStyles.rotate,
                 `rotate${rotateOpen || !selectedProfile?.configured ? " is-open" : ""}`,
@@ -458,7 +493,7 @@ export function ProviderSettings({
               <p className={settingsStyles.rotate_hint}>
                 {copy.keyRotationHint}
               </p>
-            </div>
+            </div>}
             <div
               className={cn(
                 settingsStyles.prov_foot,
@@ -473,7 +508,7 @@ export function ProviderSettings({
               >
                 {isTesting ? copy.testing : copy.testConnection}
               </Button>
-              <Button
+              {!keyless && <Button
                 variant="outline"
                 type="button"
                 onClick={() => setRotateOpen((open) => !open)}
@@ -481,14 +516,14 @@ export function ProviderSettings({
               >
                 <KeyRound aria-hidden="true" size={13} strokeWidth={1.8} />
                 {copy.rotateKey}
-              </Button>
+              </Button>}
               <Button variant="default" type="submit" disabled={busy}>
                 {isSaving ? copy.saving : copy.saveProvider}
               </Button>
             </div>
             {selectedProfile && (
               <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-2">
-                <Button
+                {!keyless && <Button
                   variant="ghost"
                   size="sm"
                   type="button"
@@ -497,7 +532,7 @@ export function ProviderSettings({
                   disabled={busy || !selectedProfile.configured}
                 >
                   {copy.removeKey}
-                </Button>
+                </Button>}
                 <Button
                   variant="ghost"
                   size="sm"

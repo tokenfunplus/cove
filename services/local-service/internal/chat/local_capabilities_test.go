@@ -54,7 +54,7 @@ func TestLocalOnlyRejectsRemoteAndResearchBeforeProviderResolution(t *testing.T)
 }
 
 func TestLocalOnlyIsSavedWithTheAcceptedBatch(t *testing.T) {
-	for _, id := range []string{localmodels.ChatID, localmodels.Qwen3AbliteratedID} {
+	for _, id := range []string{localmodels.ChatID, localmodels.Qwen3AbliteratedID, localmodels.Qwen15BID, localmodels.QwenCoder15BID, localmodels.Gemma3ID} {
 		t.Run(id, func(t *testing.T) { testLocalOnlySavedBatch(t, id) })
 	}
 }

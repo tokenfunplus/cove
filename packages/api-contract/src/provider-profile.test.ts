@@ -10,7 +10,7 @@ test("the provider profile fixture is secret-free and compatible with the typed 
     transport_security: "tls"
   } satisfies ProviderProfile;
 
-  expect(profile.endpoint).toBe("https://cloud-stg-api.near.ai");
+  expect(profile.endpoint).toBe("https://cloud-api.near.ai");
   expect(profile.configured).toBe(true);
   expect(profile).not.toHaveProperty("secret");
 });

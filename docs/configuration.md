@@ -4,19 +4,25 @@ For a first run, follow the [quick start](../README.md#quick-start). Manage ever
 
 ## Provider Profiles
 
-New Provider setup defaults to OpenAI-compatible with an empty Display name and Endpoint. Choosing NearAI fills its fixed preset values. Switching back clears the draft name, endpoint, API key, model catalog, and connection-test result. Explicitly selected saved Provider Profiles retain their settings.
+New Provider setup defaults to OpenAI-compatible with an empty Display name and Endpoint. The Connection type menu also offers NearAI, OpenRouter, OpenAI, MiniMax, Ollama, and LM Studio. Choosing a preset fills its name, endpoint, and authentication. Switching presets clears the draft API key, model catalog, selection, and test result. The blank OpenAI-compatible choice also clears the name and endpoint. Explicitly selected saved Provider Profiles retain their settings.
 
-Open **Settings → Provider settings** to configure a connection. Enter a key, click **Test connection** to load the model catalog, choose a model target for initial setup, then click **Save Provider**. Testing alone does not save the key or profile. Enter a Key again when changing a configured connection’s endpoint or authentication method. A saved Key is only used with its saved destination and authentication method. The NearAI preset uses a fixed staging endpoint; custom Providers use OpenAI-compatible APIs.
+Open **Settings → Provider settings** to configure a connection. Enter a key, click **Test connection** to load the model catalog, choose a model target for initial setup, then click **Save Provider**. Testing alone does not save the key or profile. Enter a Key again when changing a custom connection's endpoint or authentication method. A custom Provider's saved Key is only used with its saved destination and authentication method. The NearAI preset uses a fixed production endpoint; custom Providers use OpenAI-compatible APIs.
 
 | Field | Meaning |
 | --- | --- |
 | Display name (`name`) | Local label for the Provider Profile. |
 | Connection type (`kind`) | `nearai` for the supplied preset or `openai_compatible` for a custom Provider. |
 | Endpoint (`endpoint`) | Custom Provider URL. HTTPS is required except for loopback HTTP destinations. The preset's service endpoint is managed by Cove. |
-| Authentication (`auth_method`) | `bearer` sends `Authorization: Bearer <key>`; `x_api_key` sends the key in `X-API-Key`. |
+| Authentication (`auth_method`) | `bearer` sends `Authorization: Bearer <key>`; `x_api_key` sends the key in `X-API-Key`; `none` sends no authentication and is restricted to compatible loopback connections. |
 | API key (`secret` on writes) | Entered through Settings and stored in macOS Keychain by default. Profile read responses exclude the key. Key rotation preserves the previous usable key if replacement validation fails. |
 
-The NearAI preset currently uses `https://cloud-stg-api.near.ai`. Model availability and verification support depend on its service and catalog. See the [privacy model](privacy.md) for the distinction between transport, execution, and verification claims.
+The NearAI preset uses `https://cloud-api.near.ai`. Cove appends `/v1` API routes. Existing NearAI presets using the former staging origin resolve to production with their existing credential reference and selected model; saving writes the production origin. Custom staging connections and historical snapshots retain their original destinations. Test the connection explicitly to check whether the saved Key and selected model are available in production. See [ADR 0070](adr/0070-use-nearai-production-preset-endpoint.md) and the [privacy model](privacy.md) for compatibility and the distinction between transport, execution, and verification claims.
+
+Before downgrading to a build predating these presets, remove saved None-authentication connections and any NearAI preset saved with the production origin using the current build. Older readers reject either record and can fail to list all Providers, including unchanged connections. If already downgraded, reopen the current build to remove those profiles, then downgrade and configure supported connections again. Removing a Provider also removes its Key; retain access to the Key through the Provider's own account before removal. A newly saved connection never restores a discarded credential automatically. Conversation history and its snapshots remain local and unchanged by Provider removal.
+
+OpenRouter defaults to `https://openrouter.ai/api/v1`; OpenAI to `https://api.openai.com/v1`; MiniMax to `https://api.minimax.cn/v1`. They use ordinary cloud inference and editable connection settings. OpenRouter authenticates its key before catalog discovery. MiniMax displays publisher-listed models and tests access with a short chat request; it requires a platform API key for the chosen endpoint. OpenAI chat output limits use `max_completion_tokens`.
+
+Ollama defaults to `http://127.0.0.1:11434/v1` and LM Studio to `http://127.0.0.1:1234/v1`. Start the server and load a model in that application, then test and save the connection. None authentication requires no placeholder key and does not access Keychain. For a protected local server, select Bearer and enter its API token. These user-managed services remain separate from Cove's bundled models and Only on this Mac admission. See [ADR 0071](adr/0071-add-cloud-and-local-provider-setup-presets.md).
 
 Provider settings initially open the first Provider in the current Active Model Set, falling back to the first saved Provider when none is selected. Testing or saving another Provider does not switch the Active Model Set. Profiles with similar names retain separate destinations and keys; a successful test of a production connection does not validate a staging connection.
 

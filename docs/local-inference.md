@@ -1,6 +1,6 @@
 # Local inference and retrieval acceptance
 
-On this Mac installs BGE Small Chinese v1.5 Q8_0 for local document search, plus independently selectable Qwen2.5 0.5B Instruct Q4_K_M and Qwen3 0.6B Abliterated Q5_K_M for offline chat. Model downloads use pinned Hugging Face revisions and SHA-256 verification. The registry is in `services/local-service/internal/localmodels/models.go`; runtime archive integrity is pinned in `scripts/prepare-inference-runtime.mjs`. See [ADR-0048](adr/0048-add-managed-local-inference-and-document-retrieval.md) and [ADR-0054](adr/0054-add-qwen3-abliterated-local-chat.md) for lifecycle, storage, and compatibility decisions.
+On this Mac installs BGE Small Chinese v1.5 Q8_0 for local document search, plus five independently selectable offline chat models: Qwen2.5 0.5B Instruct Q4_K_M, Qwen3 0.6B Abliterated Q5_K_M, Qwen2.5 1.5B Instruct Q4_K_M, Qwen2.5 Coder 1.5B Instruct Q4_K_M, and text-only Gemma 3 1B IT Q4_K_M. Model downloads use pinned Hugging Face revisions and SHA-256 verification. The registry is in `services/local-service/internal/localmodels/models.go`; runtime archive integrity is pinned in `scripts/prepare-inference-runtime.mjs`. See [ADR-0048](adr/0048-add-managed-local-inference-and-document-retrieval.md), [ADR-0054](adr/0054-add-qwen3-abliterated-local-chat.md), and [ADR-0069](adr/0069-add-qwen15b-and-gemma-local-chat.md) for lifecycle, storage, and compatibility decisions.
 
 The optional native inference runtime requires an Apple Silicon Mac running macOS 13.3 or later. `make build-service` prepares the runtime before building the service. `COVE_INFERENCE_RUNTIME` can select a developer-built helper; it is a process configuration value, never a browser setting.
 
@@ -76,7 +76,7 @@ scripts/go -C services/local-service test ./internal/retrieval -run TestRealLoca
 scripts/go -C services/local-service test ./internal/localmodels -run TestRealOfflineChatAcceptance -v -count=1
 ```
 
-To exercise Qwen3 with the same offline-chat gate, set `COVE_TEST_CHAT_MODEL=qwen3-abliterated-chat` for the second test command. The default remains Qwen2.5. Each selected model is downloaded only when its verified weights are absent from the temporary data directory.
+To exercise another model with the same offline-chat gate, set `COVE_TEST_CHAT_MODEL` to `qwen3-abliterated-chat`, `qwen25-1-5b-chat`, `qwen25-coder-1-5b-chat`, or `gemma3-1b-chat` for the second test command. The default remains Qwen2.5 0.5B. Each selected model is downloaded only when its verified weights are absent from the temporary data directory.
 
 The fixtures and assertions live in the corresponding `acceptance_test.go` files and `internal/retrieval/testdata/chinese-retrieval.json`. Keep this data directory separate from everyday Cove data. No Provider credentials are needed for these tests.
 
@@ -87,3 +87,15 @@ Interrupted model transfers can resume on retry when the pinned source supports 
 Document search offers a Minimum similarity filter. Zero includes all non-negative matches; higher values can return no results. This user-selected cutoff is not a confidence estimate or a calibrated answer-quality threshold. Results skip chunks whose original source sections are already represented.
 
 Local chat reports waiting, model preparation, and generation activity. Switching inference models unloads the previous worker; switching back may require loading again. See [ADR 0058](adr/0058-improve-local-capability-feedback-and-recovery.md).
+
+## Additional chat model acceptance
+
+On 2026-11-26, the three Q4_K_M artifacts in [ADR 0069](adr/0069-add-qwen15b-and-gemma-local-chat.md) were downloaded from their pinned public sources, checked against their exact sizes and SHA-256 digests, and staged in a disposable data directory. Each passed the existing native offline-chat gate with llama.cpp b12606 and an unreachable external proxy:
+
+| Model | Chinese smoke cases | Streamed text deltas | First text including load | Stop | Peak process resident memory |
+| --- | --- | --- | --- | --- | --- |
+| Qwen2.5 1.5B Instruct | 3/3 | 28 | 8,164 ms | 10 ms | 1,378,353,152 bytes |
+| Qwen2.5 Coder 1.5B Instruct | 3/3 | 22 | 1,148 ms | 10 ms | 1,385,447,424 bytes |
+| Gemma 3 1B IT | 3/3 | 30 | 1,107 ms | 7 ms | 996,786,176 bytes |
+
+Each gate also completed a Chat-owned local-only Generation and verified the saved answer's selected artifact revision and hash. The files were staged before the gate, so its install call reused verified weights; the reported timings exclude downloads. These are limited synthetic extraction, rewrite, and explanation cases on one Apple Silicon development Mac, not representative Chinese, coding, or speed benchmarks. The different load times may include first-use runtime and operating-system cache effects. Model selection, file-size filtering, and unsent-draft preservation are additionally covered by workspace interaction tests.

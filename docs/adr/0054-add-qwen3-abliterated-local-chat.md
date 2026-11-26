@@ -4,6 +4,8 @@ Date: 2026-11-22
 
 Status: Accepted
 
+[ADR 0069](0069-add-qwen15b-and-gemma-local-chat.md) extends this registry to five independently selectable managed chat models.
+
 This extends the single-chat-model integration in [ADR-0048](0048-add-managed-local-inference-and-document-retrieval.md), the discovery boundary in [ADR-0051](0051-expand-small-model-discovery-by-task.md), and explicit local selection in [ADR-0053](0053-integrate-local-capabilities-into-chat-and-projects.md).
 
 Cove adds mlabonne's Qwen3 0.6B Abliterated Q5_K_M as the independent `qwen3-abliterated-chat` target. The existing `qwen-small-chat` identity and installed Qwen2.5 weights remain unchanged. The 444,415,104-byte GGUF is pinned to revision `92351f431cfdd36f71149aaf072a6490a68e144e` and SHA-256 `5f850d7369a02a318da85cf9b5deac9ab3f2f1cfe01f4ba48b68f6f7a72db87b`. The publisher declares Apache-2.0. Downloads remain explicit and integrity checked.

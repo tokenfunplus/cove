@@ -1983,7 +1983,32 @@ try {
   await until(
     `document.querySelectorAll("#provider-settings [data-slot=select-trigger]").length >= 3`,
   );
-  await clickText("OpenAI-compatible", "#provider-settings");
+  await click('#provider-settings [aria-label="Connection type"]');
+  for (const name of ["OpenRouter", "OpenAI", "MiniMax", "Ollama", "LM Studio"]) {
+    assert(await evaluate(`[...document.querySelectorAll('[role=option]')].some(option=>option.textContent.trim()===${JSON.stringify(name)})`), `Missing Provider preset: ${name}`);
+  }
+  await snapshot("provider-presets-menu-1440");
+  await chooseOption("OpenRouter");
+  for (const [name, endpoint, keyless] of [
+    ["OpenRouter", "https://openrouter.ai/api/v1", false],
+    ["OpenAI", "https://api.openai.com/v1", false],
+    ["MiniMax", "https://api.minimax.cn/v1", false],
+    ["Ollama", "http://127.0.0.1:11434/v1", true],
+    ["LM Studio", "http://127.0.0.1:1234/v1", true],
+  ]) {
+    if (name !== "OpenRouter") {
+      await click('#provider-settings [aria-label="Connection type"]');
+      await chooseOption(name);
+    }
+    assert.equal(await evaluate(`document.querySelectorAll('#provider-settings .prov__body label input')[1].value`), endpoint);
+    assert.equal(await evaluate(`!document.querySelector('#provider-settings input[type=password]')`), keyless);
+  }
+  await snapshot("provider-presets-local-1440");
+  await cdp("Emulation.setDeviceMetricsOverride", {width:390,height:844,deviceScaleFactor:1,mobile:true});
+  assert(await evaluate("document.documentElement.scrollWidth<=innerWidth"), "Local Provider setup overflows a narrow screen");
+  await snapshot("provider-presets-local-390");
+  await cdp("Emulation.setDeviceMetricsOverride", {width:1440,height:900,deviceScaleFactor:1,mobile:false});
+  await click('#provider-settings [aria-label="Connection type"]');
   await chooseOption("NearAI preset");
   assert(
     await evaluate(

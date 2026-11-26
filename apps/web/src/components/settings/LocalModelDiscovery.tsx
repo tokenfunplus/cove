@@ -5,7 +5,7 @@ import { ChevronDown, Search, SlidersHorizontal, X } from "lucide-react";
 import type { PreparedWebSource } from "@cove/api-contract";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { filterLocalModels, localModelCatalog, localModelCatalogReviewed, localModelPurposes, type LocalModelAvailability, type LocalModelLanguage, type LocalModelPurpose } from "@/lib/local-model-catalog";
+import { filterLocalModels, localModelCatalog, localModelCatalogMaxWeightMB, localModelCatalogReviewed, localModelPurposes, type LocalModelAvailability, type LocalModelLanguage, type LocalModelPurpose } from "@/lib/local-model-catalog";
 import { localModelsCopy as copy } from "@/messages/local-models";
 import { localModelsStyles as styles } from "@/styles/local-models";
 import { LocalDocumentsDialog } from "./LocalDocumentsDialog";
@@ -13,8 +13,8 @@ import { LocalModelDiscoveryCard } from "./LocalModelDiscoveryCard";
 
 const languages = ["all", "zh", "en", "multilingual", "independent"] as const;
 const availabilities = ["all", "ready", "explore"] as const;
-const sizes = [[10, copy.sizes.tiny], [50, copy.sizes.small], [100, copy.sizes.medium], [250, copy.sizes.large], [500, copy.sizes.all]] as const;
-const initialFilters = { query: "", purpose: "all" as LocalModelPurpose | "all", language: "all" as LocalModelLanguage | "all", availability: "all" as LocalModelAvailability | "all", maxWeightMB: 500 };
+const sizes = [[10, copy.sizes.tiny], [50, copy.sizes.small], [100, copy.sizes.medium], [250, copy.sizes.large], [500, copy.sizes.compact], [1000, copy.sizes.larger], [localModelCatalogMaxWeightMB, copy.sizes.all]] as const;
+const initialFilters = { query: "", purpose: "all" as LocalModelPurpose | "all", language: "all" as LocalModelLanguage | "all", availability: "all" as LocalModelAvailability | "all", maxWeightMB: localModelCatalogMaxWeightMB };
 const pageSize = 6;
 
 export function LocalModelDiscovery({ manage = false, onUseSources, onUseChat, onUseSpeech, request }: {
@@ -34,8 +34,8 @@ export function LocalModelDiscovery({ manage = false, onUseSources, onUseChat, o
   const models = sort === "size" ? [...filteredModels].sort((a, b) => a.weightMB - b.weightMB || a.name.localeCompare(b.name)) : filteredModels;
   const ready = models.filter(model => model.availability === "ready");
   const explore = models.filter(model => model.availability === "explore");
-  const activeFilters = Boolean(filters.query || filters.purpose !== "all" || filters.language !== "all" || filters.availability !== "all" || filters.maxWeightMB !== 500 || sort !== "featured");
-  const additionalFilters = Number(filters.language !== "all") + Number(filters.maxWeightMB !== 500) + Number(sort !== "featured");
+  const activeFilters = Boolean(filters.query || filters.purpose !== "all" || filters.language !== "all" || filters.availability !== "all" || filters.maxWeightMB !== initialFilters.maxWeightMB || sort !== "featured");
+  const additionalFilters = Number(filters.language !== "all") + Number(filters.maxWeightMB !== initialFilters.maxWeightMB) + Number(sort !== "featured");
 
   function updateFilters(patch: Partial<typeof initialFilters>) {
     setFilters(current => ({ ...current, ...patch }));
@@ -82,7 +82,7 @@ export function LocalModelDiscovery({ manage = false, onUseSources, onUseChat, o
       </div>
       <div className={styles.results}>
         <p role="status">{models.length} of {localModelCatalog.length} models</p>
-        {additionalFilters > 0 && !filtersOpen && <span>{[filters.language !== "all" && copy.languages[filters.language], filters.maxWeightMB !== 500 && `Up to ${filters.maxWeightMB} MB`, sort === "size" && "Smallest files first"].filter(Boolean).join(" · ")}</span>}
+        {additionalFilters > 0 && !filtersOpen && <span>{[filters.language !== "all" && copy.languages[filters.language], filters.maxWeightMB !== initialFilters.maxWeightMB && sizes.find(([value]) => value === filters.maxWeightMB)?.[1], sort === "size" && "Smallest files first"].filter(Boolean).join(" · ")}</span>}
       </div>
       {ready.length > 0 && <section aria-labelledby="local-ready-title" className={styles.collection}>
         <div className={styles.collectionHeader}><h4 id="local-ready-title">{copy.readyTitle}<span>{ready.length}</span></h4><p>{copy.readyDescription}</p></div>

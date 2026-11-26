@@ -21,6 +21,9 @@ import (
 const EmbeddingID = "bge-small-zh"
 const ChatID = "qwen-small-chat"
 const Qwen3AbliteratedID = "qwen3-abliterated-chat"
+const Qwen15BID = "qwen25-1-5b-chat"
+const QwenCoder15BID = "qwen25-coder-1-5b-chat"
+const Gemma3ID = "gemma3-1b-chat"
 const RuntimeVersion = "b12606"
 
 type Model struct {
@@ -38,6 +41,9 @@ var Registry = []Model{
 	{ID: EmbeddingID, Name: "BGE Small Chinese v1.5", Role: "embedding", Revision: "5bf683e6a1bd454bbb60ba051088c50731d63fcb", SHA256: "5a88d266870fbd27c6f329df60de80e2d4cf3bbd5e6f080bd5c1b2e5abb12039", Bytes: 26472640, Filename: "bge-small-zh-v1.5-q8_0.gguf", URL: "https://huggingface.co/CompendiumLabs/bge-small-zh-v1.5-gguf/resolve/5bf683e6a1bd454bbb60ba051088c50731d63fcb/bge-small-zh-v1.5-q8_0.gguf"},
 	{ID: ChatID, Name: "Qwen2.5 0.5B Instruct", Role: "chat", Revision: "9217f5db79a29953eb74d5343926648285ec7e67", SHA256: "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db", Bytes: 491400032, Filename: "qwen2.5-0.5b-instruct-q4_k_m.gguf", URL: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/9217f5db79a29953eb74d5343926648285ec7e67/qwen2.5-0.5b-instruct-q4_k_m.gguf"},
 	{ID: Qwen3AbliteratedID, Name: "Qwen3 0.6B Abliterated Q5_K_M", Role: "chat", Revision: "92351f431cfdd36f71149aaf072a6490a68e144e", SHA256: "5f850d7369a02a318da85cf9b5deac9ab3f2f1cfe01f4ba48b68f6f7a72db87b", Bytes: 444415104, Filename: "qwen3-0.6b-abliterated.q5_k_m.gguf", URL: "https://huggingface.co/mlabonne/Qwen3-0.6B-abliterated-GGUF/resolve/92351f431cfdd36f71149aaf072a6490a68e144e/qwen3-0.6b-abliterated.q5_k_m.gguf"},
+	{ID: Qwen15BID, Name: "Qwen2.5 1.5B Instruct", Role: "chat", Revision: "91cad51170dc346986eccefdc2dd33a9da36ead9", SHA256: "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e", Bytes: 1117320736, Filename: "qwen2.5-1.5b-instruct-q4_k_m.gguf", URL: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q4_k_m.gguf"},
+	{ID: QwenCoder15BID, Name: "Qwen2.5 Coder 1.5B Instruct", Role: "chat", Revision: "f86cb2c1fa58255f8052cc32aeede1b7482d4361", SHA256: "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046", Bytes: 1117320768, Filename: "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", URL: "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/f86cb2c1fa58255f8052cc32aeede1b7482d4361/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"},
+	{ID: Gemma3ID, Name: "Gemma 3 1B IT", Role: "chat", Revision: "116f76234503685a98f572982177b11d44ec8ff1", SHA256: "12bf0fff8815d5f73a3c9b586bd8fee8e7b248c935de70dec367679873d0f29d", Bytes: 806058496, Filename: "google_gemma-3-1b-it-Q4_K_M.gguf", URL: "https://huggingface.co/bartowski/google_gemma-3-1b-it-GGUF/resolve/116f76234503685a98f572982177b11d44ec8ff1/google_gemma-3-1b-it-Q4_K_M.gguf"},
 }
 
 func IsChatModel(id string) bool {

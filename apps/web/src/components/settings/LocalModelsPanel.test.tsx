@@ -11,6 +11,24 @@ setupControlTests();
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
+test("larger integrated chat models appear by default and respect file-size filters", async () => {
+  const user = userEvent.setup();
+  render(<LocalModelsPanel />);
+  for (const name of ["Qwen2.5 1.5B Instruct", "Qwen2.5 Coder 1.5B Instruct", "Gemma 3 1B IT"]) {
+    expect(screen.getByText(name)).toBeTruthy();
+  }
+  await user.click(screen.getByRole("button", { name: "Filters" }));
+  await chooseOption(user, screen.getByRole("combobox", { name: "Model file size" }), "Up to 1 GB");
+  expect(screen.getByText("Gemma 3 1B IT")).toBeTruthy();
+  expect(screen.queryByText("Qwen2.5 1.5B Instruct")).toBeNull();
+  expect(screen.queryByText("Qwen2.5 Coder 1.5B Instruct")).toBeNull();
+  await chooseOption(user, screen.getByRole("combobox", { name: "Model file size" }), "Up to 500 MB");
+  expect(screen.queryByText("Gemma 3 1B IT")).toBeNull();
+  await user.click(screen.getAllByRole("button", { name: "Reset filters" })[0]);
+  expect(screen.getByText("Qwen2.5 Coder 1.5B Instruct")).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Model file size" }).textContent).toBe("Up to 1.5 GB");
+});
+
 test("task, language, size, and search filters combine and can be reset", async () => {
   const user = userEvent.setup();
   render(<LocalModelsPanel />);
@@ -28,9 +46,9 @@ test("task, language, size, and search filters combine and can be reset", async 
   expect(screen.getAllByRole("article")).toHaveLength(localModelCatalog.filter(model=>model.availability==="ready").length+6);
   expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("");
   await user.type(screen.getByRole("searchbox"), "QWEN gguf");
-  expect(screen.getAllByRole("article")).toHaveLength(4);
+  expect(screen.getAllByRole("article")).toHaveLength(6);
   await user.click(screen.getByRole("button", { name: "Available in Cove" }));
-  expect(screen.getAllByRole("article")).toHaveLength(2);
+  expect(screen.getAllByRole("article")).toHaveLength(4);
   expect(screen.getByText("Qwen2.5 0.5B Instruct")).toBeTruthy();
   await user.clear(screen.getByRole("searchbox"));
   await user.click(screen.getByRole("button", { name: "All models" }));
@@ -55,7 +73,7 @@ test("discovery stays offline and distinguishes source files from installed capa
   expect(files.getAttribute("target")).toBe("_blank");
   expect(files.getAttribute("rel")).toContain("noreferrer");
   await chooseOption(user, screen.getByRole("combobox", { name: "Task" }), "Write offline");
-  expect(screen.getAllByRole("article")).toHaveLength(5);
+  expect(screen.getAllByRole("article")).toHaveLength(7);
   expect(fetch).not.toHaveBeenCalled();
 });
 
