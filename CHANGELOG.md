@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.1.0-beta.14 - 2026-11-26
+
+### Added
+
+- Set up OpenRouter, OpenAI, MiniMax, Ollama, and LM Studio from Provider presets. Loopback local servers can use None authentication or an API token when required.
+- Install and independently select Qwen2.5 1.5B Instruct, Qwen2.5 Coder 1.5B Instruct, and Gemma 3 1B IT as verified Q4_K_M local chat downloads.
+
+### Changed
+
+- Point the fixed NearAI preset at production while preserving existing preset identities, credential references, and model selections. Test the connection to check production access.
+- Raise Discover's default file-size ceiling to 1.5 GB while retaining smaller filters. Existing local models remain independently supported.
+
+### Fixed
+
+- Reject MiniMax application-level validation errors even when HTTP succeeds, preserving the working Key when a replacement fails.
+- Recognize equivalent preset endpoints with explicit default ports and use OpenAI's completion-token limit field.
+
 ## 0.1.0-beta.13 - 2026-11-26
 
 ### Added
