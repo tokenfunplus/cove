@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.1.0-beta.13 - 2026-11-26
+
+### Added
+
+- Interact with cards in Chat and the Quick Panel when using one eligible external model. Rank options, adjust a budget with sliders, edit text with a live preview, or reveal hints and check quiz answers. Edits save on this Mac.
+- Send a card’s current values to the selected model with **Continue**, or select **Include card** to discuss them alongside a typed question and attachments.
+
+### Changed
+
+- Review card context locally before sending. Later turns use compact card summaries while the original replies remain available in conversation history.
+- Upgrade SQLite to schema 29 to retain card definitions, saved values, and submission state.
+
 ## 0.1.0-beta.12 - 2026-11-25
 
 ### Added
