@@ -15,8 +15,9 @@ const (
 
 	AuthBearer = "bearer"
 	AuthAPIKey = "x_api_key"
+	AuthNone   = "none"
 
-	NearAIEndpoint = "https://cloud-stg-api.near.ai"
+	NearAIEndpoint = "https://cloud-api.near.ai"
 )
 
 var (
@@ -92,7 +93,7 @@ func NormalizeProfile(profile Profile) (Profile, error) {
 			profile.Name = "NearAI"
 		}
 	case KindOpenAICompatible:
-		if profile.AuthMethod != AuthBearer && profile.AuthMethod != AuthAPIKey {
+		if profile.AuthMethod != AuthBearer && profile.AuthMethod != AuthAPIKey && profile.AuthMethod != AuthNone {
 			return Profile{}, ErrInvalidAuth
 		}
 		if profile.Name == "" {
@@ -105,6 +106,9 @@ func NormalizeProfile(profile Profile) (Profile, error) {
 	endpoint, err := validateEndpoint(profile.Endpoint, profile.Kind)
 	if err != nil {
 		return Profile{}, err
+	}
+	if profile.AuthMethod == AuthNone && !isLoopbackHost(endpoint.Hostname()) {
+		return Profile{}, ErrInvalidAuth
 	}
 	profile.Endpoint = endpoint.String()
 	profile.Destination = endpoint.Host
@@ -120,7 +124,7 @@ func NormalizeProfile(profile Profile) (Profile, error) {
 }
 
 func NewProfile(input ProfileInput) (Profile, error) {
-	return NormalizeProfile(Profile{
+	profile, err := NormalizeProfile(Profile{
 		ID:         input.ID,
 		Kind:       input.Kind,
 		Name:       input.Name,
@@ -128,6 +132,10 @@ func NewProfile(input ProfileInput) (Profile, error) {
 		Model:      input.Model,
 		AuthMethod: input.AuthMethod,
 	})
+	if err == nil && profile.AuthMethod == AuthNone && input.Secret != "" {
+		return Profile{}, ErrInvalidAuth
+	}
+	return profile, err
 }
 
 func validateEndpoint(raw, kind string) (*url.URL, error) {
@@ -179,7 +187,7 @@ func runtimeLocation(kind string, endpoint *url.URL) string {
 	if kind == KindNearAIPreset {
 		return "NearAI cloud"
 	}
-	if endpoint.Scheme == "http" && isLoopbackHost(endpoint.Hostname()) {
+	if isLoopbackHost(endpoint.Hostname()) {
 		return "User local service"
 	}
 	return "User configured cloud provider"

@@ -188,7 +188,7 @@ function configureNearAITarget(
     ...fixture.profile,
     id: "nearai",
     kind: "nearai" as const,
-    endpoint: "https://cloud-stg-api.near.ai",
+    endpoint: "https://cloud-api.near.ai",
   };
   for (const batch of [fixture.pendingBatch, fixture.completedBatch]) {
     const target = batch.targets[targetIndex]!;
@@ -1165,21 +1165,21 @@ test("clearing history also removes cached conversation content", async () => {
 
 test("Provider settings test the active chat connection when a similarly named connection comes first", async () => {
   configureNearAITarget(0, "private_tee");
-  const production = {
+  const staging = {
     ...fixture.profile,
     name: "nearai",
-    endpoint: "https://cloud-api.near.ai",
+    endpoint: "https://cloud-stg-api.near.ai",
   };
-  const staging = {
+  const production = {
     ...fixture.profile,
     id: "nearai",
     kind: "nearai" as const,
     name: "NearAI",
-    endpoint: "https://cloud-stg-api.near.ai",
+    endpoint: "https://cloud-api.near.ai",
   };
   vi.mocked(transport.getProviderProfiles).mockResolvedValue([
-    production,
     staging,
+    production,
   ]);
   vi.mocked(transport.testProviderConnection).mockResolvedValue({
     models: fixture.models,
@@ -1190,13 +1190,13 @@ test("Provider settings test the active chat connection when a similarly named c
   await user.click(screen.getByRole("tab", { name: /Provider settings/ }));
   expect(
     (screen.getByRole("textbox", { name: "Endpoint" }) as HTMLInputElement).value,
-  ).toBe(staging.endpoint);
+  ).toBe(production.endpoint);
   await user.click(screen.getByRole("button", { name: "Test connection" }));
   await waitFor(() =>
     expect(vi.mocked(transport.testProviderConnection).mock.calls[0]?.[0]).toMatchObject({
-      id: staging.id,
+      id: production.id,
       kind: "nearai",
-      endpoint: staging.endpoint,
+      endpoint: production.endpoint,
     }),
   );
 });
@@ -1209,7 +1209,7 @@ test("local model discovery is reachable from settings without starting generati
   expect(screen.getByRole("tab", { name: "On this Mac" }).getAttribute("aria-selected")).toBe("true");
   const panel = document.getElementById("settings-local-models")!;
   await user.click(within(panel).getByRole("button",{name:"Discover"}));
-  expect(within(panel).getAllByRole("article")).toHaveLength(14);
+  expect(within(panel).getAllByRole("article")).toHaveLength(17);
   await chooseOption(user,within(panel).getByRole("combobox", { name: "Task" }),"Write offline");
   await user.click(within(panel).getByRole("button", { name: "Installed" }));
   await user.click(within(panel).getByRole("button", { name: "Discover" }));
@@ -1221,9 +1221,12 @@ test("local model discovery is reachable from settings without starting generati
   expect((composer as HTMLTextAreaElement).value).toBe("Keep this draft");
 });
 
-test.each(["Installed", "Discover"])("%s selects the requested local model and preserves the draft", async (view) => {
-  const modelId = "qwen3-abliterated-chat";
-  const name = "Qwen3 0.6B Abliterated Q5_K_M";
+test.each(["Installed", "Discover"].flatMap(view => [
+  [view, "qwen3-abliterated-chat", "Qwen3 0.6B Abliterated Q5_K_M"],
+  [view, "qwen25-1-5b-chat", "Qwen2.5 1.5B Instruct"],
+  [view, "qwen25-coder-1-5b-chat", "Qwen2.5 Coder 1.5B Instruct"],
+  [view, "gemma3-1b-chat", "Gemma 3 1B IT"],
+]))("%s selects %s and preserves the draft", async (view, modelId, name) => {
   const localProfile = { ...fixture.profile, id: "cove-local", kind: "local" as const, name: "On this Mac", endpoint: "http://127.0.0.1", configured: true };
   vi.mocked(transport.getProviderProfiles).mockResolvedValue([fixture.profile, localProfile]);
   vi.mocked(transport.getProviderCatalog).mockImplementation(async id => ({ models: id === "cove-local" ? ["qwen-small-chat", modelId] : fixture.models }));

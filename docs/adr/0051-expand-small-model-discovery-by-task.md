@@ -4,6 +4,8 @@ Date: 2026-11-22
 
 Status: Accepted
 
+[ADR 0069](0069-add-qwen15b-and-gemma-local-chat.md) extends the catalog with three managed chat models and raises its default file-size ceiling to 1.5 GB while retaining the 500 MB filter.
+
 This extends [curated model discovery](0047-add-curated-local-model-discovery.md) while retaining the managed-install boundary in [ADR-0048](0048-add-managed-local-inference-and-document-retrieval.md).
 
 The Local models catalog grows from seven to 27 entries across eleven tasks: document retrieval, reranking, writing, code, translation, OCR, transcription, speech synthesis, audio preparation, image tools, and text classification. Selected artifact sets remain within 500 MB. The catalog includes compact language identification and audio/vision utilities as well as several small chat-model families, rather than treating chat as the only local-model use.

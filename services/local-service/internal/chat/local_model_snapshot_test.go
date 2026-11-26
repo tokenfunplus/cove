@@ -11,7 +11,7 @@ import (
 func TestLocalSnapshotUsesSelectedModelArtifact(t *testing.T) {
 	original, _ := localmodels.Lookup(localmodels.ChatID)
 	profile := provider.Profile{Kind: provider.KindLocal, LocalModel: &provider.ModelArtifact{SHA256: original.SHA256}}
-	for _, id := range []string{localmodels.ChatID, localmodels.Qwen3AbliteratedID} {
+	for _, id := range []string{localmodels.ChatID, localmodels.Qwen3AbliteratedID, localmodels.Qwen15BID, localmodels.QwenCoder15BID, localmodels.Gemma3ID} {
 		profile.Model = id
 		model, _ := localmodels.Lookup(id)
 		snapshot := snapshotFor(profile, "")

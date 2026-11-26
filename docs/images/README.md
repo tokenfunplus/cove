@@ -2,6 +2,8 @@
 
 | File | Content and source |
 | --- | --- |
+| `provider-presets-menu.png` | Provider setup source build, 2026-11-26, 1440 × 900: the connection menu offers NearAI, five cloud/local templates, and a blank compatible connection. |
+| `provider-presets-local.png` | The same production-browser fixture: LM Studio defaults to loopback and None authentication, with an explicit Bearer option for protected servers. |
 | `cove-quick-panel-compact.png` | Quick Panel source build, 2026-11-24, 1240 × 360. The native window opens at its compact size with the composer focused. |
 | `cove-quick-panel-answer.png` | The same AppKit and WebKit fixture at 1240 × 1304. The window grows to show the synthetic prompt, reply, and browser handoff. |
 | `local-search-filter-desktop.png` | Local capability recovery source build, 2026-11-23, 1440 × 900: explicit document scope and user-selected similarity controls in a disposable production-browser fixture. |
@@ -27,6 +29,8 @@
 Atlas and Lumen are demo model names. These captures use an isolated temporary data directory and a loopback simulated Provider with disposable credentials. They contain no personal conversation history or real Provider Keys. The displayed transport/verification state belongs to that fixture and does not demonstrate real Provider verification.
 
 When refreshing screenshots, capture the implemented application with synthetic content. Keep the source version and image descriptions current, use temporary `COVE_DATA_DIR` storage, and explicitly opt into the test file Secret Store when disposable credentials are needed. Do not capture a personal workspace or include browser launch URLs.
+
+The Provider preset captures come directly from `apps/web/e2e/acceptance.mjs` using a disposable database and a simulated loopback Provider. The screenshots show unsaved setup forms with empty credentials. They establish implemented defaults and layout, not successful access to any live cloud service or an installed Ollama/LM Studio server.
 
 The 2026-11-18 captures come directly from `apps/web/e2e/acceptance.mjs` in this change. The model names and responses are synthetic; the loopback Provider reports fixed token counts for the performance example. Neither the displayed metrics nor the fixture's transport labels establish live Provider performance or verification. The screenshots are original production-browser captures, not rendered mockups.
 

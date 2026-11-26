@@ -73,7 +73,7 @@ The embedded NearAI viewer displays Cove's supplied report rather than independe
 
 ## Provider integration and dependencies
 
-The NearAI SDK is pinned to `0.2.1`. The preset still uses a staging endpoint. Treat provider integration as dependent on upstream availability and explicit verification results rather than a blanket confidentiality promise.
+The NearAI SDK is pinned to `0.2.1`. The preset uses the production endpoint `https://cloud-api.near.ai`; existing staging presets follow the compatibility rule in [ADR 0070](adr/0070-use-nearai-production-preset-endpoint.md). Treat provider integration as dependent on upstream availability and explicit verification results rather than a blanket confidentiality promise.
 
 The SDK transitively includes `elliptic`, which has an unresolved low-severity advisory, [GHSA-848j-6mx2-7j84](https://github.com/advisories/GHSA-848j-6mx2-7j84).
 

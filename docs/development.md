@@ -178,7 +178,7 @@ Integration fixtures configure temporary directories. Never point tests at perso
 For installation, Provider setup, file chat, and comparison behavior, see the [user guide](user-guide.md). The current beta's compatibility and update notes are in [0.1.0-beta.13](releases/0.1.0-beta.13.md).
 
 - **Expired browser session:** reopen with `make start-local` or the Launcher. Restarting the service invalidates sessions.
-- **Provider unavailable:** verify endpoint, authentication, model catalog, and availability. The NearAI preset uses a fixed staging endpoint.
+- **Provider unavailable:** verify endpoint, authentication, model catalog, and availability. The NearAI preset uses the fixed production endpoint `https://cloud-api.near.ai`.
 - **Stale interface:** run `make build-service` and restart. Assets are embedded at Go compile time.
 - **Go missing:** put a working Go executable on `PATH`; `scripts/go` also supports Homebrew or goenv.
 - **Linux development:** use portable targets and the explicit file-store option; SwiftUI and Keychain are unavailable.

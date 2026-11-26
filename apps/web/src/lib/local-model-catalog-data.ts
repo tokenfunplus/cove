@@ -89,6 +89,96 @@ export const curatedLocalModels = [
     "revision": "92351f431cfdd36f71149aaf072a6490a68e144e"
   },
   {
+    "id": "qwen25-1-5b-chat",
+    "name": "Qwen2.5 1.5B Instruct",
+    "publisher": "Qwen",
+    "purpose": "write",
+    "role": "Chat model",
+    "availability": "ready",
+    "benefit": "Write and summarize offline with a larger Qwen",
+    "example": "Try Chinese and English summaries, rewrites, and extraction from supplied text.",
+    "limitation": "Experimental: facts and code may be wrong. Review summaries and extracted information.",
+    "languages": [
+      "en",
+      "zh",
+      "multilingual"
+    ],
+    "languageLabel": "Multilingual, including Chinese",
+    "weightMB": 1117.3,
+    "format": "GGUF \u00b7 Q4_K_M",
+    "runtime": "llama.cpp",
+    "license": "Apache-2.0",
+    "licenseUrl": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+    "files": [
+      "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+    ],
+    "setup": "Cove installs a pinned, SHA-256-checked publisher GGUF and runs its embedded chat template. Context is limited to 4,096 tokens and output to 1,024 tokens.",
+    "modelUrl": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+    "filesUrl": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/tree/91cad51170dc346986eccefdc2dd33a9da36ead9",
+    "source": "Publisher",
+    "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9"
+  },
+  {
+    "id": "qwen25-coder-1-5b-chat",
+    "name": "Qwen2.5 Coder 1.5B Instruct",
+    "publisher": "Qwen",
+    "purpose": "code",
+    "role": "Chat model",
+    "availability": "ready",
+    "benefit": "Write and explain short code locally",
+    "example": "Draft a small function or explain a supplied code snippet, then run independent tests.",
+    "limitation": "Experimental coding model. Generated code can be incorrect; review and test it independently.",
+    "languages": [
+      "en",
+      "zh",
+      "multilingual"
+    ],
+    "languageLabel": "Multilingual, including Chinese",
+    "weightMB": 1117.3,
+    "format": "GGUF \u00b7 Q4_K_M",
+    "runtime": "llama.cpp",
+    "license": "Apache-2.0",
+    "licenseUrl": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+    "files": [
+      "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    ],
+    "setup": "Cove installs a pinned, SHA-256-checked publisher GGUF and runs its embedded chat template. Context is limited to 4,096 tokens and output to 1,024 tokens.",
+    "modelUrl": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+    "filesUrl": "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/tree/f86cb2c1fa58255f8052cc32aeede1b7482d4361",
+    "source": "Publisher",
+    "revision": "f86cb2c1fa58255f8052cc32aeede1b7482d4361"
+  },
+  {
+    "id": "gemma3-1b-chat",
+    "name": "Gemma 3 1B IT",
+    "publisher": "Google / bartowski conversion",
+    "purpose": "write",
+    "role": "Chat model",
+    "availability": "ready",
+    "benefit": "Try a compact text-only writing model",
+    "example": "Compare short summaries and rewrites with a different local model family.",
+    "limitation": "Experimental text-only model. Facts and code may be wrong. Uses the Gemma model license.",
+    "languages": [
+      "en",
+      "zh",
+      "multilingual"
+    ],
+    "languageLabel": "Multilingual, including Chinese",
+    "weightMB": 806.1,
+    "format": "GGUF \u00b7 Q4_K_M",
+    "runtime": "llama.cpp",
+    "license": "Gemma",
+    "licenseUrl": "https://huggingface.co/google/gemma-3-1b-it",
+    "files": [
+      "google_gemma-3-1b-it-Q4_K_M.gguf"
+    ],
+    "setup": "Cove installs a pinned, SHA-256-checked community conversion and runs its embedded chat template. Context is limited to 4,096 tokens and output to 1,024 tokens. This 1B model accepts text only.",
+    "modelUrl": "https://huggingface.co/google/gemma-3-1b-it",
+    "filesUrl": "https://huggingface.co/bartowski/google_gemma-3-1b-it-GGUF/tree/116f76234503685a98f572982177b11d44ec8ff1",
+    "source": "Community conversion",
+    "revision": "116f76234503685a98f572982177b11d44ec8ff1"
+  },
+  {
     "id": "rapidocr",
     "name": "PP-OCRv4 Mobile",
     "publisher": "PaddleOCR \u00b7 RapidOCR conversion",

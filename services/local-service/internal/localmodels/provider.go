@@ -31,9 +31,15 @@ func (manager *Manager) Metadata() []provider.ModelMetadata {
 		}
 		owner := "Qwen"
 		description := "Experimental local model for short rewrites and extraction. Facts and code may be wrong."
-		if model.ID == Qwen3AbliteratedID {
+		switch model.ID {
+		case Qwen3AbliteratedID:
 			owner = "mlabonne / Qwen"
 			description = "Experimental abliterated model with reduced refusals. Non-thinking mode. Facts and code may be wrong."
+		case QwenCoder15BID:
+			description = "Experimental local coding model. Review generated code and run independent tests."
+		case Gemma3ID:
+			owner = "Google"
+			description = "Experimental local text-only model for short writing and summarization. Facts and code may be wrong."
 		}
 		result = append(result, provider.ModelMetadata{ID: model.ID, Name: model.Name + " · local", Owner: owner, Description: description, ContextLength: &contextLength, MaxOutputTokens: &output, Capabilities: []string{"text_input"}})
 	}

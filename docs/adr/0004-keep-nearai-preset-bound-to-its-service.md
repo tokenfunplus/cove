@@ -1,5 +1,7 @@
 # Keep the NearAI preset bound to its service
 
+[ADR 0070](0070-use-nearai-production-preset-endpoint.md) replaces the staging destination with the fixed production endpoint and describes existing-profile compatibility.
+
 The NearAI Preset Provider uses the fixed staging endpoint `https://cloud-stg-api.near.ai` and Bearer authentication for both model discovery and chat completion. After entering a valid key, the user selects a model from the provider's catalog; a custom endpoint is represented as a separate OpenAI-compatible Provider Profile rather than mutating the NearAI preset.
 
 ## Considered Options

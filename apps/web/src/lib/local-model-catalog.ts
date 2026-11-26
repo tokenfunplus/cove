@@ -3,7 +3,8 @@ import type { LocalModel, LocalModelAvailability, LocalModelLanguage, LocalModel
 
 export type { LocalModel, LocalModelAvailability, LocalModelLanguage, LocalModelPurpose } from "./local-model-types";
 
-export const localModelCatalogReviewed = "2026-11-22";
+export const localModelCatalogReviewed = "2026-11-26";
+export const localModelCatalogMaxWeightMB = 1500;
 export const localModelCatalog: LocalModel[] = curatedLocalModels;
 export const localModelPurposes: LocalModelPurpose[] = ["search", "rerank", "write", "code", "translate", "ocr", "voice", "speak", "audio", "vision", "classify"];
 

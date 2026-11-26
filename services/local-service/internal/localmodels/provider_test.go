@@ -55,17 +55,37 @@ func TestInstalledChatModelsHaveIndependentCatalogEntries(t *testing.T) {
 	if len(manager.Metadata()) != 2 {
 		t.Fatal("installing a second chat model replaced the first")
 	}
+	for _, id := range []string{Qwen15BID, QwenCoder15BID, Gemma3ID} {
+		install(id)
+	}
+	metadata := manager.Metadata()
+	if len(metadata) != 5 {
+		t.Fatal("the catalog did not retain all five installed chat targets")
+	}
+	for _, model := range metadata {
+		if model.ID == Gemma3ID && (model.Owner != "Google" || model.Description == "") {
+			t.Fatal("Gemma lost its publisher or text-only description")
+		}
+	}
 	if err := manager.Remove(ctx, Qwen3AbliteratedID); err != nil {
 		t.Fatal(err)
 	}
-	metadata := manager.Metadata()
-	if !manager.Profile().Configured || len(metadata) != 1 || metadata[0].ID != ChatID {
+	metadata = manager.Metadata()
+	if !manager.Profile().Configured || len(metadata) != 4 || metadata[0].ID != ChatID {
 		t.Fatal("removing Qwen3 disabled the other installed chat model")
+	}
+	for _, id := range []string{ChatID, Qwen15BID, QwenCoder15BID, Gemma3ID} {
+		if err := manager.Remove(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if manager.Profile().Configured || len(manager.Metadata()) != 0 {
+		t.Fatal("removing every chat target left the managed Provider configured")
 	}
 }
 
 func TestCancelBeforeResponseHeadersStopsLocalWorker(t *testing.T) {
-	for _, id := range []string{ChatID, Qwen3AbliteratedID} {
+	for _, id := range []string{ChatID, Qwen3AbliteratedID, Qwen15BID, QwenCoder15BID, Gemma3ID} {
 		t.Run(id, func(t *testing.T) { testCancelBeforeResponseHeaders(t, id) })
 	}
 }

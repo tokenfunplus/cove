@@ -60,6 +60,8 @@ Assistant Markdown protects math delimiters before parsing emphasis and uses loc
 
 `components/ui` owns editable shadcn/Radix primitives. Domain presentation uses these adapters for selects, checkboxes, sliders, radio cards, progress, disclosures, buttons, text fields, and file-picker triggers. Tailwind recipes in `styles` express domain presentation through semantic variables in `theme/tokens.css`. Component-specific CSS is avoided; CSS retains theme registration, base rules, and shared motion. See [presentation and skin decision](adr/0020-use-tailwind-recipes-and-shadcn-primitives.md).
 
+Provider setup imports the same bundled defaults embedded by the HTTP Provider adapter for OpenRouter, OpenAI, MiniMax, Ollama, and LM Studio. They retain the compatible transport kind; loopback-only None authentication bypasses credentials, while NearAI retains its independent verified path. See [Provider setup presets](adr/0071-add-cloud-and-local-provider-setup-presets.md).
+
 Model selection preferences contain bounded browser-local identifiers and names; manual cost rates are also browser-local. Explicitly saved Debate rates are copied into the session for cumulative background budget estimates; see [Debate stage summaries and controls](adr/0041-add-debate-stage-summaries-and-run-controls.md). Model filter popovers and option menus use shared Radix primitives, including nested focus and Escape behavior in Provider settings. Conversation reading anchors and updated-answer counts remain transient presentation state. See [workspace experience and edited-prompt branches](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
 See [frontend organization decision](adr/0019-separate-frontend-presentation-and-api-hooks.md) and the [refactor acceptance baseline](frontend-refactor.md).
@@ -101,6 +103,8 @@ Schema 23 stores Projects, current instructions/background and fixed sources in 
 `internal/localmodels` owns verified downloads and authenticated native worker lifecycles; workers have no browser sessions, Provider Keys, or persistence responsibilities. The managed local Provider uses ordinary Chat Generations and immutable model-artifact provenance. A single lease bounds concurrent native inference, cancellation terminates local chat work, and idle workers unload.
 
 Installed chat artifacts share the managed Provider but retain independent model targets, workers, and saved artifact revisions/hashes. Model selection, local-only admission, and removal honor the chosen target. Qwen3 Abliterated runs its embedded template in non-thinking mode. See [multiple local chat targets](adr/0054-add-qwen3-abliterated-local-chat.md).
+
+The registry also includes Qwen2.5 1.5B Instruct, Qwen2.5 Coder 1.5B Instruct, and text-only Gemma 3 1B IT, each as a pinned Q4_K_M artifact. Discover includes file-size filters through 1.5 GB. See [additional managed chat models](adr/0069-add-qwen15b-and-gemma-local-chat.md).
 
 Chat exposes explicit library import, search, source selection, and deletion operations. `internal/retrieval` indexes only selected documents with versioned embeddings and resolves hits back to original source sections. Persistence owns library originals, vectors, and weight files. Selected results enter the existing immutable source-snapshot and citation path; library deletion does not mutate saved history. See [managed local inference and retrieval](adr/0048-add-managed-local-inference-and-document-retrieval.md).
 

@@ -242,7 +242,7 @@ func browserDebateFixture(t *testing.T, mode string) (*Service, *persistence.SQL
 	t.Helper()
 	upstream := &debateTestProvider{}
 	service, store := newDebateTest(t, upstream)
-	profile := provider.Profile{ID: "fixture", Kind: provider.KindNearAIPreset, Name: "NearAI fixture", Endpoint: "https://cloud-stg-api.near.ai", AuthMethod: provider.AuthBearer}
+	profile := provider.Profile{ID: "fixture", Kind: provider.KindNearAIPreset, Name: "NearAI fixture", Endpoint: "https://cloud-api.near.ai", AuthMethod: provider.AuthBearer}
 	service.profiles = classifiedProviderSource{profileProviderSource: profileProviderSource{profiles: map[string]provider.Profile{"fixture": profile}}, metadata: provider.ModelMetadata{PrivacyMode: mode, Verifiable: mode == provider.PrivacyModePrivateTEE}}
 	return service, store, upstream
 }

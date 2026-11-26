@@ -116,7 +116,7 @@ func NewHTTPAdapter(client *http.Client) *HTTPAdapter {
 }
 
 func (adapter *HTTPAdapter) do(request *http.Request) (*http.Response, error) {
-	if request.URL.Scheme == "http" && isLoopbackHost(request.URL.Hostname()) {
+	if isLoopbackHost(request.URL.Hostname()) {
 		return adapter.localClient.Do(request)
 	}
 	return adapter.client.Do(request)
@@ -131,6 +131,10 @@ func (adapter *HTTPAdapter) Validate(ctx context.Context, input ValidateInput) (
 		if err := adapter.validateNearAIKey(ctx, profile, input.Secret); err != nil {
 			return ValidationResult{}, err
 		}
+	} else if p, ok := presetFor(profile); ok && p.ID == "openrouter" {
+		if err := adapter.validateKeyEndpoint(ctx, profile, input.Secret, http.MethodGet, "/key"); err != nil {
+			return ValidationResult{}, err
+		}
 	}
 	metadata, err := adapter.ListModelMetadata(ctx, profile, input.Secret)
 	if err != nil {
@@ -138,6 +142,12 @@ func (adapter *HTTPAdapter) Validate(ctx context.Context, input ValidateInput) (
 	}
 	models := modelIDs(metadata)
 	if profile.Model == "" {
+		if p, ok := presetFor(profile); ok && len(p.Models) > 0 {
+			profile.Model = p.Models[0]
+			if err := adapter.ValidateChat(ctx, profile, input.Secret); err != nil {
+				return ValidationResult{}, err
+			}
+		}
 		return ValidationResult{Models: models, ModelMetadata: metadata}, nil
 	}
 	if !containsModel(models, profile.Model) {
@@ -150,17 +160,21 @@ func (adapter *HTTPAdapter) Validate(ctx context.Context, input ValidateInput) (
 }
 
 func (adapter *HTTPAdapter) validateNearAIKey(ctx context.Context, profile Profile, secret credentials.Secret) error {
+	return adapter.validateKeyEndpoint(ctx, profile, secret, http.MethodPost, "/check_api_key")
+}
+
+func (adapter *HTTPAdapter) validateKeyEndpoint(ctx context.Context, profile Profile, secret credentials.Secret, method, path string) error {
 	ctx, cancel := context.WithTimeout(ctx, providerPreflightTimeout)
 	defer cancel()
 	// The NearAI catalog is public, including for rejected keys. Use its
 	// authenticated, non-inference check before reporting a verified connection.
-	request, err := adapter.newRequest(ctx, http.MethodPost, profile, "/check_api_key", secret)
+	request, err := adapter.newRequest(ctx, method, profile, path, secret)
 	if err != nil {
 		return err
 	}
 	response, err := adapter.do(request)
 	if err != nil {
-		return fmt.Errorf("validate NearAI key: %w", ErrProviderUnavailable)
+		return fmt.Errorf("validate Provider key: %w", ErrProviderUnavailable)
 	}
 	defer response.Body.Close()
 	return classifyStatus(response.StatusCode)
@@ -176,17 +190,21 @@ func (adapter *HTTPAdapter) stream(ctx context.Context, input CompletionInput, i
 		return nil, err
 	}
 	payload := struct {
-		Model         string            `json:"model"`
-		Messages      []ProviderMessage `json:"messages"`
-		Temperature   *float64          `json:"temperature,omitempty"`
-		TopP          *float64          `json:"top_p,omitempty"`
-		MaxTokens     *int              `json:"max_tokens,omitempty"`
-		Stream        bool              `json:"stream"`
-		Tools         []Tool            `json:"tools,omitempty"`
-		StreamOptions *struct {
+		Model               string            `json:"model"`
+		Messages            []ProviderMessage `json:"messages"`
+		Temperature         *float64          `json:"temperature,omitempty"`
+		TopP                *float64          `json:"top_p,omitempty"`
+		MaxTokens           *int              `json:"max_tokens,omitempty"`
+		MaxCompletionTokens *int              `json:"max_completion_tokens,omitempty"`
+		Stream              bool              `json:"stream"`
+		Tools               []Tool            `json:"tools,omitempty"`
+		StreamOptions       *struct {
 			IncludeUsage bool `json:"include_usage"`
 		} `json:"stream_options,omitempty"`
 	}{Model: profile.Model, Messages: input.Messages, Temperature: input.GenerationParameters.Temperature, TopP: input.GenerationParameters.TopP, MaxTokens: input.GenerationParameters.MaxTokens, Stream: true}
+	if usesCompletionTokenLimit(profile) {
+		payload.MaxCompletionTokens, payload.MaxTokens = payload.MaxTokens, nil
+	}
 	payload.Tools = input.Tools
 	if includeUsage {
 		payload.StreamOptions = &struct {
@@ -259,6 +277,20 @@ func (adapter *HTTPAdapter) ListModels(ctx context.Context, profile Profile, sec
 }
 
 func (adapter *HTTPAdapter) ListModelMetadata(ctx context.Context, profile Profile, secret credentials.Secret) ([]ModelMetadata, error) {
+	profile, err := NormalizeProfile(profile)
+	if err != nil {
+		return nil, err
+	}
+	if p, ok := presetFor(profile); ok && len(p.Models) > 0 {
+		if strings.TrimSpace(secret.Value) == "" {
+			return nil, ErrAuthenticationFailed
+		}
+		models := make([]ModelMetadata, 0, len(p.Models))
+		for _, id := range p.Models {
+			models = append(models, ModelMetadata{ID: id, Name: id, Owner: p.Name, Description: "Publisher-listed model; availability is checked when testing or sending.", Capabilities: []string{"text_input"}, PrivacyMode: PrivacyModeIncognito})
+		}
+		return models, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, providerPreflightTimeout)
 	defer cancel()
 	request, err := adapter.newRequest(ctx, http.MethodGet, profile, "/models", secret)
@@ -333,16 +365,21 @@ func (adapter *HTTPAdapter) ValidateChat(ctx context.Context, profile Profile, s
 			Role    string `json:"role"`
 			Content string `json:"content"`
 		} `json:"messages"`
-		MaxTokens int  `json:"max_tokens"`
-		Stream    bool `json:"stream"`
+		MaxTokens           *int `json:"max_tokens,omitempty"`
+		MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
+		Stream              bool `json:"stream"`
 	}{
 		Model: profile.Model,
 		Messages: []struct {
 			Role    string `json:"role"`
 			Content string `json:"content"`
 		}{{Role: "user", Content: "Connection test"}},
-		MaxTokens: 1,
-		Stream:    false,
+		Stream: false,
+	}
+	limit := 1
+	payload.MaxTokens = &limit
+	if usesCompletionTokenLimit(profile) {
+		payload.MaxCompletionTokens, payload.MaxTokens = &limit, nil
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -371,7 +408,7 @@ func (adapter *HTTPAdapter) newRequest(ctx context.Context, method string, profi
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(secret.Value) == "" {
+	if profile.AuthMethod != AuthNone && strings.TrimSpace(secret.Value) == "" {
 		return nil, ErrAuthenticationFailed
 	}
 	endpoint, err := url.Parse(profile.Endpoint)
@@ -389,6 +426,7 @@ func (adapter *HTTPAdapter) newRequest(ctx context.Context, method string, profi
 	}
 	request.Header.Set("Accept", "application/json")
 	switch profile.AuthMethod {
+	case AuthNone:
 	case AuthBearer:
 		request.Header.Set("Authorization", "Bearer "+secret.Value)
 	case AuthAPIKey:

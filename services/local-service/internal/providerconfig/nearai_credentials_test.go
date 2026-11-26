@@ -44,7 +44,7 @@ func TestNearAIKeyRotationReachesAttestationAndSurvivesReopening(t *testing.T) {
 
 			var attestationKey string
 			client := &http.Client{Transport: credentialRoundTripFunc(func(request *http.Request) (*http.Response, error) {
-				if request.URL.Host != "cloud-stg-api.near.ai" {
+				if request.URL.Host != "cloud-api.near.ai" {
 					t.Fatal("a NearAI credential left its fixed destination")
 				}
 				key := request.Header.Get("Authorization")

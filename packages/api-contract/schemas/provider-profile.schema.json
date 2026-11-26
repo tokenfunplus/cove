@@ -10,7 +10,7 @@
     "name": { "type": "string" },
     "endpoint": { "type": "string", "format": "uri" },
     "model_id": { "type": "string" },
-    "auth_method": { "enum": ["bearer", "x_api_key"] },
+    "auth_method": { "enum": ["bearer", "x_api_key", "none"] },
     "runtime_location": { "type": "string" },
     "destination": { "type": "string" },
     "transport_security": { "enum": ["tls", "plaintext", "unknown"] },

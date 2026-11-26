@@ -233,6 +233,7 @@ func (service *Service) ValidateSelection(ctx context.Context, providerID, model
 
 const noCredential = "-"
 const credentialPrefix = "cove-credential/"
+const legacyNearAIEndpoint = "https://cloud-stg-api.near.ai"
 
 func (service *Service) Configure(ctx context.Context, input ProfileInput) (Profile, error) {
 	if input.ID == localProviderID || input.Kind == provider.KindLocal {
@@ -269,9 +270,9 @@ func (service *Service) Configure(ctx context.Context, input ProfileInput) (Prof
 			return Profile{}, provider.ErrInvalidProfile
 		}
 		next.CreatedAt = saved.CreatedAt
-		if sameDestination(prior, profile) {
+		if sameDestination(prior, profile) && profile.AuthMethod != provider.AuthNone {
 			next.CredentialRef = saved.CredentialRef
-		} else if input.Secret == "" && saved.CredentialRef != noCredential {
+		} else if profile.AuthMethod != provider.AuthNone && input.Secret == "" && saved.CredentialRef != noCredential {
 			exists, err := service.secrets.Exists(ctx, credentialRef(saved))
 			if err != nil {
 				return Profile{}, err
@@ -279,6 +280,11 @@ func (service *Service) Configure(ctx context.Context, input ProfileInput) (Prof
 			if exists {
 				return Profile{}, ErrDestinationChanged
 			}
+		}
+	}
+	if profile.AuthMethod == provider.AuthNone {
+		if _, err := service.adapter.Validate(ctx, provider.ValidateInput{Profile: profile}); err != nil {
+			return Profile{}, fmt.Errorf("%w: %w", ErrValidationFailed, err)
 		}
 	}
 	if input.Secret != "" {
@@ -403,6 +409,9 @@ func (service *Service) validationConnection(ctx context.Context, input ProfileI
 	if input.Secret != "" {
 		return profile, credentials.Secret{Value: input.Secret}, nil
 	}
+	if profile.AuthMethod == provider.AuthNone {
+		return profile, credentials.Secret{}, nil
+	}
 	if saved.ID == "" {
 		return Profile{}, credentials.Secret{}, ErrUnconfigured
 	}
@@ -425,6 +434,9 @@ func credentialRef(saved persistence.ProviderProfile) string {
 }
 
 func (service *Service) readSecret(ctx context.Context, saved persistence.ProviderProfile) (credentials.Secret, error) {
+	if saved.AuthMethod == provider.AuthNone {
+		return credentials.Secret{}, nil
+	}
 	if saved.CredentialRef == noCredential {
 		return credentials.Secret{}, ErrUnconfigured
 	}
@@ -436,6 +448,9 @@ func (service *Service) readSecret(ctx context.Context, saved persistence.Provid
 }
 
 func (service *Service) hasSecret(ctx context.Context, saved persistence.ProviderProfile) bool {
+	if saved.AuthMethod == provider.AuthNone {
+		return true
+	}
 	if saved.CredentialRef == noCredential {
 		return false
 	}
@@ -461,6 +476,11 @@ func (service *Service) discardCredential(ctx context.Context, saved persistence
 }
 
 func fromStored(saved persistence.ProviderProfile) (Profile, error) {
+	// Existing presets follow the fixed production service without changing
+	// custom Providers, credential references, or historical snapshots.
+	if saved.Kind == provider.KindNearAIPreset && strings.TrimRight(strings.TrimSpace(saved.Endpoint), "/") == legacyNearAIEndpoint {
+		saved.Endpoint = provider.NearAIEndpoint
+	}
 	profile, err := provider.NormalizeProfile(Profile{
 		ID:         saved.ID,
 		Kind:       saved.Kind,
