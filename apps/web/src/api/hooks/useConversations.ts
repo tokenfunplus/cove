@@ -1,31 +1,60 @@
 import * as api from "@/api";
 import { projectKeys } from "@/api/projects";
-import { conversationKeys, debateKeys, generationKeys, localDocumentsKey } from "@/api/queryKeys";
+import {
+  conversationKeys,
+  debateKeys,
+  generationKeys,
+  localDocumentsKey,
+} from "@/api/queryKeys";
 import type { ConversationUpdateInput } from "@cove/api-contract";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 function conversationListOptions(archived = false, projectId?: string) {
   return {
-    queryKey: projectId === undefined ? conversationKeys.list(archived) : [...conversationKeys.list(archived),projectId],
+    queryKey:
+      projectId === undefined
+        ? conversationKeys.list(archived)
+        : [...conversationKeys.list(archived), projectId],
     queryFn: () => api.getConversations({ archived, projectId }),
     retry: false as const,
   };
 }
 
-export function useConversations(archived = false, projectId?: string, enabled = true) {
+export function useConversations(
+  archived = false,
+  projectId?: string,
+  enabled = true,
+) {
   const cache = useQueryClient();
   const previousDebateMetadata = useRef<string | undefined>(undefined);
   const query = useQuery({
     ...conversationListOptions(archived, projectId),
     enabled,
     refetchOnWindowFocus: true,
-    refetchInterval: query => query.state.data?.some(item => item.debate_status === "running" || item.debate_status === "pausing") ? 3000 : query.state.data?.some(item => item.debate_id) ? 15000 : false,
+    refetchInterval: (query) =>
+      query.state.data?.some(
+        (item) =>
+          item.debate_status === "running" || item.debate_status === "pausing",
+      )
+        ? 3000
+        : query.state.data?.some((item) => item.debate_id)
+          ? 15000
+          : false,
   });
-  const debateMetadata = query.data?.filter(item => item.debate_id).map(item => `${item.id}:${item.debate_status}:${item.debate_round}:${item.updated_at}`).join("|");
+  const debateMetadata = query.data
+    ?.filter((item) => item.debate_id)
+    .map(
+      (item) =>
+        `${item.id}:${item.debate_status}:${item.debate_round}:${item.updated_at}`,
+    )
+    .join("|");
   useEffect(() => {
     if (debateMetadata === undefined) return;
-    if (previousDebateMetadata.current !== undefined && previousDebateMetadata.current !== debateMetadata) {
+    if (
+      previousDebateMetadata.current !== undefined &&
+      previousDebateMetadata.current !== debateMetadata
+    ) {
       // A state or activity change can alter both badges and filtered membership.
       void cache.invalidateQueries({ queryKey: conversationKeys.searches });
     }
@@ -47,7 +76,18 @@ export function useConversation(id: string | undefined) {
 export function useCreateConversation() {
   const cache = useQueryClient();
   return useMutation({
-    mutationFn: (input?: string | {title?:string;project_id?:string;source_conversation_id?:string}) => typeof input === "object" ? api.createConversation(input.title,input) : api.createConversation(input),
+    mutationFn: (
+      input?:
+        | string
+        | {
+            title?: string;
+            project_id?: string;
+            source_conversation_id?: string;
+          },
+    ) =>
+      typeof input === "object"
+        ? api.createConversation(input.title, input)
+        : api.createConversation(input),
     retry: false,
     onSuccess: () =>
       cache.invalidateQueries({ queryKey: conversationKeys.lists }),
@@ -97,6 +137,7 @@ export function useDeleteConversation() {
         queryKey: conversationKeys.detail(id),
         exact: true,
       });
+      cache.removeQueries({ queryKey: ["interactive-card"] });
       cache.removeQueries({ queryKey: generationKeys.all });
       cache.removeQueries({ queryKey: debateKeys.session(id) });
       return cache.invalidateQueries({ queryKey: conversationKeys.lists });
@@ -111,10 +152,12 @@ export function useClearChatData() {
     retry: false,
     onSuccess: async () => {
       await cache.cancelQueries({ queryKey: conversationKeys.all });
+      await cache.cancelQueries({ queryKey: ["interactive-card"] });
       await cache.cancelQueries({ queryKey: generationKeys.all });
       await cache.cancelQueries({ queryKey: debateKeys.all });
       await cache.cancelQueries({ queryKey: localDocumentsKey });
       cache.removeQueries({ queryKey: conversationKeys.all });
+      cache.removeQueries({ queryKey: ["interactive-card"] });
       cache.removeQueries({ queryKey: generationKeys.all });
       cache.removeQueries({ queryKey: debateKeys.all });
       cache.removeQueries({ queryKey: localDocumentsKey });

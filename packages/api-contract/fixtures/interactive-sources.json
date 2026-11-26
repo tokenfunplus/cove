@@ -1,0 +1,199 @@
+[
+  {
+    "name": "plain",
+    "body": "```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```",
+    "valid": true
+  },
+  {
+    "name": "CRLF",
+    "body": "```cove-card-v1\r\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\r\n```",
+    "valid": true
+  },
+  {
+    "name": "closing whitespace",
+    "body": "```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n``` \t",
+    "valid": true
+  },
+  {
+    "name": "opening whitespace",
+    "body": "```cove-card-v1 \t\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```",
+    "valid": true
+  },
+  {
+    "name": "long closing fence",
+    "body": "```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n````",
+    "valid": true
+  },
+  {
+    "name": "quoted",
+    "body": "> ```cove-card-v1\n> {\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n> ```",
+    "valid": false
+  },
+  {
+    "name": "nested example",
+    "body": "````markdown\n```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```\n````",
+    "valid": false
+  },
+  {
+    "name": "tilde example",
+    "body": "~~~markdown\n```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```\n~~~",
+    "valid": false
+  },
+  {
+    "name": "unclosed",
+    "body": "```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n",
+    "valid": false
+  },
+  {
+    "name": "duplicate",
+    "body": "```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```\n```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```",
+    "valid": false
+  },
+  {
+    "name": "leading reasoning",
+    "body": "<analysis>example\n```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```\n</analysis>\n```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```",
+    "valid": true
+  },
+  {
+    "name": "unterminated reasoning",
+    "body": "<analysis>\n```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```",
+    "valid": false
+  },
+  {
+    "name": "mismatched version",
+    "body": "```cove-card-v2\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```",
+    "valid": true
+  },
+  {
+    "name": "json marker",
+    "body": "```json\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```",
+    "valid": true
+  },
+  {
+    "name": "case and spacing",
+    "body": "``` COVE-CARD-V1 \n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```",
+    "valid": true
+  },
+  {
+    "name": "ordinary json",
+    "body": "```json\n{\"title\":\"An ordinary object\"}\n```",
+    "valid": false
+  },
+  {
+    "name": "bare nested model input",
+    "body": "{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"Walk\",\"Read\"]}]}",
+    "valid": true
+  },
+  {
+    "name": "truncated bare model input",
+    "body": "{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[",
+    "valid": false
+  },
+  {
+    "name": "copied fence suffix",
+    "body": "```cove-ui JSON block:\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}\n```",
+    "valid": true,
+    "prose": ""
+  },
+  {
+    "name": "case and tab suffix",
+    "body": "``` COVE-UI\tJSON block:\r\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}\r\n```",
+    "valid": true,
+    "prose": ""
+  },
+  {
+    "name": "unknown fence version",
+    "body": "```cove-card-v9\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}\n```",
+    "valid": false
+  },
+  {
+    "name": "unclosed ordinary fence after bare object",
+    "body": "{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}\n```python\npass",
+    "valid": false
+  },
+  {
+    "name": "repaired bare object with prose",
+    "body": "{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]]}}\n\nNext paragraph.",
+    "valid": true,
+    "prose": "\n\nNext paragraph."
+  },
+  {
+    "name": "repaired marked json",
+    "body": "```json\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]]}}\n```",
+    "valid": true,
+    "prose": ""
+  },
+  {
+    "name": "bare object with extra root closers",
+    "body": "{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}}}]\nAfter.",
+    "valid": true,
+    "prose": "\nAfter."
+  },
+  {
+    "name": "pretty bare object",
+    "body": "{\n  \"cove_ui\": 1,\n  \"title\": \"Pick\",\n  \"children\": [\n    {\n      \"type\": \"Choice\",\n      \"options\": [\n        \"One\",\n        \"Two\"\n      ]\n    }\n  ]\n}\nAfter.",
+    "valid": true,
+    "prose": "\nAfter."
+  },
+  {
+    "name": "reasoning containing a bare example",
+    "body": "<analysis>{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}</analysis>\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}",
+    "valid": true,
+    "prose": "<analysis>{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}</analysis>\n"
+  },
+  {
+    "name": "ordinary marker prefix",
+    "body": "{\"cove_ui\":10,\"title\":\"Not UI\"}",
+    "valid": false
+  },
+  {
+    "name": "bare object after prose",
+    "body": "Here are choices.\n\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}\nAfter.",
+    "valid": true,
+    "prose": "Here are choices.\n\n\nAfter."
+  },
+  {
+    "name": "bare example in ordinary fence",
+    "body": "Example:\n```json\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}\n```",
+    "valid": true,
+    "prose": "Example:\n"
+  },
+  {
+    "name": "bare example in python fence",
+    "body": "Example:\n```python\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}\n```",
+    "valid": false
+  },
+  {
+    "name": "quoted bare example",
+    "body": "Example:\n> {\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}",
+    "valid": false
+  },
+  {
+    "name": "mixed fenced and bare UI",
+    "body": "```cove-ui\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}\n```\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}",
+    "valid": false
+  },
+  {
+    "name": "two bare roots",
+    "body": "{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}\n{\"cove_ui\":1,\"title\":\"Pick\",\"children\":[{\"type\":\"Choice\",\"options\":[\"One\",\"Two\"]}]}",
+    "valid": false
+  },
+  {
+    "name": "valid card before unclosed ordinary json fence",
+    "body": "```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```\n```json\n{\"ordinary\":true}",
+    "valid": true,
+    "prose": "\n```json\n{\"ordinary\":true}"
+  },
+  {
+    "name": "valid card before closed ordinary json fence",
+    "body": "```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```\n```json\n{\"ordinary\":true}\n```",
+    "valid": true,
+    "prose": "\n```json\n{\"ordinary\":true}\n```"
+  },
+  {
+    "name": "valid card before unsupported version example",
+    "body": "```cove-card-v1\n{\"version\": \"cove-card-v1\", \"catalogVersion\": \"cove-interactive-v1\", \"fallback\": \"Choose whether to follow the footprints or examine the radio.\", \"stateSchema\": {\"next_action\": {\"type\": \"string\", \"enum\": [\"\", \"footprints\", \"radio\"]}}, \"spec\": {\"root\": \"scene\", \"state\": {\"next_action\": \"\"}, \"elements\": {\"scene\": {\"type\": \"Card\", \"props\": {\"title\": \"What do you do?\"}, \"children\": [\"action-choice\", \"continue\"]}, \"action-choice\": {\"type\": \"Choice\", \"props\": {\"value\": {\"$bindState\": \"/next_action\"}, \"mode\": \"single\", \"required\": true, \"options\": [{\"value\": \"footprints\", \"label\": \"Follow the footprints\"}, {\"value\": \"radio\", \"label\": \"Examine the abandoned radio\"}]}, \"children\": []}, \"continue\": {\"type\": \"Button\", \"props\": {\"label\": \"Continue story\"}, \"children\": [], \"on\": {\"press\": {\"action\": \"continue_chat\", \"params\": {\"paths\": [\"/next_action\"]}}}}}}}\n```\n```cove-card-v99\n{}\n```",
+    "valid": true,
+    "prose": "\n```cove-card-v99\n{}\n```"
+  }
+]

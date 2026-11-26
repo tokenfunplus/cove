@@ -1,3 +1,4 @@
+import { useInteractiveDraftWarning } from "@/lib/chat/interactive-drafts";
 import { useGenerationCache } from "@/api/hooks/useGenerations";
 import {
   useClearChatData,
@@ -52,8 +53,16 @@ type Dependencies = Pick<
     | "setProjectPage"
   > &
   Pick<GenerationCommands, "handleCancel"> &
-  Pick<ConversationActions, "handleCreateConversation" | "handleConversationListMode" | "handleUpdateConversation"> &
-  { copy: ApplicationCopy; attachmentDraft: AttachmentDraft; onChatDataCleared?: () => void };
+  Pick<
+    ConversationActions,
+    | "handleCreateConversation"
+    | "handleConversationListMode"
+    | "handleUpdateConversation"
+  > & {
+    copy: ApplicationCopy;
+    attachmentDraft: AttachmentDraft;
+    onChatDataCleared?: () => void;
+  };
 
 export function useConversationLifecycle({
   onChatDataCleared,
@@ -96,8 +105,15 @@ export function useConversationLifecycle({
     loadConversation: getConversation,
     loadConversations: getConversations,
   } = useConversationCache();
-  const hasDraft = Boolean(draft.trim() || attachmentDraft.attachments.length);
-  const activeGeneration = Boolean(isSending || generationBatch?.state === "pending" || generationBatch?.state === "streaming");
+  const interactiveDirty = useInteractiveDraftWarning();
+  const hasDraft =
+    interactiveDirty ||
+    Boolean(draft.trim() || attachmentDraft.attachments.length);
+  const activeGeneration = Boolean(
+    isSending ||
+      generationBatch?.state === "pending" ||
+      generationBatch?.state === "streaming",
+  );
 
   useEffect(() => {
     if (!hasDraft) return;
@@ -111,14 +127,26 @@ export function useConversationLifecycle({
 
   async function withNavigationBusy(action: () => Promise<unknown>) {
     setIsNavigating(true);
-    try { await action(); }
-    finally { setIsNavigating(false); }
+    try {
+      await action();
+    } finally {
+      setIsNavigating(false);
+    }
   }
 
-  async function handleCreateConversation(projectId?: string, initialDraft?: string) {
+  async function handleCreateConversation(
+    projectId?: string,
+    initialDraft?: string,
+  ) {
     if (isNavigating) return;
     if (hasDraft || activeGeneration) {
-      setConfirmation({ kind: "new", projectId, initialDraft, discardDraft: hasDraft, stopGeneration: activeGeneration });
+      setConfirmation({
+        kind: "new",
+        projectId,
+        initialDraft,
+        discardDraft: hasDraft,
+        stopGeneration: activeGeneration,
+      });
       return;
     }
     await withNavigationBusy(() => createConversation(projectId, initialDraft));
@@ -128,17 +156,34 @@ export function useConversationLifecycle({
     if (isNavigating) return;
     if (archived === showingArchived) return;
     if (hasDraft || activeGeneration) {
-      setConfirmation({ kind: "navigate", discardDraft: hasDraft, stopGeneration: activeGeneration, navigationAction: () => changeListMode(archived) });
+      setConfirmation({
+        kind: "navigate",
+        discardDraft: hasDraft,
+        stopGeneration: activeGeneration,
+        navigationAction: () => changeListMode(archived),
+      });
     } else await withNavigationBusy(() => changeListMode(archived));
   }
 
-  async function handleUpdateConversation(id: string, input: { pinned?: boolean; archived?: boolean }) {
+  async function handleUpdateConversation(
+    id: string,
+    input: { pinned?: boolean; archived?: boolean },
+  ) {
     if (isNavigating) return;
-    const changesSelection = id === selectedId && input.archived !== undefined && input.archived !== showingArchived;
+    const changesSelection =
+      id === selectedId &&
+      input.archived !== undefined &&
+      input.archived !== showingArchived;
     if (changesSelection && (hasDraft || activeGeneration)) {
-      setConfirmation({ kind: "navigate", discardDraft: hasDraft, stopGeneration: activeGeneration, navigationAction: () => updateConversation(id, input) });
+      setConfirmation({
+        kind: "navigate",
+        discardDraft: hasDraft,
+        stopGeneration: activeGeneration,
+        navigationAction: () => updateConversation(id, input),
+      });
     } else if (!isSending) {
-      if (changesSelection) await withNavigationBusy(() => updateConversation(id, input));
+      if (changesSelection)
+        await withNavigationBusy(() => updateConversation(id, input));
       else await updateConversation(id, input);
     }
   }
@@ -146,7 +191,11 @@ export function useConversationLifecycle({
   function navigateToConversation(id: string, messageId?: string) {
     setProjectPage(undefined);
     setSelectedId(id);
-    setConversationNavigation(messageId ? { conversationId: id, messageId, requestId: crypto.randomUUID() } : undefined);
+    setConversationNavigation(
+      messageId
+        ? { conversationId: id, messageId, requestId: crypto.randomUUID() }
+        : undefined,
+    );
     setMobileSidebarOpen(false);
   }
 
@@ -157,10 +206,34 @@ export function useConversationLifecycle({
       return;
     }
     if (activeGeneration || hasDraft) {
-      setConfirmation({ kind: "switch", conversationId: id, messageId, discardDraft: hasDraft, stopGeneration: activeGeneration });
+      setConfirmation({
+        kind: "switch",
+        conversationId: id,
+        messageId,
+        discardDraft: hasDraft,
+        stopGeneration: activeGeneration,
+      });
       return;
     }
     navigateToConversation(id, messageId);
+  }
+
+  function handleOpenProject(projectId?: string) {
+    if (isNavigating) return;
+    const open = async () => {
+      setProjectPage(projectId ? { projectId } : {});
+      setMobileSidebarOpen(false);
+    };
+    if (interactiveDirty) {
+      setConfirmation({
+        kind: "navigate",
+        discardDraft: true,
+        stopGeneration: activeGeneration,
+        navigationAction: open,
+      });
+      return;
+    }
+    void open();
   }
 
   function handleDeleteConversation(id: string) {
@@ -175,7 +248,9 @@ export function useConversationLifecycle({
       const refreshed = await getConversations({ archived: showingArchived });
 
       if (id === selectedId) {
-        setSelectedId(refreshed.find(conversation => !conversation.project_id)?.id);
+        setSelectedId(
+          refreshed.find((conversation) => !conversation.project_id)?.id,
+        );
       }
     } catch {
       setFeedback(copy.deleteFailed);
@@ -197,7 +272,8 @@ export function useConversationLifecycle({
         secureInferenceAbortRef.current ||
         secureGenerationRunsRef.current.size > 0
       ) {
-        if (!(await handleCancel())) throw new Error("Generation cancellation failed");
+        if (!(await handleCancel()))
+          throw new Error("Generation cancellation failed");
         if (generationBatch) {
           const stopped = await loadBatch(generationBatch.id);
           if (stopped.state === "pending" || stopped.state === "streaming")
@@ -228,19 +304,27 @@ export function useConversationLifecycle({
   async function confirmRequestedAction() {
     const request = confirmation;
     if (!request || isNavigating) return;
-    if (request.kind === "switch" || request.kind === "new" || request.kind === "navigate") {
+    if (
+      request.kind === "switch" ||
+      request.kind === "new" ||
+      request.kind === "navigate"
+    ) {
       setIsNavigating(true);
       try {
         const needsStop = Boolean(
           secureInferenceAbortRef.current ||
-          secureGenerationRunsRef.current.size > 0 ||
-          generationBatch?.state === "pending" ||
-          generationBatch?.state === "streaming" || isSending
+            secureGenerationRunsRef.current.size > 0 ||
+            generationBatch?.state === "pending" ||
+            generationBatch?.state === "streaming" ||
+            isSending,
         );
         if (needsStop && !(await handleCancel())) return;
         if (request.kind === "navigate") await request.navigationAction?.();
         else if (request.kind === "new") {
-          if (!(await createConversation(request.projectId, request.initialDraft))) return;
+          if (
+            !(await createConversation(request.projectId, request.initialDraft))
+          )
+            return;
         } else if (request.conversationId) {
           navigateToConversation(request.conversationId, request.messageId);
         }
@@ -276,6 +360,7 @@ export function useConversationLifecycle({
     handleConversationListMode,
     handleUpdateConversation,
     handleSelectConversation,
+    handleOpenProject,
     handleDeleteConversation,
     deleteConfirmedConversation,
     handleClearChatData,

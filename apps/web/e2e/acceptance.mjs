@@ -1,3 +1,4 @@
+import { runInteractiveAcceptance } from "./interactive.mjs";
 import { runLocalCapabilitiesAcceptance } from "./local-capabilities.mjs";
 import { runProjectsAcceptance } from "./projects.mjs";
 import http from "node:http";
@@ -45,6 +46,15 @@ const requests = [];
 let sawApiKeyHeader = false;
 const attempts = new Map();
 let catalogGate;
+const interactiveFixtures = JSON.parse(
+  await readFile(
+    path.join(
+      repoRoot,
+      "packages/api-contract/fixtures/interactive-cards.json",
+    ),
+    "utf8",
+  ),
+);
 const mathAnswer = [
   String.raw`Density \(\rho\), energy $E=mc^2$, and **Markdown**.`,
   "\u5BC6\u5EA6 and fluid mechanics remain readable together.",
@@ -109,6 +119,104 @@ const provider = http.createServer(async (request, response) => {
   }
 
   response.writeHead(200, { "Content-Type": "text/event-stream" });
+  if (prompt === "Repaired nested UI fixture") {
+    const body = 'Here are two weekend ideas.\n\n{"cove_ui":1,"title":"Repair a weekend choice","children":[{"type":"Choice","options":["A gallery","A walk"]],"continue":"Continue repaired"}}\n\nThis paragraph survives the repair.';
+    response.end("data: " + JSON.stringify({choices:[{delta:{content:body}}]}) + "\n\ndata: [DONE]\n\n");
+    return;
+  }
+  if(prompt==="Local nested UI fixture"){
+    const body='A small local exercise.\n```json\n'+JSON.stringify({cove_ui:1,title:"Recall locally",continue:false,children:[{type:"Reveal",label:"Reveal the word",children:[{type:"Text",content:"A happy accident."}]}]})+'\n```';
+    response.end("data: "+JSON.stringify({choices:[{delta:{content:body}}]})+"\n\ndata: [DONE]\n\n");return;
+  }
+  if (prompt === "Malformed interactive fixture") {
+    response.write(
+      "data: " +
+        JSON.stringify({
+          choices: [
+            {
+              delta: {
+                content:
+                  'A readable fallback answer.\n```cove-ui\n{"cove_ui":1,"title":"Safe fallback","children":[',
+              },
+            },
+          ],
+        }) +
+        "\n\n",
+    );
+    setTimeout(
+      () =>
+        response.end(
+          "data: " +
+            JSON.stringify({
+              choices: [
+                {
+                  delta: {
+                    content:
+                      '{"type":"Script","code":"never execute"}]}\n```\nYou can keep chatting.',
+                  },
+                },
+              ],
+            }) +
+            "\n\ndata: [DONE]\n\n",
+        ),
+      750,
+    );
+    return;
+  }
+  if (prompt === "Natural greeting fixture") {
+    response.write(
+      "data: " +
+        JSON.stringify({
+          choices: [{ delta: { content: "Hello! How has your day been?" } }],
+        }) +
+        "\n\n",
+    );
+    response.end("data: [DONE]\n\n");
+    return;
+  }
+  if (prompt.includes('"version":"interaction-v2"')) {
+    response.write(
+      "data: " +
+        JSON.stringify({
+          choices: [
+            { delta: { content: "I have your updated plan and invitation." } },
+          ],
+        }) +
+        "\n\n",
+    );
+    response.end("data: [DONE]\n\n");
+    return;
+  }
+  if (
+    prompt.startsWith("Interactive fixture ") ||
+    prompt.includes('"version":"interaction-v1"')
+  ) {
+    const fixture = interactiveFixtures.valid.find(
+      (f) =>
+        f.name ===
+        (prompt.includes("playground")
+          ? "playground"
+          : prompt.includes("quiz")
+            ? "quiz"
+            : "story"),
+    );
+    const version = JSON.parse(fixture.source).version;
+    const answer =
+      "Let us explore together.\n\n```" +
+      version +
+      "\n" +
+      fixture.source +
+      "\n```";
+    response.write(
+      "data: " +
+        JSON.stringify({ choices: [{ delta: { content: answer } }] }) +
+        "\n\n",
+    );
+    response.end("data: [DONE]\n\n");
+    return;
+  }
+
+
   if (prompt.startsWith("Webpage source fixture")) {
     const sourceId = prompt.match(/"id":"([a-f0-9]{64})"/)?.[1];
     const answer = `The saved page supplies this evidence. [View evidence](cove:${sourceId}:L1)`;
@@ -591,7 +699,26 @@ try {
     );
     await cdp("Input.insertText", { text: value });
   }
-  if (process.env.COVE_BROWSER_SCENARIO === "local-capabilities") {
+  if (process.env.COVE_BROWSER_SCENARIO === "interactive") {
+    try {
+      await runInteractiveAcceptance({
+        api,
+        cdp,
+        evaluate,
+        until,
+        click,
+        fill,
+        snapshot,
+        reloadPage,
+        requests,
+      });
+    } catch (error) {
+      await snapshot("interactive-failure");
+      throw error;
+    }
+    assert.equal(exceptions.length, 0);
+    socket.close();
+  } else if (process.env.COVE_BROWSER_SCENARIO === "local-capabilities") {
     await runLocalCapabilitiesAcceptance({api,cdp,evaluate,until,click,fill,snapshot});
     assert.equal(exceptions.length,0);socket.close();console.log("Local capability browser acceptance passed: retained speech drafts, empty preview text, similarity controls, and responsive layouts.");
   } else if (process.env.COVE_BROWSER_SCENARIO === "projects") {

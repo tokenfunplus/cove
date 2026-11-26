@@ -12,6 +12,7 @@ import { historyFiltersStorageKey, historyQueryFilter } from "@/components/conve
 import { conversationKeys } from "@/api/queryKeys";
 import { createLocalServiceQueryClient } from "@/api/queryClient";
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
+import { setInteractiveDraftDirty } from "@/lib/chat/interactive-drafts";
 import { quickPanelFocusEvent, quickPanelImportEvent } from "@/lib/quick-panel";
 import { App } from "@/App";
 import { ProjectsPage } from "@/components/projects/ProjectsPage";
@@ -733,10 +734,13 @@ test("Focus transitions retain locally previewed attachments without reparsing",
 
 test("a streamed answer reconciles with saved history without appearing twice", async () => {
   const { composer } = await sendPrompt();
+  expect(screen.queryByRole("checkbox", { name: "Interactive replies" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Story" })).toBeNull();
   expect(transport.createGenerationBatch).toHaveBeenCalledWith(
     fixture.conversation.id,
     {
       body: "A test prompt",
+      interactive: true,
       clientRequestId: expect.any(String),
       expectedTargets: [{ provider_id: "provider-one", model_id: "model-one", require_private_tee: false }],
     },
@@ -2762,3 +2766,181 @@ test("document search installs in place while preserving the chat draft",async()
   const batch=structuredClone(fixture.completedBatch);batch.state="failed";batch.targets[0].generation.state="failed";delete batch.targets[0].generation.assistant_message_id;fixture.conversation.generation_batches=[batch];fixture.conversation.messages=fixture.completedView.messages.slice(0,1);
   const {user}=await openWorkspace();await user.click(screen.getByRole("checkbox",{name:"Only on this Mac"}));expect(screen.getByRole<HTMLButtonElement>("button",{name:"Retry generation"}).disabled).toBe(true);expect(transport.retryGenerationTarget).not.toHaveBeenCalled();
  });
+
+
+test("project-name navigation protects an unsent interactive draft", async () => {
+  const { p } = projectNavigationFixture();
+  const { user } = await openWorkspace();
+  await user.click(screen.getByRole("button", { name: "Projects" }));
+  await user.click(
+    await screen.findByRole("button", { name: `Open project ${p.name}` }),
+  );
+  const chats = await screen.findByRole("region", { name: "Project chats" });
+  await user.click(await within(chats).findByTitle(fixture.conversation.title));
+  const controls = await screen.findByLabelText("Conversation project");
+  act(() => setInteractiveDraftDirty("project-review-draft", true));
+  try {
+    await user.click(within(controls).getByRole("button", { name: p.name }));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Discard unsent draft?",
+    });
+    await user.click(
+      within(confirmation).getByRole("button", { name: "Stay" }),
+    );
+    expect(screen.queryByRole("region", { name: "Project chats" })).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Send message" })).toBeTruthy();
+    act(() => setInteractiveDraftDirty("project-review-draft", false));
+    await user.click(within(controls).getByRole("button", { name: p.name }));
+    expect(
+      await screen.findByRole("region", { name: "Project chats" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("dialog", { name: "Discard unsent draft?" }),
+    ).toBeNull();
+  } finally {
+    act(() => setInteractiveDraftDirty("project-review-draft", false));
+  }
+});
+
+test("a failed card continuation preserves unrelated staged attachments", async () => {
+  vi.mocked(transport.previewAttachment).mockResolvedValue({
+    id: "f".repeat(64),
+    name: "retained.md",
+    media_type: "text/plain",
+    size: 6,
+    characters: 6,
+    extraction_version: "cove-text-v1",
+    sections: [{ id: "L1", text: "Source" }],
+  });
+  const { result } = mountWorkspaceController();
+  await waitFor(() => expect(result.current.conversationView?.id).toBeTruthy());
+  await act(async () => {
+    await result.current.attachmentDraft.addAttachments([
+      new File(["Source"], "retained.md", { type: "text/plain" }),
+    ]);
+  });
+  await waitFor(() =>
+    expect(result.current.attachmentDraft.attachments).toHaveLength(1),
+  );
+  vi.mocked(transport.createGenerationBatch).mockRejectedValue(
+    new Error("Synthetic admission failure"),
+  );
+  await act(async () => {
+    await result.current.handleSend({
+      body: "Continue",
+      preserveDraft: true,
+      interaction: {
+        generation_id: "review-card",
+        revision: 0,
+        values: { choice: "yes" },
+        checks: {},
+      },
+    });
+  });
+  expect(transport.createGenerationBatch).toHaveBeenCalled();
+  expect(
+    vi.mocked(transport.createGenerationBatch).mock.calls.at(-1)![1]
+      .attachments,
+  ).toBeUndefined();
+  expect(result.current.attachmentDraft.attachments.map((a) => a.name)).toEqual(
+    ["retained.md"],
+  );
+});
+
+test("failed card admission preserves an attachment preview completed during the request", async () => {
+  let finishPreview!: (
+    snapshot: Awaited<ReturnType<typeof transport.previewAttachment>>,
+  ) => void;
+  vi.mocked(transport.previewAttachment).mockReturnValue(
+    new Promise((resolve) => {
+      finishPreview = resolve;
+    }),
+  );
+  let failAdmission!: (error: Error) => void;
+  const admission = new Promise<never>((_, reject) => {
+    failAdmission = reject;
+  });
+  vi.mocked(transport.createGenerationBatch).mockReturnValue(admission);
+  const { result } = mountWorkspaceController();
+  await waitFor(() => expect(result.current.conversationView?.id).toBeTruthy());
+  let adding!: Promise<void>;
+  act(() => {
+    adding = result.current.attachmentDraft.addAttachments([
+      new File(["Source"], "pending.md", { type: "text/plain" }),
+    ]);
+  });
+  await waitFor(() => expect(transport.previewAttachment).toHaveBeenCalled());
+  expect(
+    result.current.attachmentDraft.attachments[0].snapshot,
+  ).toBeUndefined();
+  let sending!: Promise<void>;
+  act(() => {
+    sending = result.current.handleSend({
+      body: "Continue",
+      preserveDraft: true,
+      interaction: {
+        generation_id: "card",
+        revision: 0,
+        values: {},
+        checks: {},
+      },
+    });
+  });
+  await waitFor(() =>
+    expect(transport.createGenerationBatch).toHaveBeenCalled(),
+  );
+  await act(async () => {
+    finishPreview({
+      id: "a".repeat(64),
+      name: "pending.md",
+      media_type: "text/plain",
+      size: 6,
+      characters: 6,
+      extraction_version: "cove-text-v1",
+      sections: [{ id: "L1", text: "Source" }],
+    });
+    await adding;
+  });
+  expect(result.current.attachmentDraft.attachments[0].snapshot).toBeTruthy();
+  await act(async () => {
+    failAdmission(new Error("Synthetic admission failure"));
+    await sending;
+  });
+  expect(result.current.attachmentDraft.attachments[0].snapshot?.name).toBe(
+    "pending.md",
+  );
+  expect(result.current.attachmentDraft.attachments[0].input).toBeTruthy();
+});
+
+test("Quick Panel new chat and replacement imports protect a card question", async () => {
+  const { result } = renderHook(() => useChatWorkspace({ quickPanel: true }), {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    ),
+  });
+  await waitFor(() => expect(result.current.connection).toBe("ready"));
+  act(() => result.current.setSelectedId(fixture.conversation.id));
+  await waitFor(() =>
+    expect(result.current.conversationView?.id).toBe(fixture.conversation.id),
+  );
+  act(() => setInteractiveDraftDirty("quick-question", true));
+  try {
+    act(() => result.current.startBlankQuickChat());
+    expect(result.current.confirmation?.kind).toBe("navigate");
+    expect(result.current.selectedId).toBe(fixture.conversation.id);
+    act(() => result.current.setConfirmation(undefined));
+    const consume = vi.fn();
+    act(() => result.current.replaceQuickChat("Imported text", consume));
+    expect(result.current.confirmation?.discardDraft).toBe(true);
+    expect(consume).not.toHaveBeenCalled();
+    expect(result.current.selectedId).toBe(fixture.conversation.id);
+    await act(async () => {
+      await result.current.confirmRequestedAction();
+    });
+    expect(consume).toHaveBeenCalledOnce();
+    expect(result.current.selectedId).toBeUndefined();
+    expect(result.current.draft).toBe("Imported text");
+  } finally {
+    act(() => setInteractiveDraftDirty("quick-question", false));
+  }
+});

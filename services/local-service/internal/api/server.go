@@ -22,6 +22,7 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
 	"github.com/tokenfunplus/cove/services/local-service/internal/downloadnetwork"
+	"github.com/tokenfunplus/cove/services/local-service/internal/interactive"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
@@ -134,6 +135,8 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/conversations/{id}", browserSession(http.HandlerFunc(server.deleteConversation)))
 	mux.Handle("DELETE /api/data", browserSession(http.HandlerFunc(server.clearChatData)))
 	mux.Handle("GET /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.getConversationMessages)))
+	mux.Handle("POST /api/generations/{id}/interactive-card", browserSession(http.HandlerFunc(server.interactiveCard)))
+	mux.Handle("PATCH /api/generations/{id}/interactive-card", browserSession(http.HandlerFunc(server.interactiveCard)))
 	mux.Handle("POST /api/conversations/{id}/messages", browserSession(http.HandlerFunc(server.createGeneration)))
 	mux.Handle("POST /api/attachments/preview", browserSession(http.HandlerFunc(server.previewAttachment)))
 	mux.Handle("GET /api/local-models", browserSession(http.HandlerFunc(server.localModelCommand)))
@@ -584,6 +587,8 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		return
 	}
 	var input struct {
+		Interactive      bool                            `json:"interactive"`
+		Card             *interactive.Submission         `json:"interaction"`
 		ExpectedProject  *persistence.ProjectExpectation `json:"expected_project"`
 		ProjectID        *json.RawMessage                `json:"project_id"`
 		EditOfBatchID    string                          `json:"edit_of_batch_id,omitempty"`
@@ -596,12 +601,12 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		ExpectedTargets  []chat.ExpectedGenerationTarget `json:"expected_targets"`
 	}
 	request.Body = http.MaxBytesReader(writer, request.Body, documents.MaxRequestBytes)
-	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" || strings.TrimSpace(input.Body) == "" || input.ProjectID != nil {
+	if err := decodeJSON(request, &input); err != nil || strings.TrimSpace(input.ClientRequestID) == "" || (strings.TrimSpace(input.Body) == "" && input.Card == nil) || input.ProjectID != nil {
 		writeError(writer, http.StatusBadRequest, "validation", "The generation request is invalid.")
 		return
 	}
 	session, _ := localsecurity.SessionFromRequest(request)
-	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{LocalOnly: input.LocalOnly, ExpectedProject: input.ExpectedProject, EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, WebSearchEnabled: input.WebSearchEnabled, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID, ExpectedTargets: input.ExpectedTargets})
+	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{Interactive: input.Interactive, Card: input.Card, LocalOnly: input.LocalOnly, ExpectedProject: input.ExpectedProject, EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, WebSearchEnabled: input.WebSearchEnabled, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID, ExpectedTargets: input.ExpectedTargets})
 	if err != nil {
 		if errors.Is(err, persistence.ErrProjectChanged) {
 			current, readErr := server.chat.ReadConversation(request.Context(), request.PathValue("id"))
@@ -960,6 +965,7 @@ type generationTargetEnvelope struct {
 }
 
 type generationBatchEnvelope struct {
+	Interactive          bool                             `json:"interactive,omitempty"`
 	LocalOnly            bool                             `json:"local_only,omitempty"`
 	ProjectContextID     string                           `json:"project_context_id,omitempty"`
 	ProjectContext       *persistence.ProjectContext      `json:"project_context,omitempty"`
@@ -1034,7 +1040,7 @@ func generationBatchEnvelopeFor(batch persistence.GenerationBatch) generationBat
 		})
 	}
 	return generationBatchEnvelope{
-		LocalOnly:      batch.LocalOnly,
+		Interactive: batch.Interactive, LocalOnly: batch.LocalOnly,
 		ProjectContext: batch.ProjectContext, InputContent: batch.InputContent, Attachments: batch.Attachments, WebSearch: batch.WebSearch,
 		ID: batch.ID, ConversationID: batch.ConversationID, ClientRequestID: batch.ClientRequestID, UserMessageID: batch.UserMessageID,
 		State: batch.State, Targets: targets, EventsURL: "/api/generation-batches/" + batch.ID + "/events",
@@ -1212,6 +1218,15 @@ func writeConversationError(writer http.ResponseWriter, err error) {
 
 func writeGenerationError(writer http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, interactive.ErrInvalid):
+		var detail *interactive.ValidationError
+		if errors.As(err, &detail) {
+			writeError(writer, 400, "invalid_interactive_card", detail.Error())
+		} else {
+			writeError(writer, 400, "invalid_interactive_card", "This interactive reply is invalid or unsupported. You can continue in chat.")
+		}
+	case errors.Is(err, persistence.ErrCardConflict):
+		writeError(writer, 409, "interactive_card_conflict", "This card changed, was already submitted, or belongs to an earlier answer. Reload the card to review its current state.")
 	case errors.Is(err, chat.ErrLocalOnly):
 		writeError(writer, http.StatusBadRequest, "local_only", err.Error())
 	case errors.Is(err, websearch.ErrUnavailable):

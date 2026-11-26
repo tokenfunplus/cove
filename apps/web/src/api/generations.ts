@@ -16,8 +16,10 @@ import {
 } from "@cove/api-contract";
 
 export type GenerationSelection = {
+  interactive?: boolean;
+  interaction?: import("@cove/api-contract").CardSubmission;
   localOnly?: boolean;
- expectedProject?:ProjectExpectation;
+  expectedProject?: ProjectExpectation;
   editOfBatchId?: string;
   clientRequestId: string;
   body: string;
@@ -32,9 +34,13 @@ export function createGenerationBatch(
   selection: GenerationSelection,
 ): Promise<GenerationBatch> {
   const input: GenerationInput = {
-    ...(selection.localOnly ? {local_only:true}:{}),
-    ...(selection.editOfBatchId ? {edit_of_batch_id:selection.editOfBatchId} : {}),
-    expected_project:selection.expectedProject,
+    interactive: selection.interactive,
+    interaction: selection.interaction,
+    ...(selection.localOnly ? { local_only: true } : {}),
+    ...(selection.editOfBatchId
+      ? { edit_of_batch_id: selection.editOfBatchId }
+      : {}),
+    expected_project: selection.expectedProject,
     client_request_id: selection.clientRequestId,
     body: selection.body,
     attachments: selection.attachments,
@@ -63,6 +69,8 @@ export function previewAttachment(
 }
 
 export function previewGenerationContext(input: {
+  interaction?: import("@cove/api-contract").CardSubmission;
+  interactive?: boolean;
   conversationId: string;
   body: string;
   attachments?: AttachmentInput[];
@@ -74,6 +82,8 @@ export function previewGenerationContext(input: {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        ...(input.interactive ? { interactive: true } : {}),
+        ...(input.interaction ? { interaction: input.interaction } : {}),
         body: input.body,
         attachments: input.attachments,
         web_source_tokens: input.webSourceTokens,
@@ -82,7 +92,10 @@ export function previewGenerationContext(input: {
   );
 }
 
-export function prepareWebSource(url: string, signal: AbortSignal): Promise<PreparedWebSource> {
+export function prepareWebSource(
+  url: string,
+  signal: AbortSignal,
+): Promise<PreparedWebSource> {
   return request<PreparedWebSource>("/api/web-sources/prepare", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -92,7 +105,9 @@ export function prepareWebSource(url: string, signal: AbortSignal): Promise<Prep
 }
 
 export function releaseWebSource(token: string): Promise<void> {
-  return request<void>(`/api/web-sources/${encodeURIComponent(token)}`, { method: "DELETE" });
+  return request<void>(`/api/web-sources/${encodeURIComponent(token)}`, {
+    method: "DELETE",
+  });
 }
 
 export function getGenerationBatch(id: string): Promise<GenerationBatch> {
@@ -118,7 +133,10 @@ export function retryGenerationTarget(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_request_id: clientRequestId, ...(localOnly ? {local_only:true} : {}) }),
+      body: JSON.stringify({
+        client_request_id: clientRequestId,
+        ...(localOnly ? { local_only: true } : {}),
+      }),
     },
   );
 }
@@ -193,4 +211,10 @@ export function getGenerationBatchContext(
   );
 }
 
-export function getProjectBatchContext(id:string):Promise<ProjectContextEnvelope>{return request(`/api/generation-batches/${encodeURIComponent(id)}/context?format=project-v1`);}
+export function getProjectBatchContext(
+  id: string,
+): Promise<ProjectContextEnvelope> {
+  return request(
+    `/api/generation-batches/${encodeURIComponent(id)}/context?format=project-v1`,
+  );
+}

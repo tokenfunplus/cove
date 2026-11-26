@@ -1,3 +1,7 @@
+import {
+  hasComposerCard,
+  prepareComposerCard,
+} from "@/lib/chat/interactive-context";
 import { ProjectContextUsage } from "./ProjectContextUsage";
 import { useState, type ReactNode } from "react";
 import { usePreviewGenerationContext } from "@/api/hooks/useGenerations";
@@ -10,6 +14,7 @@ import { englishConversationCopy as copy } from "@/messages";
 import { ListFilter } from "lucide-react";
 
 export function DraftContext({
+  interactive,
   conversationId,
   body,
   attachments,
@@ -18,6 +23,7 @@ export function DraftContext({
   destinations = [],
   renderTrigger,
 }: {
+  interactive?: boolean;
   conversationId: string;
   body: string;
   attachments: AttachmentDraft;
@@ -27,42 +33,82 @@ export function DraftContext({
   renderTrigger?: (open: () => void, disabled: boolean) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [cardError, setCardError] = useState<string>();
+  const [preparing, setPreparing] = useState(false);
   const preview = usePreviewGenerationContext();
-  const triggerDisabled = disabled || attachments.invalid;
-  function review() {
+  const triggerDisabled =
+    disabled ||
+    attachments.invalid ||
+    preparing ||
+    Boolean(interactive && hasComposerCard(conversationId) && !body.trim());
+  async function review() {
     setOpen(true);
-    preview.mutate({
-      conversationId,
-      body,
-      attachments: attachments.attachments.flatMap((item) =>
-        item.input ? [item.input] : [],
-      ),
-      webSourceTokens: attachments.attachments.flatMap((item) =>
-        item.webSourceToken ? [item.webSourceToken] : [],
-      ),
-    });
+    setCardError(undefined);
+    setPreparing(true);
+    preview.reset();
+    let releaseCardReference: (() => void) | undefined;
+    try {
+      const preparedReference = interactive
+        ? await prepareComposerCard(conversationId)
+        : undefined;
+      const { release, ...reference } = preparedReference ?? {};
+      releaseCardReference = release;
+      const interaction = preparedReference
+        ? (reference as import("@cove/api-contract").CardSubmission)
+        : undefined;
+      preview.mutate({
+        ...(interaction ? { interaction } : {}),
+        ...(interactive ? { interactive: true } : {}),
+        conversationId,
+        body,
+        attachments: attachments.attachments.flatMap((item) =>
+          item.input ? [item.input] : [],
+        ),
+        webSourceTokens: attachments.attachments.flatMap((item) =>
+          item.webSourceToken ? [item.webSourceToken] : [],
+        ),
+      });
+    } catch (error) {
+      setCardError(
+        error instanceof Error
+          ? error.message
+          : "Could not prepare the current card.",
+      );
+    } finally {
+      releaseCardReference?.();
+      setPreparing(false);
+    }
   }
-  const messages=Array.isArray(preview.data)?preview.data:preview.data?.messages??[];
-  const projectPreview=preview.data&&!Array.isArray(preview.data)?preview.data:undefined;
+  const messages = Array.isArray(preview.data)
+    ? preview.data
+    : (preview.data?.messages ?? []);
+  const projectPreview =
+    preview.data && !Array.isArray(preview.data) ? preview.data : undefined;
   const characters = messages.reduce(
     (sum, item) => sum + Array.from(item.content).length,
     0,
   );
   return (
     <>
-      {renderTrigger ? renderTrigger(review, triggerDisabled) : <Tooltip content={copy.reviewContext} suppressRestoredFocus>
-      <Button
-        type="button"
-        variant="ghost"
-        size={compact ? "icon-sm" : "sm"}
-        className={compact ? "rounded-lg text-muted-foreground" : undefined}
-        disabled={triggerDisabled}
-        onClick={review}
-      >
-        {compact && <ListFilter aria-hidden="true" size={16} />}
-        <span className={compact ? "sr-only" : undefined}>{copy.reviewContext}</span>
-      </Button>
-      </Tooltip>}
+      {renderTrigger ? (
+        renderTrigger(review, triggerDisabled)
+      ) : (
+        <Tooltip content={copy.reviewContext} suppressRestoredFocus>
+          <Button
+            type="button"
+            variant="ghost"
+            size={compact ? "icon-sm" : "sm"}
+            className={compact ? "rounded-lg text-muted-foreground" : undefined}
+            disabled={triggerDisabled}
+            onClick={review}
+          >
+            {compact && <ListFilter aria-hidden="true" size={16} />}
+            <span className={compact ? "sr-only" : undefined}>
+              {copy.reviewContext}
+            </span>
+          </Button>
+        </Tooltip>
+      )}
       {open && (
         <Dialog
           open
@@ -81,9 +127,29 @@ export function DraftContext({
             <p className="text-sm text-muted-foreground">
               {copy.draftContextNotice}
             </p>
-            {destinations.some(destination=>destination.includes("On this Mac"))&&<p className="text-sm text-muted-foreground">Local chat supports 4,096 tokens, including up to 1,024 output tokens. Character counts are not token counts; long history or source pages may exceed this model limit.</p>}
-            {destinations.length>0&&<p className="text-xs text-muted-foreground">Selected destinations: {destinations.join("; ")}</p>}
-            {projectPreview && <ProjectContextUsage project={projectPreview.project_context} usage={projectPreview.usage} preview/>}
+            {destinations.some((destination) =>
+              destination.includes("On this Mac"),
+            ) && (
+              <p className="text-sm text-muted-foreground">
+                Local chat supports 4,096 tokens, including up to 1,024 output
+                tokens. Character counts are not token counts; long history or
+                source pages may exceed this model limit.
+              </p>
+            )}
+            {destinations.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Selected destinations: {destinations.join("; ")}
+              </p>
+            )}
+            {projectPreview && (
+              <ProjectContextUsage
+                project={projectPreview.project_context}
+                usage={projectPreview.usage}
+                preview
+              />
+            )}
+            {cardError && <p role="alert">{cardError}</p>}
+            {preparing && <p role="status">Preparing current card…</p>}
             {preview.isPending && <p role="status">{copy.loading}</p>}
             {preview.isError && (
               <p role="alert">

@@ -110,5 +110,11 @@ func copyBranchTurnTx(ctx context.Context, tx *sql.Tx, conversationID string, it
 	if _, err := tx.ExecContext(ctx, `INSERT INTO batch_project_sources(batch_id,source_id,blob_hash) SELECT ?,source_id,blob_hash FROM batch_project_sources WHERE batch_id=?`, batchID, generation.GenerationBatchID); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `UPDATE generation_batches SET interactive=(SELECT interactive FROM generation_batches WHERE id=?) WHERE id=?`, generation.GenerationBatchID, batchID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO interactive_runs(generation_id,conversation_id,definition,values_json,checks_json,revision,submitted_batch_id) SELECT ?,?,definition,values_json,checks_json,revision,submitted_batch_id FROM interactive_runs WHERE generation_id=?`, generationID, conversationID, generation.ID); err != nil {
+		return err
+	}
 	return nil
 }

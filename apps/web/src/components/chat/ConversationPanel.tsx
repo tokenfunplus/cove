@@ -1,6 +1,14 @@
+import {
+  InteractiveAnswer,
+  type CardContinue,
+} from "@/components/interactive/InteractiveAnswer";
 import { useState, type ReactNode } from "react";
 import { EditPromptDialog } from "./EditPromptDialog";
-import { ChatExperienceContext, GenerationActivity, FailureActions } from "./ChatExperience";
+import {
+  ChatExperienceContext,
+  GenerationActivity,
+  FailureActions,
+} from "./ChatExperience";
 import { AnswerActions } from "@/components/chat/AnswerActions";
 import { ResponseDetails } from "./ResponseDetails";
 import { WebSearchTrace } from "./WebSearchTrace";
@@ -21,9 +29,7 @@ import { Button } from "@/components/ui/button";
 import { CoveMark } from "@/components/ui/CoveMark";
 import { ConversationWelcome } from "@/components/chat/ConversationWelcome";
 import { generationFailureMessage } from "@/components/chat/generation-status";
-import {
-  StopGenerationButton,
-} from "@/components/chat/GenerationProgress";
+import { StopGenerationButton } from "@/components/chat/GenerationProgress";
 import { AssistantMessage } from "@/components/chat/AssistantMessage";
 import { MessageMeta } from "@/components/chat/MessageMeta";
 import {
@@ -53,6 +59,7 @@ import { useConversationScroll } from "@/hooks/chat/use-conversation-scroll";
 import type { ConversationNavigation } from "@/lib/workspace-types";
 
 export function ConversationPanel({
+  interactive,
   execution,
   webSearch,
   focusMode = false,
@@ -90,6 +97,7 @@ export function ConversationPanel({
   onSkipContext,
   onVerifyAgain,
 }: {
+  interactive?: { enabled: boolean; onContinue: CardContinue };
   execution?: Parameters<typeof ChatComposer>[0]["execution"];
   webSearch?: Parameters<typeof ChatComposer>[0]["webSearch"];
   focusMode?: boolean;
@@ -107,7 +115,12 @@ export function ConversationPanel({
   onCreateConversation?: () => void;
   onOpenSettings?: () => void;
   onChooseModel?: () => void;
-  onEditPrompt?: (batchId:string,body:string,targets:ActiveModelSet,callbacks:{onAccepted:()=>void;onFailure:(message:string)=>void})=>void;
+  onEditPrompt?: (
+    batchId: string,
+    body: string,
+    targets: ActiveModelSet,
+    callbacks: { onAccepted: () => void; onFailure: (message: string) => void },
+  ) => void;
   generationBatch?: GenerationBatch;
   navigation?: ConversationNavigation;
   generationBatches?: GenerationBatch[];
@@ -131,9 +144,14 @@ export function ConversationPanel({
   activeModelSet?: ActiveModelSet;
   profiles?: ProviderProfile[];
 }) {
-  const retryLocalOnly = Boolean(execution?.localOnly || attachmentDraft?.localOnly);
-  const [editing,setEditing]=useState<{batch:GenerationBatch;body:string}>();
-  const [editError,setEditError]=useState<string>();
+  const retryLocalOnly = Boolean(
+    execution?.localOnly || attachmentDraft?.localOnly,
+  );
+  const [editing, setEditing] = useState<{
+    batch: GenerationBatch;
+    body: string;
+  }>();
+  const [editError, setEditError] = useState<string>();
   const {
     messageListRef,
     contentRef,
@@ -359,466 +377,771 @@ export function ConversationPanel({
     <Button
       variant={quickPanel ? "ghost" : "outline"}
       size={quickPanel ? "xs" : "default"}
-      className={quickPanel ? "mx-3 self-end text-muted-foreground" : chatStyles.conversationPanel_latest}
+      className={
+        quickPanel
+          ? "mx-3 self-end text-muted-foreground"
+          : chatStyles.conversationPanel_latest
+      }
       style={quickPanel ? undefined : { bottom: footerHeight + 12 }}
       onClick={returnToLatest}
       type="button"
     >
-      ↓ {copy.returnToLatest}{updatedReplies > 0 ? ` · ${updatedReplies} updated ${updatedReplies === 1 ? "answer" : "answers"}` : ""}
+      ↓ {copy.returnToLatest}
+      {updatedReplies > 0
+        ? ` · ${updatedReplies} updated ${updatedReplies === 1 ? "answer" : "answers"}`
+        : ""}
     </Button>
   );
 
   return (
     <SourceDocuments batches={allGenerationBatches} messages={view.messages}>
-    <ChatExperienceContext.Provider value={{chooseModel:onChooseModel,openSettings:onOpenSettings,busy:isSending || navigationBusy,editTarget:onEditPrompt && !draft.trim() && !attachmentDraft?.attachments.length && !view.archived ? targetId=>{const batch=allGenerationBatches.find(item=>item.targets.some(target=>target.id===targetId));const message=view.messages.find(item=>item.id===batch?.user_message_id);if(batch && message)setEditing({batch,body:message.body});}:undefined}}>
-      <section
-        className={cn(
-          chatStyles.conversationPanel,
-          `conversation-panel${hasMessages ? "" : " conversation-panel--empty"}`,
-          quickPanel && !hasMessages && "justify-center",
-        )}
-        aria-label={view.title}
-        data-workspace-chat-style="nearai"
-        data-workspace-region="conversation"
-        data-workspace-empty={hasMessages ? undefined : "true"}
-        data-quick-panel-conversation={quickPanel || undefined}
+      <ChatExperienceContext.Provider
+        value={{
+          chooseModel: onChooseModel,
+          openSettings: onOpenSettings,
+          busy: isSending || navigationBusy,
+          editTarget:
+            onEditPrompt &&
+            !draft.trim() &&
+            !attachmentDraft?.attachments.length &&
+            !view.archived
+              ? (targetId) => {
+                  const batch = allGenerationBatches.find((item) =>
+                    item.targets.some((target) => target.id === targetId),
+                  );
+                  const message = view.messages.find(
+                    (item) => item.id === batch?.user_message_id,
+                  );
+                  if (batch && message)
+                    setEditing({ batch, body: message.body });
+                }
+              : undefined,
+        }}
       >
-        {view.branch && <p className="mx-5 my-2 text-xs text-muted-foreground" role="status">Branch of {view.branch.source_title}. Earlier messages are copied context from the edited turn.</p>}
-        {editing && onEditPrompt && <EditPromptDialog key={editing.batch.id} batch={editing.batch} body={editing.body} targets={activeModelSet} profiles={profiles} busy={isSending || navigationBusy} error={editError} onCancelSubmission={onCancel} onClose={()=>{setEditing(undefined);setEditError(undefined);}} onSubmit={(body,targets)=>{setEditError(undefined);onEditPrompt(editing.batch.id,body,targets,{onAccepted:()=>setEditing(undefined),onFailure:setEditError});}}/>}
-        {view.archived ? (
-          <p className={chatStyles.conversationPanel_archived} role="status">
-            {copy.archivedConversationNotice}
-          </p>
-        ) : connectionReady && providerStatus !== "ready" &&
-          providerStatus !== "catalog-loading" ? (
-          <ProviderStatusNotice
-            onOpenSettings={onOpenSettings}
-            status={providerStatus}
-            copy={copy}
-          />
-        ) : null}
-        <div className={cn(timelineStyles.viewport, quickPanel && !hasMessages && "hidden")}>
-          <div
-          ref={messageListRef}
-          onScroll={handleMessageScroll}
+        <section
           className={cn(
-            chatStyles.messageList,
-            focusMode && chatStyles.focusMessages,
-            quickPanel && "[&_.message]:mb-4",
-            !quickPanel && timelineEntries.length > 0 && timelineStyles.messages,
-            `message-list${view.messages.length === 0 && liveTargets.length === 0 && !liveTurn ? " message-list--empty" : ""}`,
+            chatStyles.conversationPanel,
+            `conversation-panel${hasMessages ? "" : " conversation-panel--empty"}`,
+            quickPanel && !hasMessages && "justify-center",
           )}
-          aria-label={copy.conversationMessages}
-          role={quickPanel ? "region" : undefined}
-          tabIndex={quickPanel && hasMessages ? 0 : undefined}
-          data-workspace-region="messages"
+          aria-label={view.title}
+          data-workspace-chat-style="nearai"
+          data-workspace-region="conversation"
+          data-workspace-empty={hasMessages ? undefined : "true"}
+          data-quick-panel-conversation={quickPanel || undefined}
         >
-          <div ref={contentRef} className="flow-root min-w-0" data-message-content>
-          {view.messages.length === 0 &&
-          liveTargets.length === 0 &&
-          !liveTurn ? (
-            !quickPanel && <ConversationWelcome copy={copy} onSelectPrompt={onDraftChange} />
-          ) : view.messages.length === 0 ? null : (
-            view.messages.map((message) => {
-              const snapshot = message.provider_snapshot;
-              const generationTarget =
-                message.role === "assistant"
-                  ? batchTargetByAssistantMessageID.get(message.id)
-                  : undefined;
-              if (
-                generationTarget?.batch.targets.length &&
-                generationTarget.batch.targets.length > 1
-              ) {
-                if (
-                  comparisonFirstAssistantMessageID.get(
-                    generationTarget.batch.id,
-                  ) !== message.id
-                )
-                  return null;
-                return (
-                  <ModelComparisonResultGrid
-                    localOnly={retryLocalOnly}
-                    busy={isSending}
-                    batch={generationTarget.batch}
-                    copy={copy}
-                    key={generationTarget.batch.id}
-                    liveTargets={
-                      generationTarget.batch.id === liveBatch?.id
-                        ? liveTargets
-                        : undefined
-                    }
-                    onCancelTarget={
-                      generationTarget.batch.id === liveBatch?.id
-                        ? onCancelTarget
-                        : undefined
-                    }
-                    messages={view.messages}
-                    onRetry={onRetry}
-                    onSelectAnswer={onSelectAnswer}
-                    onVerifyAgain={onVerifyAgain}
-                  />
-                );
-              }
-              const historyVerification =
-                generationTarget?.target.generation.verification;
-              return (
-                <article
-                  className={cn(
-                    messagesStyles.message,
-                    `message message--${message.role}`,
-                  )}
-                  data-generation-target={generationTarget?.target.id}
-                  data-timeline-anchor={message.role === "user" ? message.id : undefined}
-                  data-quick-panel-question={quickPanel && message.role === "user" ? "" : undefined}
-                  key={message.id}
-                >
-                  {message.role === "user" ? (
-                    <span
-                      className={cn(
-                        messagesStyles.message_role,
-                        "message__role--user",
-                      )}
-                      data-message-meta="user"
-                    >
-                      {copy.you}
-                    </span>
-                  ) : (
-                    <MessageMeta
-                      role={message.role}
-                      modelId={snapshot?.model_id}
-                      providerName={snapshot?.provider_name}
-                      createdAt={message.created_at}
-                      copy={copy}
-                      verification={historyVerification}
-                      onVerifyAgain={
-                        generationTarget && onVerifyAgain
-                          ? (kind) =>
-                              onVerifyAgain(generationTarget.target.id, kind)
-                          : undefined
-                      }
-                      mode={inferenceModeForSnapshot(
-                        generationTarget?.target.generation.snapshot ??
-                          snapshot,
-                      )}
-                    />
-                  )}
-                  {message.role === "assistant" ? (
-                    <AnswerActions source={{ messageId: message.id, conversationId: message.conversation_id, body: message.body, snapshot }}>
-                      <AssistantMessage content={message.body} reasoning={message.reasoning} />
-                    </AnswerActions>
-                  ) : (
+          {view.branch && (
+            <p
+              className="mx-5 my-2 text-xs text-muted-foreground"
+              role="status"
+            >
+              Branch of {view.branch.source_title}. Earlier messages are copied
+              context from the edited turn.
+            </p>
+          )}
+          {editing && onEditPrompt && (
+            <EditPromptDialog
+              key={editing.batch.id}
+              batch={editing.batch}
+              body={editing.body}
+              targets={activeModelSet}
+              profiles={profiles}
+              busy={isSending || navigationBusy}
+              error={editError}
+              onCancelSubmission={onCancel}
+              onClose={() => {
+                setEditing(undefined);
+                setEditError(undefined);
+              }}
+              onSubmit={(body, targets) => {
+                setEditError(undefined);
+                onEditPrompt(editing.batch.id, body, targets, {
+                  onAccepted: () => setEditing(undefined),
+                  onFailure: setEditError,
+                });
+              }}
+            />
+          )}
+          {view.archived ? (
+            <p className={chatStyles.conversationPanel_archived} role="status">
+              {copy.archivedConversationNotice}
+            </p>
+          ) : connectionReady &&
+            providerStatus !== "ready" &&
+            providerStatus !== "catalog-loading" ? (
+            <ProviderStatusNotice
+              onOpenSettings={onOpenSettings}
+              status={providerStatus}
+              copy={copy}
+            />
+          ) : null}
+          <div
+            className={cn(
+              timelineStyles.viewport,
+              quickPanel && !hasMessages && "hidden",
+            )}
+          >
+            <div
+              ref={messageListRef}
+              onScroll={handleMessageScroll}
+              className={cn(
+                chatStyles.messageList,
+                focusMode && chatStyles.focusMessages,
+                quickPanel && "[&_.message]:mb-4",
+                !quickPanel &&
+                  timelineEntries.length > 0 &&
+                  timelineStyles.messages,
+                `message-list${view.messages.length === 0 && liveTargets.length === 0 && !liveTurn ? " message-list--empty" : ""}`,
+              )}
+              aria-label={copy.conversationMessages}
+              role={quickPanel ? "region" : undefined}
+              tabIndex={quickPanel && hasMessages ? 0 : undefined}
+              data-workspace-region="messages"
+            >
+              <div
+                ref={contentRef}
+                className="flow-root min-w-0"
+                data-message-content
+              >
+                {view.messages.length === 0 &&
+                liveTargets.length === 0 &&
+                !liveTurn
+                  ? !quickPanel && (
+                      <ConversationWelcome
+                        copy={copy}
+                        onSelectPrompt={onDraftChange}
+                      />
+                    )
+                  : view.messages.length === 0
+                    ? null
+                    : view.messages.map((message) => {
+                        const snapshot = message.provider_snapshot;
+                        const generationTarget =
+                          message.role === "assistant"
+                            ? batchTargetByAssistantMessageID.get(message.id)
+                            : undefined;
+                        const selectedCardBatch = allGenerationBatches.find(
+                          (b) =>
+                            b.interactive &&
+                            b.targets.length === 1 &&
+                            b.selected_answer?.assistant_message_id ===
+                              message.id,
+                        );
+                        const cardGenerationId =
+                          selectedCardBatch?.selected_answer?.generation_id ??
+                          (generationTarget?.batch.interactive &&
+                          generationTarget.batch.targets.length === 1
+                            ? generationTarget.target.generation.id
+                            : undefined);
+                        if (
+                          generationTarget?.batch.targets.length &&
+                          generationTarget.batch.targets.length > 1
+                        ) {
+                          if (
+                            comparisonFirstAssistantMessageID.get(
+                              generationTarget.batch.id,
+                            ) !== message.id
+                          )
+                            return null;
+                          return (
+                            <ModelComparisonResultGrid
+                              localOnly={retryLocalOnly}
+                              busy={isSending}
+                              batch={generationTarget.batch}
+                              copy={copy}
+                              key={generationTarget.batch.id}
+                              liveTargets={
+                                generationTarget.batch.id === liveBatch?.id
+                                  ? liveTargets
+                                  : undefined
+                              }
+                              onCancelTarget={
+                                generationTarget.batch.id === liveBatch?.id
+                                  ? onCancelTarget
+                                  : undefined
+                              }
+                              messages={view.messages}
+                              onRetry={onRetry}
+                              onSelectAnswer={onSelectAnswer}
+                              onVerifyAgain={onVerifyAgain}
+                            />
+                          );
+                        }
+                        const historyVerification =
+                          generationTarget?.target.generation.verification;
+                        return (
+                          <article
+                            className={cn(
+                              messagesStyles.message,
+                              `message message--${message.role}`,
+                            )}
+                            data-generation-target={generationTarget?.target.id}
+                            data-timeline-anchor={
+                              message.role === "user" ? message.id : undefined
+                            }
+                            data-quick-panel-question={
+                              quickPanel && message.role === "user"
+                                ? ""
+                                : undefined
+                            }
+                            key={message.id}
+                          >
+                            {message.role === "user" ? (
+                              <span
+                                className={cn(
+                                  messagesStyles.message_role,
+                                  "message__role--user",
+                                )}
+                                data-message-meta="user"
+                              >
+                                {copy.you}
+                              </span>
+                            ) : (
+                              <MessageMeta
+                                role={message.role}
+                                modelId={snapshot?.model_id}
+                                providerName={snapshot?.provider_name}
+                                createdAt={message.created_at}
+                                copy={copy}
+                                verification={historyVerification}
+                                onVerifyAgain={
+                                  generationTarget && onVerifyAgain
+                                    ? (kind) =>
+                                        onVerifyAgain(
+                                          generationTarget.target.id,
+                                          kind,
+                                        )
+                                    : undefined
+                                }
+                                mode={inferenceModeForSnapshot(
+                                  generationTarget?.target.generation
+                                    .snapshot ?? snapshot,
+                                )}
+                              />
+                            )}
+                            {message.role === "assistant" ? (
+                              <AnswerActions
+                                source={{
+                                  messageId: message.id,
+                                  conversationId: message.conversation_id,
+                                  body: message.body,
+                                  snapshot,
+                                }}
+                              >
+                                {cardGenerationId ? (
+                                  <InteractiveAnswer
+                                    generationId={cardGenerationId}
+                                    content={message.body}
+                                    reasoning={message.reasoning}
+                                    busy={
+                                      isSending ||
+                                      navigationBusy ||
+                                      activeModelSet.length !== 1
+                                    }
+                                    onContinue={
+                                      !view.archived &&
+                                      allGenerationBatches.at(-1)
+                                        ?.selected_answer?.generation_id ===
+                                        cardGenerationId
+                                        ? interactive?.onContinue
+                                        : undefined
+                                    }
+                                    destination={activeModelSet
+                                      .map(
+                                        (t) =>
+                                          `${profiles.find((p) => p.id === t.providerId)?.name ?? t.providerId} / ${t.modelId}`,
+                                      )
+                                      .join(", ")}
+                                  />
+                                ) : (
+                                  <AssistantMessage
+                                    content={message.body}
+                                    reasoning={message.reasoning}
+                                  />
+                                )}
+                              </AnswerActions>
+                            ) : (
+                              <p
+                                className={cn(
+                                  messagesStyles.message_bubble,
+                                  messagesStyles.message_body,
+                                )}
+                              >
+                                {message.body}
+                              </p>
+                            )}
+                            {message.role === "user" &&
+                              onEditPrompt &&
+                              (() => {
+                                const batch = allGenerationBatches.find(
+                                  (item) => item.user_message_id === message.id,
+                                );
+                                return batch && isTerminalBatch(batch) ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="xs"
+                                    type="button"
+                                    disabled={
+                                      isSending ||
+                                      navigationBusy ||
+                                      !!draft.trim() ||
+                                      !!attachmentDraft?.attachments.length ||
+                                      view.archived
+                                    }
+                                    title={
+                                      draft.trim() ||
+                                      attachmentDraft?.attachments.length
+                                        ? "Send or clear your current draft before editing a saved prompt."
+                                        : "Edit prompt and branch"
+                                    }
+                                    onClick={() => {
+                                      setEditError(undefined);
+                                      setEditing({ batch, body: message.body });
+                                    }}
+                                  >
+                                    Edit and resend
+                                  </Button>
+                                ) : null;
+                              })()}
+                            {message.role === "user" && message.created_at ? (
+                              <time
+                                className={messagesStyles.message_timestamp}
+                                dateTime={message.created_at}
+                              >
+                                {formatTime(message.created_at)}
+                              </time>
+                            ) : null}
+                            {message.role === "user" &&
+                              (() => {
+                                const batch = allGenerationBatches.find(
+                                  (item) => item.user_message_id === message.id,
+                                );
+                                return batch ? (
+                                  <BatchSources
+                                    batch={batch}
+                                    userBody={message.body}
+                                  />
+                                ) : null;
+                              })()}
+                            {message.role === "assistant" &&
+                              generationTarget?.target.generation
+                                .configuration_snapshot.web_search && (
+                                <WebSearchTrace
+                                  info={
+                                    generationTarget.target.generation
+                                      .web_search
+                                  }
+                                />
+                              )}
+                            {message.role === "assistant" && (
+                              <ResponseDetails
+                                metrics={
+                                  generationTarget?.target.generation.metrics
+                                }
+                                snapshot={snapshot}
+                                verification={historyVerification}
+                                mode={inferenceModeForSnapshot(snapshot)}
+                                copy={copy}
+                                onVerifyAgain={
+                                  generationTarget && onVerifyAgain
+                                    ? (kind) =>
+                                        onVerifyAgain(
+                                          generationTarget.target.id,
+                                          kind,
+                                        )
+                                    : undefined
+                                }
+                              />
+                            )}
+                          </article>
+                        );
+                      })}
+                {liveTurn && !liveUserAlreadyPersisted ? (
+                  <article
+                    data-timeline-anchor={liveTurn.userMessageId}
+                    data-quick-panel-question={quickPanel ? "" : undefined}
+                    className={cn(
+                      messagesStyles.message,
+                      "message--user message--live",
+                    )}
+                  >
                     <p
                       className={cn(
                         messagesStyles.message_bubble,
                         messagesStyles.message_body,
                       )}
                     >
-                      {message.body}
+                      {liveTurn.userBody}
                     </p>
-                  )}
-                  {message.role === "user" && onEditPrompt && (()=>{
-                    const batch=allGenerationBatches.find(item=>item.user_message_id===message.id);
-                    return batch && isTerminalBatch(batch) ? <Button variant="ghost" size="xs" type="button" disabled={isSending || navigationBusy || !!draft.trim() || !!attachmentDraft?.attachments.length || view.archived} title={draft.trim() || attachmentDraft?.attachments.length ? "Send or clear your current draft before editing a saved prompt." : "Edit prompt and branch"} onClick={()=>{setEditError(undefined);setEditing({batch,body:message.body});}}>Edit and resend</Button> : null;
-                  })()}
-                  {message.role === "user" && message.created_at ? (
-                    <time
-                      className={messagesStyles.message_timestamp}
-                      dateTime={message.created_at}
-                    >
-                      {formatTime(message.created_at)}
-                    </time>
-                  ) : null}
-                  {message.role === "user" &&
-                    (() => {
-                      const batch = allGenerationBatches.find(
-                        (item) => item.user_message_id === message.id,
-                      );
-                      return batch ? (
-                        <BatchSources batch={batch} userBody={message.body} />
-                      ) : null;
-                    })()}
-                  {message.role === "assistant" && generationTarget?.target.generation.configuration_snapshot.web_search && <WebSearchTrace info={generationTarget.target.generation.web_search} />}
-                  {message.role === "assistant" && <ResponseDetails metrics={generationTarget?.target.generation.metrics} snapshot={snapshot} verification={historyVerification} mode={inferenceModeForSnapshot(snapshot)} copy={copy} onVerifyAgain={generationTarget && onVerifyAgain ? kind=>onVerifyAgain(generationTarget.target.id,kind) : undefined}/>}
-
-                </article>
-              );
-            })
-          )}
-          {liveTurn && !liveUserAlreadyPersisted ? (
-            <article
-              data-timeline-anchor={liveTurn.userMessageId}
-              data-quick-panel-question={quickPanel ? "" : undefined}
-              className={cn(
-                messagesStyles.message,
-                "message--user message--live",
-              )}
-            >
-              <p
-                className={cn(
-                  messagesStyles.message_bubble,
-                  messagesStyles.message_body,
-                )}
-              >
-                {liveTurn.userBody}
-              </p>
-            </article>
-          ) : null}
-          {liveTargets.length > 0 &&
-          liveComparison &&
-          !liveComparisonAlreadyInHistory ? (
-            <LiveModelComparisonGrid
-              localOnly={retryLocalOnly}
-              busy={isSending}
-              batch={liveBatch}
-              copy={copy}
-              onCancelTarget={onCancelTarget}
-              onRetry={onRetry}
-              onSelectAnswer={onSelectAnswer}
-              onVerifyAgain={onVerifyAgain}
-              targets={liveTargets}
-            />
-          ) : !liveComparison ? (
-            liveTargets.map((target) => {
-              const liveGeneration = liveBatch?.targets.find(
-                (candidate) => candidate.id === target.targetId,
-              )?.generation;
-              const liveVerification = liveGeneration?.verification;
-              const liveWaiting =
-                target.phase === "pending" ||
-                target.phase === "verifying_environment" ||
-                target.phase === "streaming" ||
-                target.phase === "verifying_response";
-              return (
-                <article
-                  className={cn(
-                    messagesStyles.message,
-                    `message message--assistant message--live-assistant${target.phase === "stopped" ? " message--stopped" : ""}`,
-                  )}
-                  data-generation-target={target.targetId ?? target.key}
-                  key={target.key}
-                >
-                  <MessageMeta
-                    role="assistant"
-                    modelId={target.snapshot?.model_id ?? target.modelId}
-                    providerName={target.snapshot?.provider_name}
+                  </article>
+                ) : null}
+                {liveTargets.length > 0 &&
+                liveComparison &&
+                !liveComparisonAlreadyInHistory ? (
+                  <LiveModelComparisonGrid
+                    localOnly={retryLocalOnly}
+                    busy={isSending}
+                    batch={liveBatch}
                     copy={copy}
-                    verification={liveVerification}
-                    onVerifyAgain={
-                      target.targetId && onVerifyAgain
-                        ? (kind) => onVerifyAgain(target.targetId!, kind)
-                        : undefined
-                    }
-                    mode={inferenceModeForSnapshot(target.snapshot)}
+                    onCancelTarget={onCancelTarget}
+                    onRetry={onRetry}
+                    onSelectAnswer={onSelectAnswer}
+                    onVerifyAgain={onVerifyAgain}
+                    targets={liveTargets}
                   />
-                  {liveWaiting && target.activity && <p role="status" className="my-2 text-xs text-muted-foreground">{target.activity}</p>}
-                  {liveWaiting && <GenerationActivity stopWhenStalledOnly={Boolean(canStopFromComposer)} phase={target.phase} body={target.assistantBody} reasoning={target.reasoningBody} onStop={target.generationId && liveBatch && onCancelTarget ? ()=>onCancelTarget(liveBatch.id,target.generationId!) : onCancel}/>}
-                  {target.assistantBody || target.reasoningBody ? (
-                    <AssistantMessage content={target.assistantBody} reasoning={target.reasoningBody} streaming={target.phase === "streaming"} />
-                  ) : null}
-                  {target.phase === "stopped" ? (
-                    <p className={messagesStyles.message_state}>
-                      {copy.generationStopped}
-                    </p>
-                  ) : null}
-                  {target.phase === "failed" ? (
-                    <p className={messagesStyles.message_state}>
-                      {generationFailureMessage(
-                        target.errorCode ?? liveVerification?.failure_code,
-                        copy,
-                        target.errorMessage ??
-                          liveVerification?.evidence_summary,
-                      )}
-                    </p>
-                  ) : null}
-                  {target.phase === "unknown" ? (
-                    <p className={messagesStyles.message_state}>
-                      {copy.generationDeliveryUnknown}
-                    </p>
-                  ) : null}
-                  {!liveWaiting && liveGeneration?.configuration_snapshot.web_search && <WebSearchTrace info={liveGeneration.web_search} />}
-                  {(target.assistantBody || !liveWaiting) && <ResponseDetails metrics={liveGeneration?.metrics} snapshot={target.snapshot} verification={liveVerification} copy={copy} mode={inferenceModeForSnapshot(target.snapshot)} onVerifyAgain={target.targetId && onVerifyAgain ? kind=>onVerifyAgain(target.targetId!,kind):undefined}/>}
-                  {!canStopFromComposer &&
-                  liveWaiting &&
-                  target.assistantBody &&
-                  liveBatch &&
-                  target.generationId &&
-                  onCancelTarget ? (
-                    <StopGenerationButton
-                      copy={copy}
-                      onClick={() =>
-                        onCancelTarget(liveBatch.id, target.generationId!)
-                      }
-                    />
-                  ) : null}
-                  {(target.phase === "failed" || target.phase === "stopped") &&
-                  (target.targetId || target.generationId) &&
-                  onRetry ? (
-                    <Button disabled={isSending || (retryLocalOnly && target.providerId !== "cove-local")}
-                      variant="outline"
-                      type="button"
-                      onClick={() =>
-                        onRetry(
-                          liveBatch?.id ?? "",
-                          target.targetId ?? target.generationId!,
-                        )
-                      }
-                    >
-                      {copy.retryGeneration}
-                    </Button>
-                  ) : null}
-                  {(target.phase==="failed" || target.phase==="stopped") && <FailureActions targetId={target.targetId} code={target.errorCode} busy={isSending}/>}
-                  {liveBatch &&
-                  liveBatch.targets.length > 1 &&
-                  !liveBatch.context_frozen &&
-                  isTerminalBatch(liveBatch) &&
-                  target.phase === "completed" &&
-                  target.generationId &&
-                  onSelectAnswer ? (
-                    <Button
-                      variant="outline"
-                      aria-pressed={
-                        liveBatch.selected_generation_id === target.generationId
-                      }
-                      type="button"
-                      onClick={() =>
-                        onSelectAnswer(liveBatch.id, target.generationId!)
-                      }
-                    >
-                      {copy.useForNextTurn}
-                    </Button>
-                  ) : null}
-                </article>
-              );
-            })
-          ) : null}
-          {terminalFailedTargets.map(({ batch, target }) => (
-            <article
-              className={cn(
-                messagesStyles.message,
-                `message message--assistant message--live-assistant${target.generation.state === "stopped" ? " message--stopped" : ""}`,
-              )}
-              data-generation-target={target.id}
-              key={`${batch.id}:${target.id}`}
-            >
-              <MessageMeta
-                role="assistant"
-                modelId={target.model_id}
-                providerName={target.generation.snapshot.provider_name}
-                copy={copy}
-              />
-              {target.generation.configuration_snapshot.web_search && <WebSearchTrace info={target.generation.web_search} />}
-              <p className={messagesStyles.message_state}>
-                {target.generation.state === "stopped"
-                  ? copy.generationStopped
-                  : generationFailureMessage(
-                      target.generation.error_code,
-                      copy,
-                      target.generation.error_message,
+                ) : !liveComparison ? (
+                  liveTargets.map((target) => {
+                    const liveGeneration = liveBatch?.targets.find(
+                      (candidate) => candidate.id === target.targetId,
+                    )?.generation;
+                    const liveVerification = liveGeneration?.verification;
+                    const liveWaiting =
+                      target.phase === "pending" ||
+                      target.phase === "verifying_environment" ||
+                      target.phase === "streaming" ||
+                      target.phase === "verifying_response";
+                    return (
+                      <article
+                        className={cn(
+                          messagesStyles.message,
+                          `message message--assistant message--live-assistant${target.phase === "stopped" ? " message--stopped" : ""}`,
+                        )}
+                        data-generation-target={target.targetId ?? target.key}
+                        key={target.key}
+                      >
+                        <MessageMeta
+                          role="assistant"
+                          modelId={target.snapshot?.model_id ?? target.modelId}
+                          providerName={target.snapshot?.provider_name}
+                          copy={copy}
+                          verification={liveVerification}
+                          onVerifyAgain={
+                            target.targetId && onVerifyAgain
+                              ? (kind) => onVerifyAgain(target.targetId!, kind)
+                              : undefined
+                          }
+                          mode={inferenceModeForSnapshot(target.snapshot)}
+                        />
+                        {liveWaiting && target.activity && (
+                          <p
+                            role="status"
+                            className="my-2 text-xs text-muted-foreground"
+                          >
+                            {target.activity}
+                          </p>
+                        )}
+                        {liveWaiting && (
+                          <GenerationActivity
+                            stopWhenStalledOnly={Boolean(canStopFromComposer)}
+                            phase={target.phase}
+                            body={target.assistantBody}
+                            reasoning={target.reasoningBody}
+                            onStop={
+                              target.generationId && liveBatch && onCancelTarget
+                                ? () =>
+                                    onCancelTarget(
+                                      liveBatch.id,
+                                      target.generationId!,
+                                    )
+                                : onCancel
+                            }
+                          />
+                        )}
+                        {target.assistantBody || target.reasoningBody ? (
+                          <AssistantMessage
+                            content={target.assistantBody}
+                            reasoning={target.reasoningBody}
+                            streaming={target.phase === "streaming"}
+                            interactive={Boolean(
+                              liveBatch?.interactive || interactive?.enabled,
+                            )}
+                          />
+                        ) : null}
+                        {target.phase === "stopped" ? (
+                          <p className={messagesStyles.message_state}>
+                            {copy.generationStopped}
+                          </p>
+                        ) : null}
+                        {target.phase === "failed" ? (
+                          <p className={messagesStyles.message_state}>
+                            {generationFailureMessage(
+                              target.errorCode ??
+                                liveVerification?.failure_code,
+                              copy,
+                              target.errorMessage ??
+                                liveVerification?.evidence_summary,
+                            )}
+                          </p>
+                        ) : null}
+                        {target.phase === "unknown" ? (
+                          <p className={messagesStyles.message_state}>
+                            {copy.generationDeliveryUnknown}
+                          </p>
+                        ) : null}
+                        {!liveWaiting &&
+                          liveGeneration?.configuration_snapshot.web_search && (
+                            <WebSearchTrace info={liveGeneration.web_search} />
+                          )}
+                        {(target.assistantBody || !liveWaiting) && (
+                          <ResponseDetails
+                            metrics={liveGeneration?.metrics}
+                            snapshot={target.snapshot}
+                            verification={liveVerification}
+                            copy={copy}
+                            mode={inferenceModeForSnapshot(target.snapshot)}
+                            onVerifyAgain={
+                              target.targetId && onVerifyAgain
+                                ? (kind) =>
+                                    onVerifyAgain(target.targetId!, kind)
+                                : undefined
+                            }
+                          />
+                        )}
+                        {!canStopFromComposer &&
+                        liveWaiting &&
+                        target.assistantBody &&
+                        liveBatch &&
+                        target.generationId &&
+                        onCancelTarget ? (
+                          <StopGenerationButton
+                            copy={copy}
+                            onClick={() =>
+                              onCancelTarget(liveBatch.id, target.generationId!)
+                            }
+                          />
+                        ) : null}
+                        {(target.phase === "failed" ||
+                          target.phase === "stopped") &&
+                        (target.targetId || target.generationId) &&
+                        onRetry ? (
+                          <Button
+                            disabled={
+                              isSending ||
+                              (retryLocalOnly &&
+                                target.providerId !== "cove-local")
+                            }
+                            variant="outline"
+                            type="button"
+                            onClick={() =>
+                              onRetry(
+                                liveBatch?.id ?? "",
+                                target.targetId ?? target.generationId!,
+                              )
+                            }
+                          >
+                            {copy.retryGeneration}
+                          </Button>
+                        ) : null}
+                        {(target.phase === "failed" ||
+                          target.phase === "stopped") && (
+                          <FailureActions
+                            targetId={target.targetId}
+                            code={target.errorCode}
+                            busy={isSending}
+                          />
+                        )}
+                        {liveBatch &&
+                        liveBatch.targets.length > 1 &&
+                        !liveBatch.context_frozen &&
+                        isTerminalBatch(liveBatch) &&
+                        target.phase === "completed" &&
+                        target.generationId &&
+                        onSelectAnswer ? (
+                          <Button
+                            variant="outline"
+                            aria-pressed={
+                              liveBatch.selected_generation_id ===
+                              target.generationId
+                            }
+                            type="button"
+                            onClick={() =>
+                              onSelectAnswer(liveBatch.id, target.generationId!)
+                            }
+                          >
+                            {copy.useForNextTurn}
+                          </Button>
+                        ) : null}
+                      </article>
+                    );
+                  })
+                ) : null}
+                {terminalFailedTargets.map(({ batch, target }) => (
+                  <article
+                    className={cn(
+                      messagesStyles.message,
+                      `message message--assistant message--live-assistant${target.generation.state === "stopped" ? " message--stopped" : ""}`,
                     )}
-              </p>
-              <ResponseDetails snapshot={target.generation.snapshot} metrics={target.generation.metrics} verification={target.generation.verification} copy={copy}/>
-              <FailureActions targetId={target.id} code={target.generation.error_code} busy={isSending}/>
-              {onRetry ? (
-                <Button
-                  variant="outline"
-                  type="button"
-                  disabled={isSending || (retryLocalOnly && target.provider_id !== "cove-local")}
-                  onClick={() => onRetry(batch.id, target.id)}
-                >
-                  {copy.retryGeneration}
-                </Button>
-              ) : null}
-            </article>
-          ))}
-          {terminalFailedBatches.map((batch) => (
-            <ModelComparisonResultGrid
-              localOnly={retryLocalOnly}
-              busy={isSending}
-              batch={batch}
-              copy={copy}
-              key={batch.id}
-              messages={view.messages}
-              onRetry={onRetry}
-              onSelectAnswer={onSelectAnswer}
-              onVerifyAgain={onVerifyAgain}
-            />
-          ))}
-          </div>
-          </div>
-          {!quickPanel && <ConversationTimeline
-            key={view.id}
-            conversationId={view.id}
-            entries={timelineEntries}
-            scrollRef={messageListRef}
-            onNavigate={scrollToMessage}
-            copy={copy}
-          />}
-        </div>
-        {!quickPanel && latestButton}
-        <p
-          className={baseStyles.chatStatusLive}
-          role="status"
-          aria-live="polite"
-        >
-          {generationActive
-            ? copy.generationStreaming
-            : contextDispositionBatch
-              ? copy.modelComparison
-              : ""}
-        </p>
-        <div ref={footerRef} className="flex shrink-0 flex-col" data-workspace-region="composer">
-          {quickPanel && latestButton}
-          {contextDispositionBatch && onSkipContext ? (
-            <div className={cn(chatStyles.noteBand, focusMode && chatStyles.focusNoteBand)}>
-              <div className={cn(chatStyles.noteBand_inner, focusMode && chatStyles.focusNoteInner)}>
-                <span className={cn(chatStyles.noteBand_no, focusMode && "hidden")}>※</span>
-                <p className={cn(chatStyles.noteBand_text, focusMode && chatStyles.focusNoteText)}>
-                  {focusMode ? copy.focusContextChoice : copy.contextDispositionNote}
-                </p>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    chatStyles.noteBand_cta,
-                    "conversation-panel__skip-context",
-                    focusMode && chatStyles.focusNoteAction,
-                  )}
-                  type="button"
-                  onClick={() => onSkipContext(contextDispositionBatch.id)}
-                >
-                  <span>{copy.continueWithoutAnswer}</span>
-                  <ArrowRight aria-hidden="true" size={15} strokeWidth={2} />
-                </Button>
+                    data-generation-target={target.id}
+                    key={`${batch.id}:${target.id}`}
+                  >
+                    <MessageMeta
+                      role="assistant"
+                      modelId={target.model_id}
+                      providerName={target.generation.snapshot.provider_name}
+                      copy={copy}
+                    />
+                    {target.generation.configuration_snapshot.web_search && (
+                      <WebSearchTrace info={target.generation.web_search} />
+                    )}
+                    <p className={messagesStyles.message_state}>
+                      {target.generation.state === "stopped"
+                        ? copy.generationStopped
+                        : generationFailureMessage(
+                            target.generation.error_code,
+                            copy,
+                            target.generation.error_message,
+                          )}
+                    </p>
+                    <ResponseDetails
+                      snapshot={target.generation.snapshot}
+                      metrics={target.generation.metrics}
+                      verification={target.generation.verification}
+                      copy={copy}
+                    />
+                    <FailureActions
+                      targetId={target.id}
+                      code={target.generation.error_code}
+                      busy={isSending}
+                    />
+                    {onRetry ? (
+                      <Button
+                        variant="outline"
+                        type="button"
+                        disabled={
+                          isSending ||
+                          (retryLocalOnly &&
+                            target.provider_id !== "cove-local")
+                        }
+                        onClick={() => onRetry(batch.id, target.id)}
+                      >
+                        {copy.retryGeneration}
+                      </Button>
+                    ) : null}
+                  </article>
+                ))}
+                {terminalFailedBatches.map((batch) => (
+                  <ModelComparisonResultGrid
+                    localOnly={retryLocalOnly}
+                    busy={isSending}
+                    batch={batch}
+                    copy={copy}
+                    key={batch.id}
+                    messages={view.messages}
+                    onRetry={onRetry}
+                    onSelectAnswer={onSelectAnswer}
+                    onVerifyAgain={onVerifyAgain}
+                  />
+                ))}
               </div>
             </div>
-          ) : null}
-          {showComposer ? (
-            <ChatComposer execution={execution}
-              webSearch={webSearch}
-              composerId={composerId}
-              compact={focusMode}
-              quickPanel={quickPanel}
-              quickPanelModelControl={quickPanelModelControl}
-              connectionReady={connectionReady}
-              attachmentDraft={attachmentDraft}
-              view={view}
-              copy={copy}
-              activeModelSet={activeModelSet}
-              profiles={profiles}
-              draft={draft}
-              onDraftChange={onDraftChange}
-              onSend={onSend}
-              onCancel={onCancel}
-              isSending={isSending}
-              navigationBusy={navigationBusy}
-              catalogLoading={quickPanel ? providerStatus !== "ready" : catalogLoading}
-              privateMode={privateMode}
-              composerRef={composerRef}
-              requiresContextChoice={Boolean(contextDispositionBatch)}
-            />
-          ) : null}
-        </div>
-      </section>
-    </ChatExperienceContext.Provider>
+            {!quickPanel && (
+              <ConversationTimeline
+                key={view.id}
+                conversationId={view.id}
+                entries={timelineEntries}
+                scrollRef={messageListRef}
+                onNavigate={scrollToMessage}
+                copy={copy}
+              />
+            )}
+          </div>
+          {!quickPanel && latestButton}
+          <p
+            className={baseStyles.chatStatusLive}
+            role="status"
+            aria-live="polite"
+          >
+            {generationActive
+              ? copy.generationStreaming
+              : contextDispositionBatch
+                ? copy.modelComparison
+                : ""}
+          </p>
+          <div
+            ref={footerRef}
+            className="flex shrink-0 flex-col"
+            data-workspace-region="composer"
+          >
+            {quickPanel && latestButton}
+            {contextDispositionBatch && onSkipContext ? (
+              <div
+                className={cn(
+                  chatStyles.noteBand,
+                  focusMode && chatStyles.focusNoteBand,
+                )}
+              >
+                <div
+                  className={cn(
+                    chatStyles.noteBand_inner,
+                    focusMode && chatStyles.focusNoteInner,
+                  )}
+                >
+                  <span
+                    className={cn(
+                      chatStyles.noteBand_no,
+                      focusMode && "hidden",
+                    )}
+                  >
+                    ※
+                  </span>
+                  <p
+                    className={cn(
+                      chatStyles.noteBand_text,
+                      focusMode && chatStyles.focusNoteText,
+                    )}
+                  >
+                    {focusMode
+                      ? copy.focusContextChoice
+                      : copy.contextDispositionNote}
+                  </p>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      chatStyles.noteBand_cta,
+                      "conversation-panel__skip-context",
+                      focusMode && chatStyles.focusNoteAction,
+                    )}
+                    type="button"
+                    onClick={() => onSkipContext(contextDispositionBatch.id)}
+                  >
+                    <span>{copy.continueWithoutAnswer}</span>
+                    <ArrowRight aria-hidden="true" size={15} strokeWidth={2} />
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+            {showComposer ? (
+              <ChatComposer
+                interactive={interactive?.enabled}
+                execution={execution}
+                webSearch={webSearch}
+                composerId={composerId}
+                compact={focusMode}
+                quickPanel={quickPanel}
+                quickPanelModelControl={quickPanelModelControl}
+                connectionReady={connectionReady}
+                attachmentDraft={attachmentDraft}
+                view={view}
+                copy={copy}
+                activeModelSet={activeModelSet}
+                profiles={profiles}
+                draft={draft}
+                onDraftChange={onDraftChange}
+                onSend={onSend}
+                onCancel={onCancel}
+                isSending={isSending}
+                navigationBusy={navigationBusy}
+                catalogLoading={
+                  quickPanel ? providerStatus !== "ready" : catalogLoading
+                }
+                privateMode={privateMode}
+                composerRef={composerRef}
+                requiresContextChoice={Boolean(contextDispositionBatch)}
+              />
+            ) : null}
+          </div>
+        </section>
+      </ChatExperienceContext.Provider>
     </SourceDocuments>
   );
 }

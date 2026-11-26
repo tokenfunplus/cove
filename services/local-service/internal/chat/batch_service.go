@@ -14,6 +14,7 @@ import (
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
+	"github.com/tokenfunplus/cove/services/local-service/internal/interactive"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localmodels"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"github.com/tokenfunplus/cove/services/local-service/internal/provider"
@@ -27,8 +28,25 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 	if service.store == nil || service.profiles == nil || service.provider == nil {
 		return GenerationBatchStart{}, errors.New("chat service dependencies are required")
 	}
+	question := input.Body
+	cardFingerprint := ""
+	if input.Card != nil {
+		cardFingerprint = interactive.Fingerprint(*input.Card, question, input.Interactive, input.LocalOnly, input.WebSearchEnabled, input.ExpectedTargets, input.ExpectedProject, input.EditOfBatchID, input.Attachments, input.WebSourceTokens)
+	}
+	if input.Card != nil {
+		store, ok := service.store.(persistence.InteractiveStore)
+		if !ok {
+			return GenerationBatchStart{}, interactive.ErrInvalid
+		}
+		if b, replayed, e := store.CardReplay(ctx, *input.Card, cardFingerprint, input.ClientRequestID); e != nil || replayed {
+			if e == nil && b.ConversationID != input.ConversationID {
+				return GenerationBatchStart{}, persistence.ErrCardConflict
+			}
+			return GenerationBatchStart{Batch: b}, e
+		}
+	}
 	service.startMu.Lock()
-	existing, err := service.checkBatchStart(ctx, input.ClientRequestID)
+	existing, err := service.checkCardBatchStart(ctx, input, cardFingerprint)
 	service.startMu.Unlock()
 	if err != nil || existing.ID != "" {
 		return GenerationBatchStart{Batch: existing}, err
@@ -54,6 +72,9 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 	if err := matchExpectedTargets(activeModelSet, input.ExpectedTargets); err != nil {
 		return GenerationBatchStart{}, err
 	}
+	if input.Card != nil && len(activeModelSet) != 1 {
+		return GenerationBatchStart{}, interactive.ErrInvalid
+	}
 
 	if input.LocalOnly {
 		for _, target := range activeModelSet {
@@ -63,11 +84,22 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		}
 	}
 	resolved, resolveErr := service.resolveTargets(ctx, activeModelSet)
+	if input.Interactive && !interactiveResolvedTargets(resolved) {
+		input.Interactive = false
+	}
 	service.startMu.Lock()
 	defer service.startMu.Unlock()
 	service.secureMu.Lock()
 	defer service.secureMu.Unlock()
-	if batch, err := service.checkBatchStart(ctx, input.ClientRequestID); err != nil || batch.ID != "" {
+	if input.Card != nil {
+		if b, replayed, e := service.store.(persistence.InteractiveStore).CardReplay(ctx, *input.Card, cardFingerprint, input.ClientRequestID); e != nil || replayed {
+			if e == nil && b.ConversationID != input.ConversationID {
+				return GenerationBatchStart{}, persistence.ErrCardConflict
+			}
+			return GenerationBatchStart{Batch: b}, e
+		}
+	}
+	if batch, err := service.checkCardBatchStart(ctx, input, cardFingerprint); err != nil || batch.ID != "" {
 		return GenerationBatchStart{Batch: batch}, err
 	}
 	if resolveErr != nil {
@@ -113,14 +145,24 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 	// Validate quotas against this captured revision; persistence rechecks it atomically on admission.
 	input.previewProject = project
 	input.previewProjectSet = true
-	attachments, inputContent, err := service.prepareAttachments(ctx, input, systemPrompt)
+	cardInput := ""
+	input.Body, cardInput, err = service.prepareCardInput(ctx, input)
 	if err != nil {
 		return GenerationBatchStart{}, err
 	}
+	if input.Interactive {
+		systemPrompt += interactive.Prompt()
+	}
+	attachments, inputContent, err := service.prepareAttachments(ctx, input)
+	if err != nil {
+		return GenerationBatchStart{}, err
+	}
+	inputContent = mergeCardInput(input.Body, inputContent, cardInput)
 	if _, err := service.projectForInput(ctx, input, attachments, inputContent, systemPrompt); err != nil {
 		return GenerationBatchStart{}, err
 	}
 	batch, err := service.store.BeginGenerationBatch(ctx, persistence.BeginGenerationBatchInput{
+		Interactive: input.Interactive, Card: input.Card, CardFingerprint: cardFingerprint,
 		LocalOnly:       input.LocalOnly,
 		ExpectedProject: input.ExpectedProject,
 		WebSearch:       searchPolicy,
@@ -167,6 +209,21 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		go service.runBatchGeneration(run.context, run.batchID, run.targetID, run.generation, run.profile, run.secret, run.messages, run.configuration)
 	}
 	return GenerationBatchStart{Batch: batch}, nil
+}
+
+func (service *Service) checkCardBatchStart(ctx context.Context, input SendInput, fingerprint string) (persistence.GenerationBatch, error) {
+	batch, err := service.checkBatchStart(ctx, input.ClientRequestID)
+	if err != nil || batch.ID == "" || input.Card == nil {
+		return batch, err
+	}
+	replay, matched, err := service.store.(persistence.InteractiveStore).CardReplay(ctx, *input.Card, fingerprint, input.ClientRequestID)
+	if err != nil {
+		return persistence.GenerationBatch{}, err
+	}
+	if !matched || replay.ConversationID != input.ConversationID {
+		return persistence.GenerationBatch{}, persistence.ErrCardConflict
+	}
+	return replay, nil
 }
 
 func (service *Service) checkBatchStart(ctx context.Context, requestID string) (persistence.GenerationBatch, error) {
@@ -280,7 +337,7 @@ func (service *Service) GetGenerationBatchContext(ctx context.Context, batchID s
 	}
 	messages := make([]provider.ProviderMessage, 0, len(items)*2)
 	for _, item := range items {
-		messages = append(messages, provider.ProviderMessage{Role: "user", Content: item.UserBody}, provider.ProviderMessage{Role: "assistant", Content: item.AssistantBody})
+		messages = append(messages, historyMessages(item)...)
 	}
 	return messages, nil
 }
@@ -353,6 +410,9 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 			return GenerationStart{}, err
 		}
 		configuration = persistence.GenerationConfigurationSnapshot{SystemPrompt: settings.SystemPrompt, GenerationParameters: settings.GenerationParameters}
+	}
+	if batch.Interactive && service.settings != nil && interactiveResolvedTargets(resolved) {
+		configuration.SystemPrompt += interactive.Prompt()
 	}
 	userBody, err := service.batchUserBody(ctx, batch)
 	configuration.WebSearch = batch.WebSearch
@@ -512,6 +572,14 @@ func (service *Service) messagesForBatch(ctx context.Context, batch persistence.
 	return messagesFromBatchContext(batch, currentBody, configuration, contextItems), nil
 }
 
+func historyMessages(item persistence.ContextItem) []provider.ProviderMessage {
+	user, assistant := item.UserBody, item.AssistantBody
+	if item.Interactive {
+		user, assistant = interactive.CompactReference(user), interactive.HistoryText(assistant)
+	}
+	return []provider.ProviderMessage{{Role: "user", Content: user}, {Role: "assistant", Content: assistant}}
+}
+
 func messagesFromBatchContext(batch persistence.GenerationBatch, currentBody string, configuration persistence.GenerationConfigurationSnapshot, contextItems []persistence.ContextItem) []provider.ProviderMessage {
 	if batch.InputContent != "" {
 		currentBody = batch.InputContent
@@ -521,7 +589,7 @@ func messagesFromBatchContext(batch persistence.GenerationBatch, currentBody str
 		messages = append(messages, provider.ProviderMessage{Role: "system", Content: prompt})
 	}
 	for _, item := range contextItems {
-		messages = append(messages, provider.ProviderMessage{Role: "user", Content: item.UserBody}, provider.ProviderMessage{Role: "assistant", Content: item.AssistantBody})
+		messages = append(messages, historyMessages(item)...)
 	}
 	messages = append(messages, provider.ProviderMessage{Role: "user", Content: projectUserContent(currentBody, batch.ProjectContext)})
 	return messages

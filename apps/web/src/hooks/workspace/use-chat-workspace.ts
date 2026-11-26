@@ -1,3 +1,5 @@
+import { useInteractiveDraftWarning } from "@/lib/chat/interactive-drafts";
+import { modelMetadataForTarget } from "@/components/providers/model-selection";
 import { useCreateConversation } from "@/api/hooks/useConversations";
 import { useEffect, useRef } from "react";
 import { flushSync } from "react-dom";
@@ -24,11 +26,18 @@ import { applicationMessages } from "@/messages";
 import { useDocumentTheme } from "@/theme/use-document-theme";
 import { useWebSearch } from "@/hooks/chat/use-web-search";
 
-export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } = {}) {
+export function useChatWorkspace({
+  quickPanel = false,
+  catalogsEnabled = true,
+} = {}) {
   const createConversation = useCreateConversation().mutateAsync;
+  const interactiveDirty = useInteractiveDraftWarning();
 
   const workspaceUi = useWorkspaceUi();
-  const workspaceState = useWorkspaceState(workspaceUi.showingArchived, quickPanel);
+  const workspaceState = useWorkspaceState(
+    workspaceUi.showingArchived,
+    quickPanel,
+  );
   const conversationSearch = useConversationSearch(
     workspaceUi.conversationSearchQuery,
     workspaceUi.showingArchived,
@@ -45,8 +54,15 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
   } = workspaceState;
   const { setFeedback, setMobileSidebarOpen } = workspaceUi;
   const generationState = useGenerationState();
-  const attachmentDraft = useAttachmentDraft(quickPanel ? undefined : selectedId, workspaceUi.localOnly);
-  const webSearch = useWebSearch(selectedId, workspaceUi.setSettingsEntry, workspaceUi.setFeedback);
+  const attachmentDraft = useAttachmentDraft(
+    quickPanel ? undefined : selectedId,
+    workspaceUi.localOnly,
+  );
+  const webSearch = useWebSearch(
+    selectedId,
+    workspaceUi.setSettingsEntry,
+    workspaceUi.setFeedback,
+  );
   const {
     setGenerationBatch,
     setDraft,
@@ -58,7 +74,9 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
     secureGenerationRunsRef,
   } = generationState;
 
-  const pendingDraftTransfer = useRef<{ id: string; body: string } | undefined>(undefined);
+  const pendingDraftTransfer = useRef<{ id: string; body: string } | undefined>(
+    undefined,
+  );
   const quickChatDraftWasReset = useRef(false);
   const continuingProjectDraft = useRef(false);
   const creatingQuickChat = useRef(false);
@@ -73,7 +91,19 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
   }, [narrowLayout]);
 
   const { catalogs, activeSelection, catalog, selectionStatus } =
-    useProviderCatalogs(providerProfiles, activeModelSet, workspaceUi.localOnly, catalogsEnabled);
+    useProviderCatalogs(
+      providerProfiles,
+      activeModelSet,
+      workspaceUi.localOnly,
+      catalogsEnabled,
+    );
+  const interactiveContext = activeModelSet[0]
+    ? modelMetadataForTarget(catalogs, activeModelSet[0])?.context_length
+    : undefined;
+  const interactiveEnabled =
+    activeModelSet.length === 1 &&
+    activeModelSet[0].providerId !== "cove-local" &&
+    (interactiveContext == null || interactiveContext >= 8192);
 
   useEffect(() => {
     const active = conversationView?.active_generation_batch;
@@ -84,7 +114,8 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
 
   useEffect(() => {
     // Keep the actionable operation error when a recovery read also fails.
-    if (conversationError && workspaceUi.feedback?.tone !== "error") setFeedback(copy.unavailable);
+    if (conversationError && workspaceUi.feedback?.tone !== "error")
+      setFeedback(copy.unavailable);
   }, [conversationError, copy.unavailable]);
 
   useEffect(() => {
@@ -99,7 +130,10 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
   }, [quickPanel, selectedId]);
 
   useEffect(() => {
-    if (pendingDraftTransfer.current?.id === selectedId && pendingDraftTransfer.current) {
+    if (
+      pendingDraftTransfer.current?.id === selectedId &&
+      pendingDraftTransfer.current
+    ) {
       setDraft(pendingDraftTransfer.current.body);
       pendingDraftTransfer.current = undefined;
     }
@@ -145,11 +179,12 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
   const conversationActions = useConversationActions({
     onConversationCreated: (id, body, projectId) => {
       pendingDraftTransfer.current = { id, body };
-      if (projectId) workspaceUi.setProjectDrafts(current => {
-        const next = { ...current };
-        delete next[projectId];
-        return next;
-      });
+      if (projectId)
+        workspaceUi.setProjectDrafts((current) => {
+          const next = { ...current };
+          delete next[projectId];
+          return next;
+        });
     },
     ...workspaceState,
     ...workspaceUi,
@@ -186,10 +221,14 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
     catalogs,
     selectionStatus,
     copy,
-    externalBusy: generationState.isSending || workspaceUi.isNavigating || workspaceUi.isClearingChatData,
+    externalBusy:
+      generationState.isSending ||
+      workspaceUi.isNavigating ||
+      workspaceUi.isClearingChatData,
   });
 
   const generationCommands = useGenerationCommands({
+    interactiveEnabled,
     webSearchEnabled: webSearch.enabled && !workspaceUi.localOnly,
     attachmentDraft,
     ...workspaceState,
@@ -243,13 +282,23 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
   });
 
   async function handleQuickPanelSend() {
-    if (creatingQuickChat.current || workspaceUi.isNavigating || workspaceState.connection !== "ready") return;
+    if (
+      creatingQuickChat.current ||
+      workspaceUi.isNavigating ||
+      workspaceState.connection !== "ready"
+    )
+      return;
     const body = generationState.draft;
     if (selectedId) {
       await generationCommands.handleSend({ body, draftOnFailure: body });
       return;
     }
-    if (!body.trim() || selectionStatus !== "ready" || !attachmentDraft.validateAttachments()) return;
+    if (
+      !body.trim() ||
+      selectionStatus !== "ready" ||
+      !attachmentDraft.validateAttachments()
+    )
+      return;
     creatingQuickChat.current = true;
     workspaceUi.setIsNavigating(true);
     let conversationId: string;
@@ -265,7 +314,11 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
       creatingQuickChat.current = false;
       workspaceUi.setIsNavigating(false);
     }
-    await generationCommands.handleSend({ conversationId, body, draftOnFailure: body });
+    await generationCommands.handleSend({
+      conversationId,
+      body,
+      draftOnFailure: body,
+    });
   }
 
   function resetQuickChat(body = "") {
@@ -277,24 +330,45 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
   }
 
   function startBlankQuickChat() {
-    if (generationState.draft.trim() || attachmentDraft.attachments.length) {
-      workspaceUi.setConfirmation({ kind: "navigate", discardDraft: true, navigationAction: async () => resetQuickChat() });
+    replaceQuickChat();
+  }
+
+  function replaceQuickChat(body = "", onReset?: () => void) {
+    const reset = async () => {
+      resetQuickChat(body);
+      onReset?.();
+    };
+    if (
+      generationState.draft.trim() ||
+      attachmentDraft.attachments.length ||
+      interactiveDirty
+    ) {
+      workspaceUi.setConfirmation({
+        kind: "navigate",
+        discardDraft: true,
+        navigationAction: reset,
+      });
     } else {
-      resetQuickChat();
+      void reset();
     }
   }
 
   async function continueProjectDraft() {
     if (
-      continuingProjectDraft.current || workspaceUi.isNavigating ||
-      generationState.isSending || attachmentDraft.invalid
-    ) return;
+      continuingProjectDraft.current ||
+      workspaceUi.isNavigating ||
+      generationState.isSending ||
+      attachmentDraft.invalid
+    )
+      return;
     continuingProjectDraft.current = true;
     workspaceUi.setIsNavigating(true);
     const body = generationState.draft;
     const items = [...attachmentDraft.attachments];
     try {
-      const next = await createConversation({ project_id: conversationView?.project_id });
+      const next = await createConversation({
+        project_id: conversationView?.project_id,
+      });
       workspaceUi.setShowingArchived(false);
       pendingDraftTransfer.current = { id: next.id, body };
       attachmentDraft.transferToConversation(next.id, items);
@@ -302,18 +376,25 @@ export function useChatWorkspace({ quickPanel = false, catalogsEnabled = true } 
       workspaceUi.setProjectPage(undefined);
       return next.id;
     } catch {
-      setFeedback("The new conversation could not be created. Your draft is preserved.");
+      setFeedback(
+        "The new conversation could not be created. Your draft is preserved.",
+      );
     } finally {
       continuingProjectDraft.current = false;
       workspaceUi.setIsNavigating(false);
     }
   }
   return {
+    interactiveEnabled,
     handleQuickPanelSend,
-    resetQuickChat,
+    replaceQuickChat,
+    interactiveDirty,
     startBlankQuickChat,
     continueProjectDraft,
-    webSearch: {...webSearch, enabled:webSearch.enabled && !workspaceUi.localOnly},
+    webSearch: {
+      ...webSearch,
+      enabled: webSearch.enabled && !workspaceUi.localOnly,
+    },
     answerTools,
     conversationSearch,
     attachmentDraft,

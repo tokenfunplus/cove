@@ -28,11 +28,51 @@ type ValidationResult = provider.ValidationResult
 type ModelMetadata = provider.ModelMetadata
 
 type Service struct {
-	local    LocalProvider
-	profiles persistence.ProviderStore
-	secrets  credentials.SecretStore
-	adapter  *provider.HTTPAdapter
-	writeMu  sync.Mutex
+	local           LocalProvider
+	profiles        persistence.ProviderStore
+	secrets         credentials.SecretStore
+	adapter         *provider.HTTPAdapter
+	writeMu         sync.Mutex
+	metadataMu      sync.RWMutex
+	previewMetadata map[string]previewCatalog
+}
+
+type previewCatalog struct {
+	profile Profile
+	models  []ModelMetadata
+}
+
+// PreviewModelMetadata reads only local configuration and metadata from an earlier
+// explicit catalog request. Unknown context lengths follow the external-model policy.
+func (service *Service) PreviewModelMetadata(ctx context.Context, id, modelID string) (Profile, ModelMetadata, error) {
+	profile, err := service.Get(ctx, id)
+	if err != nil {
+		return profile, ModelMetadata{}, err
+	}
+	service.metadataMu.RLock()
+	cached := service.previewMetadata[id]
+	service.metadataMu.RUnlock()
+	models := cached.models
+	if id == localProviderID && service.local != nil {
+		models = service.local.Metadata()
+	} else if cached.profile.Endpoint != profile.Endpoint || !cached.profile.UpdatedAt.Equal(profile.UpdatedAt) {
+		models = nil
+	}
+	for _, model := range models {
+		if model.ID == modelID {
+			return profile, model, nil
+		}
+	}
+	return profile, ModelMetadata{ID: modelID}, nil
+}
+
+func (service *Service) rememberMetadata(profile Profile, models []ModelMetadata) {
+	service.metadataMu.Lock()
+	defer service.metadataMu.Unlock()
+	if service.previewMetadata == nil {
+		service.previewMetadata = make(map[string]previewCatalog)
+	}
+	service.previewMetadata[profile.ID] = previewCatalog{profile, append([]ModelMetadata(nil), models...)}
 }
 
 type LocalProvider interface {
@@ -117,6 +157,9 @@ func (service *Service) ResolveCatalog(ctx context.Context, id string) (Profile,
 		return Profile{}, credentials.Secret{}, nil, err
 	}
 	metadata, err := service.adapter.ListModelMetadata(ctx, profile, secret)
+	if err == nil {
+		service.rememberMetadata(profile, metadata)
+	}
 	return profile, secret, metadata, err
 }
 
@@ -132,6 +175,7 @@ func (service *Service) Validate(ctx context.Context, input ProfileInput) (Valid
 	if err != nil {
 		return ValidationResult{}, fmt.Errorf("%w: %w", ErrValidationFailed, err)
 	}
+	service.rememberMetadata(profile, result.ModelMetadata)
 	return result, nil
 }
 
@@ -152,6 +196,7 @@ func (service *Service) Discover(ctx context.Context, input ProfileInput) (Valid
 	if err != nil {
 		return ValidationResult{}, fmt.Errorf("%w: %w", ErrValidationFailed, err)
 	}
+	service.rememberMetadata(profile, metadata)
 	models := make([]string, 0, len(metadata))
 	for _, model := range metadata {
 		models = append(models, model.ID)
@@ -349,6 +394,11 @@ func (service *Service) validationConnection(ctx context.Context, input ProfileI
 		if saved.ID != "" && prior.Kind != profile.Kind {
 			return Profile{}, credentials.Secret{}, provider.ErrInvalidProfile
 		}
+	}
+	if saved.ID != "" && sameDestination(prior, profile) {
+		// Reconstructing unchanged connection fields must retain the local
+		// revision used to associate preview metadata with this saved profile.
+		profile.UpdatedAt = prior.UpdatedAt
 	}
 	if input.Secret != "" {
 		return profile, credentials.Secret{Value: input.Secret}, nil

@@ -93,7 +93,7 @@ export function ProjectControls({
             className="gap-2 text-muted-foreground"
             onClick={() => {
               w.exitFocusMode();
-              w.setProjectPage({ projectId: active.project_id });
+              w.handleOpenProject(active.project_id);
             }}
           >
             <FolderClosed size={14} aria-hidden="true" />
@@ -177,7 +177,7 @@ export function ProjectDialogs({ workspace: w }: { workspace: ChatWorkspace }) {
           value={w.projectEditor}
           close={() => w.setProjectEditor(undefined)}
           saved={async (p, options) => {
-            if (w.projectEditor === null) w.setProjectPage({ projectId: p.id });
+            if (w.projectEditor === null) w.handleOpenProject(p.id);
             w.setProjectEditor(options?.keepOpen ? p : undefined);
             await refresh();
           }}
@@ -227,7 +227,7 @@ export function ProjectDialogs({ workspace: w }: { workspace: ChatWorkspace }) {
               return next;
             });
             w.setProjectRemoval(undefined);
-            w.setProjectPage({});
+            w.handleOpenProject();
             await refresh();
           }}
         />
