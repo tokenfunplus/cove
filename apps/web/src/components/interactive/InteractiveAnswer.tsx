@@ -1,4 +1,16 @@
-import { useId, useRef, useState, type ReactNode } from "react";
+import {
+  ArrowUpRight,
+  Check,
+  CheckCheck,
+  Compass,
+  Lightbulb,
+  PencilLine,
+  FileText,
+  LoaderCircle,
+  SlidersHorizontal,
+  Sparkles,
+} from "lucide-react";
+import { useCallback, useId, useRef, useState, type ReactNode } from "react";
 import {
   cardField,
   cardBlock,
@@ -99,8 +111,24 @@ function InteractiveCard({
   const [question, setQuestion] = useState("");
   const card = useInteractiveCard(id, Boolean(question.trim()));
   const [expanded, setExpanded] = useState(false);
+  const sizeExpandedPanel = useCallback((panel: HTMLDivElement | null) => {
+    if (!panel) return;
+    const height = panel.offsetHeight;
+    if (height > 0)
+      panel.style.setProperty("--interactive-panel-height", `${height}px`);
+  }, []);
   const [submitting, setSubmitting] = useState(false);
   const [ask, setAsk] = useState(false);
+  const questionFocusRequested = useRef(false);
+  const attachQuestionInput = useCallback(
+    (input: HTMLTextAreaElement | null) => {
+      if (input && questionFocusRequested.current) {
+        questionFocusRequested.current = false;
+        input.focus();
+      }
+    },
+    [],
+  );
   const [feedback, setFeedback] = useState<string>();
   const scope = useId();
   const choiceRefs = useRef(new Map<string, HTMLElement>());
@@ -146,6 +174,22 @@ function InteractiveCard({
     );
   const d = definition;
   const { values, checks } = card.draft;
+  const types = new Set(
+    Object.values(d.spec.elements).map((element) => element.type),
+  );
+  const presentation = types.has("TextInput")
+    ? { label: "Make it yours", Icon: PencilLine, kind: "studio" }
+    : types.has("Ranking")
+      ? { label: "Shape your plan", Icon: Compass, kind: "itinerary" }
+      : types.has("Slider")
+        ? {
+            label: "Find your balance",
+            Icon: SlidersHorizontal,
+            kind: "balance",
+          }
+        : types.has("Feedback")
+          ? { label: "A little challenge", Icon: Lightbulb, kind: "quiz" }
+          : { label: "Explore together", Icon: Sparkles, kind: "choice" };
   const hasContinuation = Object.values(d.spec.elements).some(
     (n) => n.on?.press.action === "continue_chat",
   );
@@ -304,7 +348,15 @@ function InteractiveCard({
       case "Card":
         return (
           <div key={key} className={styles.stack}>
-            <h3 className={styles.title}>{p.title as string}</h3>
+            <header className={styles.header}>
+              <div className={styles.headerIcon} aria-hidden="true">
+                <presentation.Icon />
+              </div>
+              <div className="min-w-0">
+                <div className={styles.eyebrow}>{presentation.label}</div>
+                <h3 className={styles.title}>{p.title as string}</h3>
+              </div>
+            </header>
             {n.children.map((c) => node(c, view))}
           </div>
         );
@@ -316,7 +368,7 @@ function InteractiveCard({
         );
       case "Reveal":
         return (
-          <Disclosure key={key}>
+          <Disclosure key={key} className={styles.reveal}>
             <DisclosureTrigger>{p.label as string}</DisclosureTrigger>
             <DisclosureContent>
               {n.children.map((c) => node(c, view))}
@@ -413,12 +465,13 @@ function InteractiveCard({
           <section
             key={key}
             aria-label={p.label as string}
-            className="min-w-0 rounded-xl border border-border bg-accent p-4"
+            className={styles.preview}
           >
-            <h4 className="mb-2 text-xs font-semibold text-muted-foreground">
+            <h4 className="mb-4 flex items-center gap-2 border-b border-border pb-3 text-[10px] font-semibold uppercase tracking-widest text-primary">
+              <FileText aria-hidden="true" className="size-4" />
               {p.label as string}
             </h4>
-            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+            <p className="whitespace-pre-wrap break-words text-sm leading-7">
               {(values[fieldFor(key)] as string) ||
                 "Your text preview appears here."}
             </p>
@@ -427,6 +480,9 @@ function InteractiveCard({
       case "Choice": {
         const field = fieldFor(key);
         const options = p.options as CardOption[];
+        const label =
+          (p.label as string | undefined) ??
+          (p.mode === "single" ? "Choose an option" : "Choose any that apply");
         if (p.mode === "single")
           return (
             <fieldset
@@ -444,23 +500,37 @@ function InteractiveCard({
                   : undefined
               }
             >
-              <legend className={styles.hint}>
-                {(p.label as string) ?? field.replaceAll("_", " ")}
-              </legend>
+              <legend className="mb-3 text-sm font-medium">{label}</legend>
               <RadioGroup
+                className={styles.choiceGroup}
                 value={values[field] as string}
                 disabled={locked}
-                aria-label={(p.label as string) ?? field.replaceAll("_", " ")}
+                aria-label={label}
                 onValueChange={(v) => change(field, v)}
               >
-                {options.map((o) => (
-                  <RadioCard key={o.value} value={o.value}>
-                    <span className="block font-medium">{o.label}</span>
-                    {o.description && (
-                      <span className="mt-1 block text-sm text-muted-foreground">
-                        {o.description}
+                {options.map((o, index) => (
+                  <RadioCard
+                    key={o.value}
+                    value={o.value}
+                    className={styles.choice}
+                  >
+                    <span aria-hidden="true" className={styles.choiceMark}>
+                      <span
+                        className={styles.choiceIndex}
+                        data-letter={String.fromCharCode(65 + index)}
+                      />
+                      <Check className={styles.choiceCheck} />
+                    </span>
+                    <span className="min-w-0 flex-1 break-words">
+                      <span className="block font-medium leading-snug">
+                        {o.label}
                       </span>
-                    )}
+                      {o.description && (
+                        <span className="mt-1 block text-sm text-muted-foreground group-data-[state=checked]/radio:text-primary-foreground/85">
+                          {o.description}
+                        </span>
+                      )}
+                    </span>
                   </RadioCard>
                 ))}
               </RadioGroup>
@@ -482,10 +552,7 @@ function InteractiveCard({
                 : undefined
             }
           >
-            <legend className={styles.hint}>
-              {(p.label as string) ??
-                `Choose ${field.replaceAll("_", " ")} (any that apply)`}
-            </legend>
+            <legend className="mb-3 text-sm font-medium">{label}</legend>
             {options.map((o) => {
               const controlId = `${scope}-${view}-${key}-${o.value}`;
               const selected = (values[field] as string[]).includes(o.value);
@@ -493,7 +560,9 @@ function InteractiveCard({
                 <label
                   key={o.value}
                   htmlFor={controlId}
-                  className="flex items-start gap-3 rounded-lg border border-border p-3"
+                  className={styles.multiChoice}
+                  data-selected={selected}
+                  data-locked={locked}
                 >
                   <Checkbox
                     id={controlId}
@@ -528,8 +597,17 @@ function InteractiveCard({
         const value = checks[key];
         const result = (p.cases as CardCase[]).find((c) => c.value === value);
         return result ? (
-          <div key={key} role="status" className={styles.feedback}>
-            <strong>
+          <div
+            key={`${key}:${value}`}
+            role="status"
+            className={styles.feedback}
+          >
+            <strong className="flex items-center gap-2 text-primary">
+              {result.outcome === "correct" ? (
+                <CheckCheck aria-hidden="true" className="size-4" />
+              ) : (
+                <Lightbulb aria-hidden="true" className="size-4" />
+              )}
               {result.outcome === "correct" ? "Correct" : "Try another answer"}
             </strong>
             <p>{result.text}</p>
@@ -541,7 +619,7 @@ function InteractiveCard({
         return action ? (
           <Button
             key={key}
-            className="justify-self-start"
+            className={styles.action}
             variant={action.action === "continue_chat" ? "default" : "outline"}
             disabled={
               locked ||
@@ -553,6 +631,9 @@ function InteractiveCard({
             {submitting && action.action === "continue_chat"
               ? "Starting…"
               : (p.label as string)}
+            {action.action === "continue_chat" && (
+              <ArrowUpRight aria-hidden="true" className="size-4" />
+            )}
           </Button>
         ) : null;
       }
@@ -576,73 +657,8 @@ function InteractiveCard({
       )
       .map((o) => o.label);
   });
-  const body = (view: string) => (
+  const notices = (view: string) => (
     <>
-      {node(d.spec.root, view)}
-      {ask && !locked && (
-        <label className="mt-3 grid gap-2 text-sm">
-          Question about these choices
-          <Textarea
-            value={question}
-            maxLength={4000}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="What would you like to explore?"
-          />
-        </label>
-      )}
-      {run.submitted_batch_id && question.trim() && (
-        <div className={styles.feedback}>
-          <p>Unsent question: {question}</p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setQuestion("");
-              setAsk(false);
-            }}
-          >
-            Dismiss unsent question
-          </Button>
-        </div>
-      )}
-      {labels.length > 0 && (
-        <p className="mt-3 text-sm text-muted-foreground">
-          Selected: {labels.join("; ")}
-        </p>
-      )}
-      <div className={styles.footer}>
-        <span role="status" className={styles.hint}>
-          {run.submitted_batch_id
-            ? "Choice saved in conversation"
-            : card.saving
-              ? "Saving…"
-              : card.dirty
-                ? "Unsaved changes"
-                : "Saved on this Mac"}
-        </span>
-        {!locked && hasContinuation && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              if (ask) setQuestion("");
-              setAsk(!ask);
-            }}
-          >
-            {ask ? "Remove question" : "Ask about this"}
-          </Button>
-        )}
-        <span className={styles.hint}>{destination}</span>
-      </div>
-      {!hasContinuation && (
-        <p className={styles.hint}>Local interaction. No message is sent.</p>
-      )}
-      {hasContinuation && !run.can_continue && !run.submitted_batch_id && (
-        <p className={styles.hint}>
-          This card belongs to an earlier or unselected answer. You can explore
-          it locally.
-        </p>
-      )}
       {(feedback || card.error) && (
         <p
           id={`${scope}-${view}-error`}
@@ -681,29 +697,131 @@ function InteractiveCard({
       )}
     </>
   );
-  return (
-    <section className={styles.card} aria-label="Interactive reply">
-      {expanded ? (
-        <p className={styles.hint}>Interaction open in expanded view.</p>
-      ) : (
-        body("inline")
+  const body = (view: string, includeNotices = true) => (
+    <>
+      {node(d.spec.root, view)}
+      {ask && !locked && (
+        <label className="mt-3 grid gap-2 text-sm">
+          Question about these choices
+          <Textarea
+            ref={attachQuestionInput}
+            value={question}
+            maxLength={4000}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder="What would you like to explore?"
+          />
+        </label>
       )}
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}>
-          Expand
-        </Button>
+      {run.submitted_batch_id && question.trim() && (
+        <div className={styles.feedback}>
+          <p>Unsent question: {question}</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setQuestion("");
+              setAsk(false);
+            }}
+          >
+            Dismiss unsent question
+          </Button>
+        </div>
+      )}
+      {labels.length > 0 && (
+        <p className="sr-only" role="status">
+          Selected: {labels.join("; ")}
+        </p>
+      )}
+      <div className={styles.footer}>
+        <div className={styles.footerControls}>
+          <span role="status" className={styles.status}>
+            {card.saving ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="motion-safe:animate-spin"
+              />
+            ) : (
+              <Check aria-hidden="true" />
+            )}
+            {run.submitted_batch_id
+              ? "Choice saved in conversation"
+              : card.saving
+                ? "Saving…"
+                : card.dirty
+                  ? "Unsaved changes"
+                  : "Saved on this Mac"}
+          </span>
+          {!locked && hasContinuation && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={styles.footerQuestion}
+              onClick={() => {
+                if (ask) setQuestion("");
+                else questionFocusRequested.current = true;
+                setAsk(!ask);
+              }}
+            >
+              {ask ? "Remove question" : "Ask about this"}
+            </Button>
+          )}
+          <Disclosure className={styles.details}>
+            <DisclosureTrigger>Reply details</DisclosureTrigger>
+            <DisclosureContent>{destination}</DisclosureContent>
+          </Disclosure>
+        </div>
+      </div>
+      {!hasContinuation && (
+        <p className={styles.hint}>Local interaction. No message is sent.</p>
+      )}
+      {hasContinuation && !run.can_continue && !run.submitted_batch_id && (
+        <p className={styles.hint}>
+          This card belongs to an earlier or unselected answer. You can explore
+          it locally.
+        </p>
+      )}
+      {includeNotices && notices(view)}
+    </>
+  );
+  return (
+    <section
+      className={styles.card}
+      aria-label="Interactive reply"
+      data-kind={presentation.kind}
+    >
+      <div
+        className="h-1 bg-gradient-to-r from-primary/70 via-primary/20 to-transparent"
+        aria-hidden="true"
+      />
+      <div className={styles.content}>
+        {expanded ? (
+          <p className={styles.hint}>Interaction open in expanded view.</p>
+        ) : (
+          body("inline")
+        )}
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setExpanded(true)}>
+            Expand
+          </Button>
+        </div>
       </div>
       <Dialog
         open={expanded}
         onClose={() => setExpanded(false)}
         label={d.spec.elements[d.spec.root].props.title as string}
-        className="fixed inset-0 z-50 grid place-items-center p-4 lg:justify-items-end lg:p-0"
+        className={styles.expandedPortal}
       >
         <DialogOverlay />
-        <DialogContent className="max-h-[85dvh] w-full max-w-2xl overflow-auto rounded-2xl p-6 lg:h-dvh lg:max-h-dvh lg:max-w-xl lg:rounded-none lg:border-l lg:border-border">
-          {body("expanded")}
+        <DialogContent
+          ref={sizeExpandedPanel}
+          className={styles.expandedContent}
+        >
+          <div className={styles.expandedBody}>{body("expanded", false)}</div>
+          {(feedback || card.error) && (
+            <div className={styles.expandedNotice}>{notices("expanded")}</div>
+          )}
           <Button
-            className="mt-4"
+            className="mt-4 shrink-0 self-start"
             variant="outline"
             onClick={() => setExpanded(false)}
           >

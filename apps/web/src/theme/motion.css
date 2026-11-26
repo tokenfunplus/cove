@@ -58,3 +58,15 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Short content reveals retain a stable reading position. */
+@keyframes cove-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

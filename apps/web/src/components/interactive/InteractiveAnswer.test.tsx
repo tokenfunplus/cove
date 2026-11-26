@@ -490,6 +490,9 @@ test("a question can discuss an incomplete card without claiming a completed cho
   await user.click(
     await screen.findByRole("button", { name: "Ask about this" }),
   );
+  expect(document.activeElement).toBe(
+    screen.getByRole("textbox", { name: "Question about these choices" }),
+  );
   await user.type(
     screen.getByRole("textbox", { name: "Question about these choices" }),
     "Explain the options",
@@ -540,3 +543,24 @@ test("local-only recall supports reveal without a Continue prerequisite", async 
   expect(screen.queryByText(/belongs to an earlier/)).toBeNull();
   expect(onContinue).not.toHaveBeenCalled();
 });
+
+test.each(["single", "multiple"] as const)(
+  "missing %s choice labels use readable prompts rather than internal bindings",
+  async (mode) => {
+    if (mode === "multiple") {
+      backend.definition = parseCard(fixtures.valid[3].source);
+      backend.values = structuredClone(backend.definition.spec.state);
+    }
+    const choice = Object.values(backend.definition.spec.elements).find(
+      (element) => element.type === "Choice",
+    )!;
+    delete choice.props.label;
+    mount();
+    const label =
+      mode === "single" ? "Choose an option" : "Choose any that apply";
+    expect(await screen.findByRole("group", { name: label })).toBeTruthy();
+    if (mode === "single")
+      expect(screen.getByRole("radiogroup", { name: label })).toBeTruthy();
+    expect(screen.queryByText("next action")).toBeNull();
+  },
+);
