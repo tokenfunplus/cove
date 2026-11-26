@@ -45,7 +45,7 @@ Provider catalog errors do not automatically retry on browser focus or reconnect
 
 If you entered a new key, choose a model target for initial setup and click **Save Provider** after testing; a connection test alone does not save it. Provider Profiles describe connections, while model targets belong to the Active Model Set. Setup initializes that target only when no targets are selected. Saving Provider edits leaves an existing set unchanged; confirm or change its targets through the workspace's model controls.
 
-The NearAI preset uses its staging service, so availability and verification capabilities depend on that service and model. See [Provider configuration](configuration.md#provider-profiles).
+The NearAI preset uses its production service, so availability and verification capabilities depend on that service and model. Test an existing connection after upgrading to check production access. See [Provider configuration](configuration.md#provider-profiles).
 
 ## Why does a formula still show LaTeX source?
 
