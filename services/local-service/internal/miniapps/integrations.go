@@ -103,6 +103,9 @@ func (s *Service) StartModel(ctx context.Context, model ModelExecutor, id string
 	if err != nil {
 		return empty, err
 	}
+	if chat.AppDestinationRemote(in.Destination) && !inst.CloudEnabled {
+		return empty, ErrDenied
+	}
 	if in.ExpectedRevision != 0 && in.ExpectedRevision != inst.Revision {
 		return empty, ErrConflict
 	}
@@ -147,7 +150,7 @@ func (s *Service) StartModel(ctx context.Context, model ModelExecutor, id string
 		if err != nil {
 			return err
 		}
-		if !current.Enabled || !slices.Contains(current.Grants, "ai.generate") {
+		if !current.Enabled || !slices.Contains(current.Grants, "ai.generate") || chat.AppDestinationRemote(in.Destination) && !current.CloudEnabled {
 			return ErrDenied
 		}
 		if current.Revision != inst.Revision || current.ReleaseID != inst.ReleaseID {

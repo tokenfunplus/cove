@@ -99,3 +99,26 @@ func (s *SQLiteStore) AppActivity(ctx context.Context, id string) ([]AppActivity
 	}
 	return all, rows.Err()
 }
+
+type GlobalAppActivity struct {
+	AppActivity
+	InstanceID   string `json:"instance_id"`
+	InstanceName string `json:"instance_name"`
+}
+
+func (s *SQLiteStore) GlobalAppActivity(ctx context.Context, instance string) ([]GlobalAppActivity, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT a.operation_id,a.release_id,a.action,a.surface,a.status,a.created_at,i.id,i.name FROM mini_app_activity a JOIN mini_app_instances i ON i.id=a.instance_id WHERE (?='' OR a.instance_id=?) AND a.action NOT IN (SELECT key FROM mini_app_releases r,json_each(CAST(r.manifest AS TEXT),'$.actions') WHERE r.id=a.release_id AND json_extract(value,'$.op')='query') ORDER BY a.created_at DESC,a.rowid DESC LIMIT 100`, instance, instance)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []GlobalAppActivity{}
+	for rows.Next() {
+		var item GlobalAppActivity
+		if err := rows.Scan(&item.Operation, &item.Release, &item.Action, &item.Surface, &item.Status, &item.Time, &item.InstanceID, &item.InstanceName); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}

@@ -6,7 +6,11 @@ import {
 } from "@/api/hooks/useProviders";
 import { labelStyle, selectStyle } from "./presentation";
 
-export function useAppModelTarget(localRequired: boolean, allowVerified = false) {
+export function useAppModelTarget(
+  localRequired: boolean,
+  allowVerified = false,
+  cloudEnabled = false,
+) {
   const profiles = useProviders();
   const [localOnly, setLocalOnly] = useState(true);
   const [provider, setProvider] = useState("");
@@ -16,6 +20,7 @@ export function useAppModelTarget(localRequired: boolean, allowVerified = false)
     (p) =>
       p.configured &&
       (!policyLocal || p.kind === "local") &&
+      (p.kind === "local" || cloudEnabled || loopbackEndpoint(p.endpoint)) &&
       (p.kind !== "nearai" || allowVerified),
   );
   const profile = choices.find((p) => p.id === provider);
@@ -31,6 +36,7 @@ export function useAppModelTarget(localRequired: boolean, allowVerified = false)
     setProvider,
     choices,
     localRequired,
+    cloudEnabled,
   };
 }
 
@@ -66,6 +72,12 @@ export function AppModelTarget({
         />
         Only on this Mac
       </label>
+      {!target.cloudEnabled && (
+        <p className="text-sm text-muted-foreground">
+          Cloud models are off for this app. Enable cloud access in its settings
+          to use a remote destination.
+        </p>
+      )}
       <label className={labelStyle}>
         Model provider
         <select
@@ -110,4 +122,15 @@ export function AppModelTarget({
       )}
     </>
   );
+}
+
+export function loopbackEndpoint(endpoint: string) {
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    return host === "localhost" || host === "[::1]" ||
+      /^127(?:\.\d{1,3}){3}$/.test(host) ||
+      /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(host);
+  } catch {
+    return false;
+  }
 }

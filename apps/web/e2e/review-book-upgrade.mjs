@@ -23,10 +23,32 @@ export async function runReviewBookUpgrade({
   const path = "/apps/" + book.id;
   const before = (await api(root + book.id + "/export")).collections.questions;
   assert.equal(before.length, 3);
+  const catalog = await api("/api/mini-apps/catalog");
+  const entry = catalog.packages.find(
+    (item) => item.app === "japanese-review-book" && item.version === "1.1.0",
+  );
+  const release = await api(
+    "/api/mini-apps/catalog/" +
+      entry.publisher +
+      "/" +
+      entry.app +
+      "/" +
+      entry.version +
+      "/install",
+    "POST",
+    { digest: entry.digest },
+  );
   await goto(path + "/home");
   await button("Settings");
-  await button("Check for updates");
-  await button("Upgrade instance to 1.1.0");
+  await until(
+    "Array.from(document.querySelectorAll('select option')).some(option=>option.value==='" +
+      release.id +
+      "')",
+  );
+  await evaluate(
+    `{const select=Array.from(document.querySelectorAll('select')).find(select=>Array.from(select.options).some(option=>option.value===${JSON.stringify(release.id)}));select.value=${JSON.stringify(release.id)};select.dispatchEvent(new Event('change',{bubbles:true}));}`,
+  );
+  await button("Migrate and activate release");
   await until("document.body.textContent.includes('v1.1.0')");
   await goto(path + "/home");
   const after = (await api(root + book.id + "/export")).collections.questions;

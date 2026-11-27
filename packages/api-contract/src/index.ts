@@ -14,6 +14,7 @@ export interface HealthResponse {
 
 export interface SessionResponse {
   csrf_token: string;
+  has_mini_apps?: boolean;
 }
 
 export type ThemePreference = "system" | "light" | "dark";

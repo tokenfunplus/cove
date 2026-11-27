@@ -1,3 +1,4 @@
+import { runMiniAppWorkspace } from "./mini-app-workspace.mjs";
 import { runReviewBookUpgrade } from "./review-book-upgrade.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -161,7 +162,7 @@ export async function runMiniAppsAcceptance({
 
   await button("Settings");
   await button("Check for updates");
-  await until("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Upgrade instance to 1.1.0')");
+  await until("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Upgrade instance to 1.2.0')");
   await button("Cancel");
   await cdp("Browser.setDownloadBehavior", {
     behavior: "allow",
@@ -307,6 +308,7 @@ export async function runMiniAppsAcceptance({
   await fill("#quick-panel-input", "");
   await until("document.querySelector('#quick-panel-input')?.value===''");
   await runReviewBookUpgrade({ api, goto, button, until, evaluate, fill, click, readyRows, first, profile });
+  await runMiniAppWorkspace({api,goto,button,evaluate,until,fill,click,cdp});
   // Force an expired proof on a mounted app to exercise real Local Service rejection.
   await goto("/apps/" + first + "/home");
   await readyRows(3);

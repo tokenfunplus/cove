@@ -684,11 +684,14 @@ func TestLaunchTokenCreatesOneBrowserSession(t *testing.T) {
 	if sessionResponse.Code != http.StatusOK {
 		t.Fatalf("session status = %d, want %d", sessionResponse.Code, http.StatusOK)
 	}
-	var body map[string]string
+	var body struct {
+		CSRFToken   string `json:"csrf_token"`
+		HasMiniApps bool   `json:"has_mini_apps"`
+	}
 	if err := json.NewDecoder(sessionResponse.Body).Decode(&body); err != nil {
 		t.Fatalf("decode session response: %v", err)
 	}
-	if body["csrf_token"] == "" {
+	if body.CSRFToken == "" {
 		t.Fatal("session response did not return a CSRF token")
 	}
 
@@ -1565,11 +1568,14 @@ func launchBrowserSession(t *testing.T, server *Server) (string, string) {
 	if sessionResponse.Code != http.StatusOK {
 		t.Fatalf("session status = %d, want %d", sessionResponse.Code, http.StatusOK)
 	}
-	var body map[string]string
+	var body struct {
+		CSRFToken   string `json:"csrf_token"`
+		HasMiniApps bool   `json:"has_mini_apps"`
+	}
 	if err := json.NewDecoder(sessionResponse.Body).Decode(&body); err != nil {
 		t.Fatalf("decode session response: %v", err)
 	}
-	return token, body["csrf_token"]
+	return token, body.CSRFToken
 }
 
 func responseErrorCode(t *testing.T, response *httptest.ResponseRecorder) string {

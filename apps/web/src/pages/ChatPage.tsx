@@ -334,8 +334,8 @@ export function ChatPage({ incomingAppDraft, consumedAppDraft }: {
                             onRetry={(batchID, targetID) =>
                               void handleRetry(batchID, targetID)
                             }
-                            onCreateConversation={() =>
-                              void handleCreateConversation()
+                            onCreateConversation={(body) =>
+                              void handleCreateConversation(undefined, body)
                             }
                             onOpenSettings={() => setSettingsEntry("provider")}
                             generationBatch={generationBatch}

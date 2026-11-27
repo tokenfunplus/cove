@@ -155,3 +155,39 @@ func TestFailedSecureScopeHasNoExecutableProjection(t *testing.T) {
 		t.Fatal(projection, err)
 	}
 }
+
+func TestScopedTurnCanAnswerNormallyAndPreservesUsageAndReasoning(t *testing.T) {
+	for _, body := range []string{"You can ask me about this book.", `{"title":"A JSON example","value":3}`, `{"inputs":{"text":"An ordinary API example"}}`, `This format example contains {"action":"choice_1","inputs":{}} in explanatory text.`} {
+		input, output := int64(12), int64(8)
+		upstream := &fakeProvider{stream: &fakeStream{events: []provider.Event{{Type: provider.EventDelta, Delta: body, ReasoningDelta: "Short reasoning"}, {Type: provider.EventCompleted, Usage: &provider.TokenUsage{InputTokens: &input, OutputTokens: &output}, FinishReason: "stop"}}}}
+		service := &Service{provider: upstream, appActions: turnSource{}}
+		stream, err := service.openAppTurn(t.Context(), provider.CompletionInput{}, persistence.MiniAppScope{}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = stream.Recv(t.Context())
+		delta, err := stream.Recv(t.Context())
+		if err != nil || delta.Delta != body || delta.ReasoningDelta != "Short reasoning" {
+			t.Fatal(delta, err)
+		}
+		done, err := stream.Recv(t.Context())
+		if err != nil || done.Usage == nil || *done.Usage.InputTokens != 12 || done.FinishReason != "stop" {
+			t.Fatal(done, err)
+		}
+	}
+}
+
+func TestScopedTurnInvalidExplicitProposalHasAnAppError(t *testing.T) {
+	for _, body := range []string{`{"action":"unknown","inputs":{}}`, `{"action":"choice_1","inputs":`} {
+		upstream := &fakeProvider{stream: &fakeStream{events: []provider.Event{{Type: provider.EventDelta, Delta: body}, {Type: provider.EventCompleted}}}}
+		service := &Service{provider: upstream, appActions: turnSource{}}
+		stream, err := service.openAppTurn(t.Context(), provider.CompletionInput{}, persistence.MiniAppScope{}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = stream.Recv(t.Context())
+		if _, err := stream.Recv(t.Context()); !errors.Is(err, ErrAppProposalInvalid) {
+			t.Fatal(err)
+		}
+	}
+}

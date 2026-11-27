@@ -725,6 +725,10 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 					message = "The Provider could not finish web research. Check tool calling support or turn Web search off."
 				}
 				code := "protocol_error"
+				if errors.Is(err, ErrAppProposalInvalid) {
+					code = "app_proposal_invalid"
+					message = "The model proposed an app action that could not be used. Choose an available action or continue with a normal reply."
+				}
 				if configuration.WebSearch != nil {
 					code = "web_research_failed"
 				}

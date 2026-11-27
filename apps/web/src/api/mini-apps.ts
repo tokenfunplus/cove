@@ -37,18 +37,81 @@ const post = (data: unknown): RequestInit => ({
   body: JSON.stringify(data),
 });
 export const appKeys = {
+  presence: ["mini-apps", "presence"] as const,
   instances: ["mini-apps", "instances"] as const,
   instance: (id: string) => ["mini-apps", "instances", id] as const,
   releases: ["mini-apps", "releases"] as const,
   catalog: ["mini-apps", "catalog"] as const,
 };
+export interface AppAttachment {
+  id: string;
+  name: string;
+  size: number;
+}
+export interface HostActivity {
+  instance_id: string;
+  instance_name: string;
+  operation_id: string;
+  action: string;
+  release_id: string;
+  surface: string;
+  status: string;
+  time: number;
+}
 export const miniApps = {
-  nativeSelection: (id: string, view: string) =>
+  attachments: (id: string) =>
+    request<{ attachments: AppAttachment[] }>(instanceURL(id) + "/blobs"),
+  uploadAttachment: (id: string, operation: string, file: File) =>
+    request(
+      instanceURL(id) +
+        "/blobs?" +
+        new URLSearchParams({ id: operation, name: file.name }),
+      { method: "POST", body: file },
+    ),
+  removeAttachment: (id: string, attachment: string) =>
+    request(instanceURL(id) + "/blobs/" + segment(attachment), {
+      method: "DELETE",
+    }),
+  downloadAttachment: async (id: string, attachment: string) => {
+    const response = await fetchLocalService(
+      instanceURL(id) + "/blobs/" + segment(attachment),
+    );
+    if (!response.ok)
+      throw new Error("The attachment could not be downloaded.");
+    return response.blob();
+  },
+  checkCandidates: (
+    instance: MiniAppInstance,
+    action: string,
+    surface: MiniAppSurface,
+    items: MiniAppFields[],
+  ) =>
+    request<{ duplicates: number[] }>(
+      instanceURL(instance.id) + "/candidates/check",
+      post({
+        action,
+        surface,
+        items,
+        expected_instance_revision: instance.revision,
+      }),
+    ),
+  removeRelease: (id: string) =>
+    request<void>(root + "/packages/" + segment(id), { method: "DELETE" }),
+  hostActivity: (instance?: string) =>
+    request<{ activity: HostActivity[] }>(
+      root +
+        "/activity?" +
+        new URLSearchParams({
+          limit: "100",
+          ...(instance ? { instance } : {}),
+        }),
+    ),
+  nativeSelection: (id: string, view: string, selection = "") =>
     request<{
       pending: boolean;
       id?: string;
       target?: { action: string; view: string; title: string; field: string };
-    }>(instanceURL(id) + "/native-selection?view=" + encodeURIComponent(view)),
+    }>(instanceURL(id) + "/native-selection?view=" + encodeURIComponent(view) + "&selection=" + encodeURIComponent(selection)),
   takeNativeSelection: (instance: string, id: string) =>
     request<{ text: string }>(
       instanceURL(instance) + "/native-selection",
@@ -76,9 +139,17 @@ export const miniApps = {
   releases: () => request<{ packages: MiniAppRelease[] }>(root + "/packages"),
   catalogSettings: () =>
     request<{ url: string; public_key: string }>(root + "/catalog-settings"),
-  saveCatalogSettings: (url: string, public_key: string) =>
+  saveCatalogSettings: (
+    url: string,
+    public_key: string,
+    previous?: { url: string; public_key: string },
+  ) =>
     request(root + "/catalog-settings", {
-      ...post({ url, public_key }),
+      ...post({
+        url,
+        public_key,
+        ...(previous ? { confirm_trust: true, previous } : {}),
+      }),
       method: "PUT",
     }),
   catalog: () =>
@@ -87,6 +158,17 @@ export const miniApps = {
     request<{ instance: MiniAppInstance; package: MiniAppPackage }>(
       instanceURL(id),
     ),
+  catalogSource: async (entry: CatalogEntry): Promise<string> => {
+    const response = await fetchLocalService(releaseURL(entry));
+    if (
+      !response.ok ||
+      response.headers.get("X-Cove-Package-Digest") !== entry.digest
+    )
+      throw new Error(
+        "The catalog release changed. Refresh the catalog and try again.",
+      );
+    return response.text();
+  },
   catalogPreview: async (entry: CatalogEntry): Promise<MiniAppPackage> => {
     const response = await fetchLocalService(releaseURL(entry));
     if (
@@ -108,10 +190,15 @@ export const miniApps = {
       ...post({}),
       body: raw,
     }),
-  create: (release_id: string, name: string, grants: string[]) =>
+  create: (
+    release_id: string,
+    name: string,
+    grants: string[],
+    cloud_enabled = false,
+  ) =>
     request<MiniAppInstance>(
       root + "/instances",
-      post({ release_id, name, grants }),
+      post({ release_id, name, grants, cloud_enabled }),
     ),
   export: (id: string) => request<unknown>(instanceURL(id) + "/export"),
   restore: (raw: string) =>
@@ -120,15 +207,25 @@ export const miniApps = {
       body: raw,
     }),
   remove: (id: string) => request<void>(instanceURL(id), { method: "DELETE" }),
-  settings: (instance: MiniAppInstance, enabled: boolean, grants: string[]) =>
+  settings: (
+    instance: MiniAppInstance,
+    enabled: boolean,
+    grants: string[],
+    cloud_enabled = instance.cloud_enabled === true,
+  ) =>
     request<MiniAppInstance>(
       instanceURL(instance.id) + "/settings",
-      post({ enabled, grants, revision: instance.revision }),
+      post({ enabled, grants, cloud_enabled, revision: instance.revision }),
     ),
-  upgrade: (instance: MiniAppInstance, release_id: string, grants: string[]) =>
+  upgrade: (
+    instance: MiniAppInstance,
+    release_id: string,
+    grants: string[],
+    cloud_enabled = instance.cloud_enabled === true,
+  ) =>
     request<MiniAppInstance>(
       instanceURL(instance.id) + "/upgrade",
-      post({ release_id, grants, revision: instance.revision }),
+      post({ release_id, grants, cloud_enabled, revision: instance.revision }),
     ),
   invoke: (id: string, command: MiniAppInvocation) =>
     request<MiniAppResult>(

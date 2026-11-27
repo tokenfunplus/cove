@@ -3,6 +3,9 @@ package chat
 import (
 	"context"
 	"errors"
+	"net"
+	"net/url"
+	"strings"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
@@ -44,4 +47,14 @@ func (s *Service) resolveAppTarget(ctx context.Context, in AppTaskInput) (resolv
 		return target, err
 	}
 	return connections[0], nil
+}
+
+// AppDestinationRemote distinguishes explicit loopback targets from external model destinations.
+func AppDestinationRemote(destination string) bool {
+	parsed, err := url.Parse(destination)
+	if err != nil || parsed.Hostname() == "" {
+		return true
+	}
+	host := parsed.Hostname()
+	return !strings.EqualFold(host, "localhost") && !net.ParseIP(host).IsLoopback()
 }

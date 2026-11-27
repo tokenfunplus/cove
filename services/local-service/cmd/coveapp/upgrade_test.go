@@ -77,3 +77,10 @@ func TestShippedReadingInboxUpgrade(t *testing.T) {
 		t.Fatalf("personal Reading Inbox upgrade failed: %v", err)
 	}
 }
+
+func TestJapaneseReview12UpgradePreservesUserStateAndAppliesMissRules(t *testing.T) {
+	args := []string{"upgrade-test", filepath.Join(packageDir, "japanese-review-book-1.1.coveapp"), filepath.Join(packageDir, "japanese-review-book-1.2.coveapp"), filepath.Join(fixturesDir, "japanese-review-1.2-upgrade.json")}
+	if err := run(args, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+}

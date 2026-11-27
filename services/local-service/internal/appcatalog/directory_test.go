@@ -3,10 +3,14 @@ package appcatalog
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -22,7 +26,7 @@ func TestDirectoryFallbackAndPersistentTrust(t *testing.T) {
 	prefs := filepath.Join(t.TempDir(), "settings.json")
 	remote := Catalog{URL: "https://catalog.example/index.json", PublicKey: base64.StdEncoding.EncodeToString(public)}
 	d, _ := Open(prefs, Catalog{})
-	if err := d.Configure(remote); err != nil {
+	if err := d.ReplaceTrust(remote, Catalog{}); err != nil {
 		t.Fatal(err)
 	}
 	builtin, _ := (Catalog{}).List(t.Context())
@@ -54,6 +58,7 @@ func TestDirectoryFallbackAndPersistentTrust(t *testing.T) {
 	}
 	checkFallback := func(label string) {
 		t.Helper()
+		reopened.cachedUntil = time.Time{}
 		items, err := reopened.List(context.Background())
 		if err == nil || len(items) != len(builtin) {
 			t.Fatalf("%s: unexpected fallback (%d entries): %v", label, len(items), err)
@@ -84,4 +89,204 @@ func TestDirectoryFallbackAndPersistentTrust(t *testing.T) {
 	index.Packages = [][]byte{newApp, duplicate}
 	body = signed(index)
 	checkFallback("reject every remote entry atomically")
+}
+
+func signedTestIndex(t *testing.T, key ed25519.PrivateKey, sequence int64, packages ...[]byte) string {
+	t.Helper()
+	now := time.Now().UTC()
+	raw, err := json.Marshal(SignedIndex{Format: 2, Sequence: sequence, IssuedAt: now, ExpiresAt: now.Add(time.Hour), Packages: packages})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := json.Marshal(map[string][]byte{"payload": raw, "signature": ed25519.Sign(key, raw)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(envelope)
+}
+
+func TestConfirmedAuthorityChangesRetainEachKeysRollbackCheckpoint(t *testing.T) {
+	pubA, keyA, _ := ed25519.GenerateKey(nil)
+	pubB, keyB, _ := ed25519.GenerateKey(nil)
+	first := Catalog{URL: "https://first.example/catalog.json", PublicKey: base64.StdEncoding.EncodeToString(pubA)}
+	second := Catalog{URL: "https://second.example/catalog.json", PublicKey: base64.StdEncoding.EncodeToString(pubB)}
+	source := []byte(`{"publisher":"author","app":"notes","name":"Notes","version":"1.0.0","schema_version":1}`)
+	bodies := map[string]string{first.URL: signedTestIndex(t, keyA, 9, source), second.URL: signedTestIndex(t, keyB, 1, source)}
+	previous := http.DefaultTransport
+	defer func() { http.DefaultTransport = previous }()
+	http.DefaultTransport = catalogTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(bodies[r.URL.String()])), Header: make(http.Header), Request: r}, nil
+	})
+	path := filepath.Join(t.TempDir(), "catalog.json")
+	directory, _ := Open(path, Catalog{})
+	if err := directory.Configure(first); !errors.Is(err, ErrTrustConfirmation) {
+		t.Fatal("initial unconfirmed authority", err)
+	}
+	if err := directory.ReplaceTrust(first, Catalog{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := directory.List(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := directory.Configure(second); !errors.Is(err, ErrTrustConfirmation) {
+		t.Fatal("silently changed authority", err)
+	}
+	if err := directory.ReplaceTrust(second, Catalog{}); !errors.Is(err, ErrCatalogChanged) {
+		t.Fatal("accepted stale confirmation", err)
+	}
+	if err := directory.ReplaceTrust(second, first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := directory.List(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	directory, _ = Open(path, Catalog{})
+	if directory.Config() != second {
+		t.Fatal("lost confirmed key on restart")
+	}
+	if err := directory.ReplaceTrust(first, second); err != nil {
+		t.Fatal(err)
+	}
+	bodies[first.URL] = signedTestIndex(t, keyA, 8, source)
+	if _, err := directory.List(t.Context()); err == nil {
+		t.Fatal("lost first key rollback checkpoint")
+	}
+	if err := directory.ReplaceTrust(Catalog{}, first); err != nil {
+		t.Fatal(err)
+	}
+	if directory.Config() != (Catalog{}) || len(directory.prefs.Checkpoints) != 2 {
+		t.Fatal("clearing settings discarded key history")
+	}
+}
+
+func TestCustomCatalogCannotPublishBundledIdentities(t *testing.T) {
+	officialPublic, officialKey, _ := ed25519.GenerateKey(nil)
+	customPublic, customKey, _ := ed25519.GenerateKey(nil)
+	official := Catalog{URL: "https://official.example/catalog.json", PublicKey: base64.StdEncoding.EncodeToString(officialPublic)}
+	custom := Catalog{URL: "https://custom.example/catalog.json", PublicKey: base64.StdEncoding.EncodeToString(customPublic)}
+	builtin, _ := (Catalog{}).List(t.Context())
+	previous := http.DefaultTransport
+	defer func() { http.DefaultTransport = previous }()
+	var body string
+	http.DefaultTransport = catalogTransport(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
+	})
+	for _, publisher := range []string{"cove", "bookshelf"} {
+		t.Run(publisher, func(t *testing.T) {
+			raw := []byte(`{"publisher":"` + publisher + `","app":"future","name":"Future","version":"9.9.9","schema_version":1}`)
+			sum := sha256.Sum256(raw)
+			digest := hex.EncodeToString(sum[:])
+			directory, _ := Open("", official)
+			if err := directory.ReplaceTrust(custom, official); err != nil {
+				t.Fatal(err)
+			}
+			body = signedTestIndex(t, customKey, 1, raw)
+			entries, err := directory.List(t.Context())
+			if err == nil || len(entries) != len(builtin) || directory.KnownRelease(digest) {
+				t.Fatal("custom key claimed a bundled publisher", err)
+			}
+			if err := directory.ReplaceTrust(official, custom); err != nil {
+				t.Fatal(err)
+			}
+			body = signedTestIndex(t, officialKey, 1, raw)
+			entries, err = directory.List(t.Context())
+			if err != nil || len(entries) != len(builtin)+1 || !directory.KnownRelease(digest) {
+				t.Fatal("official authority was rejected", err)
+			}
+		})
+	}
+}
+
+func TestOldTrustCacheIsReverifiedAndFailedSavesDoNotChangeAuthority(t *testing.T) {
+	public, _, _ := ed25519.GenerateKey(nil)
+	initial := Catalog{URL: "https://old.example/catalog.json", PublicKey: base64.StdEncoding.EncodeToString(public)}
+	path := filepath.Join(t.TempDir(), "catalog.json")
+	old := preferences{Config: &initial, ReleaseDigests: map[string]bool{"old-unattributed-digest": true}, Checkpoints: map[string]checkpoint{initial.PublicKey: {Sequence: 9, Digest: "index"}}}
+	raw, _ := json.Marshal(old)
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	directory, _ := Open(path, Catalog{})
+	if directory.KnownRelease("old-unattributed-digest") || directory.Config() != initial || len(directory.prefs.Checkpoints) != 1 {
+		t.Fatal("old preferences lost settings or retained unchecked trust")
+	}
+	directory.path = filepath.Join(t.TempDir(), "missing", "settings.json")
+	if err := directory.ReplaceTrust(Catalog{}, initial); err == nil {
+		t.Fatal("save to nonexistent directory succeeded")
+	}
+	if directory.Config() != initial || len(directory.prefs.Checkpoints) != 1 {
+		t.Fatal("failed save changed in-memory authority")
+	}
+	if err := os.WriteFile(path, []byte("broken"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	broken, _ := Open(path, Catalog{})
+	if _, err := broken.List(t.Context()); err == nil {
+		t.Fatal("corrupt preferences did not report fallback")
+	}
+	if err := broken.ReplaceTrust(initial, Catalog{}); err == nil {
+		t.Fatal("corrupt preference history was silently discarded")
+	}
+}
+
+func TestDirectoryCachesOnlySuccessfulCurrentVerifiedResultsUntilExpiry(t *testing.T) {
+	public, key, _ := ed25519.GenerateKey(nil)
+	config := Catalog{URL: "https://cache.example/catalog.json", PublicKey: base64.StdEncoding.EncodeToString(public)}
+	source := []byte(`{"publisher":"author","app":"notes","name":"Notes","version":"1.0.0","schema_version":1}`)
+	previous := http.DefaultTransport
+	defer func() { http.DefaultTransport = previous }()
+	calls := 0
+	code := 200
+	body := signedTestIndex(t, key, 1, source)
+	http.DefaultTransport = catalogTransport(func(r *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
+	})
+	directory, _ := Open("", Catalog{})
+	if err := directory.ReplaceTrust(config, Catalog{}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := directory.List(t.Context())
+	if err != nil || calls != 1 {
+		t.Fatal(err, calls)
+	}
+	first[len(first)-1].Raw = nil
+	if _, err := directory.List(t.Context()); err != nil || calls != 1 {
+		t.Fatal("verified cache missed", err, calls)
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := directory.List(cancelled); !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatal("cancelled request reused or populated cache", err)
+	}
+	code = 503
+	directory.cachedUntil = time.Now().Add(-time.Second)
+	if _, err := directory.List(t.Context()); err == nil || calls != 2 {
+		t.Fatal("expired cache survived a network failure", err, calls)
+	}
+	if _, err := directory.List(t.Context()); err == nil || calls != 3 {
+		t.Fatal("failed result was cached", err, calls)
+	}
+	code = 200
+	now := time.Now().UTC()
+	raw, _ := json.Marshal(SignedIndex{Format: 2, Sequence: 2, IssuedAt: now, ExpiresAt: now.Add(5 * time.Second), Packages: [][]byte{source}})
+	envelope, _ := json.Marshal(map[string][]byte{"payload": raw, "signature": ed25519.Sign(key, raw)})
+	body = string(envelope)
+	if _, err := directory.List(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if directory.cachedUntil.After(now.Add(5 * time.Second)) {
+		t.Fatal("cache outlives signed index expiry")
+	}
+	changed := config
+	changed.URL = "https://moved.example/catalog.json"
+	if err := directory.Configure(changed); err != nil {
+		t.Fatal(err)
+	}
+	if !directory.cachedUntil.IsZero() {
+		t.Fatal("URL change retained cached releases")
+	}
+	if _, err := directory.List(t.Context()); err != nil || calls != 5 {
+		t.Fatal("new URL reused a previous cache", err, calls)
+	}
 }

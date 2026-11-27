@@ -44,7 +44,7 @@ func (s *Service) StartProposal(ctx context.Context, model ModelExecutor, instan
 	if err != nil {
 		return empty, err
 	}
-	if !instance.Enabled {
+	if !instance.Enabled || chat.AppDestinationRemote(req.Destination) && !instance.CloudEnabled {
 		return empty, ErrDenied
 	}
 	selected, err := appActionDefinitions(instance, release.Package, req.Actions, req.Surface)

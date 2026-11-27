@@ -88,6 +88,7 @@ export interface MiniAppRelease {
 }
 
 export interface MiniAppInstance {
+  cloud_enabled?: boolean;
   id: string;
   name: string;
   release_id: string;
@@ -103,6 +104,7 @@ export interface MiniAppRecord {
 }
 
 export interface MiniAppInvocation {
+  search?: string;
   expected_instance_revision?: number;
   cursor?: string;
   items?: MiniAppFields[];

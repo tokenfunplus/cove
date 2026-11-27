@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 31
+const schemaVersion = 32
 
 const defaultConversationTitle = "New conversation"
 
@@ -835,6 +835,21 @@ PRAGMA user_version=22;`); err != nil {
 	if version == 30 {
 		if err := migrateMiniAppHistory(tx); err != nil {
 			return fmt.Errorf("apply SQLite migration 31: %w", err)
+		}
+		version = 31
+	}
+	if version == 31 {
+		var count int
+		if err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info('mini_app_instances') WHERE name='cloud_enabled'").Scan(&count); err != nil {
+			return err
+		}
+		if count == 0 {
+			if _, err := tx.Exec("ALTER TABLE mini_app_instances ADD COLUMN cloud_enabled INTEGER NOT NULL DEFAULT 0"); err != nil {
+				return fmt.Errorf("apply SQLite migration 32: %w", err)
+			}
+		}
+		if _, err := tx.Exec("PRAGMA user_version=32"); err != nil {
+			return err
 		}
 	}
 	if err := tx.Commit(); err != nil {

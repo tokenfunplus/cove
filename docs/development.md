@@ -68,7 +68,7 @@ Local search uses `GET /api/conversations/search?q=...&archived=...` behind the 
 
 ## Chat storage and rendering compatibility
 
-Current source builds migrate the schema 16 database through schema 29. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Schema 23 adds Projects, independent project context snapshots, fixed-source blobs and owning references. Schema 24 indexes project provenance and blob ownership lookups. Schema 25 adds the explicit local document library and embedding indexes. Schema 26 adds Project material use, scoped vector indexes, and saved local-only execution policy. Schema 27 adds independent local speech preferences and per-model voice profiles. Schema 28 stores refreshed PDF page text with its Project search index. Schema 29 stores interactive card definitions, values, revisions, and their submitted batch IDs. Selected answers retain cited web source text in later context. See [Debate mode](debate.md), [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md), and [ADR-0062](adr/0062-improve-pdf-extraction-and-local-search-review.md).
+Current source builds migrate the schema 16 database through schema 32. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Schema 23 adds Projects, independent project context snapshots, fixed-source blobs and owning references. Schema 24 indexes project provenance and blob ownership lookups. Schema 25 adds the explicit local document library and embedding indexes. Schema 26 adds Project material use, scoped vector indexes, and saved local-only execution policy. Schema 27 adds independent local speech preferences and per-model voice profiles. Schema 28 stores refreshed PDF page text with its Project search index. Schema 29 stores interactive card definitions, values, revisions, and their submitted batch IDs. Selected answers retain cited web source text in later context. See [Debate mode](debate.md), [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md), and [ADR-0062](adr/0062-improve-pdf-extraction-and-local-search-review.md).
 
 | Schema | Added data | Historical behavior |
 | --- | --- | --- |
@@ -85,6 +85,9 @@ Current source builds migrate the schema 16 database through schema 29. Schema 2
 | 27 | Local speech preferences and per-model voice profiles | Existing databases start with default speech settings. |
 | 28 | Refreshed PDF source snapshots for Project search indexes | Existing indexes use the saved Project source snapshot until refreshed. Saved conversations and original files are retained. |
 | 29 | Interactive card definitions, saved values, and submission state | Existing chat history stays readable. Earlier Cove builds reject the upgraded database. |
+| 30 | Mini App packages, independent instances, scoped records, attachments and task history | Existing Chat data stays unchanged. Older services reject the upgraded database. |
+| 31 | Persisted Mini App browser-task delivery receipts | Verified browser results can acknowledge interrupted delivery without re-running the model. |
+| 32 | Per-instance cloud model permission | Existing instances default to cloud access off. Local records, attachments and declared grants are preserved. |
 
 Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
@@ -235,3 +238,18 @@ They accept explicitly supplied test assets and destinations.
 | `--managed` | Set `COVE_ACCEPTANCE_GGUF` and `COVE_ACCEPTANCE_MANAGED_MODEL` to an existing model file and its Cove catalog ID. The runner verifies the pinned size and SHA-256, copies the file into the disposable host, and requests **Only on this Mac** inference. The package must include the inference runtime. |
 | `--compatible` | Set `COVE_ACCEPTANCE_LOOPBACK_ENDPOINT` and `COVE_ACCEPTANCE_LOOPBACK_MODEL` for a running OpenAI-compatible service on `127.0.0.1`. The harness checks local-only denial before selecting the compatible target. |
 | `--cloud` | Set `COVE_ACCEPTANCE_CLOUD_ENDPOINT`, `COVE_ACCEPTANCE_CLOUD_MODEL`, and `COVE_ACCEPTANCE_CLOUD_KEY` for an authorized HTTPS test provider. This mode makes a real model request. The test-only key uses the temporary fixture secret store. The harness checks the input and destination, denies the local-only request, and verifies that revocation blocks the next call. |
+
+### Mini App acceptance evidence
+
+Run `scripts/native/test-mini-apps.sh PATH_TO_PACKAGED_SERVICE --os-handoff`
+for an isolated cold-start URL event that preserves the system URL handler.
+Run `scripts/native/test-mini-app-compatible.sh PATH_TO_PACKAGED_SERVICE`
+for the native transport, loopback fixture, generation and confirmed save path.
+The macOS CI job runs both commands. The loopback fixture verifies transport and
+ownership behavior with synthetic answers. It does not measure model quality.
+
+The `--interactive`, `--managed` and `--cloud` modes remain explicit real-machine
+acceptance commands. Supply the pinned model artifact or dedicated test Provider
+credentials described by their diagnostics. Preserve the command, assessed commit,
+exit status and sanitized outcome in local acceptance logs. Keep the public
+catalog deployment and production signing authority with the release operator.

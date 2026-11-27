@@ -27,6 +27,11 @@ func TestModelProposalOnlySeesSelectedSchemasAndCannotWrite(t *testing.T) {
 	db, s := storeAt(t, ":memory:")
 	defer db.Close()
 	_, instance := setup(t, s)
+	var err error
+	instance, err = s.Configure(t.Context(), instance.ID, ConfigRequest{Revision: instance.Revision, Enabled: true, Grants: instance.Grants, CloudEnabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
 	req := ProposalRequest{Actions: []string{"inbox.add"}, Question: "Save an essay", Surface: "chat", ProviderID: "remote", ModelID: "model", OperationID: uuid.NewString(), Destination: "https://provider.example"}
 	m := &captureProposal{}
 	if _, err := s.StartProposal(t.Context(), m, instance.ID, req); err != nil {

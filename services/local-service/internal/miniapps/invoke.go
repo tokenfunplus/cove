@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
@@ -31,6 +32,7 @@ type Record struct {
 	Fields   map[string]any `json:"fields"`
 }
 type Invocation struct {
+	Search           string           `json:"search,omitempty"`
 	ExpectedRevision int64            `json:"expected_instance_revision,omitempty"`
 	Cursor           string           `json:"cursor,omitempty"`
 	Items            []map[string]any `json:"items,omitempty"`
@@ -221,6 +223,9 @@ func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result
 		if !slices.Contains(a.Surfaces, req.Surface) || !slices.Contains(i.Grants, capability(a.Op)) {
 			return ErrDenied
 		}
+		if utf8.RuneCountInString(req.Search) > 256 || req.Search != "" && a.Op != "query" {
+			return invalid("record search")
+		}
 		if req.Cursor != "" && (a.Op != "query" || len(req.Cursor) != sha256.Size*2) {
 			return invalid("query cursor")
 		}
@@ -265,11 +270,11 @@ func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result
 			if err != nil {
 				return err
 			}
-			out, err = queryPage(queryRecords(rows, a, req.Inputs, now), a.Limit, req.Cursor)
+			out, err = queryPage(searchRecords(queryRecords(rows, a, req.Inputs, now), req.Search), a.Limit, req.Cursor)
 			if err != nil {
 				return err
 			}
-			return tx.RecordActivity(i.ID, req.OperationID, r.ID, req.Action, req.Surface, "completed")
+			return nil
 		}
 		var rows []Record
 		if a.Op == "update" || a.Op == "delete" {
@@ -317,6 +322,22 @@ func (s *Service) write(tx *persistence.MiniAppStore, i Instance, a Action, rows
 	if !errors.Is(err, sql.ErrNoRows) {
 		return out, err
 	}
+	issued := strconv.FormatInt(s.now().Unix(), 10)
+	if confirm != "" {
+		parts := strings.Split(confirm, ".")
+		if len(parts) != 3 {
+			return out, ErrConflict
+		}
+		timestamp, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return out, ErrConflict
+		}
+		age := s.now().Sub(time.Unix(timestamp, 0))
+		if age > 15*time.Minute || age < -5*time.Second {
+			return out, ErrPreviewExpired
+		}
+		issued = parts[1]
+	}
 	proposed, err := propose(i.ID, rows, a, req, now)
 	if err != nil {
 		return out, err
@@ -331,9 +352,9 @@ func (s *Service) write(tx *persistence.MiniAppStore, i Instance, a Action, rows
 	}
 	mac := hmac.New(sha256.New, s.secret[:])
 	date := now.Format(time.DateOnly)
-	fmt.Fprintf(mac, "%s/%d/%s/", fingerprint, i.Revision, date)
+	fmt.Fprintf(mac, "%s/%d/%s/%s/", fingerprint, i.Revision, date, issued)
 	mac.Write(encoded)
-	preview := date + "." + hex.EncodeToString(mac.Sum(nil))
+	preview := date + "." + issued + "." + hex.EncodeToString(mac.Sum(nil))
 	if confirm == "" {
 		out.Confirmation = preview
 		return out, nil
@@ -430,4 +451,22 @@ func propose(id string, rows []Record, a Action, req Invocation, now time.Time) 
 		proposed[index].Fields = updated
 	}
 	return proposed, nil
+}
+
+func searchRecords(rows []Record, query string) []Record {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return rows
+	}
+	filtered := []Record{}
+	for _, row := range rows {
+		for _, value := range row.Fields {
+			text, ok := value.(string)
+			if ok && strings.Contains(strings.ToLower(text), query) {
+				filtered = append(filtered, row)
+				break
+			}
+		}
+	}
+	return filtered
 }

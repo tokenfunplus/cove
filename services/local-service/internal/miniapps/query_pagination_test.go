@@ -123,3 +123,49 @@ func TestSQLiteQueryMatchesTypedOrderingPredicatesAndLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRecordSearchIncludesLaterPagesAndPreservesActionLimit(t *testing.T) {
+	db, service := storeAt(t, ":memory:")
+	defer db.Close()
+	raw, err := os.ReadFile("../appcatalog/packages/japanese-review-book.coveapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := Validate(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capped := pkg.Actions["review.listAll"]
+	capped.Limit = 2
+	pkg.Actions["review.firstTwo"] = capped
+	raw, err = json.Marshal(pkg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := service.Install(t.Context(), raw, "builtin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	book, err := service.Create(t.Context(), CreateRequest{ReleaseID: release.ID, Name: "Search", Grants: pkg.Capabilities})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n := range 51 {
+		command := Invocation{Action: "review.addQuestions", Surface: "page", OperationID: fmt.Sprint("new", n), Inputs: map[string]any{"question": fmt.Sprint("Question ", n), "answer": "Common"}}
+		if n == 50 {
+			command.Inputs["answer"] = "Rare needle %_"
+		}
+		command.Confirm = call(t, service, book.ID, command).Confirmation
+		call(t, service, book.ID, command)
+	}
+	query := read("review.listAll")
+	query.Search = "NEEDLE %_"
+	result := call(t, service, book.ID, query)
+	if len(result.Records) != 1 || result.Records[0].Fields["answer"] != "Rare needle %_" {
+		t.Fatal("search only covered the first page", result)
+	}
+	query.Action = "review.firstTwo"
+	if rows := call(t, service, book.ID, query).Records; len(rows) != 0 {
+		t.Fatal("search widened the action's fixed limit", rows)
+	}
+}

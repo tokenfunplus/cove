@@ -518,10 +518,11 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
 
     private func openExternalLink(_ action: WKNavigationAction) {
         if action.navigationType == .linkActivated, isQuickPanelFrame(action.sourceFrame),
-           let url = action.request.url, let link = MiniAppLink(url) {
-            switch link {
-            case .apps, .pick, .open: NSWorkspace.shared.open(url)
-            case .install: break
+           let url = action.request.url, MiniAppLink(url) != nil {
+            if !NSWorkspace.shared.open(url) {
+                let notice = NSAlert()
+                notice.messageText = "Cove could not open this app link. Reopen Cove from Applications and try again."
+                notice.runModal()
             }
             return
         }

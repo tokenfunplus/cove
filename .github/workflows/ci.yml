@@ -89,7 +89,8 @@ jobs:
       - name: Test Mini App Launcher intents and private picker transport
         run: |
           test "$(plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw -o - .artifacts/Cove.app/Contents/Info.plist)" = "cove"
-          scripts/native/test-mini-apps.sh .artifacts/Cove.app/Contents/Resources/cove-local-service
+          scripts/native/test-mini-apps.sh .artifacts/Cove.app/Contents/Resources/cove-local-service --os-handoff
+          scripts/native/test-mini-app-compatible.sh .artifacts/Cove.app/Contents/Resources/cove-local-service
       - name: Verify test Secret Store is enabled
         run: test "$(plutil -extract CoveInsecureFileSecretStore raw -o - .artifacts/Cove.app/Contents/Info.plist)" = "true"
       - name: Run macOS package acceptance test

@@ -102,7 +102,7 @@ public final class LauncherStateMachine: ObservableObject {
         return true
     }
 
-    public func openMiniApp(_ link: MiniAppLink) {
+    public func openMiniApp(_ link: MiniAppLink, selection: UUID? = nil) {
         var items: [URLQueryItem]
         switch link {
         case .apps: items = []
@@ -113,6 +113,7 @@ public final class LauncherStateMachine: ObservableObject {
             if let version { items.append(.init(name: "version", value: version)) }
         case .pick: return
         }
+        if let selection { items.append(.init(name: "selection", value: selection.uuidString.lowercased())) }
         guard ensureReady(), let url = launchURL(intent: "apps", additionalItems: items) else { return }
         browser.open(url)
     }

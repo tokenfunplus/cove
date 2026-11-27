@@ -1,5 +1,5 @@
 import { MacSelection } from "./MacSelection";
-import { useState } from "react";
+import { useDeferredValue, useState } from "react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -17,6 +17,7 @@ import type {
 } from "@cove/api-contract";
 import { ChevronLeft, Settings2, Check } from "lucide-react";
 import { appKeys, miniApps } from "@/api/mini-apps";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AppPractice } from "./AppPractice";
 import { AppRecordSource } from "./AppRecordSource";
@@ -40,7 +41,12 @@ export interface AppContext {
     scope: import("@cove/api-contract").MiniAppTurnScope,
     name: string,
   ) => void;
-  proposal?: { action: string; inputs: MiniAppFields; actions: string[] };
+  proposal?: {
+    action: string;
+    inputs: MiniAppFields;
+    actions: string[];
+    origin?: string;
+  };
   surface: MiniAppSurface;
   draft?: string;
   localRequired?: boolean;
@@ -274,7 +280,17 @@ export function AppView({
   );
   const openForm = (id: string, initial?: MiniAppFields) =>
     setForm({ id, initial, records: selected, key: crypto.randomUUID() });
-  const [selectedRefs, setSelected] = useState<Record<string, number>>({});
+  const [selectedRecords, setSelected] = useState<
+    Record<string, MiniAppRecord>
+  >({});
+  const selectedRefs = Object.fromEntries(
+    Object.values(selectedRecords).map((record) => [
+      record.id,
+      record.revision,
+    ]),
+  );
+  const [filter, setFilter] = useState("");
+  const search = useDeferredValue(filter);
   const [feedback, setFeedback] = useState("");
   const canQuery = instance.grants.includes("records.query");
   const rows = useInfiniteQuery({
@@ -286,6 +302,7 @@ export function AppView({
       instance.revision,
       surface,
       query,
+      search,
     ],
     initialPageParam: "",
     getNextPageParam: (last: MiniAppResult) => last.next_cursor,
@@ -296,13 +313,14 @@ export function AppView({
         cursor: pageParam || undefined,
         surface,
         inputs: query!.inputs,
+        search: search || undefined,
         operation_id: crypto.randomUUID(),
       }),
     enabled: !!query && canQuery,
     retry: false,
   });
   const records = rows.data?.pages.flatMap((page) => page.records ?? []) ?? [];
-  const selected = records.filter((r) => selectedRefs[r.id] === r.revision);
+  const selected = Object.values(selectedRecords);
   const [practiceRecords, setPracticeRecords] = useState<typeof records>();
   const transfer = useMutation({
     retry: false,
@@ -328,6 +346,7 @@ export function AppView({
   function choose(id: string) {
     setFeedback("");
     const act = pkg.actions[id];
+    const suggested = proposal?.action === id ? proposal.inputs : undefined;
     if (act.op === "query" && !Object.keys(act.inputs ?? {}).length)
       return performQuery(id, {});
     const record = selected.length === 1 ? selected[0] : undefined;
@@ -343,13 +362,14 @@ export function AppView({
           field === "$id" ? record.id : record.fields[field],
         ]),
       );
-      return openForm(id, initial);
+      return openForm(id, { ...initial, ...suggested });
     }
     openForm(
       id,
-      record && (act.op === "update" || act.op === "generate")
-        ? record.fields
-        : undefined,
+      suggested ??
+        (record && (act.op === "update" || act.op === "generate")
+          ? record.fields
+          : undefined),
     );
   }
   function performQuery(action: string, inputs: MiniAppFields) {
@@ -359,6 +379,7 @@ export function AppView({
     )
       void rows.refetch();
     setQuery({ action, inputs });
+    setFilter("");
     setSelected({});
     setForm(undefined);
   }
@@ -491,6 +512,7 @@ export function AppView({
           instance={instance}
           pkg={pkg}
           actionId={form.id}
+          proposalKey={proposal?.origin}
           surface={surface}
           initial={form.initial}
           selected={form.records ?? selected}
@@ -522,6 +544,21 @@ export function AppView({
               Refresh
             </Button>
           </div>
+          <label className="grid gap-1 text-sm">
+            Filter records
+            <Input
+              type="search"
+              value={filter}
+              maxLength={256}
+              onChange={(event) => setFilter(event.target.value)}
+              placeholder="Search matching records"
+            />
+          </label>
+          {selected.length > 0 && (
+            <p className="text-sm">
+              {selected.length} selected across these results.
+            </p>
+          )}
           {rows.isPending && <p role="status">Loading records…</p>}
           <ErrorMessage error={rows.error} />
           {rows.isSuccess && !records.length && (
@@ -548,7 +585,7 @@ export function AppView({
                   const checked = e.target.checked;
                   setSelected((old) => {
                     const next = { ...old };
-                    if (checked) next[record.id] = record.revision;
+                    if (checked) next[record.id] = record;
                     else delete next[record.id];
                     return next;
                   });

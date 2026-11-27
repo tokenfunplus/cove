@@ -56,7 +56,11 @@ function ProposalForm({
   const allowed = selected.filter((id) => actions.includes(id));
   const [question, setQuestion] = useState("");
   const [started, setStarted] = useState<AppTask>();
-  const target = useAppModelTarget(localRequired);
+  const target = useAppModelTarget(
+    localRequired,
+    false,
+    instance.cloud_enabled === true,
+  );
   const { profile, model, policyLocal } = target;
   const retry = useRef<{ fingerprint: string; id: string } | undefined>(
     undefined,

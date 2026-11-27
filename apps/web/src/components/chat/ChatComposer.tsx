@@ -1,3 +1,10 @@
+import {
+  AppStarters,
+  appDiscoveryQuestion,
+  mentionedApps,
+  ChatDiscoveryBridge,
+  type chatApps,
+} from "./AppDiscovery";
 import { ComposerCardReference } from "@/components/interactive/ComposerCardReference";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ComposerLocalTools } from "./ComposerLocalTools";
@@ -9,7 +16,14 @@ import {
   LockKeyhole,
   Square,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useState, type ReactNode, type RefObject } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import {
   type ConversationView,
   type MiniAppTurnScope,
@@ -59,7 +73,7 @@ type Props = {
   profiles: ProviderProfile[];
   draft: string;
   onDraftChange: (value: string) => void;
-  onSend: (scope?: MiniAppTurnScope, accepted?:()=>void) => void;
+  onSend: (scope?: MiniAppTurnScope, accepted?: () => void) => void;
   onCancel?: () => void;
   isSending: boolean;
   navigationBusy?: boolean;
@@ -93,19 +107,48 @@ export function ChatComposer({
   composerRef,
   requiresContextChoice,
 }: Props) {
-  const [appsOpen,setAppsOpen] = useState(false);
+  const [appsOpen, setAppsOpen] = useState(false);
+  const [discoveryPrompt, setDiscoveryPrompt] = useState(false);
+  const [initialApp, setInitialApp] = useState<string>();
+  const [availableApps, setAvailableApps] = useState<ReturnType<typeof chatApps>>(
+    [],
+  );
+  function openApps(instance?: string) {
+    setInitialApp(instance);
+    setAppsOpen(true);
+  }
+  function closeApps() {
+    setAppsOpen(false);
+    setInitialApp(undefined);
+    setDiscoveryPrompt(false);
+  }
+
   const [appTurn, setAppTurn] = useState<{
     conversation: string;
     name: string;
     scope: MiniAppTurnScope;
   }>();
   const selectedApp = appTurn?.conversation === view.id ? appTurn : undefined;
-  const appTargetAllowed = activeModelSet.length === 1 && !webSearch?.enabled &&
-    profiles.some(profile => profile.id === activeModelSet[0].providerId);
+  const appTargetAllowed =
+    activeModelSet.length === 1 &&
+    !webSearch?.enabled &&
+    profiles.some((profile) => profile.id === activeModelSet[0].providerId);
   function submit() {
     if (selectedApp) {
-      onSend(selectedApp.scope, () => setAppTurn(current => current === selectedApp ? undefined : current));
-    } else onSend();
+      onSend(selectedApp.scope, () =>
+        setAppTurn((current) =>
+          current === selectedApp ? undefined : current,
+        ),
+      );
+    } else {
+      const matches = mentionedApps(draft, availableApps);
+      if (!quickPanel && (appDiscoveryQuestion(draft) || matches.length)) {
+        setDiscoveryPrompt(true);
+        openApps(matches.length === 1 ? matches[0].instance.id : undefined);
+        return;
+      }
+      onSend();
+    }
   }
   useEffect(() => {
     const textarea = composerRef.current;
@@ -172,6 +215,15 @@ export function ChatComposer({
     !catalogLoading &&
     !requiresContextChoice &&
     Boolean(draft.trim());
+  const canDiscover =
+    !selectedApp &&
+    !quickPanel &&
+    connectionReady &&
+    !navigationBusy &&
+    !isSending &&
+    (appDiscoveryQuestion(draft) ||
+      mentionedApps(draft, availableApps).length > 0);
+  const canSubmit = canSend || canDiscover;
   const actionLabel = isSending ? copy.stopGeneration : copy.sendMessage;
   function renderInput(sourceActions?: ReactNode, webpage?: WebpageAction) {
     const contextAction = attachmentDraft ? (
@@ -206,7 +258,7 @@ export function ChatComposer({
                       toggle: execution.setLocalOnly,
                     }
                   }
-                  onApps={() => setAppsOpen(true)}
+                  onApps={() => openApps()}
                   onManage={execution?.openLocalModels}
                 />
               )
@@ -235,7 +287,7 @@ export function ChatComposer({
         attachments={attachmentDraft}
         projectId={view.project_id}
         disabled={toolsDisabled}
-        onApps={() => setAppsOpen(true)}
+        onApps={() => openApps()}
         onManage={execution?.openLocalModels}
         compact={compact}
         actions={
@@ -250,17 +302,79 @@ export function ChatComposer({
     );
     return (
       <>
-        {selectedApp && <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span>Next message · {selectedApp.name} · {selectedApp.scope.actions.length} selected actions</span>
-          <Button type="button" variant="ghost" size="sm" onClick={()=>setAppTurn(undefined)}>Remove app</Button>
-          {!appTargetAllowed && <p role="status">Select one model and turn off web search to use these actions.</p>}
-        </div>}
+        <ChatDiscoveryBridge enabled={!quickPanel} change={setAvailableApps} />
+        {!quickPanel && !view.messages.length && (
+          <AppStarters
+            apps={availableApps}
+            open={(id, question) => {
+              if (question) onDraftChange(question);
+              openApps(id);
+            }}
+          />
+        )}
+        {selectedApp && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span>
+              Next message · {selectedApp.name} ·{" "}
+              {selectedApp.scope.actions.length} selected actions
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setAppTurn(undefined)}
+            >
+              Remove app
+            </Button>
+            {!appTargetAllowed && (
+              <p role="status">
+                Select one model and turn off web search to use these actions.
+              </p>
+            )}
+          </div>
+        )}
         {appsOpen && (
           <Suspense fallback={null}>
-            <ComposerAppPicker key={view.id} surface={quickPanel ? "panel" : "chat"}
-              draft={draft} localRequired={execution?.localOnly} close={() => setAppsOpen(false)}
-              onScope={quickPanel ? undefined : (scope,name)=>{setAppTurn({conversation:view.id,scope,name});setAppsOpen(false);}}
-              change={onDraftChange} busy={isSending || !!navigationBusy}/>
+            <ComposerAppPicker
+              key={view.id}
+              surface={quickPanel ? "panel" : "chat"}
+              draft={draft}
+              localRequired={execution?.localOnly}
+              close={closeApps}
+              initialInstance={initialApp}
+              introduction={
+                discoveryPrompt ? (
+                  <div className="grid gap-2 text-sm">
+                    <p>
+                      Choose an installed app and the actions it may use for
+                      this message. Your draft stays here until you send it.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!canSend}
+                      onClick={() => {
+                        closeApps();
+                        onSend();
+                      }}
+                    >
+                      Send message without app actions
+                    </Button>
+                  </div>
+                ) : undefined
+              }
+              onScope={
+                quickPanel
+                  ? undefined
+                  : (scope, name) => {
+                      setAppTurn({ conversation: view.id, scope, name });
+                      closeApps();
+                    }
+              }
+              change={onDraftChange}
+              busy={isSending || !!navigationBusy}
+            />
           </Suspense>
         )}
         {view.project_id && (
@@ -300,7 +414,7 @@ export function ChatComposer({
               })
             ) {
               event.preventDefault();
-              if (canSend) submit();
+              if (canSubmit) submit();
             }
           }}
         />
@@ -388,7 +502,9 @@ export function ChatComposer({
                 )}
                 type={isSending ? "button" : "submit"}
                 onClick={isSending ? onCancel : undefined}
-                disabled={navigationBusy || (isSending ? !onCancel : !canSend)}
+                disabled={
+                  navigationBusy || (isSending ? !onCancel : !canSubmit)
+                }
               >
                 {isSending ? (
                   <Square
@@ -430,7 +546,7 @@ export function ChatComposer({
       data-compact={compact ? "true" : undefined}
       onSubmit={(event) => {
         event.preventDefault();
-        if (event.target === event.currentTarget && canSend) submit();
+        if (event.target === event.currentTarget && canSubmit) submit();
       }}
     >
       <div

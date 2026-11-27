@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
 )
 
@@ -21,9 +22,9 @@ type selectionTarget struct {
 	Revision int64  `json:"revision"`
 }
 type stagedSelection struct {
-	target   selectionTarget
-	id, text string
-	expires  time.Time
+	target            selectionTarget
+	id, text, session string
+	expires           time.Time
 }
 
 func (s *Server) nativeSelection(w http.ResponseWriter, r *http.Request) {
@@ -103,9 +104,9 @@ func (s *Server) nativeSelection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 429, "busy", "Too many pending selections.")
 		return
 	}
-	selection := stagedSelection{pick.Target, uuid.NewString(), pick.Text, time.Now().Add(10 * time.Minute)}
+	selection := stagedSelection{target: pick.Target, id: uuid.NewString(), text: pick.Text, expires: time.Now().Add(10 * time.Minute)}
 	s.files.selections[selection.id] = selection
-	writeJSON(w, 200, struct{}{})
+	writeJSON(w, 200, map[string]string{"id": selection.id})
 }
 
 func (s *Server) appNativeSelection(w http.ResponseWriter, r *http.Request) {
@@ -119,21 +120,24 @@ func (s *Server) appNativeSelection(w http.ResponseWriter, r *http.Request) {
 	s.files.Lock()
 	defer s.files.Unlock()
 	s.files.prune()
+	session, _ := localsecurity.SessionFromRequest(r)
 	if r.Method == "GET" {
-		view := r.URL.Query().Get("view")
-		var pending stagedSelection
-		for _, item := range s.files.selections {
-			if item.target.Instance == id && (view == "" || item.target.View == view) && (pending.id == "" || item.expires.Before(pending.expires)) {
-				pending = item
-			}
-		}
-		if pending.id == "" {
+		receipt := r.URL.Query().Get("selection")
+		pending, ok := s.files.selections[receipt]
+		if !ok || pending.target.Instance != id {
 			writeJSON(w, 200, map[string]any{"pending": false})
 			return
 		}
+		if pending.session != "" && pending.session != session.ID {
+			appReply(w, nil, miniapps.ErrDenied)
+			return
+		}
+		pending.session = session.ID
+		s.files.selections[receipt] = pending
 		writeJSON(w, 200, map[string]any{"pending": true, "id": pending.id, "target": pending.target})
 		return
 	}
+
 	var in struct {
 		ID string `json:"id"`
 	}
@@ -141,7 +145,7 @@ func (s *Server) appNativeSelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pending, ok := s.files.selections[in.ID]
-	if !ok || pending.target.Instance != id {
+	if !ok || pending.target.Instance != id || pending.session != session.ID {
 		appReply(w, nil, miniapps.ErrConflict)
 		return
 	}

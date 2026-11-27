@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { observeBrowserSessionExpiry } from "@/api/client";
 import { useLocalSession } from "@/api/hooks/useSession";
+import { WorkspaceSearch } from "@/components/miniapps/WorkspaceSearch";
 import { Button } from "@/components/ui/button";
 import {
   AppDirectory,
@@ -68,6 +69,13 @@ export default function MiniAppsPage({
   const session = useLocalSession();
   const [expired, setExpired] = useState(false);
   useEffect(() => observeBrowserSessionExpiry(() => setExpired(true)), []);
+  useEffect(() => {
+    if (!session.isSuccess || id || target) return;
+    const section = new URLSearchParams(window.location.search).get("section");
+    const element = document.getElementById("mini-app-" + section);
+    if (element instanceof HTMLDetailsElement) element.open = true;
+    element?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [address, session.isSuccess, id, target]);
   const open = useCallback(
     (instance: string, nextView?: string, replace?: boolean) => {
       navigate(
@@ -94,8 +102,9 @@ export default function MiniAppsPage({
   return (
     <main className="min-h-dvh bg-background px-4 py-6 text-foreground sm:px-8 sm:py-10">
       <div className="mx-auto max-w-3xl space-y-6">
-        <header className="flex items-center justify-between gap-4">
+        <header className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="text-2xl font-semibold tracking-tight">Mini Apps</h1>
+          <WorkspaceSearch navigate={(path) => navigate(path)} />
           <Button asChild size="sm" variant="outline">
             <a
               href="/"
@@ -146,7 +155,11 @@ export default function MiniAppsPage({
             attach={attach}
           />
         ) : (
-          <AppDirectory key={address} open={open} target={target} />
+          <AppDirectory
+            key={target ? JSON.stringify(target) : "directory"}
+            open={open}
+            target={target}
+          />
         )}
       </div>
     </main>

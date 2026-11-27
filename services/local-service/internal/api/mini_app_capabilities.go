@@ -34,7 +34,21 @@ func (s *Server) appCapabilities(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		states[cap] = s.capabilityStatus(ctx, cap, r.URL.Query().Get("local_only") == "true")
+		if cap == "ai.generate" && r.URL.Query().Get("local_only") != "true" && s.providerSetup != nil {
+			profiles, err := s.providerSetup.List(ctx)
+			if err == nil {
+				for _, profile := range profiles {
+					if profile.Configured && (i.CloudEnabled || !chat.AppDestinationRemote(profile.Endpoint)) {
+						states[cap] = "available"
+						break
+					}
+				}
+			}
+			if states[cap] == "available" {
+				continue
+			}
+		}
+		states[cap] = s.capabilityStatus(ctx, cap, r.URL.Query().Get("local_only") == "true" || !i.CloudEnabled)
 	}
 	writeJSON(w, 200, map[string]any{"host_version": miniapps.RuntimeVersion, "capabilities": states})
 }

@@ -391,3 +391,53 @@ func TestLegacyOfficialFileCanUpgradeButModifiedFilesCannotClaimItsOrigin(t *tes
 		t.Fatal("old content changed")
 	}
 }
+
+func TestConversationWriteOperationCannotRepeatAfterReopening(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "proposal.sqlite")
+	db, service := storeAt(t, path)
+	_, book := setup(t, service)
+	command := Invocation{Action: "inbox.add", Surface: "chat", OperationID: "chat_stable-proposal", Inputs: map[string]any{"title": "One reviewed note", "note": "Saved once"}}
+	command.Confirm = call(t, service, book.ID, command).Confirmation
+	first := call(t, service, book.ID, command)
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, service = storeAt(t, path)
+	defer db.Close()
+	service.now = func() time.Time { return time.Now().Add(48 * time.Hour) }
+	replay := command
+	replay.Confirm = ""
+	if _, err := service.Invoke(t.Context(), book.ID, replay); !errors.Is(err, ErrConflict) {
+		t.Fatal("reopened proposal was eligible for a new preview", err)
+	}
+	retried := call(t, service, book.ID, command)
+	if len(retried.Records) != 1 || retried.Records[0].ID != first.Records[0].ID {
+		t.Fatal("accepted delivery retry changed the saved record")
+	}
+	rows := call(t, service, book.ID, read("inbox.all")).Records
+	if len(rows) != 2 {
+		t.Fatal("proposal repeated", len(rows))
+	}
+}
+
+func TestPreviewExpiresButCommittedReceiptRemainsIdempotent(t *testing.T) {
+	store, service := storeAt(t, ":memory:")
+	defer store.Close()
+	_, book := setup(t, service)
+	now := time.Date(2026, 11, 27, 23, 58, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	cmd := Invocation{OperationID: "expires", Action: "inbox.add", Surface: "page", Inputs: map[string]any{"title": "New", "note": "Content"}}
+	cmd.Confirm = call(t, service, book.ID, cmd).Confirmation
+	now = now.Add(16 * time.Minute)
+	if _, err := service.Invoke(t.Context(), book.ID, cmd); !errors.Is(err, ErrPreviewExpired) {
+		t.Fatal("old preview was accepted", err)
+	}
+	cmd.Confirm = ""
+	cmd.Confirm = call(t, service, book.ID, cmd).Confirmation
+	saved := call(t, service, book.ID, cmd)
+	now = now.Add(24 * time.Hour)
+	retry, err := service.Invoke(t.Context(), book.ID, cmd)
+	if err != nil || len(retry.Records) != 1 || retry.Records[0].ID != saved.Records[0].ID {
+		t.Fatal("accepted write lost idempotency", retry, err)
+	}
+}

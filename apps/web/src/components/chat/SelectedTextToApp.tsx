@@ -1,4 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useContext, useEffect, useState } from "react";
+import { QueryClientContext, useQuery } from "@tanstack/react-query";
+import { appKeys, miniApps } from "@/api/mini-apps";
 import { Button } from "@/components/ui/button";
 const Picker = lazy(() => import("./ComposerAppPicker"));
 
@@ -10,7 +12,12 @@ interface Props {
   surface: "chat" | "panel";
 }
 
-export function SelectedTextToApp({
+export function SelectedTextToApp(props: Props) {
+  const cache = useContext(QueryClientContext);
+  return cache ? <SelectionControls {...props} /> : null;
+}
+
+function SelectionControls({
   conversation,
   draft,
   change,
@@ -19,6 +26,16 @@ export function SelectedTextToApp({
 }: Props) {
   const [selected, setSelected] = useState("");
   const [frozen, setFrozen] = useState("");
+  const installed = useQuery({
+    queryKey: appKeys.instances,
+    queryFn: miniApps.instances,
+    enabled: !!selected || !!frozen,
+    retry: false,
+  });
+  const canReceive = installed.data?.instances.some(
+    (instance) =>
+      instance.enabled && instance.grants.includes("mac.selection.receive"),
+  );
   useEffect(() => {
     function source(node: Node | null) {
       const element = node instanceof Element ? node : node?.parentElement;
@@ -37,6 +54,7 @@ export function SelectedTextToApp({
     document.addEventListener("selectionchange", changed);
     return () => document.removeEventListener("selectionchange", changed);
   }, [conversation]);
+  if (!canReceive) return null;
   if (frozen)
     return (
       <Suspense fallback={null}>

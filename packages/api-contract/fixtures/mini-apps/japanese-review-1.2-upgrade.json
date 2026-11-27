@@ -1,0 +1,102 @@
+{
+  "grants": [
+    "records.query",
+    "records.commit",
+    "blobs.import"
+  ],
+  "attachments": [
+    {
+      "name": "lesson.txt",
+      "data": "TG9jYWwgbGVzc29uLg=="
+    }
+  ],
+  "before": [
+    {
+      "action": "review.listDue",
+      "count": 3
+    },
+    {
+      "action": "review.markLearned",
+      "select": [
+        0,
+        1,
+        2
+      ],
+      "count": 3
+    },
+    {
+      "action": "review.addQuestions",
+      "inputs": {
+        "question": "A saved question?",
+        "answer": "An existing answer.",
+        "source": "stored-material",
+        "sourceTitle": "Saved lesson"
+      },
+      "count": 1
+    }
+  ],
+  "after": [
+    {
+      "action": "review.listDue",
+      "count": 1,
+      "expect_fields": {
+        "question": "A saved question?",
+        "answer": "An existing answer.",
+        "source": "stored-material",
+        "sourceTitle": "Saved lesson",
+        "misses": 0
+      }
+    },
+    {
+      "action": "review.practiceAgain",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "misses": 1,
+        "mastered": false
+      }
+    },
+    {
+      "action": "review.listDue",
+      "count": 1,
+      "expect_fields": {
+        "misses": 1
+      }
+    },
+    {
+      "action": "review.practiceAgain",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "misses": 2
+      }
+    },
+    {
+      "action": "review.listDue",
+      "count": 0
+    },
+    {
+      "action": "review.listAll",
+      "count": 4
+    },
+    {
+      "action": "review.markLearned",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "misses": 0,
+        "mastered": true
+      }
+    },
+    {
+      "action": "review.listDue",
+      "count": 0
+    }
+  ]
+}

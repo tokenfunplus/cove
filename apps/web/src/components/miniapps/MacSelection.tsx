@@ -12,9 +12,10 @@ export function MacSelection({
   view: string;
   open: (id: string, initial: Record<string, string>) => void;
 }) {
+  const receipt = new URLSearchParams(window.location.search).get("selection") ?? "";
   const pending = useQuery({
-    queryKey: ["mini-app-selection", instance, view],
-    queryFn: () => miniApps.nativeSelection(instance, view),
+    queryKey: ["mini-app-selection", instance, view, receipt],
+    queryFn: () => miniApps.nativeSelection(instance, view, receipt),
     refetchOnWindowFocus: "always",
     staleTime: 0,
   });

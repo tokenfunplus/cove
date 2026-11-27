@@ -29,6 +29,8 @@ test("catalog links and downloads resolve to the bytes in the signed release", a
     process.execPath,
     [
       fileURLToPath(new URL("./build-mini-app-catalog.mjs", import.meta.url)),
+      "--sequence",
+      "42",
       site,
       pem,
       ...files.map((name) => join(source, name)),
@@ -45,6 +47,7 @@ test("catalog links and downloads resolve to the bytes in the signed release", a
   );
   const index = JSON.parse(payload);
   assert.equal(index.format, 2);
+  assert.equal(index.sequence, 42);
   assert(
     index.sequence > 0 &&
       Date.parse(index.expires_at) > Date.parse(index.issued_at),

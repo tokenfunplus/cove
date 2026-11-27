@@ -15,6 +15,7 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
+	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 )
 
 var appSlug = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
@@ -24,7 +25,11 @@ var versionID = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 func appDestination(r *http.Request) string {
 	q := r.URL.Query()
 	if id, err := uuid.Parse(q.Get("instance")); err == nil && viewID.MatchString(q.Get("view")) {
-		return "/apps/" + id.String() + "/" + q.Get("view")
+		path := "/apps/" + id.String() + "/" + q.Get("view")
+		if selection, err := uuid.Parse(q.Get("selection")); err == nil {
+			path += "?selection=" + selection.String()
+		}
+		return path
 	}
 	if appSlug.MatchString(q.Get("publisher")) && appSlug.MatchString(q.Get("app")) {
 		path := "/apps/install/" + q.Get("publisher") + "/" + q.Get("app")
@@ -62,6 +67,8 @@ func (s *Server) miniAppRoutes(mux *http.ServeMux, session func(http.Handler) ht
 	mux.HandleFunc("GET /apps", s.shell)
 	mux.HandleFunc("GET /apps/{path...}", s.shell)
 	register("GET", "/packages", s.appPackages)
+	register("DELETE", "/packages/{release}", s.appDeleteRelease)
+	register("GET", "/activity", s.appGlobalActivity)
 	register("POST", "/packages/preview", s.appPackages)
 	register("POST", "/packages/install", s.appPackages)
 	register("GET", "/instances", s.appInstances)
@@ -71,6 +78,7 @@ func (s *Server) miniAppRoutes(mux *http.ServeMux, session func(http.Handler) ht
 	register("POST", "/instances/{id}/settings", s.appInstance)
 	register("POST", "/instances/{id}/upgrade", s.appInstance)
 	register("POST", "/instances/{id}/actions/{action}", s.appInvoke)
+	register("POST", "/instances/{id}/candidates/check", s.appCandidateCheck)
 	register("GET", "/catalog-settings", s.appCatalogSettings)
 	register("PUT", "/catalog-settings", s.appCatalogSettings)
 	register("GET", "/catalog", s.appCatalog)
@@ -132,6 +140,8 @@ func appReply(w http.ResponseWriter, value any, err error) {
 		writeError(w, 400, "validation", err.Error())
 	case errors.Is(err, miniapps.ErrReleaseContents):
 		writeError(w, 409, "release_conflict", "A package with this version already has different contents. Publish a new version.")
+	case errors.Is(err, miniapps.ErrPreviewExpired):
+		writeError(w, 409, "preview_expired", "This change preview has expired. Preview the changes again.")
 	case errors.Is(err, miniapps.ErrDenied):
 		writeError(w, 403, "permission_denied", "This operation is unavailable for the instance and its current permissions.")
 	case errors.Is(err, miniapps.ErrConflict), errors.Is(err, chat.ErrAppTaskConflict):
@@ -240,12 +250,30 @@ func (s *Server) appInvoke(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) appCatalogSettings(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "PUT" {
-		var config appcatalog.Catalog
-		if !appInput(w, r, &config) {
+		var input struct {
+			appcatalog.Catalog
+			ConfirmTrust bool                `json:"confirm_trust"`
+			Previous     *appcatalog.Catalog `json:"previous,omitempty"`
+		}
+		if !appInput(w, r, &input) {
 			return
 		}
-		if err := s.catalog.Configure(config); err != nil {
-			writeError(w, 400, "invalid_catalog", "Check the HTTPS URL and signing key. Once a signed catalog has been used, its signing key must match.")
+		var err error
+		if input.ConfirmTrust && input.Previous != nil {
+			err = s.catalog.ReplaceTrust(input.Catalog, *input.Previous)
+		} else {
+			err = s.catalog.Configure(input.Catalog)
+		}
+		if errors.Is(err, appcatalog.ErrTrustConfirmation) {
+			writeError(w, 409, "catalog_confirmation_required", "Review and confirm the new catalog signing authority.")
+			return
+		}
+		if errors.Is(err, appcatalog.ErrCatalogChanged) {
+			writeError(w, 409, "catalog_changed", "Catalog settings changed. Reload them before confirming a new authority.")
+			return
+		}
+		if err != nil {
+			writeError(w, 400, "invalid_catalog", "Check the HTTPS URL and signing key. Cove could not save these catalog settings.")
 			return
 		}
 	}
@@ -339,4 +367,23 @@ func (s *Server) appSelection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, in)
+}
+
+func (s *Server) appDeleteRelease(w http.ResponseWriter, r *http.Request) {
+	s.apps.InstanceChanges.Lock()
+	defer s.apps.InstanceChanges.Unlock()
+	err := s.apps.RemoveRelease(r.Context(), r.PathValue("release"))
+	if errors.Is(err, persistence.ErrAppReleaseInUse) {
+		writeError(w, 409, "release_in_use", "An instance still uses this release. Keep it installed to preserve its data.")
+		return
+	}
+	appReply(w, struct{}{}, err)
+}
+func (s *Server) appGlobalActivity(w http.ResponseWriter, r *http.Request) {
+	if s.appStore == nil {
+		writeError(w, 503, "unavailable", "Local activity is unavailable.")
+		return
+	}
+	items, err := s.appStore.GlobalAppActivity(r.Context(), r.URL.Query().Get("instance"))
+	appReply(w, map[string]any{"activity": items}, err)
 }

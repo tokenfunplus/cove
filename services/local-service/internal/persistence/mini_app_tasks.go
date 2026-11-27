@@ -53,21 +53,88 @@ func (s *SQLiteStore) appTask(ctx context.Context, instance, id string, generati
 }
 
 func (s *SQLiteStore) BeginAppTask(ctx context.Context, instance, id, fingerprint, frozen string) error {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO mini_app_tasks(instance_id,id,fingerprint,request,state,created_at) VALUES(?,?,?,?,'running',unixepoch())", instance, id, fingerprint, frozen)
-	return err
+	return s.MiniAppTransaction(ctx, func(tx *MiniAppStore) error {
+		if _, err := tx.tx.ExecContext(ctx, "INSERT INTO mini_app_tasks(instance_id,id,fingerprint,request,state,created_at) VALUES(?,?,?,?,'running',unixepoch())", instance, id, fingerprint, frozen); err != nil {
+			return err
+		}
+		return tx.recordAppTaskActivity(instance, id, "running")
+	})
 }
 
 func (s *SQLiteStore) FinishAppTask(ctx context.Context, instance, id, state, result, detail string) error {
-	_, err := s.db.ExecContext(ctx, "UPDATE mini_app_tasks SET state=?,result=?,detail=? WHERE instance_id=? AND id=? AND state='running'", state, result, detail, instance, id)
-	if err == nil {
-		_, err = s.db.ExecContext(ctx, compactTasks, instance)
+	return s.MiniAppTransaction(ctx, func(tx *MiniAppStore) error {
+		res, err := tx.tx.ExecContext(ctx, "UPDATE mini_app_tasks SET state=?,result=?,detail=? WHERE instance_id=? AND id=? AND state='running'", state, result, detail, instance, id)
+		if err != nil {
+			return err
+		}
+		count, err := res.RowsAffected()
+		if err != nil || count == 0 {
+			return err
+		}
+		// Capture the frozen action before retention may discard the task request.
+		if err := tx.recordAppTaskActivity(instance, id, state); err != nil {
+			return err
+		}
+		_, err = tx.tx.ExecContext(ctx, compactTasks, instance)
+		return err
+	})
+}
+
+func (tx *MiniAppStore) recordAppTaskActivity(instance, id, status string) error {
+	var request, release string
+	if err := tx.tx.QueryRowContext(tx.ctx, "SELECT t.request,i.release_id FROM mini_app_tasks t JOIN mini_app_instances i ON i.id=t.instance_id WHERE t.instance_id=? AND t.id=?", instance, id).Scan(&request, &release); err != nil {
+		return err
 	}
-	return err
+	var saved struct {
+		Release string
+		Target  struct{ Action, Surface string }
+	}
+	_ = json.Unmarshal([]byte(request), &saved)
+	if saved.Release != "" {
+		release = saved.Release
+	}
+	action := saved.Target.Action
+	if action == "" {
+		action = "ai.propose"
+	}
+	surface := saved.Target.Surface
+	if surface == "" {
+		surface = "page"
+	}
+	return tx.RecordActivity(instance, id, release, action, surface, status)
 }
 
 func (s *SQLiteStore) RecoverAppTasks(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, "UPDATE mini_app_tasks SET state='failed',detail='Cove stopped before the task completed.' WHERE state='running'")
-	return err
+	return s.MiniAppTransaction(ctx, func(tx *MiniAppStore) error {
+		rows, err := tx.tx.QueryContext(ctx, "SELECT instance_id,id FROM mini_app_tasks WHERE state='running'")
+		if err != nil {
+			return err
+		}
+		type interruptedTask struct{ instance, id string }
+		var interrupted []interruptedTask
+		for rows.Next() {
+			var task interruptedTask
+			if err := rows.Scan(&task.instance, &task.id); err != nil {
+				rows.Close()
+				return err
+			}
+			interrupted = append(interrupted, task)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.tx.ExecContext(ctx, "UPDATE mini_app_tasks SET state='failed',detail='Cove stopped before the task completed.' WHERE state='running'"); err != nil {
+			return err
+		}
+		for _, task := range interrupted {
+			if err := tx.recordAppTaskActivity(task.instance, task.id, "failed"); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *SQLiteStore) FindAppTask(ctx context.Context, instance, id string) (AppTask, bool, error) {
@@ -105,26 +172,36 @@ func (s *SQLiteStore) BeginBrowserAppTask(ctx context.Context, instance, id, fin
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, "INSERT INTO mini_app_tasks(instance_id,id,fingerprint,request,state,snapshot,created_at) VALUES(?,?,?,?,'running',?,unixepoch())", instance, id, fingerprint, frozen, string(data))
-	return err
+	return s.MiniAppTransaction(ctx, func(tx *MiniAppStore) error {
+		if _, err := tx.tx.ExecContext(ctx, "INSERT INTO mini_app_tasks(instance_id,id,fingerprint,request,state,snapshot,created_at) VALUES(?,?,?,?,'running',?,unixepoch())", instance, id, fingerprint, frozen, string(data)); err != nil {
+			return err
+		}
+		return tx.recordAppTaskActivity(instance, id, "running")
+	})
 }
 func (s *SQLiteStore) FinishBrowserAppTask(ctx context.Context, instance, id, state, body, detail string, v GenerationVerification, receipt string) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, "UPDATE mini_app_tasks SET state=?,result=?,detail=?,verification=?,request=json_set(request,'$.BrowserSettlement',?) WHERE instance_id=? AND id=? AND state='running'", state, body, detail, string(data), receipt, instance, id)
-	if err != nil {
+	return s.MiniAppTransaction(ctx, func(tx *MiniAppStore) error {
+		res, err := tx.tx.ExecContext(ctx, "UPDATE mini_app_tasks SET state=?,result=?,detail=?,verification=?,request=json_set(request,'$.BrowserSettlement',?) WHERE instance_id=? AND id=? AND state='running'", state, body, detail, string(data), receipt, instance, id)
+		if err != nil {
+			return err
+		}
+		count, err := res.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return sql.ErrNoRows
+		}
+		if err := tx.recordAppTaskActivity(instance, id, state); err != nil {
+			return err
+		}
+		_, err = tx.tx.ExecContext(ctx, compactTasks, instance)
 		return err
-	}
-	count, err := res.RowsAffected()
-	if err == nil && count == 0 {
-		return sql.ErrNoRows
-	}
-	if err == nil {
-		_, err = s.db.ExecContext(ctx, compactTasks, instance)
-	}
-	return err
+	})
 }
 
 // A delivery retry succeeds only for the identical settlement from the same browser claim.

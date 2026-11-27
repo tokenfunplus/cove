@@ -4,9 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import type { MiniAppFields, MiniAppTurnScope } from "@cove/api-contract";
 import { miniApps, appKeys } from "@/api/mini-apps";
 import { AppView } from "@/components/miniapps/AppWorkspace";
+import { AssistantMessage } from "./AssistantMessage";
 import { ErrorMessage, OpenApp } from "@/components/miniapps/presentation";
 
 interface Props {
+  generationId: string;
+  reasoning?: string;
   verifiedGeneration?: string;
   verification?: string;
   scope: MiniAppTurnScope;
@@ -18,6 +21,8 @@ interface Props {
 }
 
 export default function AppTurnAnswer({
+  generationId,
+  reasoning,
   verifiedGeneration,
   verification,
   scope,
@@ -27,9 +32,26 @@ export default function AppTurnAnswer({
   localRequired,
   disabled,
 }: Props) {
+  let candidate: { action?: string; inputs?: MiniAppFields } | undefined;
+  try {
+    const parsed: unknown = JSON.parse(
+      body
+        .trim()
+        .replace(/^(?:Suggestion:|Suggested:|Proposed action:)\s*/, "")
+        .replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, "$1"),
+    );
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "action" in parsed
+    )
+      candidate = parsed as { action?: string; inputs?: MiniAppFields };
+  } catch {}
+  const ordinary = !candidate;
   const item = useQuery({
     queryKey: appKeys.instance(scope.instance),
     queryFn: () => miniApps.get(scope.instance),
+    enabled: !ordinary,
     retry: false,
   });
   const verified = useQuery({
@@ -41,6 +63,7 @@ export default function AppTurnAnswer({
       scope.revision,
     ],
     enabled:
+      !ordinary &&
       !!verifiedGeneration &&
       (verification === "verified_model" ||
         verification === "verified_gateway"),
@@ -64,6 +87,8 @@ export default function AppTurnAnswer({
       throw new Error("This conversation is unavailable.");
     t.change(t.draft ? t.draft + "\n\n" + text : text);
   }
+  if (ordinary)
+    return <AssistantMessage content={body} reasoning={reasoning} />;
   if (!item.data)
     return item.error ? (
       <ErrorMessage error={item.error} />
@@ -139,7 +164,11 @@ export default function AppTurnAnswer({
           draft={draft}
           localRequired={localRequired}
           attach={attach}
-          proposal={{ ...proposal, actions: scope.actions }}
+          proposal={{
+            ...proposal,
+            actions: scope.actions,
+            origin: generationId,
+          }}
         />
       </fieldset>
     </section>

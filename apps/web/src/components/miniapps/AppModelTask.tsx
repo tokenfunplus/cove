@@ -83,8 +83,13 @@ export function AppModelTask({
   previewCandidates: (rows: MiniAppFields[]) => void;
   choose: (row: MiniAppFields) => void;
 }) {
-  const target = useAppModelTarget(localRequired, true);
+  const target = useAppModelTarget(
+    localRequired,
+    true,
+    instance.cloud_enabled === true,
+  );
   const [browserError, setBrowserError] = useState<unknown>();
+  const cancelledBrowserTask = useRef<string | undefined>(undefined);
   const { profile, model, policyLocal, profiles, catalog } = target;
   const [started, setStarted] = useState<AppTask>();
   const [submitted, setSubmitted] = useState<{
@@ -96,6 +101,10 @@ export function AppModelTask({
   const history = useQuery({
     queryKey: ["mini-app-tasks", instance.id],
     queryFn: () => miniApps.tasks(instance.id),
+    refetchInterval: (query) =>
+      query.state.data?.tasks.some((task) => task.state === "running")
+        ? 1000
+        : false,
     retry: false,
   });
   const previous = (history.data?.tasks ?? []).filter(
@@ -106,6 +115,8 @@ export function AppModelTask({
   const { poll, task } = useAppTaskStatus(instance.id, recent, "generation");
   const active = task?.state === "running";
   useEffect(() => {
+    if (task?.state === "cancelled") cancelledBrowserTask.current = task.id;
+    if (task && task.state !== "running") void history.refetch();
     if (task && task.state !== "running")
       stopVerifiedAppTask(instance.id, task.id);
   }, [instance.id, task?.id, task?.state]);
@@ -135,7 +146,13 @@ export function AppModelTask({
       });
       retryKey.current = undefined;
       if (job.browser && job.state === "running") {
-        void startVerifiedAppTask(instance.id, job.id).catch(setBrowserError);
+        void startVerifiedAppTask(instance.id, job.id).catch((error) => {
+          if (
+            cancelledBrowserTask.current !== job.id &&
+            !(error instanceof DOMException && error.name === "AbortError")
+          )
+            setBrowserError(error);
+        });
       }
       setSubmitted({ ...data, id: job.id });
       return job;
@@ -149,15 +166,18 @@ export function AppModelTask({
     retry: false,
     mutationFn: async () => {
       const cancelled = await miniApps.cancel(instance.id, task!.id);
+      cancelledBrowserTask.current = task!.id;
       stopVerifiedAppTask(instance.id, task!.id);
       return cancelled;
     },
     onSuccess: () => {
+      setBrowserError(undefined);
       void poll.refetch();
     },
   });
   const source =
-    task?.inputs ?? (submitted?.id === task?.id ? submitted?.inputs : undefined);
+    task?.inputs ??
+    (submitted?.id === task?.id ? submitted?.inputs : undefined);
   const inputReady = !!source;
   const bindings = action.candidate_bindings ?? {};
   const generated = candidate && {
@@ -186,6 +206,26 @@ export function AppModelTask({
       ]),
     ),
   }));
+  const checkingDuplicates =
+    !!candidate &&
+    instance.grants.includes("records.query") &&
+    results.length > 0 &&
+    task?.state === "completed";
+  const duplicates = useQuery({
+    queryKey: [
+      "mini-app-records",
+      instance.id,
+      "candidate-duplicates",
+      instance.revision,
+      task?.id,
+      results,
+    ],
+    enabled: checkingDuplicates,
+    retry: false,
+    refetchOnWindowFocus: "always",
+    queryFn: () =>
+      miniApps.checkCandidates(instance, actionId, surface, results),
+  });
   return (
     <section
       className="space-y-3 border-t border-border pt-4"
@@ -302,6 +342,16 @@ export function AppModelTask({
             </details>
           )}
           {task.error && <ErrorMessage error={task.error} />}
+          <ErrorMessage error={duplicates.error} />
+          {duplicates.isError && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void duplicates.refetch()}
+            >
+              Retry duplicate check
+            </Button>
+          )}
           {task.state === "completed" && !inputReady && (
             <p role="status">
               Loading the saved task input before using candidates…
@@ -313,6 +363,8 @@ export function AppModelTask({
               <CandidateSelection
                 key={task.id}
                 rows={results}
+                duplicates={duplicates.data?.duplicates ?? []}
+                checking={checkingDuplicates && !duplicates.isSuccess}
                 choose={choose}
                 canSave={instance.grants.includes("records.commit")}
                 preview={previewCandidates}
@@ -339,15 +391,31 @@ function CandidateSelection({
   choose,
   preview,
   canSave,
+  duplicates,
+  checking,
 }: {
+  duplicates: number[];
+  checking: boolean;
   rows: MiniAppFields[];
   choose: (row: MiniAppFields) => void;
   preview: (rows: MiniAppFields[]) => void;
   canSave: boolean;
 }) {
   const [selection, setSelection] = useState<number[]>([]);
+  const selected = selection.filter((index) => !duplicates.includes(index));
   return (
     <div className="space-y-2">
+      {checking && <p role="status">Checking for saved records…</p>}
+      {duplicates.length > 0 && (
+        <p role="status">
+          {duplicates.length}{" "}
+          {duplicates.length === 1 ? "candidate is" : "candidates are"} already
+          saved or repeated in this result.
+        </p>
+      )}
+      <p className="text-sm text-muted-foreground">
+        Select up to 50 candidates for one save.
+      </p>
       {rows.map((row, index) => (
         <div
           key={index}
@@ -356,13 +424,18 @@ function CandidateSelection({
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              checked={selection.includes(index)}
-              disabled={!canSave}
+              checked={selected.includes(index)}
+              disabled={
+                !canSave ||
+                checking ||
+                duplicates.includes(index) ||
+                (!selected.includes(index) && selected.length >= 50)
+              }
               onChange={(e) =>
                 setSelection(
                   e.target.checked
-                    ? [...selection, index]
-                    : selection.filter((n) => n !== index),
+                    ? [...selected, index]
+                    : selected.filter((n) => n !== index),
                 )
               }
             />
@@ -372,7 +445,7 @@ function CandidateSelection({
           <Button
             size="sm"
             variant="outline"
-            disabled={!canSave}
+            disabled={!canSave || checking || duplicates.includes(index)}
             onClick={() => choose(row)}
           >
             Use candidate {index + 1}
@@ -380,12 +453,12 @@ function CandidateSelection({
         </div>
       ))}
       <Button
-        disabled={!canSave || selection.length === 0 || selection.length > 50}
+        disabled={!canSave || checking || selected.length === 0}
         onClick={() =>
-          preview(rows.filter((_, index) => selection.includes(index)))
+          preview(rows.filter((_, index) => selected.includes(index)))
         }
       >
-        Preview selected ({selection.length})
+        Preview selected ({selected.length})
       </Button>
     </div>
   );

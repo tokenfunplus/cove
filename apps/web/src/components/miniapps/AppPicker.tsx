@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,9 +11,17 @@ import { AppWorkspace, type AppContext } from "./AppWorkspace";
 
 export default function AppPicker({
   close,
+  initialInstance,
+  introduction,
   ...context
-}: AppContext & { close: () => void }) {
-  const [location, setLocation] = useState<{ id: string; view?: string }>();
+}: AppContext & {
+  close: () => void;
+  initialInstance?: string;
+  introduction?: ReactNode;
+}) {
+  const [location, setLocation] = useState<
+    { id: string; view?: string } | undefined
+  >(() => (initialInstance ? { id: initialInstance } : undefined));
   const open = useCallback(
     (id: string, view?: string) => setLocation({ id, view }),
     [],
@@ -32,6 +40,7 @@ export default function AppPicker({
             Done
           </Button>
         </div>
+        {introduction}
         {location ? (
           <AppWorkspace
             key={location.id}

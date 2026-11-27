@@ -14,10 +14,21 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const [output, pem, ...files] = process.argv.slice(2);
-if (!output || !pem || !files.length || files.length > 128) {
+const args = process.argv.slice(2);
+const sequenceFlag = args.indexOf("--sequence");
+const sequence = sequenceFlag < 0 ? NaN : Number(args[sequenceFlag + 1]);
+if (sequenceFlag >= 0) args.splice(sequenceFlag, 2);
+const [output, pem, ...files] = args;
+if (
+  !output ||
+  !pem ||
+  !files.length ||
+  files.length > 128 ||
+  !Number.isSafeInteger(sequence) ||
+  sequence < 1
+) {
   throw new Error(
-    "Usage: node scripts/build-mini-app-catalog.mjs NEW_DIRECTORY ED25519_PRIVATE_PEM APP.coveapp [...]",
+    "Usage: node scripts/build-mini-app-catalog.mjs --sequence POSITIVE_INTEGER NEW_DIRECTORY ED25519_PRIVATE_PEM APP.coveapp [...]",
   );
 }
 const destination = resolve(output);
@@ -73,7 +84,7 @@ const issued = Date.now();
 const payload = Buffer.from(
   JSON.stringify({
     format: 2,
-    sequence: issued,
+    sequence,
     issued_at: new Date(issued).toISOString(),
     expires_at: new Date(issued + 30 * 86400000).toISOString(),
     packages,

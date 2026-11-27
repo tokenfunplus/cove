@@ -9,6 +9,7 @@ import type {
   MiniAppSurface,
   MiniAppRecord,
 } from "@cove/api-contract";
+import { proposalOperationId } from "@/lib/mini-app-proposal";
 import { miniApps } from "@/api/mini-apps";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,7 @@ import { AppProcessing } from "./AppProcessing";
 import { AppFileInput } from "./AppFileInput";
 
 interface Props {
+  proposalKey?: string;
   instance: MiniAppInstance;
   pkg: MiniAppPackage;
   actionId: string;
@@ -71,6 +73,7 @@ function defaults(
   );
 }
 export function AppActionForm({
+  proposalKey,
   instance,
   pkg,
   actionId,
@@ -86,7 +89,8 @@ export function AppActionForm({
   candidate,
 }: Props) {
   const action = pkg.actions[actionId];
-  const [inputs, setInputs] = useState(() => defaults(action, initial));
+  const [initialInputs] = useState(() => defaults(action, initial));
+  const [inputs, setInputs] = useState(initialInputs);
   const [preview, setPreview] = useState<{
     command: MiniAppInvocation;
     rows: MiniAppRecord[];
@@ -94,6 +98,18 @@ export function AppActionForm({
   const call = useMutation({
     retry: false,
     mutationFn: async (command: MiniAppInvocation) => {
+      if (proposalKey && !command.confirm) {
+        command = {
+          ...command,
+          operation_id: await proposalOperationId(
+            proposalKey,
+            instance.id,
+            instance.release_id,
+            initialInputs,
+            command,
+          ),
+        };
+      }
       const result = await miniApps.invoke(instance.id, {
         ...command,
         expected_instance_revision: instance.revision,
@@ -328,7 +344,22 @@ export function AppActionForm({
           )}
         </>
       )}
-      <ErrorMessage error={selection.error ?? call.error} />
+      {proposalKey && (
+        <p className="text-sm text-muted-foreground">
+          This conversation proposal can be applied once. Changing its values
+          creates a separate reviewed request.
+        </p>
+      )}
+      <ErrorMessage
+        error={
+          selection.error ??
+          (proposalKey &&
+          (call.error as { envelope?: { error?: { code?: string } } })?.envelope
+            ?.error?.code === "conflict"
+            ? "This proposal has already been reviewed, or its target changed. Open the app to check its saved records."
+            : call.error)
+        }
+      />
     </section>
   );
 }

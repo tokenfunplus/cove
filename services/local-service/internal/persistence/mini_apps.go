@@ -58,6 +58,7 @@ type AppRelease struct {
 	Manifest           []byte
 }
 type AppInstance struct {
+	CloudEnabled        bool
 	ID, ReleaseID, Name string
 	Revision            int64
 	Enabled             bool
@@ -100,12 +101,12 @@ func (s *MiniAppStore) AddRelease(r AppRelease) error {
 	return err
 }
 func (s *MiniAppStore) Instance(id string) (i AppInstance, err error) {
-	err = s.tx.QueryRowContext(s.ctx, "SELECT id,release_id,name,revision,enabled,grants FROM mini_app_instances WHERE id=?", id).Scan(&i.ID, &i.ReleaseID, &i.Name, &i.Revision, &i.Enabled, &i.Grants)
+	err = s.tx.QueryRowContext(s.ctx, "SELECT id,release_id,name,revision,enabled,grants,cloud_enabled FROM mini_app_instances WHERE id=?", id).Scan(&i.ID, &i.ReleaseID, &i.Name, &i.Revision, &i.Enabled, &i.Grants, &i.CloudEnabled)
 	return
 }
 func (s *MiniAppStore) SaveInstance(i AppInstance) error {
-	_, err := s.tx.ExecContext(s.ctx, `INSERT INTO mini_app_instances(id,release_id,name,revision,enabled,grants) VALUES(?,?,?,?,?,?)
-	ON CONFLICT(id) DO UPDATE SET release_id=excluded.release_id,revision=excluded.revision,enabled=excluded.enabled,grants=excluded.grants`, i.ID, i.ReleaseID, i.Name, i.Revision, i.Enabled, i.Grants)
+	_, err := s.tx.ExecContext(s.ctx, `INSERT INTO mini_app_instances(id,release_id,name,revision,enabled,grants,cloud_enabled) VALUES(?,?,?,?,?,?,?)
+	ON CONFLICT(id) DO UPDATE SET release_id=excluded.release_id,revision=excluded.revision,enabled=excluded.enabled,grants=excluded.grants,cloud_enabled=excluded.cloud_enabled`, i.ID, i.ReleaseID, i.Name, i.Revision, i.Enabled, i.Grants, i.CloudEnabled)
 	return err
 }
 func (s *MiniAppStore) DeleteInstance(id string) error {
@@ -221,3 +222,17 @@ func (s *MiniAppStore) DeleteRecords(instance, collection string, ids []string) 
        WHERE json_extract(r.value,'$.id') IN (SELECT value FROM json_each(?)))`, instance, string(raw))
 	return err
 }
+
+func (s *MiniAppStore) DeleteUnusedAppRelease(id string) error {
+	result, err := s.tx.ExecContext(s.ctx, "DELETE FROM mini_app_releases WHERE id=? AND NOT EXISTS(SELECT 1 FROM mini_app_instances WHERE release_id=?)", id, id)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err == nil && count == 0 {
+		return ErrAppReleaseInUse
+	}
+	return err
+}
+
+var ErrAppReleaseInUse = errors.New("the release is used by an existing instance")

@@ -18,15 +18,16 @@ import (
 )
 
 var (
-	ErrInvalid  = errors.New("invalid mini app request")
-	ErrDenied   = errors.New("mini app capability denied")
-	ErrConflict = errors.New("mini app state changed")
-	ErrNotFound = errors.New("mini app not found")
-	slug        = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
-	key         = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,47}$`)
-	actionID    = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.]{0,79}$`)
-	semver      = regexp.MustCompile(`^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$`)
-	dayOffset   = regexp.MustCompile(`^\$today([+-][0-9]{1,4})?$`)
+	ErrInvalid        = errors.New("invalid mini app request")
+	ErrDenied         = errors.New("mini app capability denied")
+	ErrConflict       = errors.New("mini app state changed")
+	ErrNotFound       = errors.New("mini app not found")
+	ErrPreviewExpired = errors.New("mini app change preview expired")
+	slug              = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
+	key               = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_]{0,47}$`)
+	actionID          = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_.]{0,79}$`)
+	semver            = regexp.MustCompile(`^(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$`)
+	dayOffset         = regexp.MustCompile(`^\$today([+-][0-9]{1,4})?$`)
 )
 
 const MaxPackageBytes = 1 << 20

@@ -46,14 +46,17 @@ export async function runMiniAppTurn({
     await until("!!(" + expr + ")");
     await evaluate("(" + expr + ").click()");
   }
-  await click('button[aria-label="Tools"]');
-  await button("Mini Apps");
-  await until(
-    'Array.from(document.querySelectorAll("[role=dialog] button strong")).some(e=>e.textContent==="Turn reading list")',
-  );
-  await evaluate(
-    'Array.from(document.querySelectorAll("[role=dialog] button strong")).find(e=>e.textContent==="Turn reading list").closest("button").click()',
-  );
+  const beforeDiscovery = requests.length;
+  await fill("#generation-input", "Which apps can I use in this chat?");
+  await click('button[aria-label="Send message"]');
+  await until('!!document.querySelector("[role=dialog]")');
+  assert.equal(requests.length, beforeDiscovery, "Discovering installed apps stays local");
+  await until('document.body.textContent.includes("Turn reading list")');
+  await button("Done", "[role=dialog]");
+  await fill("#generation-input", "Show records from Turn reading list");
+  await click('button[aria-label="Send message"]');
+  await until('!!document.querySelector("[role=dialog]")');
+  assert.equal(requests.length, beforeDiscovery, "Mentioning an instance requires explicit action selection");
   await until(
     'Array.from(document.querySelectorAll("summary")).some(e=>e.textContent==="Use app actions in my next message")',
   );

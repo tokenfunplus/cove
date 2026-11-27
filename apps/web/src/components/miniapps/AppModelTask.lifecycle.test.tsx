@@ -196,3 +196,158 @@ test("historical candidates wait for their frozen inputs before saving", async (
     source: "material-id",
   });
 });
+
+test("saved candidate checks disable duplicate rows before another save", async () => {
+  const job: AppTask = {
+    ...running,
+    state: "completed",
+    result: '[{"question":"One","answer":"A"},{"question":"Two","answer":"B"}]',
+  };
+  vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [job] });
+  vi.spyOn(miniApps, "task").mockResolvedValue({
+    ...job,
+    inputs: { passage: "Saved input" },
+  });
+  const check = vi
+    .spyOn(miniApps, "checkCandidates")
+    .mockResolvedValue({ duplicates: [1] });
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        })
+      }
+    >
+      <AppModelTask
+        instance={{
+          id: "book",
+          name: "Book",
+          release_id: "r",
+          enabled: true,
+          revision: 1,
+          grants: ["records.query", "records.commit"],
+        }}
+        actionId="study"
+        action={{
+          title: "Create cards",
+          op: "generate",
+          inputs: { passage: "text" },
+          surfaces: ["page"],
+        }}
+        inputs={{ passage: "Current text" }}
+        surface="page"
+        localRequired={false}
+        candidate={{
+          title: "Save",
+          op: "create",
+          inputs: { question: "text", answer: "text" },
+          surfaces: ["page"],
+        }}
+        previewCandidates={vi.fn()}
+        choose={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+  fireEvent.change(await screen.findByLabelText("Recent tasks"), {
+    target: { value: "task" },
+  });
+  await waitFor(() => expect(check).toHaveBeenCalled());
+  await screen.findByText(
+    "1 candidate is already saved or repeated in this result.",
+  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Use candidate 1",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Use candidate 2",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    (screen.getByLabelText("Select candidate 2") as HTMLInputElement).disabled,
+  ).toBe(true);
+  expect(
+    screen.getByText("Select up to 50 candidates for one save."),
+  ).toBeDefined();
+});
+
+test("a candidate save can select fifty rows and explains the limit", async () => {
+  const rows = Array.from({ length: 51 }, (_, index) => ({
+    question: "Question " + index,
+    answer: "Answer " + index,
+  }));
+  const job: AppTask = {
+    ...running,
+    state: "completed",
+    result: JSON.stringify(rows),
+  };
+  vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [job] });
+  vi.spyOn(miniApps, "task").mockResolvedValue({
+    ...job,
+    inputs: { passage: "Saved input" },
+  });
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        })
+      }
+    >
+      <AppModelTask
+        instance={{
+          id: "book",
+          name: "Book",
+          release_id: "r",
+          enabled: true,
+          revision: 1,
+          grants: ["records.commit"],
+        }}
+        actionId="study"
+        action={{
+          title: "Create cards",
+          op: "generate",
+          inputs: { passage: "text" },
+          surfaces: ["page"],
+        }}
+        inputs={{ passage: "Current text" }}
+        surface="page"
+        localRequired={false}
+        candidate={{
+          title: "Save",
+          op: "create",
+          inputs: { question: "text", answer: "text" },
+          surfaces: ["page"],
+        }}
+        previewCandidates={vi.fn()}
+        choose={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+  fireEvent.change(await screen.findByLabelText("Recent tasks"), {
+    target: { value: "task" },
+  });
+  await screen.findByLabelText("Select candidate 51");
+  for (let index = 1; index <= 50; index++)
+    fireEvent.click(screen.getByLabelText("Select candidate " + index));
+  expect(
+    (screen.getByLabelText("Select candidate 51") as HTMLInputElement).disabled,
+  ).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Preview selected (50)",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
+  expect(
+    screen.getByText("Select up to 50 candidates for one save."),
+  ).toBeDefined();
+});

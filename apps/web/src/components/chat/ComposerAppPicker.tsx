@@ -1,7 +1,9 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef, type ReactNode } from "react";
 import AppPicker from "@/components/miniapps/AppPicker";
 
 interface Props {
+  initialInstance?: string;
+  introduction?: ReactNode;
   onScope?: (
     scope: import("@cove/api-contract").MiniAppTurnScope,
     name: string,
@@ -36,6 +38,8 @@ export default function ComposerAppPicker(props: Props) {
   }, []);
   return (
     <AppPicker
+      initialInstance={props.initialInstance}
+      introduction={props.introduction}
       onScope={props.onScope}
       draft={props.selectedText ?? props.draft}
       selectionSource={props.selectedText ? "selection" : undefined}

@@ -60,6 +60,7 @@ import { ArrowRight } from "lucide-react";
 import { useConversationScroll } from "@/hooks/chat/use-conversation-scroll";
 import type { ConversationNavigation } from "@/lib/workspace-types";
 
+const AppWelcomeDiscovery = lazy(() => import("./AppDiscovery"));
 const AppTurnAnswer = lazy(() => import("./AppTurnAnswer"));
 
 export function ConversationPanel({
@@ -116,7 +117,7 @@ export function ConversationPanel({
   onSend?: (scope?: import("@cove/api-contract").MiniAppTurnScope, accepted?:()=>void) => void;
   onCancel?: () => void;
   onRetry?: (batchID: string, targetID: string) => void;
-  onCreateConversation?: () => void;
+  onCreateConversation?: (body?: string) => void;
   onOpenSettings?: () => void;
   onChooseModel?: () => void;
   onEditPrompt?: (
@@ -214,11 +215,12 @@ export function ConversationPanel({
           <p className={baseStyles.eyebrow}>{copy.chatSurface}</p>
           <h2>{copy.noConversationSelected}</h2>
           <p>{copy.emptyConversationHint}</p>
+          {onCreateConversation && !quickPanel && <Suspense fallback={null}><AppWelcomeDiscovery startDraft={onCreateConversation} /></Suspense>}
           {onCreateConversation ? (
             <Button
               variant="default"
               className={primitivesStyles.emptyState_action}
-              onClick={onCreateConversation}
+              onClick={() => onCreateConversation()}
             >
               {copy.startConversation}
             </Button>
@@ -651,6 +653,8 @@ export function ConversationPanel({
                                   <Suspense fallback={<p role="status">Opening app response…</p>}>
                                     <AppTurnAnswer
                                       key={message.id}
+                                      generationId={generationTarget.target.generation.id}
+                                      reasoning={message.reasoning}
                                       verifiedGeneration={generationTarget.target.generation.snapshot.provider_kind==="nearai" ? generationTarget.target.generation.id : undefined}
                                       verification={generationTarget.target.generation.verification?.status}
                                       scope={generationTarget.target.generation.configuration_snapshot.mini_app}

@@ -77,3 +77,25 @@ metadata. The receipt binds the exact response, browser session and claim.
 Delivery retries are idempotent after acceptance and do not repeat inference.
 This adds no host database migration. Record editors bind their target selection
 when opened, and cross-workspace navigation uses Chat's draft confirmation.
+
+## Directory authority and cloud policy
+
+Only a catalog verified by the public key embedded in the Cove release can
+supply updates for bundled publisher identities. A user-selected signing key
+has an independent authority. Changing it requires explicit confirmation bound
+to the previously displayed URL and key, and each key retains its own rollback
+checkpoint. Official key rotation therefore requires a Cove release carrying
+the new default key followed by confirmation for a saved directory configuration.
+This supersedes the initial shared-authority statement above.
+
+SQLite schema 32 adds a per-instance cloud permission with a default of false.
+Existing records, attachments and local generation grants retain their values.
+The setting controls app-owned remote tasks independently of local generation.
+Query invocations no longer write activity rows, preserving room for reviewed
+writes and model-task lifecycle entries. The workspace can inspect activity and
+remove only package releases that have no instance references.
+
+Model-task admission, terminal state, browser settlement receipts and activity
+changes commit in one persistence transaction. Activity failure cannot leave a
+running task without its worker or acknowledge only part of a verified result.
+Restart recovery updates task and activity states together.

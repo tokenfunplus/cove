@@ -126,21 +126,26 @@ private enum MiniAppLauncherAcceptance {
         let file = try await client.call(instance + "/files/" + op)
         try expect(file["text"] as? String == text)
         _ = try await other.call(instance + "/files/" + op, status: 404)
+        var selectedReceipt: UUID?
         if interactive {
             let board = NSPasteboard.withUniqueName()
             defer { board.releaseGlobally() }
             try expect(board.setString(text, forType: .string))
             guard let selection = board.string(forType: .string) else { throw FixtureFailure.mismatch }
             print("In the selection chooser pick a field of the Picker fixture instance.")
-            await chooseMiniAppForSelection(selection, launcher: launcher, service: service)
+            selectedReceipt = await chooseMiniAppForSelection(selection, launcher: launcher, service: service)
         } else {
             let targets = try await service.miniAppSelectionTargets()
             guard let target = (try JSONSerialization.jsonObject(with: targets) as? [[String: Any]])?.first(where: {
                 $0["action"] as? String == "review.suggestQuestions" && $0["field"] as? String == "passage"
             }) else { throw FixtureFailure.mismatch }
-            try await service.stageMiniAppSelection(JSONSerialization.data(withJSONObject: ["target": target, "text": text]))
+            let staged = try await service.stageMiniAppSelection(JSONSerialization.data(withJSONObject: ["target": target, "text": text]))
+            if let raw = (try JSONSerialization.jsonObject(with: staged) as? [String:String])?["id"] { selectedReceipt = UUID(uuidString: raw) }
         }
-        let pendingText = try await client.call(instance + "/native-selection")
+        guard let selectedReceipt else { throw FixtureFailure.mismatch }
+        let selectionPath = instance + "/native-selection?selection=" + selectedReceipt.uuidString.lowercased()
+        let pendingText = try await client.call(selectionPath)
+        _ = try await other.call(selectionPath, status: 403)
         guard let selectionID = pendingText["id"] as? String,
               (pendingText["target"] as? [String: Any])?["instance"] as? String == id else { throw FixtureFailure.mismatch }
         let received = try await client.call(instance + "/native-selection", body: ["id":selectionID])

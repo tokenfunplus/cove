@@ -43,7 +43,7 @@ test("a file import defaults to the existing instance and preserves its grant ch
   expect((screen.getByRole("checkbox", { name: "Request model generation" }) as HTMLInputElement).checked).toBe(false);
   expect(install).not.toHaveBeenCalled();
   await userEvent.setup().click(screen.getByRole("button", { name: "Upgrade instance to 1.1.0" }));
-  await waitFor(() => expect(update).toHaveBeenCalledWith(first, "new", ["records.query"]));
+  await waitFor(() => expect(update).toHaveBeenCalledWith(first, "new", ["records.query"], false));
   expect(create).not.toHaveBeenCalled();
 });
 

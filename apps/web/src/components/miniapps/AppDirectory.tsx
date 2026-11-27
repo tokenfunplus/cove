@@ -19,6 +19,8 @@ import {
   selectStyle,
 } from "./presentation";
 
+import { HostActivity } from "./HostActivity";
+import { PackageEditor } from "./PackageEditor";
 import { CatalogSettings } from "./CatalogSettings";
 
 type Source =
@@ -61,6 +63,19 @@ export function AppDirectory({ open, target }: Props) {
     },
   });
   const [browse, setBrowse] = useState(false);
+  const [search, setSearch] = useState("");
+  const [packageDraft, setPackageDraft] = useState("");
+  const term = search.trim().toLocaleLowerCase();
+  const contains = (...values: (string | undefined)[]) =>
+    !term || values.some((value) => value?.toLocaleLowerCase().includes(term));
+  const [removeId, setRemoveId] = useState("");
+  const remove = useMutation({
+    mutationFn: miniApps.removeRelease,
+    onSuccess: async () => {
+      setRemoveId("");
+      await cache.invalidateQueries({ queryKey: appKeys.releases });
+    },
+  });
 
   const instances = useQuery({
     queryKey: appKeys.instances,
@@ -84,7 +99,10 @@ export function AppDirectory({ open, target }: Props) {
       ),
   );
   const ready = instances.isSuccess && releases.isSuccess;
-  const showCatalog = browse || (ready && books.length === 0);
+  const showCatalog =
+    browse ||
+    new URLSearchParams(window.location.search).get("section") === "catalog" ||
+    (ready && books.length === 0);
   const catalog = useQuery({
     queryKey: appKeys.catalog,
     queryFn: miniApps.catalog,
@@ -141,7 +159,13 @@ export function AppDirectory({ open, target }: Props) {
                 : (preview.source.origin ?? "local");
           return (
             previous &&
-            canUpgrade(previous.package, preview.pkg, previous.origin, origin, previous.legacy_verified)
+            canUpgrade(
+              previous.package,
+              preview.pkg,
+              previous.origin,
+              origin,
+              previous.legacy_verified,
+            )
           );
         })}
         close={() => setPreview(undefined)}
@@ -211,14 +235,31 @@ export function AppDirectory({ open, target }: Props) {
               : "Install a package to create an instance."}
           </p>
         )}
-        {books.map((book) => (
-          <InstanceRow
-            key={book.id}
-            book={book}
-            release={installed.find((r) => r.id === book.release_id)}
-            open={() => open(book.id)}
+        <label className={labelStyle}>
+          Search workspace
+          <Input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Apps, instances or publishers"
           />
-        ))}
+        </label>
+        {books
+          .filter((book) =>
+            contains(
+              book.name,
+              installed.find((release) => release.id === book.release_id)
+                ?.package.name,
+            ),
+          )
+          .map((book) => (
+            <InstanceRow
+              key={book.id}
+              book={book}
+              release={installed.find((r) => r.id === book.release_id)}
+              open={() => open(book.id)}
+            />
+          ))}
       </section>
       <details className={sectionStyle}>
         <summary className="cursor-pointer text-sm font-semibold">
@@ -260,7 +301,7 @@ export function AppDirectory({ open, target }: Props) {
         <ErrorMessage error={restore.error} />
       </details>
       {showCatalog && (
-        <section className={sectionStyle}>
+        <section id="mini-app-catalog" className={sectionStyle}>
           <h2 className="text-lg font-semibold">App catalog</h2>
           <ErrorMessage error={catalog.error} />
           {catalog.data?.warning && <p role="status">{catalog.data.warning}</p>}
@@ -268,35 +309,63 @@ export function AppDirectory({ open, target }: Props) {
           {catalog.isSuccess && entries.length === 0 && (
             <p>No matching release in the catalog.</p>
           )}
-          {entries.map((entry) => (
-            <div
-              key={[entry.publisher, entry.app, entry.version].join("/")}
-              className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3"
-            >
-              <div>
-                <strong>{entry.name}</strong>
-                <p className="text-sm text-muted-foreground">
-                  {entry.publisher} / {entry.app} · {entry.version}
-                </p>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={inspect.isPending}
-                onClick={() => inspect.mutate({ kind: "catalog", entry })}
+          {entries
+            .filter((entry) => contains(entry.name, entry.publisher, entry.app))
+            .map((entry) => (
+              <div
+                key={[entry.publisher, entry.app, entry.version].join("/")}
+                className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3"
               >
-                Preview release
-              </Button>
-            </div>
-          ))}
+                <div>
+                  <strong>{entry.name}</strong>
+                  <p className="text-sm text-muted-foreground">
+                    {entry.publisher} / {entry.app} · {entry.version}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={inspect.isPending}
+                  onClick={() => inspect.mutate({ kind: "catalog", entry })}
+                >
+                  Preview release
+                </Button>
+              </div>
+            ))}
         </section>
       )}
-      <CatalogSettings />
+      {window.location.pathname.startsWith("/apps") && (
+        <>
+          <HostActivity instances={instances.data?.instances ?? []} />
+          <PackageEditor
+            source={packageDraft}
+            onChange={setPackageDraft}
+            examples={entries.filter((entry) => entry.origin === "builtin")}
+            preview={async (raw) => {
+              const release = await miniApps.localPackage(raw, "preview");
+              setPreview({
+                pkg: release.package,
+                source: { kind: "local", raw, origin: release.origin },
+              });
+            }}
+          />
+          <CatalogSettings />
+        </>
+      )}
       {installed.length > 0 && (
         <section className={sectionStyle}>
           <h2 className="text-lg font-semibold">Installed packages</h2>
+          <p className="text-sm">
+            A release can be removed after its instances are removed or
+            upgraded. Export instance data before deleting an instance.
+          </p>
+          <ErrorMessage error={remove.error} />
           {installed
-            .filter((r) => matches(r.package, target))
+            .filter(
+              (r) =>
+                matches(r.package, target) &&
+                contains(r.package.name, r.package.publisher, r.package.app),
+            )
             .map((r) => (
               <div
                 key={r.id}
@@ -321,6 +390,37 @@ export function AppDirectory({ open, target }: Props) {
                   <Plus />
                   New instance
                 </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={
+                    (instances.data?.instances ?? []).some(
+                      (instance) => instance.release_id === r.id,
+                    ) || remove.isPending
+                  }
+                  onClick={() => setRemoveId(r.id)}
+                >
+                  Remove package
+                </Button>
+                {removeId === r.id && (
+                  <span className="flex items-center gap-2 text-sm">
+                    Remove this unused release?
+                    <Button
+                      size="sm"
+                      disabled={remove.isPending}
+                      onClick={() => remove.mutate(r.id)}
+                    >
+                      Confirm package removal
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setRemoveId("")}
+                    >
+                      Cancel
+                    </Button>
+                  </span>
+                )}
               </div>
             ))}
         </section>
@@ -390,6 +490,9 @@ export function PackagePreview({
     () =>
       firstTarget?.grants.filter((cap) => pkg.capabilities.includes(cap)) ?? [],
   );
+  const [cloudEnabled, setCloudEnabled] = useState(
+    firstTarget?.cloud_enabled === true,
+  );
   const submitting = useRef(false);
   const install = useMutation({
     retry: false,
@@ -405,8 +508,8 @@ export function PackagePreview({
       if (upgradeId && !upgrade)
         throw new Error("The instance changed. Review the installation again.");
       return upgrade
-        ? miniApps.upgrade(upgrade, release.id, grants)
-        : miniApps.create(release.id, name.trim(), grants);
+        ? miniApps.upgrade(upgrade, release.id, grants, cloudEnabled)
+        : miniApps.create(release.id, name.trim(), grants, cloudEnabled);
     },
     onSuccess: async (book) => {
       if (book) {
@@ -453,6 +556,10 @@ export function PackagePreview({
               value={upgradeId}
               onChange={(e) => {
                 setUpgrade(e.target.value);
+                setCloudEnabled(
+                  previous.find((i) => i.id === e.target.value)
+                    ?.cloud_enabled === true,
+                );
                 const target = previous.find((i) => i.id === e.target.value);
                 setGrants(
                   target
@@ -495,6 +602,16 @@ export function PackagePreview({
           selected={grants}
           onChange={setGrants}
         />
+        {
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={cloudEnabled}
+              onChange={(event) => setCloudEnabled(event.target.checked)}
+            />
+            Allow this app to send selected input to cloud models
+          </label>
+        }
         <div className="flex flex-wrap gap-2">
           <Button
             disabled={

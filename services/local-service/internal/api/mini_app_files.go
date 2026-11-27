@@ -118,7 +118,7 @@ func (s *Server) nativeAppFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if claim || renew {
 		q.claimed = true
-		q.expires = time.Now().Add(30 * time.Minute)
+		q.expires = time.Now().Add(2 * time.Minute)
 		writeJSON(w, 200, map[string]string{"instance": q.label})
 		return
 	}

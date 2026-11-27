@@ -28,27 +28,31 @@ type Release struct {
 	Package        Package `json:"package"`
 }
 type Instance struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	ReleaseID string   `json:"release_id"`
-	Enabled   bool     `json:"enabled"`
-	Grants    []string `json:"grants"`
-	Revision  int64    `json:"revision"`
+	CloudEnabled bool     `json:"cloud_enabled"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	ReleaseID    string   `json:"release_id"`
+	Enabled      bool     `json:"enabled"`
+	Grants       []string `json:"grants"`
+	Revision     int64    `json:"revision"`
 }
 type CreateRequest struct {
-	ReleaseID string   `json:"release_id"`
-	Name      string   `json:"name"`
-	Grants    []string `json:"grants"`
+	CloudEnabled bool     `json:"cloud_enabled"`
+	ReleaseID    string   `json:"release_id"`
+	Name         string   `json:"name"`
+	Grants       []string `json:"grants"`
 }
 type ConfigRequest struct {
-	Revision int64    `json:"revision"`
-	Enabled  bool     `json:"enabled"`
-	Grants   []string `json:"grants"`
+	CloudEnabled bool     `json:"cloud_enabled"`
+	Revision     int64    `json:"revision"`
+	Enabled      bool     `json:"enabled"`
+	Grants       []string `json:"grants"`
 }
 type UpgradeRequest struct {
-	Revision  int64    `json:"revision"`
-	ReleaseID string   `json:"release_id"`
-	Grants    []string `json:"grants"`
+	CloudEnabled *bool    `json:"cloud_enabled,omitempty"`
+	Revision     int64    `json:"revision"`
+	ReleaseID    string   `json:"release_id"`
+	Grants       []string `json:"grants"`
 }
 
 type Service struct {
@@ -108,7 +112,7 @@ func loadInstance(tx *persistence.MiniAppStore, id string) (i Instance, err erro
 	if err != nil {
 		return i, lookup(err)
 	}
-	i = Instance{ID: row.ID, Name: row.Name, ReleaseID: row.ReleaseID, Enabled: row.Enabled, Revision: row.Revision}
+	i = Instance{CloudEnabled: row.CloudEnabled, ID: row.ID, Name: row.Name, ReleaseID: row.ReleaseID, Enabled: row.Enabled, Revision: row.Revision}
 	err = json.Unmarshal(row.Grants, &i.Grants)
 	return
 }
@@ -120,7 +124,7 @@ func saveInstance(tx *persistence.MiniAppStore, i Instance) error {
 	if err != nil {
 		return err
 	}
-	return tx.SaveInstance(persistence.AppInstance{ID: i.ID, Name: i.Name, ReleaseID: i.ReleaseID, Enabled: i.Enabled, Revision: i.Revision, Grants: grants})
+	return tx.SaveInstance(persistence.AppInstance{CloudEnabled: i.CloudEnabled, ID: i.ID, Name: i.Name, ReleaseID: i.ReleaseID, Enabled: i.Enabled, Revision: i.Revision, Grants: grants})
 }
 
 var ErrReleaseContents = fmt.Errorf("%w: a release with this version already has different contents; publish a new version", ErrConflict)
@@ -199,7 +203,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Instance, erro
 		if !short(req.Name, 100) || !subset(req.Grants, r.Package.Capabilities) {
 			return invalid("instance name or grants")
 		}
-		i = Instance{ID: uuid.NewString(), ReleaseID: r.ID, Name: strings.TrimSpace(req.Name), Enabled: true, Grants: append([]string{}, req.Grants...), Revision: 1}
+		i = Instance{CloudEnabled: req.CloudEnabled, ID: uuid.NewString(), ReleaseID: r.ID, Name: strings.TrimSpace(req.Name), Enabled: true, Grants: append([]string{}, req.Grants...), Revision: 1}
 		if err := saveInstance(tx, i); err != nil {
 			return err
 		}
@@ -239,6 +243,7 @@ func (s *Service) Configure(ctx context.Context, id string, req ConfigRequest) (
 		}
 		i.Revision++
 		i.Enabled = req.Enabled
+		i.CloudEnabled = req.CloudEnabled && req.Enabled
 		i.Grants = append([]string{}, req.Grants...)
 		if !i.Enabled {
 			i.Grants = []string{}
@@ -316,6 +321,10 @@ func (s *Service) Upgrade(ctx context.Context, id string, req UpgradeRequest) (I
 		if size > 16<<20 {
 			return invalid("upgraded instance exceeds storage limit")
 		}
+		if req.CloudEnabled != nil {
+			i.CloudEnabled = *req.CloudEnabled
+		}
+		i.CloudEnabled = i.CloudEnabled && i.Enabled
 		i.ReleaseID = after.ID
 		i.Revision++
 		i.Grants = append([]string{}, req.Grants...)
@@ -385,4 +394,14 @@ func migrate(tx *persistence.MiniAppStore, id string, old, next Package, now tim
 		}
 	}
 	return nil
+}
+
+// RemoveRelease preserves every instance and permits removal only after its users are removed.
+func (s *Service) RemoveRelease(ctx context.Context, id string) error {
+	return s.store.MiniAppTransaction(ctx, func(tx *persistence.MiniAppStore) error {
+		if _, err := loadRelease(tx, id); err != nil {
+			return err
+		}
+		return tx.DeleteUnusedAppRelease(id)
+	})
 }

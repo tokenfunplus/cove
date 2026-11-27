@@ -162,8 +162,8 @@ public final class BundledServiceManager: ServiceManaging, ServiceStatusReading,
         return try await miniAppControl("/internal/control/mini-app-selection/targets", body: nil)
     }
 
-    public func stageMiniAppSelection(_ body: Data) async throws {
-        _ = try await miniAppControl("/internal/control/mini-app-selection/stage", body: body)
+    public func stageMiniAppSelection(_ body: Data) async throws -> Data {
+        return try await miniAppControl("/internal/control/mini-app-selection/stage", body: body)
     }
 
     private func miniAppControl(_ path: String, body: Data?) async throws -> Data {

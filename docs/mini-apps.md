@@ -216,8 +216,9 @@ The package uses the following host contract extensions.
 ## Release an update
 
 Keep the publisher and app ID stable. Personal file imports upgrade through
-local releases. The configured catalog signer can update bundled apps from any
-publisher, including Reading Inbox. Change the release
+local releases. Only the signing authority embedded in the packaged defaults can
+update bundled publishers, including Reading Inbox. A user-configured signing
+authority distributes its own publishers. Change the release
 version when changing a rule, view or label. To add a new field to existing
 records, declare it in the collection, update all applicable create actions
 and seed records, increment `schema_version`, and supply a migration for each
@@ -387,7 +388,7 @@ release retires replies that refer to the earlier revision.
 
 New instances start with all permissions unchecked. The install preview lists compatible existing instances with the installed and incoming versions. A single matching instance is preselected for upgrade. With multiple matches, choose one explicitly. Creating a separate instance starts with independent data. Upgrades retain existing grants and ask for each newly requested capability.
 
-Use **Services → Send to Cove Mini App** in a Mac application to choose an enabled instance, action and field for selected text. The Launcher deposits the selection over its control channel. The receiving page offers a one-use import into that field before the user runs the action. Selections expire after ten minutes; a permission change invalidates them. **Ask Cove** continues to open the Quick Panel. A pending file request expires after two minutes; the Launcher renews its thirty-minute lease while the native picker remains open.
+Use **Services → Send to Cove Mini App** in a Mac application to choose an enabled instance, action and field for selected text. The Launcher deposits the selection over its control channel. The receiving page offers a one-use import into that field before the user runs the action. Selections expire after ten minutes; a permission change invalidates them. **Ask Cove** continues to open the Quick Panel. A pending file request expires after two minutes; the Launcher renews its two-minute lease every thirty seconds while the native picker remains open.
 
 `GET /api/mini-apps/instances/{id}/capabilities` reports the host contract version and a per-capability state of `available`, `setup_required`, `denied` or `unsupported`. Query with `local_only=true` for a managed-model task. This performs local readiness checks without running a model, installing weights or prompting for a file. The actual operation validates its specific target, inputs and grant again.
 
@@ -425,3 +426,56 @@ Use **Copy local app link** on an app page to bookmark its stable
 Queries apply typed filters, ordering and limits in SQLite before decoding
 record data. Writes load only their selected records. Pagination keeps its
 existing revision checks and creation-order tiebreaker.
+
+## Workspace and model permissions
+
+The standalone Mini Apps workspace includes **Search workspace** (Command-K),
+**Host activity**, and **Agent packages**. The package editor loads exact example
+bytes, accepts a personal package file, validates installation, and downloads the
+edited source. Canceling an installation preview preserves its editor text.
+Unused package versions can be removed. A version referenced by an instance
+stays installed until that instance is removed, preserving its data.
+
+Record search matches text within the complete result authorized by the selected
+action, after that action's filters and limit. Searches retain explicit selections
+across pages, and attaching or writing those selections validates them again.
+Candidate duplicate checks compare authored input fields against saved records,
+including archived items, and ignore the host's material bindings. They require
+read permission. Users with independent write permission can still add records
+when read access is off. A batch can contain at most fifty selected candidates.
+
+Every instance has a separate **Allow this app to send selected input to cloud
+models** setting, initially off. Managed models and explicit loopback compatible
+endpoints work with cloud access off. **Only on this Mac** continues to require a
+Cove-managed local chat target. Cloud access applies to app-owned generation and
+model proposal tasks, and is checked again at task admission. Ordinary Chat sends
+continue to use the conversation's selected model and its explicit draft/send
+controls. Restoring a data backup creates a disabled instance with cloud access
+off. Package upgrades preserve the current cloud choice unless explicitly changed.
+
+An App-scoped conversation can answer normally or propose a permitted action.
+**List my app actions**, **Find due questions**, and direct instance-name mentions
+open local discovery before sending. Inventory discovery reads app metadata and
+permissions without calling a model or attaching records. A conversation write
+uses a stable operation identity for its generation, instance and reviewed values.
+Reopening that reply cannot replay the same write. Writes made by earlier host
+versions used random operation IDs, so the host cannot retroactively associate
+them with a generation. Candidate duplicate checks help when reviewing that older
+history.
+
+Change previews expire after fifteen minutes, including across midnight. An
+already accepted write can still acknowledge an identical retry. Services-selected
+text is delivered through a one-use receipt in the launched local browser URL,
+then bound to the receiving Browser Session. The stable app bookmark excludes it.
+
+Declarations using typed defaults, dynamic limits/counts, output schemas, record
+links, selection mappings, practice pages, delete actions or bundled images require
+`min_host_version: "1.1.0"`. Conditional `if`, numeric `add` and `$record` rules
+are available in the original grammar. An upgrade fixture must contain at least
+one before/after step or an attachment to exercise a migration.
+
+Review Book 1.2 is an additional immutable release. Its schema 3 migration adds a
+miss counter to existing cards. The first miss keeps the card due today, the
+second and later misses schedule tomorrow, and marking learned resets the counter
+and schedules next week. These rules live in the package and use the same runtime
+as independent authors' apps.

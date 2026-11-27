@@ -10,10 +10,32 @@ import { AppProposal } from "./AppProposal";
 
 vi.mock("@/api/client", () => ({ request: vi.fn() }));
 vi.mock("@/api/hooks/useProviders", () => ({
-  useProviders: () => ({ data: [{id:"local", name:"Local", kind:"local", endpoint:"http://worker", configured:true}], isSuccess:true }),
+  useProviders: () => ({ data: [
+    {id:"local", name:"Local", kind:"local", endpoint:"http://worker", configured:true},
+    {id:"remote", name:"Cloud", kind:"compatible", endpoint:"https://model.example/v1", configured:true, runtime_location:"remote"},
+    {id:"loopback", name:"Loopback", kind:"compatible", endpoint:"http://127.0.0.1:11434/v1", configured:true, runtime_location:"local"},
+  ], isSuccess:true }),
   providerCatalogQueryOptions: (id:string) => ({queryKey:["models",id], enabled:!!id, queryFn:async()=>({models:["model-1"]})}),
 }));
 afterEach(()=>{cleanup();vi.resetAllMocks();});
+
+test("proposal model choices follow the instance cloud grant while retaining loopback access", async () => {
+  const pkg: MiniAppPackage = {format:1,publisher:"author",app:"notes",name:"Notes",description:"Notes",schema_version:1,version:"1.0.0",capabilities:["records.commit"],collections:{},pages:[],actions:{add:{title:"Add note",op:"create",inputs:{text:"text"},surfaces:["panel"]}}};
+  const client = new QueryClient();
+  const instance = {id:"book",release_id:"r",enabled:true,revision:1,grants:["records.commit"],name:"Notes",cloud_enabled:true};
+  vi.mocked(request).mockResolvedValue(null);
+  const view = (cloudEnabled: boolean) => <QueryClientProvider client={client}><AppProposal instance={{...instance, cloud_enabled:cloudEnabled}} pkg={pkg} actions={["add"]} surface="panel" localRequired={false} choose={vi.fn()}/></QueryClientProvider>;
+  const {rerender} = render(view(true));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button",{name:"Ask a model to propose an action"}));
+  expect(screen.queryByRole("option",{name:"Cloud · remote"})).toBeNull();
+  await user.click(screen.getByLabelText("Only on this Mac"));
+  expect(screen.getByRole("option",{name:"Cloud · remote"})).toBeTruthy();
+  expect(screen.getByRole("option",{name:"Loopback · local"})).toBeTruthy();
+  rerender(view(false));
+  expect(screen.queryByRole("option",{name:"Cloud · remote"})).toBeNull();
+  expect(screen.getByRole("option",{name:"Loopback · local"})).toBeTruthy();
+});
 
 test("sends only chosen action names and opens a suggestion for editing on request",async()=>{
   const pkg:MiniAppPackage={format:1,publisher:"author",app:"notes",name:"Notes",description:"Notes",schema_version:1,version:"1.0.0",capabilities:["records.commit"],collections:{},pages:[],actions:{

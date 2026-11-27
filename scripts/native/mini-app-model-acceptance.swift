@@ -58,12 +58,14 @@ func verifyCloudGeneration(_ client: LocalClient, instance: String, text: String
     let profile = try await client.call("/api/models", body: ["kind":"openai_compatible", "name":"Acceptance cloud",
         "endpoint":endpoint, "auth_method":"bearer", "secret":key],status:201)
     guard let id = profile["id"] as? String, let selected = profile["endpoint"] as? String else { throw FixtureFailure.mismatch }
+    guard let entry = try await client.call(instance)["instance"] as? [String:Any], let revision = entry["revision"] as? Int, let permissions = entry["grants"] as? [String] else { throw FixtureFailure.mismatch }
+    _ = try await client.call(instance + "/settings", body:["revision":revision,"enabled":true,"grants":permissions,"cloud_enabled":true])
     try await exerciseModel(client, instance: instance, text: text, provider: id, model: model, endpoint: selected, localOnly: false)
     guard let old = try await client.call(instance)["instance"] as? [String:Any], let rev = old["revision"] as? Int,
           let grants = old["grants"] as? [String] else { throw FixtureFailure.mismatch }
-    _ = try await client.call(instance + "/settings",body:["revision":rev, "enabled":true, "grants":grants.filter{$0 != "ai.generate"}])
+    _ = try await client.call(instance + "/settings",body:["revision":rev, "enabled":true, "grants":grants,"cloud_enabled":false])
     _ = try await client.call(instance + "/tasks",body:taskInput(text, id, model, selected, false),status:403)
-    print("Cloud generation passed; revoking this instance's grant blocked a new request.")
+    print("Cloud generation passed; revoking only cloud access blocked a new remote request.")
 }
 
 private func taskInput(_ text: String, _ provider: String, _ model: String, _ endpoint: String, _ localOnly: Bool) -> [String:Any] {

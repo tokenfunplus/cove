@@ -10,7 +10,7 @@ func pickMiniAppText(_ id: UUID, service: BundledServiceManager) async {
           let claim = try? JSONDecoder().decode(Claim.self, from: data) else { miniAppNotice("The file request expired. Open the file picker again from the app."); return }
     let panel = NSOpenPanel()
     panel.message = "Choose a UTF-8 text file for " + claim.instance
-    panel.allowedContentTypes = [.plainText]
+    panel.allowedContentTypes = [.plainText, .sourceCode] + [UTType(filenameExtension: "md")].compactMap { $0 }
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
     NSApp.activate(ignoringOtherApps: true)
@@ -18,11 +18,11 @@ func pickMiniAppText(_ id: UUID, service: BundledServiceManager) async {
     let lease = Task {
         while !Task.isCancelled {
             do {
-                try await Task.sleep(nanoseconds: 60_000_000_000)
+                try await Task.sleep(nanoseconds: 30_000_000_000)
                 try await service.renewMiniAppPicker(id)
             } catch {
                 if Task.isCancelled { return }
-                // A brief IPC interruption leaves the current lease valid for thirty minutes.
+                // A brief IPC interruption leaves the current lease valid for two minutes.
             }
         }
     }
@@ -30,14 +30,16 @@ func pickMiniAppText(_ id: UUID, service: BundledServiceManager) async {
     var reply = Reply(state: "cancelled")
     if await panel.begin() == .OK, let url = panel.url {
         reply = Reply(state: "failed")
-        if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
-           let handle = try? FileHandle(forReadingFrom: url) {
+        let selected: (String, String)? = await Task.detached(priority: .userInitiated) {
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+                  let handle = try? FileHandle(forReadingFrom: url) else { return nil }
             defer { try? handle.close() }
-            if let bytes = try? handle.read(upToCount: 60001), bytes.count <= 60000,
-               let text = String(data: bytes, encoding: .utf8) {
-                reply = Reply(state: "completed", name: url.lastPathComponent, text: text)
-            }
-        }
+            guard let bytes = try? handle.read(upToCount: 60001), bytes.count <= 60000,
+                  let text = String(data: bytes, encoding: .utf8) else { return nil }
+            return (url.lastPathComponent, text)
+        }.value
+        if let selected { reply = Reply(state: "completed", name: selected.0, text: selected.1) }
+
     }
     guard let body = try? JSONEncoder().encode(reply) else { return }
     do { _ = try await service.miniAppFileRequest(id, reply: body) }
@@ -53,7 +55,7 @@ func miniAppNotice(_ message: String) {
 }
 
 @MainActor
-func chooseMiniAppForSelection(_ text: String, launcher: LauncherStateMachine, service: BundledServiceManager) async {
+func chooseMiniAppForSelection(_ text: String, launcher: LauncherStateMachine, service: BundledServiceManager) async -> UUID? {
     struct Target: Codable { let instance, name, view, action, title, field: String; let revision: Int }
     struct Selection: Encodable { let target: Target; let text: String }
     do {
@@ -62,7 +64,7 @@ func chooseMiniAppForSelection(_ text: String, launcher: LauncherStateMachine, s
         let targets = try JSONDecoder().decode([Target].self, from: data)
         guard !targets.isEmpty else {
             miniAppNotice("Enable selection access and a text action in a Mini App's settings first.")
-            return
+            return nil
         }
         let alert = NSAlert()
         alert.messageText = "Send selected text to a Mini App"
@@ -72,11 +74,14 @@ func chooseMiniAppForSelection(_ text: String, launcher: LauncherStateMachine, s
         alert.addButton(withTitle: "Send selection")
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
         let target = targets[list.indexOfSelectedItem]
-        try await service.stageMiniAppSelection(JSONEncoder().encode(Selection(target: target, text: text)))
-        if let id = UUID(uuidString: target.instance) { launcher.openMiniApp(.open(id, target.view)) }
+        let receipt = try await service.stageMiniAppSelection(JSONEncoder().encode(Selection(target: target, text: text)))
+        guard let object = try JSONSerialization.jsonObject(with: receipt) as? [String:String], let raw = object["id"], let selection = UUID(uuidString: raw) else { return nil }
+        if let id = UUID(uuidString: target.instance) { launcher.openMiniApp(.open(id, target.view), selection: selection) }
+        return selection
     } catch {
         miniAppNotice("Cove could not send this selection. Check the app's permissions and try again.")
+        return nil
     }
 }

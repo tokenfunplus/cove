@@ -144,11 +144,14 @@ func TestReviewBookUpgradeAndPractice(t *testing.T) {
 func TestConfirmedWriteUsesReviewedDayAndCanRetryAfterConflict(t *testing.T) {
 	db, s := storeAt(t, filepath.Join(t.TempDir(), "review.sqlite"))
 	defer db.Close()
+	reviewDate := s.now()
+	beforeMidnight := time.Date(reviewDate.Year(), reviewDate.Month(), reviewDate.Day(), 23, 59, 0, 0, reviewDate.Location())
+	s.now = func() time.Time { return beforeMidnight }
 	_, i := setup(t, s)
 	row := call(t, s, i.ID, read("inbox.queue")).Records[0]
 	req := Invocation{Action: "inbox.defer", OperationID: "day-boundary", Surface: "chat", Records: []RecordRef{{row.ID, row.Revision}}}
 	preview := call(t, s, i.ID, req)
-	tomorrow := s.now().AddDate(0, 0, 1)
+	tomorrow := beforeMidnight.Add(2 * time.Minute)
 	s.now = func() time.Time { return tomorrow }
 	req.Confirm = tomorrow.Format(time.DateOnly) + preview.Confirmation[len(time.DateOnly):]
 	if _, err := s.Invoke(t.Context(), i.ID, req); !errors.Is(err, ErrConflict) {
@@ -216,5 +219,76 @@ func TestReviewBookRequiresDeclaredRuntimeAndConsistentOutput(t *testing.T) {
 				t.Fatal("invalid feature declaration accepted", err)
 			}
 		})
+	}
+}
+
+func TestReviewBook12MigratesMissCounterAndAppliesItsOwnSchedulingRules(t *testing.T) {
+	db, service := storeAt(t, ":memory:")
+	defer db.Close()
+	today := time.Date(2026, 11, 27, 12, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return today }
+	install := func(name string) Release {
+		t.Helper()
+		raw, err := os.ReadFile("../appcatalog/packages/" + name + ".coveapp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		release, err := service.Install(t.Context(), raw, "builtin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return release
+	}
+	old := install("japanese-review-book-1.1")
+	book, err := service.Create(t.Context(), CreateRequest{ReleaseID: old.ID, Name: "Saved Japanese book", Grants: old.Package.Capabilities})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := Invocation{Action: "review.addQuestions", Surface: "page", OperationID: "saved-card", Inputs: map[string]any{"question": "Existing question?", "answer": "Existing answer", "source": "source-record", "sourceTitle": "An earlier lesson"}}
+	saved.Confirm = call(t, service, book.ID, saved).Confirmation
+	original := call(t, service, book.ID, saved).Records[0]
+	next := install("japanese-review-book-1.2")
+	upgraded, err := service.Upgrade(t.Context(), book.ID, UpgradeRequest{Revision: book.Revision, ReleaseID: next.ID, Grants: book.Grants})
+	if err != nil || upgraded.ID != book.ID {
+		t.Fatal(upgraded, err)
+	}
+	records := call(t, service, book.ID, read("review.listAll")).Records
+	var card Record
+	for _, record := range records {
+		if record.ID == original.ID {
+			card = record
+		}
+	}
+	if card.ID == "" || card.Fields["answer"] != original.Fields["answer"] || card.Fields["source"] != original.Fields["source"] || card.Fields["misses"] != 0.0 {
+		t.Fatal("migration lost user state", card)
+	}
+	update := func(action, operation string) {
+		t.Helper()
+		request := Invocation{Action: action, Surface: "chat", OperationID: operation, Records: []RecordRef{{ID: card.ID, Revision: card.Revision}}}
+		request.Confirm = call(t, service, book.ID, request).Confirmation
+		card = call(t, service, book.ID, request).Records[0]
+		replay := call(t, service, book.ID, request).Records[0]
+		if replay.Revision != card.Revision {
+			t.Fatal("a replay counted a miss twice")
+		}
+	}
+	update("review.practiceAgain", "first-miss")
+	if card.Fields["misses"] != 1.0 || card.Fields["due"] != today.Format(time.DateOnly) {
+		t.Fatal("first miss must remain due today", card)
+	}
+	update("review.practiceAgain", "second-miss")
+	if card.Fields["misses"] != 2.0 || card.Fields["due"] != today.AddDate(0, 0, 1).Format(time.DateOnly) {
+		t.Fatal("second miss must move to tomorrow", card)
+	}
+	update("review.practiceAgain", "third-miss")
+	if card.Fields["misses"] != 3.0 || card.Fields["due"] != today.AddDate(0, 0, 1).Format(time.DateOnly) {
+		t.Fatal("later miss must move to tomorrow", card)
+	}
+	update("review.markLearned", "learned")
+	if card.Fields["misses"] != 0.0 || card.Fields["due"] != today.AddDate(0, 0, 7).Format(time.DateOnly) || card.Fields["mastered"] != true {
+		t.Fatal("learning must reset misses and review next week", card)
+	}
+	if !maps.Equal(card.Fields, map[string]any{"question": original.Fields["question"], "answer": original.Fields["answer"], "source": original.Fields["source"], "sourceTitle": original.Fields["sourceTitle"], "mastered": true, "archived": false, "misses": 0.0, "due": today.AddDate(0, 0, 7).Format(time.DateOnly)}) {
+		t.Fatal("scheduling changed another field", card)
 	}
 }

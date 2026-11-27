@@ -7,7 +7,9 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
+	"time"
 )
 
 type checkpoint struct {
@@ -16,6 +18,7 @@ type checkpoint struct {
 }
 
 type preferences struct {
+	TrustPolicy    int                   `json:"trust_policy,omitempty"`
 	ReleaseDigests map[string]bool       `json:"releases,omitempty"`
 	Versions       map[string]string     `json:"versions,omitempty"`
 	Publishers     map[string]bool       `json:"publishers,omitempty"`
@@ -25,11 +28,14 @@ type preferences struct {
 
 // Directory persists the selected trust root and the newest verified index across Launcher sessions.
 type Directory struct {
-	mu       sync.Mutex
-	path     string
-	defaults Catalog
-	loadErr  error
-	prefs    preferences
+	mu            sync.Mutex
+	path          string
+	defaults      Catalog
+	loadErr       error
+	prefs         preferences
+	cachedConfig  Catalog
+	cachedUntil   time.Time
+	cachedEntries []Entry
 }
 
 func Open(path string, defaults Catalog) (*Directory, error) {
@@ -45,6 +51,11 @@ func Open(path string, defaults Catalog) (*Directory, error) {
 				d.prefs = preferences{}
 			}
 		}
+	}
+	// Older preferences did not distinguish the official signing authority from a
+	// user-selected directory. Reverify cached release identities under this policy.
+	if d.prefs.TrustPolicy < 1 {
+		d.prefs.ReleaseDigests = nil
 	}
 	return d, nil
 }
@@ -84,7 +95,21 @@ func (d *Directory) save(next preferences) error {
 	d.prefs = next
 	return nil
 }
+
+var ErrTrustConfirmation = errors.New("confirm the catalog signing authority before changing it")
+var ErrCatalogChanged = errors.New("catalog settings changed; review the current signing authority")
+
 func (d *Directory) Configure(config Catalog) error {
+	return d.configure(config, nil)
+}
+
+// ReplaceTrust requires the authority shown in the confirmation to still be current.
+// Checkpoints remain scoped to their signing key and survive a trust change.
+func (d *Directory) ReplaceTrust(config, previous Catalog) error {
+	return d.configure(config, &previous)
+}
+
+func (d *Directory) configure(config Catalog, previous *Catalog) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
@@ -93,40 +118,57 @@ func (d *Directory) Configure(config Catalog) error {
 	if d.loadErr != nil {
 		return d.loadErr
 	}
-	for signer := range d.prefs.Checkpoints {
-		if config.PublicKey != "" && signer != config.PublicKey {
-			return errors.New("this installation already trusts another catalog signing key")
-		}
+	current := d.config()
+	if previous != nil && *previous != current {
+		return ErrCatalogChanged
+	}
+	if current.PublicKey != config.PublicKey && previous == nil {
+		return ErrTrustConfirmation
 	}
 	next := d.prefs
 	next.Config = &config
-	return d.save(next)
+	if current.PublicKey != config.PublicKey {
+		next.ReleaseDigests = nil
+	}
+	if err := d.save(next); err != nil {
+		return err
+	}
+	d.cachedEntries = nil
+	d.cachedUntil = time.Time{}
+	return nil
 }
 func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 	if d.loadErr != nil {
 		entries, _ := (Catalog{}).List(ctx)
 		return entries, d.loadErr
 	}
-	config := d.Config()
-	return config.list(ctx, func(index *SignedIndex) error {
+	if err := ctx.Err(); err != nil {
+		return bundledFallback(ctx, err)
+	}
+	d.mu.Lock()
+	config := d.config()
+	if config == d.cachedConfig && time.Now().Before(d.cachedUntil) {
+		entries := cloneEntries(d.cachedEntries)
+		d.mu.Unlock()
+		return entries, nil
+	}
+	d.mu.Unlock()
+	var expires time.Time
+	var checkedDigest string
+	entries, err := config.list(ctx, func(index *SignedIndex) error {
+		expires = index.ExpiresAt
+		checkedDigest = index.Digest
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		if config != d.config() {
 			return errors.New("catalog settings changed")
 		}
-		for signer := range d.prefs.Checkpoints {
-			if signer != config.PublicKey {
-				return errors.New("catalog signing key differs from the trusted key")
-			}
-		}
 		prior := d.prefs.Checkpoints[config.PublicKey]
 		if index.Sequence < prior.Sequence || index.Sequence == prior.Sequence && index.Digest != prior.Digest {
 			return errors.New("catalog release index is older than the trusted revision")
 		}
-		if prior.Digest == index.Digest {
-			return nil
-		}
 		next := d.prefs
+		next.TrustPolicy = 1
 		next.ReleaseDigests = make(map[string]bool, len(index.Packages))
 		next.Publishers = make(map[string]bool, len(d.prefs.Publishers))
 		maps.Copy(next.Publishers, d.prefs.Publishers)
@@ -137,6 +179,9 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 			if err != nil {
 				return err
 			}
+			if ReservedPublisher(e.Publisher) && (d.defaults.PublicKey == "" || config.PublicKey != d.defaults.PublicKey) {
+				return errors.New("this signing authority cannot publish bundled app identities")
+			}
 			version := e.Publisher + "/" + e.App + "/" + e.Version
 			if digest, seen := next.Versions[version]; seen && digest != e.Digest {
 				return errors.New("a published catalog release changed its contents")
@@ -145,9 +190,46 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 			next.Publishers[e.Publisher] = true
 			next.ReleaseDigests[e.Digest] = true
 		}
-		next.Checkpoints = map[string]checkpoint{config.PublicKey: {Sequence: index.Sequence, Digest: index.Digest}}
+		if prior.Digest == index.Digest && d.prefs.TrustPolicy == 1 && maps.Equal(d.prefs.ReleaseDigests, next.ReleaseDigests) {
+			return nil
+		}
+		next.Checkpoints = make(map[string]checkpoint, len(d.prefs.Checkpoints)+1)
+		maps.Copy(next.Checkpoints, d.prefs.Checkpoints)
+		next.Checkpoints[config.PublicKey] = checkpoint{Sequence: index.Sequence, Digest: index.Digest}
 		return d.save(next)
 	})
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		return bundledFallback(ctx, err)
+	}
+	if !expires.IsZero() {
+		d.mu.Lock()
+		if config == d.config() && d.prefs.Checkpoints[config.PublicKey].Digest == checkedDigest {
+			d.cachedConfig = config
+			d.cachedUntil = time.Now().Add(30 * time.Second)
+			if expires.Before(d.cachedUntil) {
+				d.cachedUntil = expires
+			}
+			d.cachedEntries = cloneEntries(entries)
+		}
+		d.mu.Unlock()
+	}
+	return entries, nil
+}
+
+func bundledFallback(ctx context.Context, err error) ([]Entry, error) {
+	entries, _ := (Catalog{}).List(ctx)
+	return entries, err
+}
+
+func cloneEntries(entries []Entry) []Entry {
+	result := slices.Clone(entries)
+	for index := range result {
+		result[index].Raw = slices.Clone(result[index].Raw)
+	}
+	return result
 }
 
 func (d *Directory) KnownRelease(digest string) bool {

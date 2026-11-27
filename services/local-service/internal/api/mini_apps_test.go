@@ -50,6 +50,13 @@ func TestMiniAppInstallationNativeImportAndChatSnapshot(t *testing.T) {
 			}
 		}
 	}
+	var presence struct {
+		HasMiniApps bool `json:"has_mini_apps"`
+	}
+	call("GET", "/api/session", nil, true, 200, &presence)
+	if presence.HasMiniApps {
+		t.Fatal("empty workspace reported installed apps")
+	}
 	const base = "/api/mini-apps"
 	var catalog struct{ Packages []appcatalog.Entry }
 	call("GET", base+"/catalog", nil, false, 401, nil)
@@ -66,6 +73,10 @@ func TestMiniAppInstallationNativeImportAndChatSnapshot(t *testing.T) {
 	call("POST", path, map[string]string{"digest": item.Digest}, true, 200, &release)
 	var instance miniapps.Instance
 	call("POST", base+"/instances", miniapps.CreateRequest{ReleaseID: release.ID, Name: "Book", Grants: release.Package.Capabilities}, true, 200, &instance)
+	call("GET", "/api/session", nil, true, 200, &presence)
+	if !presence.HasMiniApps {
+		t.Fatal("session did not report installed apps")
+	}
 	prefix := base + "/instances/" + instance.ID
 	var choices []selectionTarget
 	privateSelection := "/internal/control/mini-app-selection"
@@ -80,14 +91,15 @@ func TestMiniAppInstallationNativeImportAndChatSnapshot(t *testing.T) {
 		t.Fatal("no eligible native selection action")
 	}
 	stage := map[string]any{"target": choices[0], "text": "Native fixture"}
-	call("POST", privateSelection+"/stage", stage, true, 200, nil)
-	call("POST", privateSelection+"/stage", map[string]any{"target": choices[0], "text": "Second fixture"}, true, 200, nil)
+	var firstSelection, secondSelection struct{ ID string }
+	call("POST", privateSelection+"/stage", stage, true, 200, &firstSelection)
+	call("POST", privateSelection+"/stage", map[string]any{"target": choices[0], "text": "Second fixture"}, true, 200, &secondSelection)
 	var pending struct {
 		ID      string
 		Pending bool
 		Target  selectionTarget
 	}
-	call("GET", prefix+"/native-selection", nil, true, 200, &pending)
+	call("GET", prefix+"/native-selection?selection="+firstSelection.ID, nil, true, 200, &pending)
 	if !pending.Pending || pending.Target != choices[0] {
 		t.Fatal("wrong selection target")
 	}
@@ -97,7 +109,7 @@ func TestMiniAppInstallationNativeImportAndChatSnapshot(t *testing.T) {
 		t.Fatal("missing selected text")
 	}
 	call("POST", prefix+"/native-selection", map[string]string{"id": pending.ID}, true, 409, nil)
-	call("GET", prefix+"/native-selection?view="+choices[0].View, nil, true, 200, &pending)
+	call("GET", prefix+"/native-selection?selection="+secondSelection.ID+"&view="+choices[0].View, nil, true, 200, &pending)
 	call("POST", prefix+"/native-selection", map[string]string{"id": pending.ID}, true, 200, &selected)
 	if selected.Text != "Second fixture" {
 		t.Fatal("a later native selection replaced a pending selection")
