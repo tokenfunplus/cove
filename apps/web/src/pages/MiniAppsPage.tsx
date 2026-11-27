@@ -13,6 +13,7 @@ import {
 import { AppWorkspace } from "@/components/miniapps/AppWorkspace";
 import { appBookmark, ErrorMessage } from "@/components/miniapps/presentation";
 import { isConversationId } from "@/lib/launcher-intent";
+import { navigateWorkspace as navigate } from "@/lib/workspace-navigation";
 import "@/components/miniapps/mini-apps.css";
 
 const slug = /^[a-z][a-z0-9-]{0,47}$/;
@@ -51,13 +52,6 @@ function route(path: string): {
 function subscribe(fn: () => void) {
   window.addEventListener("popstate", fn);
   return () => window.removeEventListener("popstate", fn);
-}
-function navigate(path: string, replace = false) {
-  if (window.location.pathname + window.location.search !== path) {
-    if (replace) window.history.replaceState(null, "", path);
-    else window.history.pushState(null, "", path);
-  }
-  window.dispatchEvent(new PopStateEvent("popstate"));
 }
 export default function MiniAppsPage({
   attach,
@@ -112,7 +106,7 @@ export default function MiniAppsPage({
   return (
     <main
       className={
-        "mini-app-shell min-h-dvh bg-background px-5 pb-12 pt-5 text-foreground sm:px-10 sm:pt-7 " +
+        "mini-app-shell h-dvh min-h-0 overflow-y-auto overscroll-contain bg-background px-5 pb-12 pt-5 text-foreground sm:px-10 sm:pt-7 " +
         (session.isSuccess && !expired ? "mini-app-with-sidebar" : "")
       }
     >

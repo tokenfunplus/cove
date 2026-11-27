@@ -24,17 +24,48 @@ const json = (method: string, body: unknown) => ({
 export const createDebate = (input: StartDebateInput) =>
   request<DebateSession>("/api/debates", json("POST", input));
 export const getDebate = (id: string, before = 0, signal?: AbortSignal) =>
-  request<DebateView>(`${path(id)}${before ? `?before=${before}` : ""}`, { signal });
-export const getDebateTurn = (id: string, turnId: string) => request<DebateTurn>(`${path(id)}/turns/${encodeURIComponent(turnId)}`);
-const browserTurnPath = (id: string, turnId: string) => `${path(id)}/turns/${encodeURIComponent(turnId)}/browser`;
-export const claimDebateBrowserTurn = (id: string, turnId: string, claimId: string, signal?: AbortSignal) =>
-  request<DebateBrowserContext>(`${browserTurnPath(id, turnId)}/claim`, { ...json("POST", { claim_id: claimId }), signal });
-export const progressDebateBrowserTurn = (id: string, turnId: string, input: DebateBrowserProgress, signal?: AbortSignal) =>
-  request<void>(`${browserTurnPath(id, turnId)}/progress`, { ...json("POST", input), signal });
-export const settleDebateBrowserTurn = (id: string, turnId: string, input: DebateBrowserResult) =>
-  request<DebateTurn>(`${browserTurnPath(id, turnId)}/settle`, json("POST", input));
+  request<DebateView>(`${path(id)}${before ? `?before=${before}` : ""}`, {
+    signal,
+  });
+export const getDebateTurn = (id: string, turnId: string) =>
+  request<DebateTurn>(`${path(id)}/turns/${encodeURIComponent(turnId)}`);
+const browserTurnPath = (id: string, turnId: string) =>
+  `${path(id)}/turns/${encodeURIComponent(turnId)}/browser`;
+export const claimDebateBrowserTurn = (
+  id: string,
+  turnId: string,
+  claimId: string,
+  signal?: AbortSignal,
+) =>
+  request<DebateBrowserContext>(`${browserTurnPath(id, turnId)}/claim`, {
+    ...json("POST", { claim_id: claimId }),
+    signal,
+  });
+export const progressDebateBrowserTurn = (
+  id: string,
+  turnId: string,
+  input: DebateBrowserProgress,
+  signal?: AbortSignal,
+) =>
+  request<void>(`${browserTurnPath(id, turnId)}/progress`, {
+    ...json("POST", input),
+    signal,
+  });
+export const settleDebateBrowserTurn = (
+  id: string,
+  turnId: string,
+  input: DebateBrowserResult,
+  signal?: AbortSignal,
+) =>
+  request<DebateTurn>(`${browserTurnPath(id, turnId)}/settle`, {
+    ...json("POST", input),
+    signal,
+  });
 export const pauseDebateOnPageExit = (id: string) =>
-  fetchLocalService(`${path(id)}/control`, { ...json("POST", { action: "pause" }), keepalive: true });
+  fetchLocalService(`${path(id)}/control`, {
+    ...json("POST", { action: "pause" }),
+    keepalive: true,
+  });
 export const controlDebate = (id: string, action: DebateAction) =>
   request<DebateSession>(`${path(id)}/control`, json("POST", { action }));
 export const updateDebateRules = (id: string, rules: DebateRules) =>

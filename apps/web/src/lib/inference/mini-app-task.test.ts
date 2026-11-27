@@ -6,7 +6,10 @@ import { runVerifiedBrowserTurn } from "./debate-browser-turn";
 import { runVerifiedAppTask } from "./mini-app-task";
 
 vi.mock("@/api/client", () => ({ request: vi.fn() }));
-afterEach(() => vi.resetAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.resetAllMocks();
+});
 
 function claim() {
   return {
@@ -59,12 +62,10 @@ test("app verification claims the authorized prompt, exposes no interim answer a
     mode: "private_tee",
     target: { model_id: "fixture-model" },
   });
-  const steps = vi
-    .mocked(request)
-    .mock.calls.map(([path, init]) => ({
-      path,
-      data: JSON.parse(init!.body as string),
-    }));
+  const steps = vi.mocked(request).mock.calls.map(([path, init]) => ({
+    path,
+    data: JSON.parse(init!.body as string),
+  }));
   expect(
     steps.every((step) =>
       step.path.startsWith("/api/mini-apps/instances/book/tasks/task/browser/"),
@@ -167,6 +168,45 @@ test("an already verified result is never replaced with an empty failed receipt"
   ).rejects.toThrow("delivery unavailable");
   expect(settle).toHaveBeenCalledOnce();
   expect(settle.mock.calls[0][0]).toMatchObject({
+    body: "Retained answer",
+    verification: { status: "verified_model" },
+  });
+});
+
+test("app settlement uses the shared five-send bound and preserves every verified byte", async () => {
+  vi.useFakeTimers();
+  const error = { envelope: { error: { code: "internal_error" } } };
+  vi.mocked(request).mockImplementation(async (path) => {
+    if (path.endsWith("/claim")) return claim();
+    if (path.endsWith("/settle")) throw error;
+    return undefined;
+  });
+  const transport = verifiedTransport();
+  const result = runVerifiedAppTask(
+    "book",
+    "task",
+    new AbortController().signal,
+    async () => transport,
+  );
+  const rejected = expect(result).rejects.toBe(error);
+  await vi.waitFor(() =>
+    expect(
+      vi.mocked(request).mock.calls.some(([path]) => path.endsWith("/settle")),
+    ).toBe(true),
+  );
+  await vi.runAllTimersAsync();
+  await rejected;
+  const claims = vi
+    .mocked(request)
+    .mock.calls.filter(([path]) => path.endsWith("/claim"));
+  const settlements = vi
+    .mocked(request)
+    .mock.calls.filter(([path]) => path.endsWith("/settle"));
+  expect(claims).toHaveLength(1);
+  expect(transport.generate).toHaveBeenCalledOnce();
+  expect(settlements).toHaveLength(5);
+  expect(new Set(settlements.map(([, init]) => init?.body)).size).toBe(1);
+  expect(JSON.parse(settlements[0]![1]!.body as string)).toMatchObject({
     body: "Retained answer",
     verification: { status: "verified_model" },
   });

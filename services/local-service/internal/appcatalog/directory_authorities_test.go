@@ -138,3 +138,45 @@ func TestUnattributedLegacyVersionHistoryCannotPoisonANewAuthority(t *testing.T)
 		t.Fatal("migration lost checkpoints or retained ambiguous publisher authority")
 	}
 }
+
+func TestLegacyHistoryUsesItsSoleHistoricalSignerAfterSettingsChanged(t *testing.T) {
+	pubA, _, _ := ed25519.GenerateKey(nil)
+	pubB, _, _ := ed25519.GenerateKey(nil)
+	a := base64.StdEncoding.EncodeToString(pubA)
+	b := base64.StdEncoding.EncodeToString(pubB)
+	for _, ambiguous := range []bool{false, true} {
+		name := "sole-signer"
+		if ambiguous {
+			name = "ambiguous-signers"
+		}
+		t.Run(name, func(t *testing.T) {
+			current := Catalog{URL: "https://new.example/catalog.json", PublicKey: b}
+			previous := preferences{Config: &current, Versions: map[string]string{"author/notes/1.0.0": "original-digest"}, Publishers: map[string]bool{"author": true}, ReleaseDigests: map[string]bool{"original-digest": true}, Checkpoints: map[string]checkpoint{a: {Sequence: 7, Digest: "old-index"}}}
+			if ambiguous {
+				previous.Checkpoints[b] = checkpoint{Sequence: 1, Digest: "other-index"}
+			}
+			raw, err := json.Marshal(previous)
+			if err != nil {
+				t.Fatal(err)
+			}
+			file := filepath.Join(t.TempDir(), "catalog.json")
+			if err := os.WriteFile(file, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			directory, err := Open(file, Catalog{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			retained := directory.prefs.Authorities[a].Versions["author/notes/1.0.0"] == "original-digest"
+			if retained == ambiguous {
+				t.Fatal("historical signer attribution incorrect", retained, ambiguous)
+			}
+			if directory.Config() != current || len(directory.prefs.Checkpoints) != len(previous.Checkpoints) || directory.KnownRelease("original-digest") {
+				t.Fatal("migration changed preferences or accepted an unverified release")
+			}
+			if directory.prefs.Authorities[b].Versions["author/notes/1.0.0"] != "" {
+				t.Fatal("legacy version transferred to newly selected signer")
+			}
+		})
+	}
+}

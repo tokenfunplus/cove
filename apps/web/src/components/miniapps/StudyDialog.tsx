@@ -25,14 +25,14 @@ export function StudyDialog({
       onClose={() => {
         if (!busy) close();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[110] flex min-h-0 items-center justify-center p-3 sm:p-4"
     >
       <DialogOverlay />
       <DialogContent
-        className="study-dialog relative max-h-[90dvh] w-full max-w-2xl overflow-y-auto rounded-2xl p-6 sm:p-8"
+        className="study-dialog relative flex max-h-full min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-2xl"
         onInteractOutside={(event) => event.preventDefault()}
       >
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-6 py-4 sm:px-8">
           <DialogTitle className="text-2xl font-semibold tracking-tight">
             {title}
           </DialogTitle>
@@ -46,7 +46,9 @@ export function StudyDialog({
             <X className="size-5" />
           </Button>
         </div>
-        {children}
+        <div className="study-dialog-body min-h-0 overflow-y-auto overscroll-contain p-6 sm:p-8">
+          {children}
+        </div>
       </DialogContent>
     </Dialog>
   );

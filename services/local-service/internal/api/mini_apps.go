@@ -111,6 +111,7 @@ func (s *Server) miniAppRoutes(mux *http.ServeMux, session func(http.Handler) ht
 	register("GET", "/instances/{id}/tasks/{task}", s.appTasks)
 	register("DELETE", "/instances/{id}/tasks/{task}", s.appTasks)
 	register("POST", "/instances/{id}/tasks/{task}/retry-save", s.appRetryTaskSave)
+	register("POST", "/instances/{id}/tasks/{task}/discard-result", s.appDiscardTaskResult)
 	register("POST", "/instances/{id}/files", s.appFiles)
 	register("GET", "/instances/{id}/files/{file}", s.appFiles)
 	control := localsecurity.RequireControlToken(s.controlToken, s.writeSecurityError)
@@ -154,7 +155,7 @@ func appReply(w http.ResponseWriter, value any, err error) {
 	case errors.Is(err, miniapps.ErrDenied):
 		writeError(w, 403, "permission_denied", "This operation is unavailable for the instance and its current permissions.")
 	case errors.Is(err, chat.ErrAppTaskSavePending):
-		writeError(w, 409, "task_save_pending", "A Mini App result is waiting to be saved. Retry saving it from the app or Activity before starting another app model task.")
+		writeError(w, 409, "task_save_pending", "A Mini App result is waiting to be saved. Open Activity to retry saving or discard its unsaved output before starting another app model task.")
 	case errors.Is(err, miniapps.ErrConflict), errors.Is(err, chat.ErrAppTaskConflict):
 		writeError(w, 409, "conflict", "The instance, record, or operation has changed. Refresh and review it again.")
 	case errors.Is(err, miniapps.ErrNotFound), errors.Is(err, sql.ErrNoRows):
@@ -351,7 +352,7 @@ func (s *Server) appCatalog(w http.ResponseWriter, r *http.Request) {
 				appReply(w, nil, miniapps.ErrConflict)
 				return
 			}
-			release, err := s.apps.Install(r.Context(), e.Raw, e.Origin)
+			release, err := s.apps.Install(r.Context(), e.Raw, e.ReleaseOrigin())
 			appReply(w, release, err)
 			return
 		}

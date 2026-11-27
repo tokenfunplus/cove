@@ -40,7 +40,10 @@ export interface MiniAppAction {
 }
 
 export interface MiniAppPackage {
-  assets?:Record<string,{mime:"image/png"|"image/jpeg";alt:string;data:string}>;
+  assets?: Record<
+    string,
+    { mime: "image/png" | "image/jpeg"; alt: string; data: string }
+  >;
   min_host_version?: string;
   speech_language?: "ja";
   format: 1;
@@ -59,7 +62,7 @@ export interface MiniAppPackage {
     }
   >;
   pages: {
-    image?:string;
+    image?: string;
     id: string;
     title: string;
     actions: string[];
@@ -80,6 +83,8 @@ export interface MiniAppPackage {
 }
 
 export interface MiniAppRelease {
+  catalog_authority?: string;
+  official_catalog?: boolean;
   legacy_verified?: boolean;
   id: string;
   origin: string;

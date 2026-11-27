@@ -30,6 +30,8 @@ function SelectionControls({
     queryKey: appKeys.instances,
     queryFn: miniApps.instances,
     enabled: !!selected || !!frozen,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
   const canReceive = installed.data?.instances.some(
@@ -54,7 +56,6 @@ function SelectionControls({
     document.addEventListener("selectionchange", changed);
     return () => document.removeEventListener("selectionchange", changed);
   }, [conversation]);
-  if (!canReceive) return null;
   if (frozen)
     return (
       <Suspense fallback={null}>
@@ -69,6 +70,7 @@ function SelectionControls({
         />
       </Suspense>
     );
+  if (!canReceive) return null;
   if (!selected) return null;
   return (
     <div className="flex justify-end px-3">

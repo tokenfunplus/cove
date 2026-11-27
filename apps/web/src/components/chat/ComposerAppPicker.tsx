@@ -29,9 +29,13 @@ export default function ComposerAppPicker(props: Props) {
   }, [props]);
   const attach = useCallback((snapshot: string) => {
     const target = latest.current;
-    if (!target || target.busy)
+    if (!target)
       throw new Error(
         "The destination changed. Reopen the picker to attach these records.",
+      );
+    if (target.busy)
+      throw new Error(
+        "This chat is busy. Wait for the current response, then attach these records again.",
       );
     target.change(target.draft ? target.draft + "\n\n" + snapshot : snapshot);
     target.close();

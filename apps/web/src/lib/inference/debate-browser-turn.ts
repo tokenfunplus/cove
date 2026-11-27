@@ -18,6 +18,10 @@ type Commands = {
   }>;
   progress: (input: Omit<DebateBrowserProgress, "claim_id">) => Promise<void>;
   settle: (input: Omit<DebateBrowserResult, "claim_id">) => Promise<unknown>;
+  // Debate's first accepted receipt wins. App tasks retain paid output instead.
+  failDelivery?: (
+    input: Omit<DebateBrowserResult, "claim_id">,
+  ) => Promise<unknown>;
 };
 
 /** Runs an exclusively claimed browser request with the saved target and messages. */
@@ -152,18 +156,24 @@ export async function runVerifiedBrowserTurn(
     }
     throw new Error("Browser inference ended without a result");
   } finally {
-    if (!settled && !verifiedResult) {
-      // No unverified answer enters later debate context, even in gateway modes.
-      await commands
-        .settle({
-          body: "",
-          verification: failedVerificationForContract(
-            mode,
-            signal.aborted ? "browser_interrupted" : "secure_transport_error",
-            "The browser turn was interrupted before verification completed.",
-          ),
-        })
-        .catch(() => undefined);
+    if (!settled) {
+      const fail = verifiedResult ? commands.failDelivery : commands.settle;
+      // A lost ACK must not replace an accepted receipt. Only Debate opts into
+      // its first-result-wins cleanup; App tasks keep their verified result.
+      await fail?.({
+        body: "",
+        verification: failedVerificationForContract(
+          mode,
+          verifiedResult
+            ? "browser_delivery_failed"
+            : signal.aborted
+              ? "browser_interrupted"
+              : "secure_transport_error",
+          verifiedResult
+            ? "The verified result could not be delivered. Resume explicitly to retry this turn."
+            : "The browser turn was interrupted before verification completed.",
+        ),
+      }).catch(() => undefined);
     }
   }
 }

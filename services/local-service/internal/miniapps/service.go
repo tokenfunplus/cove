@@ -21,11 +21,13 @@ import (
 )
 
 type Release struct {
-	LegacyVerified bool    `json:"legacy_verified,omitempty"`
-	ID             string  `json:"id"`
-	Origin         string  `json:"origin"`
-	Digest         string  `json:"digest"`
-	Package        Package `json:"package"`
+	CatalogAuthority string  `json:"catalog_authority,omitempty"`
+	OfficialCatalog  bool    `json:"official_catalog,omitempty"`
+	LegacyVerified   bool    `json:"legacy_verified,omitempty"`
+	ID               string  `json:"id"`
+	Origin           string  `json:"origin"`
+	Digest           string  `json:"digest"`
+	Package          Package `json:"package"`
 }
 type Instance struct {
 	CloudEnabled bool     `json:"cloud_enabled"`
@@ -79,7 +81,8 @@ func Preview(raw []byte, origin string) (Release, error) {
 	if err != nil {
 		return Release{}, err
 	}
-	switch origin {
+	channel, authority, official := releaseOrigin(origin)
+	switch channel {
 	case "catalog", "builtin":
 	case "local":
 		if p.Publisher == "cove" {
@@ -89,7 +92,7 @@ func Preview(raw []byte, origin string) (Release, error) {
 		return Release{}, invalid("package origin")
 	}
 	id := releaseID(origin, p.Publisher, p.App, p.Version)
-	return Release{ID: id, Package: p, Origin: origin, Digest: digest(raw)}, nil
+	return Release{ID: id, Package: p, Origin: channel, CatalogAuthority: authority, OfficialCatalog: official, Digest: digest(raw)}, nil
 }
 func lookup(err error) error {
 	if errors.Is(err, sql.ErrNoRows) {
@@ -102,7 +105,8 @@ func loadRelease(tx *persistence.MiniAppStore, id string) (r Release, err error)
 	if err != nil {
 		return r, lookup(err)
 	}
-	r.ID, r.Digest, r.Origin = row.ID, row.Digest, row.Origin
+	r.ID, r.Digest = row.ID, row.Digest
+	r.Origin, r.CatalogAuthority, r.OfficialCatalog = releaseOrigin(row.Origin)
 	r.LegacyVerified = row.Origin == "local" && appcatalog.IsBundledDigest(row.Digest)
 	err = json.Unmarshal(row.Manifest, &r.Package)
 	return
@@ -145,7 +149,7 @@ func (s *Service) Install(ctx context.Context, raw []byte, origin string) (Relea
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		return tx.AddRelease(persistence.AppRelease{ID: r.ID, Origin: r.Origin, Digest: r.Digest, Manifest: raw})
+		return tx.AddRelease(persistence.AppRelease{ID: r.ID, Origin: r.DistributionOrigin(), Digest: r.Digest, Manifest: raw})
 	})
 	return r, err
 }
@@ -301,10 +305,7 @@ func (s *Service) Upgrade(ctx context.Context, id string, req UpgradeRequest) (I
 			return err
 		}
 		old, next := before.Package, after.Package
-		// The configured catalog signer is the release authority for all bundled apps.
-		trustedAfter := after.Origin == "builtin" || after.Origin == "catalog"
-		trustedBefore := before.Origin == "builtin" || before.Origin == "catalog" || before.LegacyVerified
-		sameOrigin := before.Origin == after.Origin || trustedBefore && trustedAfter
+		sameOrigin := compatibleAuthority(before, after)
 		if !sameOrigin || old.Publisher != next.Publisher || old.App != next.App || !newer(next.Version, old.Version) || next.SchemaVersion < old.SchemaVersion {
 			return invalid("incompatible upgrade")
 		}
@@ -404,4 +405,46 @@ func (s *Service) RemoveRelease(ctx context.Context, id string) error {
 		}
 		return tx.DeleteUnusedAppRelease(id)
 	})
+}
+
+// releaseOrigin decodes only host-created provenance. A legacy unbound catalog
+// remains readable, but cannot silently acquire a signing identity for updates.
+func releaseOrigin(origin string) (channel, authority string, official bool) {
+	for _, prefix := range []string{"catalog:", "official-catalog:"} {
+		if strings.HasPrefix(origin, prefix) {
+			key := strings.TrimPrefix(origin, prefix)
+			decoded, err := hex.DecodeString(key)
+			if err != nil || len(decoded) != sha256.Size || key != strings.ToLower(key) {
+				return "", "", false
+			}
+			return "catalog", key, prefix == "official-catalog:"
+		}
+	}
+	return origin, "", false
+}
+
+func (r Release) DistributionOrigin() string {
+	if r.Origin != "catalog" || r.CatalogAuthority == "" {
+		return r.Origin
+	}
+	if r.OfficialCatalog {
+		return "official-catalog:" + r.CatalogAuthority
+	}
+	return "catalog:" + r.CatalogAuthority
+}
+
+func compatibleAuthority(before, after Release) bool {
+	switch before.Origin {
+	case "catalog":
+		if after.Origin == "catalog" {
+			return before.CatalogAuthority != "" && before.CatalogAuthority == after.CatalogAuthority
+		}
+		return after.Origin == "builtin" && before.OfficialCatalog
+	case "builtin":
+		return after.Origin == "builtin" || after.Origin == "catalog" && after.OfficialCatalog
+	case "local":
+		return after.Origin == "local" || before.LegacyVerified && (after.Origin == "builtin" || after.Origin == "catalog" && after.OfficialCatalog)
+	default:
+		return false
+	}
 }

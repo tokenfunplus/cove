@@ -344,7 +344,7 @@ func TestSignedCatalogCanUpdateBundledIndependentPublisher(t *testing.T) {
 	if _, err = s.Upgrade(ctx, i.ID, UpgradeRequest{Revision: i.Revision, ReleaseID: local.ID}); !errors.Is(err, ErrInvalid) {
 		t.Fatal("personal package replaced a signed identity", err)
 	}
-	verified := newRelease(t, s, next, "catalog")
+	verified := newRelease(t, s, next, "official-catalog:"+strings.Repeat("a", 64))
 	if _, err = s.Upgrade(ctx, i.ID, UpgradeRequest{Revision: i.Revision, ReleaseID: verified.ID, Grants: i.Grants}); err != nil {
 		t.Fatal(err)
 	}

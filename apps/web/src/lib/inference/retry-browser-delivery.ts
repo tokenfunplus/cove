@@ -10,7 +10,10 @@ export async function retryBrowserDelivery<T>(
       const code = (error as { envelope?: { error?: { code?: string } } })
         ?.envelope?.error?.code;
       const transient =
-        !code || code === "service_unavailable" || code === "internal_error";
+        !code ||
+        code === "service_unavailable" ||
+        code === "internal_error" ||
+        code === "mini_app_error";
       if (!transient || signal.aborted || attempt >= 4) throw error;
       await new Promise<void>((resolve) => {
         const finish = () => {
@@ -20,6 +23,7 @@ export async function retryBrowserDelivery<T>(
         };
         const timer = setTimeout(finish, 100 * 2 ** attempt);
         signal.addEventListener("abort", finish, { once: true });
+        if (signal.aborted) finish();
       });
       if (signal.aborted) throw error;
     }

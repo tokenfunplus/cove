@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 )
 
@@ -21,15 +22,16 @@ var ErrBackupRelease = errors.New("install the exact package release used by thi
 // Backup is an owner-initiated snapshot of the saved record collections. Its
 // identity selects an installed release. It carries no executable package bytes.
 type Backup struct {
-	Attachments []persistence.MiniAppBlob `json:"attachments,omitempty"`
-	Format      string                    `json:"format"`
-	ReleaseID   string                    `json:"release_id"`
-	Digest      string                    `json:"digest"`
-	Publisher   string                    `json:"publisher"`
-	App         string                    `json:"app"`
-	Version     string                    `json:"version"`
-	Name        string                    `json:"name"`
-	Collections map[string][]Record       `json:"collections"`
+	CatalogAuthority string                    `json:"catalog_authority,omitempty"`
+	Attachments      []persistence.MiniAppBlob `json:"attachments,omitempty"`
+	Format           string                    `json:"format"`
+	ReleaseID        string                    `json:"release_id"`
+	Digest           string                    `json:"digest"`
+	Publisher        string                    `json:"publisher"`
+	App              string                    `json:"app"`
+	Version          string                    `json:"version"`
+	Name             string                    `json:"name"`
+	Collections      map[string][]Record       `json:"collections"`
 }
 
 func (s *Service) Export(ctx context.Context, id string) (Backup, error) {
@@ -44,7 +46,7 @@ func (s *Service) Export(ctx context.Context, id string) (Backup, error) {
 			return err
 		}
 		result = Backup{
-			Format: "cove-instance/1", ReleaseID: release.ID, Digest: release.Digest,
+			Format: "cove-instance/1", ReleaseID: release.ID, Digest: release.Digest, CatalogAuthority: release.CatalogAuthority,
 			Publisher: release.Package.Publisher, App: release.Package.App,
 			Version: release.Package.Version, Name: instance.Name,
 			Collections: map[string][]Record{},
@@ -85,37 +87,82 @@ func decodeBackup(raw []byte) (Backup, error) {
 	if b.Format != "cove-instance/1" || !short(b.Name, 100) || len(b.ReleaseID) != 64 || len(b.Digest) != 64 {
 		return b, invalid("backup format, identity or name")
 	}
+	if b.CatalogAuthority != "" {
+		channel, authority, _ := releaseOrigin("catalog:" + b.CatalogAuthority)
+		if channel != "catalog" || authority == "" || !backupHasAuthority(b, authority) {
+			return b, invalid("backup signing authority")
+		}
+	}
 	return b, nil
+}
+
+func backupHasAuthority(b Backup, authority string) bool {
+	return b.ReleaseID == releaseID("catalog:"+authority, b.Publisher, b.App, b.Version) || b.ReleaseID == releaseID("official-catalog:"+authority, b.Publisher, b.App, b.Version)
 }
 
 // Archived releases may move between the bundle and the signed catalog.
 // A personal import is always resolved within its original distribution channel.
 func releaseForBackup(tx *persistence.MiniAppStore, b Backup) (Release, error) {
+	original, err := loadRelease(tx, b.ReleaseID)
+	if err == nil && matchesBackup(original, b) {
+		return original, nil
+	}
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return Release{}, err
+	}
 	builtin := releaseID("builtin", b.Publisher, b.App, b.Version)
 	catalog := releaseID("catalog", b.Publisher, b.App, b.Version)
-	candidates := []string{b.ReleaseID}
-	switch b.ReleaseID {
-	case builtin:
-		candidates = append(candidates, catalog)
-	case catalog:
-		candidates = append(candidates, builtin)
-	}
-	for _, id := range candidates {
-		r, err := loadRelease(tx, id)
-		if errors.Is(err, ErrNotFound) {
-			if b.Publisher != "cove" && id == b.ReleaseID && id == releaseID("local", b.Publisher, b.App, b.Version) {
-				return restoreLocalPackageFromBundle(tx, b, builtin)
-			}
-			continue
+	if b.ReleaseID == releaseID("local", b.Publisher, b.App, b.Version) {
+		if b.Publisher != "cove" {
+			return restoreLocalPackageFromBundle(tx, b, builtin)
 		}
+		return Release{}, ErrBackupRelease
+	}
+	ids, err := tx.ReleaseIDs()
+	if err != nil {
+		return Release{}, err
+	}
+	var candidate *Release
+	ambiguous := false
+	for _, id := range ids {
+		r, err := loadRelease(tx, id)
 		if err != nil {
 			return Release{}, err
 		}
-		if r.Digest == b.Digest && r.Package.Publisher == b.Publisher && r.Package.App == b.App && r.Package.Version == b.Version {
+		if !matchesBackup(r, b) {
+			continue
+		}
+		// An exact bundled artifact is independently attested by this Cove build.
+		if r.Origin == "builtin" && appcatalog.IsBundledDigest(b.Digest) && (b.ReleaseID == builtin || b.ReleaseID == catalog || b.CatalogAuthority != "" && backupHasAuthority(b, b.CatalogAuthority)) {
 			return r, nil
 		}
+		allowed := b.ReleaseID == catalog && r.Origin == "catalog" || b.ReleaseID == builtin && r.Origin == "catalog" && (r.CatalogAuthority == "" || r.OfficialCatalog)
+		if r.CatalogAuthority != "" {
+			for _, prefix := range []string{"catalog:", "official-catalog:"} {
+				allowed = allowed || b.ReleaseID == releaseID(prefix+r.CatalogAuthority, b.Publisher, b.App, b.Version)
+			}
+		}
+		if !allowed {
+			continue
+		}
+		if candidate != nil && candidate.CatalogAuthority != r.CatalogAuthority {
+			ambiguous = true
+		}
+		if candidate == nil {
+			item := r
+			candidate = &item
+		}
+	}
+	// A legacy snapshot cannot infer an original author from multiple identical
+	// republications. The owner must install/select one unambiguous trusted source.
+	if candidate != nil && !ambiguous {
+		return *candidate, nil
 	}
 	return Release{}, ErrBackupRelease
+}
+
+func matchesBackup(r Release, b Backup) bool {
+	return r.Digest == b.Digest && r.Package.Publisher == b.Publisher && r.Package.App == b.App && r.Package.Version == b.Version
 }
 
 // Earlier releases allowed a bundled third-party package file to be installed

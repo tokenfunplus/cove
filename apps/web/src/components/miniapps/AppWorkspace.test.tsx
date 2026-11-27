@@ -6,7 +6,7 @@ import type {
   MiniAppPackage,
   MiniAppSurface,
 } from "@cove/api-contract";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { miniApps } from "@/api/mini-apps";
@@ -168,6 +168,11 @@ test("refresh invalidates changed and removed selections while retaining unchang
   await screen.findByText("Updated");
   await screen.findByRole("button", { name: "Add to current draft (1)" });
   expect(
+    screen.getByText(
+      "Some selected items changed or are no longer in the loaded results. Review the remaining selection before continuing.",
+    ),
+  ).toBeTruthy();
+  expect(
     (screen.getByLabelText("Select record 1") as HTMLInputElement).checked,
   ).toBe(false);
   expect(
@@ -301,3 +306,92 @@ test("editing freezes the selected record and a write-only chat proposal offers 
     ),
   );
 });
+
+test.each(["changed", "removed"])(
+  "background refresh retires a %s write target and explains the reset",
+  async (change) => {
+    const original = [
+      { id: "a", revision: 1, fields: { text: "Original A" } },
+      { id: "b", revision: 1, fields: { text: "Original B" } },
+    ];
+    const edit: MiniAppAction = {
+      title: "Edit selected notes",
+      op: "update",
+      collection: "notes",
+      inputs: { text: "text" },
+      values: { text: "$input.text" },
+      surfaces: ["page"],
+    };
+    const book = {
+      ...pkg,
+      capabilities: ["records.query", "records.commit"],
+      actions: { list, edit },
+      pages: [{ id: "home", title: "Notes", actions: ["list", "edit"] }],
+    };
+    const invoke = vi
+      .spyOn(miniApps, "invoke")
+      .mockResolvedValue({ records: original });
+    const cache = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    render(
+      <QueryClientProvider client={cache}>
+        <AppView
+          instance={{
+            id: "book",
+            name: "Notebook",
+            release_id: "r",
+            enabled: true,
+            revision: 1,
+            grants: book.capabilities,
+          }}
+          pkg={book}
+          page={book.pages[0]}
+          surface="page"
+          attach={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByLabelText("Select record 1"));
+    await user.click(screen.getByLabelText("Select record 2"));
+    await user.click(
+      screen.getByRole("button", { name: "Edit selected notes" }),
+    );
+    await screen.findByRole("button", { name: "Preview changes" });
+    invoke.mockResolvedValue({
+      records:
+        change === "removed"
+          ? [original[1]]
+          : [
+              {
+                ...original[0],
+                revision: 2,
+                fields: { text: "Updated elsewhere" },
+              },
+              original[1],
+            ],
+    });
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: ["mini-app-records", "book"] });
+    });
+    await screen.findByText(
+      "Saved items changed. Reopen the action to review the latest selection.",
+    );
+    expect(
+      screen.queryByText(
+        "Some selected items changed or are no longer in the loaded results. Review the remaining selection before continuing.",
+      ),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Preview changes" }),
+    ).toBeNull();
+    expect(
+      invoke.mock.calls.every(([, command]) => command.action === "list"),
+    ).toBe(true);
+    const selected = screen
+      .getAllByRole("checkbox")
+      .filter((box) => (box as HTMLInputElement).checked);
+    expect(selected).toHaveLength(1);
+  },
+);

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -15,6 +16,14 @@ func TestRestoreAcrossDistributionChannels(t *testing.T) {
 	}{
 		{"builtin", "catalog", false, true},
 		{"catalog", "builtin", false, true},
+		{"official-catalog:" + strings.Repeat("a", 64), "builtin", false, true},
+		{"builtin", "official-catalog:" + strings.Repeat("a", 64), false, true},
+		{"builtin", "catalog:" + strings.Repeat("a", 64), false, false},
+		{"official-catalog:" + strings.Repeat("a", 64), "catalog:" + strings.Repeat("a", 64), false, true},
+		{"catalog:" + strings.Repeat("a", 64), "official-catalog:" + strings.Repeat("a", 64), false, true},
+		{"official-catalog:" + strings.Repeat("a", 64), "catalog:" + strings.Repeat("b", 64), false, false},
+		{"catalog", "catalog:" + strings.Repeat("a", 64), false, true},
+		{"catalog", "catalog:" + strings.Repeat("a", 64), true, false},
 		{"builtin", "catalog", true, false},
 		{"local", "catalog", false, false},
 		{"local", "builtin", false, true},

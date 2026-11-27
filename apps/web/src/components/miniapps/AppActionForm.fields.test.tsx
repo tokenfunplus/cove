@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { MiniAppPackage } from "@cove/api-contract";
+import type { MiniAppFields, MiniAppPackage } from "@cove/api-contract";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
@@ -14,6 +14,7 @@ vi.mock("./AppModelTask", () => ({ AppModelTask: () => null }));
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 const pkg: MiniAppPackage = {
@@ -44,7 +45,7 @@ const pkg: MiniAppPackage = {
     },
   },
 };
-function mount() {
+function mount(initial?: MiniAppFields, source = pkg) {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <AppActionForm
@@ -56,7 +57,8 @@ function mount() {
           enabled: true,
           grants: ["records.commit"],
         }}
-        pkg={pkg}
+        pkg={source}
+        initial={initial}
         actionId="add"
         surface="page"
         selected={[]}
@@ -89,6 +91,43 @@ test("defaulted options stay out of the main form and are preserved without open
       }),
     ),
   );
+});
+
+test("proposed non-default options open automatically and remain editable", async () => {
+  mount({ body: "Proposed note", active: true, remindOn: "2030-01-05" });
+  const options = screen.getByText("More options").closest("details")!;
+  expect(options.open).toBe(true);
+  expect((screen.getByLabelText("Active") as HTMLInputElement).checked).toBe(
+    true,
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByText("More options"));
+  expect(options.open).toBe(false);
+});
+
+test("a proposal equal to a resolved date default does not expand ordinary options", () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 10, 28, 12));
+  const date = new Date();
+  date.setDate(date.getDate() + 2);
+  const resolved = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+  mount(
+    { body: "Proposed note", active: false, remindOn: resolved },
+    {
+      ...pkg,
+      actions: {
+        add: {
+          ...pkg.actions.add,
+          defaults: { active: false, remindOn: "$today+2" },
+        },
+      },
+    },
+  );
+  expect(screen.getByText("More options").closest("details")!.open).toBe(false);
 });
 
 test("optional values can be reviewed and edited explicitly before confirmation", async () => {

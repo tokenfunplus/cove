@@ -10,7 +10,9 @@ func pickMiniAppText(_ id: UUID, service: BundledServiceManager) async {
           let claim = try? JSONDecoder().decode(Claim.self, from: data) else { miniAppNotice("The file request expired. Open the file picker again from the app."); return }
     let panel = NSOpenPanel()
     panel.message = "Choose a UTF-8 text file for " + claim.instance
-    panel.allowedContentTypes = [.plainText, .sourceCode] + [UTType(filenameExtension: "md")].compactMap { $0 }
+    panel.allowedContentTypes = [.plainText, .sourceCode] +
+        ["md", "json", "jsonl", "yaml", "yml", "html", "xml", "toml", "csv", "tsv"]
+            .compactMap { UTType(filenameExtension: $0) }
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
     NSApp.activate(ignoringOtherApps: true)
@@ -78,7 +80,10 @@ func chooseMiniAppForSelection(_ text: String, launcher: LauncherStateMachine, s
         let target = targets[list.indexOfSelectedItem]
         let receipt = try await service.stageMiniAppSelection(JSONEncoder().encode(Selection(target: target, text: text)))
         guard let object = try JSONSerialization.jsonObject(with: receipt) as? [String:String], let raw = object["id"], let selection = UUID(uuidString: raw) else { return nil }
-        if let id = UUID(uuidString: target.instance) { launcher.openMiniApp(.open(id, target.view), selection: selection) }
+        if let id = UUID(uuidString: target.instance),
+           !launcher.openMiniApp(.open(id, target.view), selection: selection) {
+            miniAppNotice("Cove could not open the selected app. Reopen Cove and send the selection again.")
+        }
         return selection
     } catch {
         miniAppNotice("Cove could not send this selection. Check the app's permissions and try again.")

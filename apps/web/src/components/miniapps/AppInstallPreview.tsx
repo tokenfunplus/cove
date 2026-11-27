@@ -9,11 +9,22 @@ import type {
 import { appKeys, miniApps, type CatalogEntry } from "@/api/mini-apps";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ErrorMessage, labelStyle, selectStyle } from "./presentation";
+import {
+  catalogSourceLabel,
+  ErrorMessage,
+  labelStyle,
+  selectStyle,
+} from "./presentation";
 import { StudyDialog } from "./StudyDialog";
 
 export type PackageSource =
-  | { kind: "local"; raw: string; origin?: string }
+  | {
+      kind: "local";
+      raw: string;
+      origin?: string;
+      catalog_authority?: string;
+      official_catalog?: boolean;
+    }
   | { kind: "catalog"; entry: CatalogEntry }
   | { kind: "installed"; release: MiniAppRelease };
 
@@ -194,11 +205,13 @@ export function PackagePreview({
   const sourceLabel =
     source.kind === "installed"
       ? "Installed on this Mac"
-      : origin === "builtin"
-        ? "Included with Cove"
-        : origin === "catalog"
-          ? "Verified catalog"
-          : "From a local file";
+      : catalogSourceLabel({
+          origin,
+          official_catalog:
+            source.kind === "catalog"
+              ? source.entry.official_catalog
+              : source.official_catalog,
+        });
   const permission = (capability: string) => {
     const copy = permissionCopy[capability] ?? {
       title: capability.replaceAll(/[._-]/g, " "),

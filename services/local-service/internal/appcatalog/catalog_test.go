@@ -88,3 +88,17 @@ func TestSignedCatalogRejectsChangedPackage(t *testing.T) {
 		t.Fatal("modified index accepted")
 	}
 }
+
+func TestCatalogRejectsAlternateEncodingOfTheSameAuthority(t *testing.T) {
+	public, _, _ := ed25519.GenerateKey(nil)
+	key := base64.StdEncoding.EncodeToString(public)
+	canonical := Catalog{URL: "https://catalog.example/index.json", PublicKey: key}
+	if err := canonical.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	alternate := canonical
+	alternate.PublicKey = key[:16] + "\n" + key[16:]
+	if err := alternate.Validate(); err == nil {
+		t.Fatal("alternate text encoding could create a second rollback checkpoint for one key")
+	}
+}

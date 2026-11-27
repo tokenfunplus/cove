@@ -45,6 +45,8 @@ export function AppSettings({
             current.origin,
             entry.origin,
             current.legacy_verified,
+            current,
+            entry,
           ),
         )
         .sort((a, b) =>
@@ -67,6 +69,8 @@ export function AppSettings({
             current.origin,
             r.origin,
             current.legacy_verified,
+            current,
+            r,
           )),
     ) ?? [];
   const activity = useQuery({
@@ -107,14 +111,17 @@ export function AppSettings({
   const [releaseId, setRelease] = useState(instance.release_id);
   const [grants, setGrants] = useState(instance.grants ?? []);
   const [enabled, setEnabled] = useState(instance.enabled);
- const [cloudEnabled,setCloudEnabled]=useState(instance.cloud_enabled===true);
+  const [cloudEnabled, setCloudEnabled] = useState(
+    instance.cloud_enabled === true,
+  );
   const next = choices.find((p) => p.id === releaseId);
   const upgrading = releaseId !== instance.release_id;
   const save = useMutation({
     retry: false,
     mutationFn: async () => {
-      if (upgrading) await miniApps.upgrade(instance, releaseId, grants,cloudEnabled);
-      else await miniApps.settings(instance, enabled, grants,cloudEnabled);
+      if (upgrading)
+        await miniApps.upgrade(instance, releaseId, grants, cloudEnabled);
+      else await miniApps.settings(instance, enabled, grants, cloudEnabled);
     },
     onSettled: () => cache.invalidateQueries({ queryKey: appKeys.instances }),
   });
@@ -237,7 +244,16 @@ export function AppSettings({
           selected={grants}
           onChange={setGrants}
         />
-        {<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={cloudEnabled} onChange={event=>setCloudEnabled(event.target.checked)}/>Allow this app to send selected input to cloud models</label>}
+        {
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={cloudEnabled}
+              onChange={(event) => setCloudEnabled(event.target.checked)}
+            />
+            Allow this app to send selected input to cloud models
+          </label>
+        }
         <Button onClick={() => save.mutate()}>
           {upgrading ? "Migrate and activate release" : "Save settings"}
         </Button>

@@ -412,18 +412,32 @@ export function AppView({
     );
     const previous = previousRows.current;
     previousRows.current = { scope: selectionScope, revisions };
-    setSelected((selected) => {
-      const stale = Object.keys(selected).filter((id) =>
-        revisions.has(id)
-          ? revisions.get(id) !== selected[id].revision
-          : previous?.scope === selectionScope && previous.revisions.has(id),
+    const stale = (record: MiniAppRecord) =>
+      revisions.has(record.id)
+        ? revisions.get(record.id) !== record.revision
+        : previous?.scope === selectionScope &&
+          previous.revisions.has(record.id);
+    const staleIds = Object.keys(selectedRecords).filter((id) =>
+      stale(selectedRecords[id]),
+    );
+    if (form?.records?.some(stale)) {
+      formIdentity.current = undefined;
+      setForm(undefined);
+      setFeedback(
+        "Saved items changed. Reopen the action to review the latest selection.",
       );
-      if (!stale.length) return selected;
-      const next = { ...selected };
-      for (const id of stale) delete next[id];
-      return next;
-    });
-  }, [rows.data, selectionScope]);
+    } else if (staleIds.length && !form) {
+      setFeedback(
+        "Some selected items changed or are no longer in the loaded results. Review the remaining selection before continuing.",
+      );
+    }
+    if (staleIds.length)
+      setSelected((selected) => {
+        const next = { ...selected };
+        for (const id of staleIds) delete next[id];
+        return next;
+      });
+  }, [rows.data, selectionScope, form, selectedRecords]);
   const selected = Object.values(selectedRecords);
   const [practiceRecords, setPracticeRecords] = useState<typeof records>();
   const [detail, setDetail] = useState<MiniAppRecord>();

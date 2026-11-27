@@ -38,11 +38,19 @@ embed the official public key using the packaging option above.
 
 Changing a directory URL under the same key retains its trust. Changing the
 key requires an authenticated confirmation bound to the previously displayed
-URL and key. This supports an operator's explicit key rotation or a switch to
-a different directory. A newly packaged default public key becomes the official
-release authority. Users with an explicit saved directory can review and confirm
-that key through Catalog settings. Historical rollback checkpoints survive the
-change.
+URL and key. A newly packaged default public key becomes the official authority
+for that directory's new releases. Users with an explicit saved directory can
+review and confirm it through Catalog settings. Historical rollback checkpoints
+survive the change.
+
+Each installed catalog release also pins the fingerprint of its actual signing
+key. Changing the trusted directory does not transfer an installed app to another
+authority: its upgrades require the same key. Transferring an already bound app to
+a replacement key needs a future explicit identity-transfer contract; a normal
+trust prompt cannot authorize that transfer. Legacy releases without a stored
+signer remain usable but do not infer an author through an upgrade. Their exported
+data may be restored as a separate disabled copy after the exact package is
+independently verified from one unambiguous source.
 
 Preferences from earlier versions reverify their cached release identities
 under these publisher rules before downloaded files gain catalog provenance.
@@ -62,5 +70,13 @@ own immutable-version history. Ambiguous legacy histories are reverified without
 discarding existing rollback checkpoints or changing instance data.
 
 Successful verified indexes are cached in memory for up to thirty seconds,
-bounded by their signed expiration. Changing the URL or signing authority
-invalidates that cache. Failed and cancelled requests never populate it.
+bounded by their signed expiration. Remote failures briefly cache only bundled
+fallback entries and the warning for five seconds, so an offline file import does
+not repeat the remote timeout during preview and installation. Cancelled requests
+do not populate that cache. Changing the URL or signing authority invalidates
+both success and failure caches.
+
+New verification keys use canonical single-line base64. Earlier persisted aliases
+of the same Ed25519 key are normalized when preferences are opened. Their highest
+rollback checkpoint is retained, and conflicting same-sequence indexes or package
+versions remain rejected; normalization never blesses an arbitrary alias's bytes.

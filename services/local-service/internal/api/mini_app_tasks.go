@@ -97,3 +97,32 @@ func (s *Server) appRetryTaskSave(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (s *Server) appDiscardTaskResult(w http.ResponseWriter, r *http.Request) {
+	model, ok := s.chat.(interface {
+		DiscardAppTaskResult(context.Context, string, string) error
+	})
+	if !ok || s.appStore == nil {
+		writeError(w, 503, "model_unavailable", "Mini App task recovery is unavailable.")
+		return
+	}
+	s.apps.InstanceChanges.Lock()
+	defer s.apps.InstanceChanges.Unlock()
+	instance, id, ctx := r.PathValue("id"), r.PathValue("task"), r.Context()
+	if _, err := s.apps.Instance(ctx, instance); err != nil {
+		appReply(w, nil, err)
+		return
+	}
+	if _, found, err := s.appStore.FindAppTask(ctx, instance, id); err != nil {
+		appReply(w, nil, err)
+		return
+	} else if !found {
+		appReply(w, nil, miniapps.ErrNotFound)
+		return
+	}
+	if err := model.DiscardAppTaskResult(ctx, instance, id); err != nil {
+		appReply(w, nil, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

@@ -333,3 +333,82 @@ func TestVerifiedAppSettlementRetriesOnlyItsFrozenReceipt(t *testing.T) {
 		})
 	}
 }
+
+func TestDiscardPendingAppOutputRequiresDurableCancellationAndPreservesRecords(t *testing.T) {
+	service, store, upstream, input := settlementFixture(t)
+	if err := store.MiniAppTransaction(t.Context(), func(tx *persistence.MiniAppStore) error {
+		if err := tx.SaveRecord(input.Instance, "notes", persistence.AppRecord{ID: "saved", Revision: 3, Fields: []byte(`{"title":"Saved record"}`)}); err != nil {
+			return err
+		}
+		return tx.SaveAppBlob(input.Instance, persistence.MiniAppBlob{ID: "attachment", Name: "notes.txt", Data: []byte("Saved attachment")})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	store.alwaysFail.Store(true)
+	if _, err := service.StartAppTask(t.Context(), input, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	waitForAppWorker(t, service)
+	if err := service.DiscardAppTaskResult(t.Context(), "other", input.ID); !errors.Is(err, ErrAppTaskConflict) {
+		t.Fatal("another owner discarded output", err)
+	}
+	if err := service.DiscardAppTaskResult(t.Context(), input.Instance, input.ID); !errors.Is(err, ErrAppTaskSavePending) {
+		t.Fatal("failed cancellation was acknowledged", err)
+	}
+	task, _ := store.AppTask(t.Context(), input.Instance, input.ID)
+	if projected := service.ProjectAppTask(input.Instance, task); !projected.PendingSave || projected.Result != "Frozen candidate" {
+		t.Fatal("failed discard lost the result", projected)
+	}
+	store.alwaysFail.Store(false)
+	for range 2 {
+		if err := service.DiscardAppTaskResult(t.Context(), input.Instance, input.ID); err != nil {
+			t.Fatal("discard was not idempotent", err)
+		}
+	}
+	task, err := store.AppTask(t.Context(), input.Instance, input.ID)
+	if err != nil || task.State != "cancelled" || task.Result != "" || service.hasPendingAppTaskSave() || upstream.streamCalls() != 1 {
+		t.Fatal("discard did not release only its output", task, err)
+	}
+	if err := store.MiniAppTransaction(t.Context(), func(tx *persistence.MiniAppStore) error {
+		instance, err := tx.Instance(input.Instance)
+		if err != nil || instance.Revision != 1 || instance.Name != "Book" {
+			t.Fatal("discard changed the instance", instance, err)
+		}
+		records, err := tx.Records(input.Instance, "notes")
+		if err != nil || len(records) != 1 || records[0].Revision != 3 || string(records[0].Fields) != `{"title":"Saved record"}` {
+			t.Fatal("discard changed saved records", records, err)
+		}
+		attachment, err := tx.AppBlob(input.Instance, "attachment")
+		if err != nil || string(attachment.Data) != "Saved attachment" {
+			t.Fatal("discard changed attachments", attachment, err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal("discard removed its instance", err)
+	}
+	input.ID = "after-discard"
+	upstream.stream = &fakeStream{events: []provider.Event{{Type: provider.EventDelta, Delta: "Next result"}, {Type: provider.EventCompleted}}}
+	if _, err := service.StartAppTask(t.Context(), input, func() error { return nil }); err != nil {
+		t.Fatal("discard left admission blocked", err)
+	}
+	waitForAppWorker(t, service)
+}
+
+func TestDiscardPendingOutputNeverOverwritesAnAlreadyCommittedResult(t *testing.T) {
+	service, store, _, input := settlementFixture(t)
+	if _, err := service.StartAppTask(t.Context(), input, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	waitForAppWorker(t, service)
+	// Reproduce an ambiguous commit whose acknowledgment and receipt check failed.
+	service.appTask.Lock()
+	service.appTask.pending = &appTaskSettlement{instance: input.Instance, id: input.ID, state: "completed", result: "Frozen candidate"}
+	service.appTask.Unlock()
+	if err := service.DiscardAppTaskResult(t.Context(), input.Instance, input.ID); err != nil {
+		t.Fatal(err)
+	}
+	task, err := store.AppTask(t.Context(), input.Instance, input.ID)
+	if err != nil || task.State != "completed" || task.Result != "Frozen candidate" || service.hasPendingAppTaskSave() {
+		t.Fatal("discard replaced durable output", task, err)
+	}
+}

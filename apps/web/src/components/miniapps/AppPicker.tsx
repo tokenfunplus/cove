@@ -30,28 +30,30 @@ export default function AppPicker({
     <Dialog
       open
       onClose={close}
-      className="fixed inset-0 z-[100] grid place-items-center p-2 sm:p-5"
+      className="fixed inset-0 z-[100] flex min-h-0 items-center justify-center p-2 sm:p-5"
     >
       <DialogOverlay />
-      <DialogContent className="max-h-[94dvh] w-full max-w-2xl space-y-3 overflow-auto rounded-2xl p-4">
-        <div className="flex items-center justify-between">
+      <DialogContent className="flex max-h-full min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-border p-4">
           <DialogTitle>Mini Apps</DialogTitle>
           <Button onClick={close} variant="ghost" size="sm">
             Done
           </Button>
         </div>
-        {introduction}
-        {location ? (
-          <AppWorkspace
-            key={location.id}
-            {...location}
-            {...context}
-            navigate={open}
-            back={() => setLocation(undefined)}
-          />
-        ) : (
-          <AppDirectory open={open} />
-        )}
+        <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-4">
+          {introduction}
+          {location ? (
+            <AppWorkspace
+              key={location.id}
+              {...location}
+              {...context}
+              navigate={open}
+              back={() => setLocation(undefined)}
+            />
+          ) : (
+            <AppDirectory open={open} />
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

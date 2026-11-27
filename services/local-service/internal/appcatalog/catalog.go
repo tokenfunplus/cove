@@ -27,16 +27,18 @@ const MaxPackage = 1 << 20
 const maxIndex = 8 << 20
 
 type Entry struct {
-	MinHostVersion string `json:"min_host_version,omitempty"`
-	Publisher      string `json:"publisher"`
-	App            string `json:"app"`
-	Version        string `json:"version"`
-	SchemaVersion  int    `json:"schema_version"`
-	Name           string `json:"name"`
-	Description    string `json:"description,omitempty"`
-	Digest         string `json:"digest"`
-	Origin         string `json:"origin"`
-	Raw            []byte `json:"-"`
+	CatalogAuthority string `json:"catalog_authority,omitempty"`
+	OfficialCatalog  bool   `json:"official_catalog,omitempty"`
+	MinHostVersion   string `json:"min_host_version,omitempty"`
+	Publisher        string `json:"publisher"`
+	App              string `json:"app"`
+	Version          string `json:"version"`
+	SchemaVersion    int    `json:"schema_version"`
+	Name             string `json:"name"`
+	Description      string `json:"description,omitempty"`
+	Digest           string `json:"digest"`
+	Origin           string `json:"origin"`
+	Raw              []byte `json:"-"`
 }
 
 type Catalog struct {
@@ -50,7 +52,7 @@ func (c Catalog) Validate() error {
 	}
 	u, err := url.Parse(c.URL)
 	key, e := base64.StdEncoding.DecodeString(c.PublicKey)
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" || e != nil || len(key) != ed25519.PublicKeySize {
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" || e != nil || len(key) != ed25519.PublicKeySize || base64.StdEncoding.EncodeToString(key) != c.PublicKey {
 		return errors.New("use an HTTPS index URL and a base64 Ed25519 public key")
 	}
 	return nil
@@ -72,6 +74,8 @@ func entry(raw []byte, origin string) (Entry, error) {
 	}
 	digest := sha256.Sum256(raw)
 	item.Digest, item.Origin, item.Raw = hex.EncodeToString(digest[:]), origin, raw
+	// Package bytes cannot attest their own distribution authority.
+	item.CatalogAuthority, item.OfficialCatalog = "", false
 	return item, nil
 }
 
@@ -137,6 +141,9 @@ func (c Catalog) list(ctx context.Context, accept func(*SignedIndex) error) ([]E
 				return errors.New("catalog version has conflicting contents")
 			}
 			return nil
+		}
+		if origin == "catalog" {
+			e.CatalogAuthority = Authority(c.PublicKey)
 		}
 		all[key] = e
 		return nil
@@ -207,4 +214,26 @@ func ReservedPublisher(publisher string) bool {
 		}
 	}
 	return false
+}
+
+// Authority identifies the Ed25519 trust root without exposing mutable URLs.
+func Authority(publicKey string) string {
+	key, err := base64.StdEncoding.DecodeString(publicKey)
+	if err != nil || len(key) != ed25519.PublicKeySize {
+		return ""
+	}
+	sum := sha256.Sum256(key)
+	return hex.EncodeToString(sum[:])
+}
+
+// ReleaseOrigin is an internal, persisted provenance token. Public DTOs retain
+// the catalog channel and expose its attested authority separately.
+func (e Entry) ReleaseOrigin() string {
+	if e.Origin != "catalog" || e.CatalogAuthority == "" {
+		return e.Origin
+	}
+	if e.OfficialCatalog {
+		return "official-catalog:" + e.CatalogAuthority
+	}
+	return "catalog:" + e.CatalogAuthority
 }

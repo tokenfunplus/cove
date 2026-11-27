@@ -137,3 +137,62 @@ can retry persistence without receiving data or restoring execution grants; an
 explicit instance deletion removes that instance's pending settlement. Accepted
 verified browser receipts remain idempotent. Restart cannot recover an unsaved
 in-memory output and never automatically repeats the paid request.
+
+
+## Explicit unsaved-result recovery
+
+An owner may confirm discarding one unsaved model output. Chat first stores a
+cancelled terminal state with no output, then releases admission for other App
+tasks. If cancellation cannot be stored, the original output remains recoverable.
+An already committed answer is never replaced by a late discard. Recovery remains
+available after generation permission is revoked and does not remove records,
+attachments, or the instance. Activity names the blocking app and offers a direct,
+draft-protected navigation path from Chat.
+
+## Per-release catalog signer continuity
+
+A verified catalog release now persists the SHA-256 fingerprint of its Ed25519
+public key as part of its immutable release identity and storage provenance.
+Public responses retain the `catalog` channel and separately expose the signing
+authority and whether it matches the packaged Cove default key. Catalog updates
+must retain that fingerprint, even after a confirmed directory-authority switch.
+Only the packaged official authority can succeed a bundled identity. This
+supersedes the earlier policy that a newly selected catalog authority could
+update every non-bundled publisher identity.
+
+Existing unbound catalog releases retain their records, attachments and normal
+use, but cannot acquire an inferred signer through an upgrade. Their exact bytes
+can be independently reverified and used when restoring an exported backup as a
+separate disabled instance; permissions must be granted again. Key transfer or
+rotation for an already bound catalog lineage needs a future explicit identity
+transfer contract. This change uses the existing provenance column, without a
+host database schema migration.
+
+Directory failures cache only bundled fallback metadata and the original warning
+for five seconds. Cancelled requests do not populate that cache, and any trust or
+URL change invalidates it. Legacy immutable-version history is attributed to its
+sole historical signer even when a different, unverified key is currently selected;
+ambiguous multi-signer history still requires independent reverification.
+
+Legacy public-key encodings are canonicalized before trust-history lookup. When
+aliases identify the same Ed25519 key, their highest sequence is retained. Equal
+sequence/index conflicts and immutable package conflicts remain closed until an
+unambiguous newer index omits the conflicted version; neither alias is arbitrarily
+accepted. New settings require canonical base64, preventing new history aliases.
+
+
+## Workspace navigation and draft protection
+
+First-party workspace entries carry a namespaced lineage, index, and key while
+preserving other browser history state. Programmatic navigation requests Chat's
+existing draft and generation confirmation before adding an entry. A protected
+Back or Forward traversal returns to the known original entry; approval revisits
+the existing target instead of replacing its URL. Staying leaves those tracked
+entries intact. Legacy, external, and rebased hash entries have no safe numeric
+traversal distance; their fallback preserves the current Chat URL and state rather
+than guessing a direction into unrelated history.
+
+The release-authority encoding does not add a database schema migration beyond
+this branch's schema 32. The main-branch service rejects that newer schema. Earlier
+unreleased schema-32 development builds do not implement the new signer binding;
+downgrading Mini App data to those development snapshots is unsupported.

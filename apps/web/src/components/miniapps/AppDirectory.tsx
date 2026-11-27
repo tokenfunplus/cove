@@ -51,7 +51,7 @@ interface Props {
   open: (id: string, view?: string, replace?: boolean) => void;
   target?: InstallTarget;
   section?: DirectorySection;
-  navigate?: (path: string) => void;
+  navigate?: (path: string, replace?: boolean) => void;
 }
 function matches(
   pkg: Pick<MiniAppPackage, "publisher" | "app" | "version">,
@@ -96,7 +96,7 @@ export function AppDirectory({
     if (navigate) navigate(next === "mine" ? "/apps" : "/apps?section=" + next);
     else setLocalSection(next);
   }
-  function showDetail(entry: CatalogEntry) {
+  function showDetail(entry: CatalogEntry, replace = false) {
     if (navigate)
       navigate(
         "/apps?" +
@@ -105,6 +105,7 @@ export function AppDirectory({
             app: entry.publisher + "/" + entry.app,
             version: entry.version,
           }),
+        replace,
       );
     else {
       setLocalSection("catalog");
@@ -159,11 +160,16 @@ export function AppDirectory({
     window.addEventListener("popstate", leaveReview);
     return () => window.removeEventListener("popstate", leaveReview);
   }, [navigate]);
+  const requestedGroup = groups.find(
+    (group) => group[0].publisher + "/" + group[0].app === detailName,
+  );
   const detail = standalone
-    ? groups
-        .find((group) => group[0].publisher + "/" + group[0].app === detailName)
-        ?.find((entry) => !detailVersion || entry.version === detailVersion)
+    ? requestedGroup?.find(
+        (entry) => !detailVersion || entry.version === detailVersion,
+      )
     : localDetail;
+  const missingRequestedRelease =
+    standalone && !!detailName && catalog.isSuccess && !detail;
   // A catalog handoff opens an existing copy without requesting the directory.
   const onlyBook =
     ready && target && books.length === 1 ? books[0].id : undefined;
@@ -203,6 +209,8 @@ export function AppDirectory({
             kind: "local",
             raw,
             origin: release.origin,
+            catalog_authority: release.catalog_authority,
+            official_catalog: release.official_catalog,
           } as PackageSource,
         };
       }
@@ -319,6 +327,12 @@ export function AppDirectory({
               before.origin,
               origin,
               before.legacy_verified,
+              before,
+              preview.source.kind === "catalog"
+                ? preview.source.entry
+                : preview.source.kind === "installed"
+                  ? preview.source.release
+                  : preview.source,
             )
           );
         })}
@@ -471,7 +485,7 @@ export function AppDirectory({
               ) ?? [detail]
             }
             selected={detail}
-            select={showDetail}
+            select={(entry) => showDetail(entry, true)}
             back={() => changeSection("catalog")}
             copies={allBooks.filter((book) =>
               installed.some(
@@ -504,6 +518,32 @@ export function AppDirectory({
               });
             }}
           />
+        ) : missingRequestedRelease ? (
+          <section className={sectionStyle}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => changeSection("catalog")}
+            >
+              Back to Discover
+            </Button>
+            <p role="alert">
+              {detailVersion
+                ? "Version " + detailVersion + " of " + detailName
+                : "App " + detailName}{" "}
+              is not available in the current catalog.
+            </p>
+            {catalog.data?.warning && (
+              <p className="text-sm text-muted-foreground">
+                {catalog.data.warning}
+              </p>
+            )}
+            {requestedGroup && (
+              <Button onClick={() => showDetail(requestedGroup[0], true)}>
+                View available versions
+              </Button>
+            )}
+          </section>
         ) : (
           <section id="mini-app-catalog" className="space-y-7">
             <div className="flex flex-wrap items-end justify-between gap-5">
@@ -673,7 +713,13 @@ export function AppDirectory({
               const release = await miniApps.localPackage(raw, "preview");
               setPreview({
                 pkg: release.package,
-                source: { kind: "local", raw, origin: release.origin },
+                source: {
+                  kind: "local",
+                  raw,
+                  origin: release.origin,
+                  catalog_authority: release.catalog_authority,
+                  official_catalog: release.official_catalog,
+                },
               });
             }}
             expanded

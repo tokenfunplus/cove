@@ -8,7 +8,7 @@ export function generationErrorMessage(
 ): string {
   if (error instanceof LocalServiceError) {
     if (error.envelope.error.code === "task_save_pending")
-      return "An app result is waiting to be saved. Open Mini Apps, choose Activity and retry saving it before starting another app task.";
+      return "An app result is waiting to be saved. Open Activity to retry saving or discard its unsaved output before starting another app task.";
     if (
       error.envelope.error.code === "author_preview_only" ||
       error.envelope.error.code === "app_scope_changed" ||

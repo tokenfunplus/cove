@@ -23,3 +23,9 @@ Pause finishes active requests. Stop cancels browser work, records a terminal se
 ## Pause and settlement ordering
 
 The first successful browser claim is the admission boundary for an active request. Manual and automatic pauses reject new claims and wake unclaimed tasks immediately; already claimed requests may settle. The browser also invalidates deferred starts when Stop is requested. Result acceptance and deadline expiry are serialized: a receipt accepted before the fixed deadline wins even if the worker observes both signals together, and receipts arriving after the deadline are rejected. Claim admission rechecks that deadline after reading session state so a slow local read cannot authorize an already expired request.
+
+## Browser delivery failures
+
+Debate and Mini App browser workers share one bounded delivery policy: at most five sends, with abort-aware exponential backoff for connection and Local Service storage errors. Every retry carries the same claim and frozen result; neither a claim nor chargeable inference repeats.
+
+If delivery of a verified Debate result remains unsuccessful, the browser attempts a failed terminal receipt using a separate three-second cleanup window. The service accepts only the first result for that claim. A lost success response therefore cannot be overwritten by cleanup, while a reachable service can end a rejected or interrupted delivery without waiting for the inference deadline. An unreachable or unauthorized service still relies on its existing expiry. Mini App workers do not opt into this empty-result cleanup: their paid results follow the separate retained-result recovery contract in ADR-0073.

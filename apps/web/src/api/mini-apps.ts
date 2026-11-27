@@ -16,6 +16,8 @@ const segment = encodeURIComponent;
 const instanceURL = (id: string) => root + "/instances/" + segment(id);
 export interface CatalogEntry {
   origin: string;
+  catalog_authority?: string;
+  official_catalog?: boolean;
   schema_version: number;
   publisher: string;
   app: string;
@@ -348,6 +350,11 @@ export const miniApps = {
   retryTaskSave: (id: string, task: string) =>
     request<void>(
       instanceURL(id) + "/tasks/" + segment(task) + "/retry-save",
+      post({}),
+    ),
+  discardTaskResult: (id: string, task: string) =>
+    request<void>(
+      instanceURL(id) + "/tasks/" + segment(task) + "/discard-result",
       post({}),
     ),
   cancel: (id: string, task: string) =>

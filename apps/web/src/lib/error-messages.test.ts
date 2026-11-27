@@ -13,7 +13,7 @@ test("a waiting app save directs the user to Activity instead of suggesting anot
     },
   });
   const message = generationErrorMessage(error, applicationMessages("en"));
-  expect(message).toContain("choose Activity");
+  expect(message).toContain("Open Activity");
   expect(message).toContain("retry saving");
   expect(message).not.toBe(applicationMessages("en").generationFailed);
 });

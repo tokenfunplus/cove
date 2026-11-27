@@ -33,17 +33,31 @@ test("permanent authorization and state errors do not retry", async () => {
   expect(send).toHaveBeenCalledOnce();
 });
 
-test("a temporary Local Service storage error retries the same delivery", async () => {
-  vi.useFakeTimers();
-  const error = { envelope: { error: { code: "internal_error" } } };
-  const send = vi
-    .fn()
-    .mockRejectedValueOnce(error)
-    .mockResolvedValue(undefined);
-  const result = retryBrowserDelivery(send, new AbortController().signal);
-  await vi.runAllTimersAsync();
-  await result;
-  expect(send).toHaveBeenCalledTimes(2);
+test.each(["internal_error", "mini_app_error", "service_unavailable"])(
+  "a %s retries the same frozen delivery",
+  async (code) => {
+    vi.useFakeTimers();
+    const error = { envelope: { error: { code } } };
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValue(undefined);
+    const result = retryBrowserDelivery(send, new AbortController().signal);
+    await vi.runAllTimersAsync();
+    await result;
+    expect(send).toHaveBeenCalledTimes(2);
+  },
+);
+
+test("an already aborted signal still allows one terminal delivery without retry", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const error = new Error("Disconnected");
+  const send = vi.fn().mockRejectedValue(error);
+  await expect(retryBrowserDelivery(send, controller.signal)).rejects.toBe(
+    error,
+  );
+  expect(send).toHaveBeenCalledOnce();
 });
 
 test("delivery retries stop after a bounded number of attempts", async () => {

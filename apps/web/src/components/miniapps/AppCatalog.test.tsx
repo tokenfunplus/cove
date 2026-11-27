@@ -103,8 +103,11 @@ test("the market preview illustrates declared sample content instead of renderin
   expect(screen.queryByText("2026-11-27")).toBeNull();
 });
 
-function showInstalledCopies(copies: { id: string; name: string }[]) {
-  const selected = entry("notes", "1.0.0");
+function showInstalledCopies(
+  copies: { id: string; name: string }[],
+  metadata: Partial<CatalogEntry> = {},
+) {
+  const selected = { ...entry("notes", "1.0.0"), ...metadata };
   const pkg: MiniAppPackage = {
     format: 1,
     publisher: "studio",
@@ -149,6 +152,24 @@ test("an installed release opens its existing data instead of creating another c
   await user.click(screen.getByRole("button", { name: "Create another copy" }));
   expect(install).toHaveBeenCalledWith(pkg, selected, true);
 });
+
+test.each([false, true])(
+  "catalog origin is attested separately from the literal publisher id (official: %s)",
+  (official) => {
+    showInstalledCopies([], {
+      origin: "catalog",
+      publisher: "cove-team",
+      official_catalog: official,
+      catalog_authority: official ? "cove-key" : "custom-key",
+    });
+    expect(
+      screen.getByText(official ? "Cove catalog" : "Custom signed catalog"),
+    ).toBeTruthy();
+    expect(screen.getByText("Publisher ID: cove-team")).toBeTruthy();
+    expect(screen.queryByText("Made by Cove team")).toBeNull();
+    expect(screen.queryByText("Verified catalog")).toBeNull();
+  },
+);
 
 test("multiple installed copies require an explicit choice without installing anything", async () => {
   const { openCopy, install } = showInstalledCopies([

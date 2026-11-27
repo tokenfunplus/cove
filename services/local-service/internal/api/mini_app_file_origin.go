@@ -2,9 +2,10 @@ package api
 
 import (
 	"fmt"
+	"net/http"
+
 	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
 	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
-	"net/http"
 )
 
 // A file can acquire catalog provenance only by matching independently trusted bytes.
@@ -25,7 +26,7 @@ func (s *Server) fileOrigin(r *http.Request, raw []byte) (string, error) {
 		}
 		reserved = true
 		if e.Digest == candidate.Digest {
-			return e.Origin, nil
+			return e.ReleaseOrigin(), nil
 		}
 	}
 	releases, err := s.apps.Releases(ctx)
@@ -45,11 +46,14 @@ func (s *Server) fileOrigin(r *http.Request, raw []byte) (string, error) {
 		}
 		reserved = true
 		if e.Digest == candidate.Digest {
-			return e.Origin, nil
+			if e.Origin == "catalog" && e.CatalogAuthority == "" {
+				continue
+			}
+			return e.DistributionOrigin(), nil
 		}
 	}
-	if s.catalog.KnownRelease(candidate.Digest) {
-		return "catalog", nil
+	if origin, ok := s.catalog.KnownReleaseOrigin(candidate.Digest); ok {
+		return origin, nil
 	}
 	if s.catalog.Config().URL != "" {
 		entries, _ := s.catalog.List(ctx)
@@ -58,7 +62,7 @@ func (s *Server) fileOrigin(r *http.Request, raw []byte) (string, error) {
 				reserved = true
 			}
 			if candidate.Digest == e.Digest {
-				return e.Origin, nil
+				return e.ReleaseOrigin(), nil
 			}
 		}
 	}

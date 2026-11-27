@@ -86,6 +86,17 @@ export function useDebateBrowserTurns(
                 controller.signal,
               );
             },
+            failDelivery: (input) => {
+              const payload = { ...input, claim_id: claimId };
+              // Stop can abort the inference/backoff. Give terminal cleanup its
+              // own bounded window; the service never replaces an accepted result.
+              const cleanup = AbortSignal.timeout(3_000);
+              return retryBrowserDelivery(
+                () =>
+                  api.settleDebateBrowserTurn(id, turn.id, payload, cleanup),
+                cleanup,
+              );
+            },
           },
           controller.signal,
         )

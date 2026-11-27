@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { checkMiniAppScroll } from "./mini-app-scroll.mjs";
 
 export async function runMiniAppWorkspace({
   api,
@@ -130,6 +131,7 @@ export async function runMiniAppWorkspace({
       JSON.stringify("Choose app access") +
       "]')",
   );
+  await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true);
   await button("Cancel");
   assert.deepEqual(
     (await api("/api/mini-apps/instances")).instances,

@@ -16,7 +16,18 @@ test("catalog updates preserve the independent publisher of a bundled app and is
     actions: {},
   };
   const after = { ...before, version: "1.1.0" };
-  expect(canUpgrade(before, after, "builtin", "catalog")).toBe(true);
+  expect(
+    canUpgrade(
+      before,
+      after,
+      "builtin",
+      "catalog",
+      false,
+      {},
+      { official_catalog: true },
+    ),
+  ).toBe(true);
+  expect(canUpgrade(before, after, "builtin", "catalog")).toBe(false);
   expect(canUpgrade(before, after, "builtin", "local")).toBe(false);
   expect(canUpgrade(before, after, "local", "catalog")).toBe(false);
   expect(
@@ -38,6 +49,65 @@ test("only independently verified legacy files can upgrade to a trusted release"
   } as MiniAppPackage;
   const after = { ...before, version: "1.1.0" };
   expect(canUpgrade(before, after, "local", "builtin", true)).toBe(true);
-  expect(canUpgrade(before, after, "local", "catalog", true)).toBe(true);
+  expect(
+    canUpgrade(
+      before,
+      after,
+      "local",
+      "catalog",
+      true,
+      {},
+      { official_catalog: true },
+    ),
+  ).toBe(true);
   expect(canUpgrade(before, after, "local", "builtin", false)).toBe(false);
+});
+
+test("catalog upgrade choices bind the original signing authority, including legacy unknown authorities", () => {
+  const before = {
+    publisher: "author",
+    app: "notes",
+    version: "1.0.0",
+    schema_version: 1,
+  } as MiniAppPackage;
+  const after = { ...before, version: "1.1.0" };
+  expect(
+    canUpgrade(
+      before,
+      after,
+      "catalog",
+      "catalog",
+      false,
+      { catalog_authority: "key-a" },
+      { catalog_authority: "key-a" },
+    ),
+  ).toBe(true);
+  expect(
+    canUpgrade(
+      before,
+      after,
+      "catalog",
+      "catalog",
+      false,
+      { catalog_authority: "key-a" },
+      { catalog_authority: "key-b" },
+    ),
+  ).toBe(false);
+  expect(
+    canUpgrade(
+      before,
+      after,
+      "catalog",
+      "catalog",
+      false,
+      {},
+      { catalog_authority: "key-a" },
+    ),
+  ).toBe(false);
+  expect(
+    canUpgrade(before, after, "catalog", "builtin", false, {
+      official_catalog: true,
+    }),
+  ).toBe(true);
+  expect(canUpgrade(before, after, "catalog", "builtin")).toBe(false);
 });

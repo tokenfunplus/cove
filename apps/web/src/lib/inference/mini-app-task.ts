@@ -1,6 +1,7 @@
 import type { ProviderSnapshot } from "@cove/api-contract";
 import { request } from "@/api/client";
 import { runVerifiedBrowserTurn } from "./debate-browser-turn";
+import { retryBrowserDelivery } from "./retry-browser-delivery";
 import type { SecureInferenceTransport } from "./secure-inference";
 
 /** Only an explicit start triggers a chargeable request. Polling old jobs never claims work. */
@@ -19,27 +20,15 @@ export function runVerifiedAppTask(
   const claim_id = crypto.randomUUID();
   async function send<T>(step: string, values: Record<string, unknown>) {
     const body = JSON.stringify({ claim_id, ...values });
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await request<T>(base + step, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-          ...(step === "settle" ? {} : { signal }),
-        });
-      } catch (error) {
-        const code = (error as { envelope?: { error?: { code?: string } } })
-          ?.envelope?.error?.code;
-        const transient =
-          !code || code === "service_unavailable" || code === "mini_app_error";
-        // Claims never repeat a model call. Settlements reuse their exact verified bytes.
-        if (step === "claim" || !transient || attempt >= 7 || signal.aborted)
-          throw error;
-        await new Promise<void>((resolve) =>
-          setTimeout(resolve, Math.min(100 * 2 ** attempt, 2000)),
-        );
-      }
-    }
+    const deliver = () =>
+      request<T>(base + step, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        ...(step === "settle" ? {} : { signal }),
+      });
+    // Claim failures are final. Only delivery of these frozen bytes can retry.
+    return step === "claim" ? deliver() : retryBrowserDelivery(deliver, signal);
   }
   return runVerifiedBrowserTurn(
     {

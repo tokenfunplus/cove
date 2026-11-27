@@ -70,6 +70,7 @@ function CatalogForm({
   const [index, setIndex] = useState(url);
   const [key, setKey] = useState(publicKey);
   const [confirmation, setConfirmation] = useState<CatalogConfig>();
+  const unchanged = index.trim() === url && key.trim() === publicKey;
   const cache = useQueryClient();
   const save = useMutation({
     mutationFn: ({
@@ -109,6 +110,7 @@ function CatalogForm({
       className="space-y-2"
       onSubmit={(event) => {
         event.preventDefault();
+        if (unchanged) return;
         const config = { url: index.trim(), public_key: key.trim() };
         save.reset();
         if (config.public_key !== publicKey) setConfirmation(config);
@@ -156,13 +158,17 @@ function CatalogForm({
             }}
           />
         </label>
-        <Button type="submit" disabled={!!index.trim() !== !!key.trim()}>
+        <Button
+          type="submit"
+          disabled={unchanged || !!index.trim() !== !!key.trim()}
+        >
           Save catalog settings
         </Button>
         {defaults && (
           <Button
             type="button"
             variant="outline"
+            disabled={mode === "default" && unchanged}
             onClick={() => {
               onEdit();
               save.reset();

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { miniApps, type CatalogEntry } from "@/api/mini-apps";
 import { Button } from "@/components/ui/button";
-import { ErrorMessage, humanize, selectStyle } from "./presentation";
+import { catalogSourceLabel, ErrorMessage, selectStyle } from "./presentation";
 import { recordPrimaryField } from "./AppRecordFields";
 
 export function groupCatalog(entries: CatalogEntry[]) {
@@ -291,7 +291,7 @@ export function CatalogCard({
         </p>
         <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-4">
           <span className="text-xs text-muted-foreground">
-            By {humanize(entry.publisher)}
+            Publisher ID: {entry.publisher}
           </span>
           <Button
             variant="ghost"
@@ -360,9 +360,7 @@ export function CatalogDetail({
         </div>
         <div className="flex flex-col items-start justify-center py-2">
           <span className="mini-app-eyebrow">
-            {selected.origin === "builtin"
-              ? "Included with Cove"
-              : "From your app catalog"}
+            {catalogSourceLabel(selected)}
           </span>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             {selected.name}
@@ -371,7 +369,7 @@ export function CatalogDetail({
             {pkg?.description ?? selected.description}
           </p>
           <p className="mt-5 text-xs text-muted-foreground">
-            Made by {humanize(selected.publisher)}
+            Publisher ID: {selected.publisher}
           </p>
           <div className="my-7 w-full border-t border-border" />
           <div className="grid gap-3 text-sm">

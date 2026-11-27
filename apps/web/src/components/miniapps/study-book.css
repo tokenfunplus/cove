@@ -208,7 +208,7 @@
   border-radius: 8px;
   color: #6475a0;
 }
-.study-dialog > section {
+.study-dialog-body > section {
   border: 0;
   padding: 0;
   background: none;

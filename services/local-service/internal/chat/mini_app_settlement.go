@@ -130,6 +130,45 @@ func (s *Service) RetryAppTaskSave(ctx context.Context, instance, id string) err
 	return nil
 }
 
+// DiscardAppTaskResult drops only an explicitly selected unsaved output. The
+// cancellation must be durable before admission is released; a saved result is
+// never replaced, even if an earlier save lost its acknowledgment.
+func (s *Service) DiscardAppTaskResult(ctx context.Context, instance, id string) error {
+	store, ok := s.store.(AppTaskStore)
+	if !ok {
+		return ErrAppTaskConflict
+	}
+	s.appTask.Lock()
+	defer s.appTask.Unlock()
+	pending := s.appTask.pending
+	task, found, err := store.FindAppTask(ctx, instance, id)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrAppTaskConflict
+	}
+	if pending == nil || pending.instance != instance || pending.id != id {
+		if task.State == "cancelled" {
+			return nil
+		}
+		return ErrAppTaskConflict
+	}
+	if task.State != "running" {
+		// A terminal write may have committed before the connection failed.
+		s.appTask.pending = nil
+		return nil
+	}
+	bounded, cancel := context.WithTimeout(ctx, appTaskSaveTimeout)
+	defer cancel()
+	discarded := appTaskSettlement{instance: instance, id: id, state: "cancelled", detail: "The owner discarded this unsaved result."}
+	if err := finishAppTaskWithRetry(bounded, store, discarded); err != nil {
+		return ErrAppTaskSavePending
+	}
+	s.appTask.pending = nil
+	return nil
+}
+
 // Grant changes retain an already completed unsaved result. Explicit deletion
 // releases its memory, and stopping or shutdown makes one bounded save attempt.
 func (s *Service) flushPendingAppTaskOnStop(instance, id string) {

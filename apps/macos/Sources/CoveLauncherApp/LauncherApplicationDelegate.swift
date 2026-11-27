@@ -12,7 +12,9 @@ final class LauncherApplicationDelegate: NSObject, NSApplicationDelegate {
             guard let service else { return }
             Task { await pickMiniAppText(id, service: service) }
         } else {
-            launcher?.openMiniApp(link)
+            if launcher?.openMiniApp(link) != true {
+                miniAppNotice("Cove could not open this app. Reopen Cove and try the link again.")
+            }
         }
     }
 

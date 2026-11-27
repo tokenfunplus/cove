@@ -127,24 +127,25 @@ test("an unsaved result blocks new generation and retries only the retained save
   expect(startVerifiedAppTask).not.toHaveBeenCalled();
 });
 test("a pending save in another app directs recovery to Activity without retrying admission", async () => {
+  vi.spyOn(miniApps, "hostActivity").mockResolvedValue({ activity: [] });
   vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [] });
-  const start = vi
-    .spyOn(miniApps, "startTask")
-    .mockRejectedValue(
-      new LocalServiceError({
-        error: {
-          code: "task_save_pending",
-          message: "Another app has a pending save.",
-          details: null,
-          request_id: "fixture",
-        },
-      }),
-    );
+  const start = vi.spyOn(miniApps, "startTask").mockRejectedValue(
+    new LocalServiceError({
+      error: {
+        code: "task_save_pending",
+        message: "Another app has a pending save.",
+        details: null,
+        request_id: "fixture",
+      },
+    }),
+  );
   form();
   fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
-  const recovery = await screen.findByRole("link", { name: "Open Mini Apps" });
-  expect(recovery.getAttribute("href")).toBe("cove://apps");
-  expect(screen.getByText(/choose Activity and retry saving/)).toBeTruthy();
+  const recovery = await screen.findByRole("link", { name: "Open Activity" });
+  expect(recovery.getAttribute("href")).toBe("/apps?section=activity");
+  expect(
+    screen.getByText(/Open Activity to retry saving or discard/),
+  ).toBeTruthy();
   expect(start).toHaveBeenCalledOnce();
   expect(startVerifiedAppTask).not.toHaveBeenCalled();
 });

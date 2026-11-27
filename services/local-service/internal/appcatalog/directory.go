@@ -49,10 +49,11 @@ type Directory struct {
 	cachedConfig  Catalog
 	cachedUntil   time.Time
 	cachedEntries []Entry
+	cachedErr     error
 }
 
 func Open(path string, defaults Catalog) (*Directory, error) {
-	d := &Directory{path: path, defaults: defaults}
+	d := &Directory{path: path, defaults: canonicalCatalog(defaults)}
 	if path != "" {
 		raw, err := os.ReadFile(path)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -65,14 +66,18 @@ func Open(path string, defaults Catalog) (*Directory, error) {
 			}
 		}
 	}
+	d.prefs = normalizeAuthorityPreferences(d.prefs)
 	// Older preferences did not distinguish the official signing authority from a
 	// user-selected directory. Reverify cached release identities under this policy.
 	if d.prefs.TrustPolicy < 2 {
 		// A legacy version history can only be attributed when exactly one key
 		// was ever accepted. Multi-authority histories must be reverified.
-		key := d.config().PublicKey
-		if _, known := d.prefs.Checkpoints[key]; key != "" && known && len(d.prefs.Checkpoints) == 1 {
-			d.prefs.Authorities = map[string]authorityHistory{key: {Versions: maps.Clone(d.prefs.Versions), Publishers: maps.Clone(d.prefs.Publishers)}}
+		if len(d.prefs.Checkpoints) == 1 {
+			for key := range d.prefs.Checkpoints {
+				if Authority(key) != "" {
+					d.prefs.Authorities = map[string]authorityHistory{key: {Versions: maps.Clone(d.prefs.Versions), Publishers: maps.Clone(d.prefs.Publishers)}}
+				}
+			}
 		}
 		d.prefs.ReleaseDigests = nil
 		d.prefs.Versions = nil
@@ -187,8 +192,9 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 	config := d.config()
 	if config == d.cachedConfig && time.Now().Before(d.cachedUntil) {
 		entries := cloneEntries(d.cachedEntries)
+		err := d.cachedErr
 		d.mu.Unlock()
-		return entries, nil
+		return entries, err
 	}
 	d.mu.Unlock()
 	var expires time.Time
@@ -248,7 +254,24 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 		err = ctx.Err()
 	}
 	if err != nil {
-		return bundledFallback(ctx, err)
+		entries, fallbackErr := bundledFallback(ctx, err)
+		// Briefly reuse only bundled fallback metadata after an actual remote failure.
+		// This avoids repeating the network timeout during preview -> install.
+		if ctx.Err() == nil {
+			d.mu.Lock()
+			freshSuccess := d.cachedConfig == config && d.cachedErr == nil && time.Now().Before(d.cachedUntil)
+			if config == d.config() && !freshSuccess {
+				d.cachedConfig, d.cachedUntil = config, time.Now().Add(5*time.Second)
+				d.cachedEntries, d.cachedErr = cloneEntries(entries), fallbackErr
+			}
+			d.mu.Unlock()
+		}
+		return entries, fallbackErr
+	}
+	for index := range entries {
+		if entries[index].Origin == "catalog" {
+			entries[index].OfficialCatalog = d.defaults.PublicKey != "" && config.PublicKey == d.defaults.PublicKey
+		}
 	}
 	if !expires.IsZero() {
 		d.mu.Lock()
@@ -259,6 +282,7 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 				d.cachedUntil = expires
 			}
 			d.cachedEntries = cloneEntries(entries)
+			d.cachedErr = nil
 		}
 		d.mu.Unlock()
 	}
@@ -307,4 +331,17 @@ func BundledDefaults(path string, env Catalog) (Catalog, error) {
 		return Catalog{}, err
 	}
 	return c, c.Validate()
+}
+
+// KnownReleaseOrigin uses only metadata previously verified under the current
+// trust root. A directory switch cannot relabel another authority's release.
+func (d *Directory) KnownReleaseOrigin(digest string) (string, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	config := d.config()
+	if !d.prefs.Authorities[config.PublicKey].Releases[digest] {
+		return "", false
+	}
+	entry := Entry{Origin: "catalog", CatalogAuthority: Authority(config.PublicKey), OfficialCatalog: d.defaults.PublicKey != "" && config.PublicKey == d.defaults.PublicKey}
+	return entry.ReleaseOrigin(), true
 }

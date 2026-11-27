@@ -90,6 +90,7 @@ export function AppActionForm({
   candidate,
 }: Props) {
   const action = pkg.actions[actionId];
+  const [defaultInputs] = useState(() => defaults(action));
   const [initialInputs] = useState(() => defaults(action, initial));
   const [inputs, setInputs] = useState(initialInputs);
   const [preview, setPreview] = useState<{
@@ -183,6 +184,9 @@ export function AppActionForm({
     key !== action.count_input;
   const contentFields = editableFields.filter(([key]) => !isAdditional(key));
   const additionalFields = editableFields.filter(([key]) => isAdditional(key));
+  const [optionsOpen, setOptionsOpen] = useState(() =>
+    additionalFields.some(([key]) => initialInputs[key] !== defaultInputs[key]),
+  );
   function renderField([key, type]: [
     string,
     NonNullable<MiniAppAction["inputs"]>[string],
@@ -351,7 +355,11 @@ export function AppActionForm({
             )}
             {contentFields.map(renderField)}
             {additionalFields.length > 0 && (
-              <details className="group/options rounded-xl border border-border/70 bg-muted/25 px-4 py-3">
+              <details
+                open={optionsOpen}
+                onToggle={(event) => setOptionsOpen(event.currentTarget.open)}
+                className="group/options rounded-xl border border-border/70 bg-muted/25 px-4 py-3"
+              >
                 <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
                   <SlidersHorizontal
                     className="size-3.5 text-muted-foreground"

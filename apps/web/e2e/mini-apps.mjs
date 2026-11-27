@@ -1,4 +1,5 @@
 import { runMiniAppWorkspace } from "./mini-app-workspace.mjs";
+import { checkMiniAppScroll } from "./mini-app-scroll.mjs";
 import { runReviewBookUpgrade } from "./review-book-upgrade.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -142,6 +143,7 @@ export async function runMiniAppsAcceptance({
 
   await goto("/apps/" + first + "/home");
   await readyRows(3);
+  await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, false);
   await click('[aria-label="Select record 1"]');
   await button("Mark learned and review in a week");
   await button("Preview changes");
@@ -162,6 +164,16 @@ export async function runMiniAppsAcceptance({
   await click('button[aria-label="Tools"]');
   await button("Mini Apps");
   await until("!!document.querySelector('[role=dialog]')");
+  await button("Discover");
+  await click('[data-app="cove/japanese-review-book"] .mini-app-card-cover');
+  await button("Get app");
+  await until("document.querySelectorAll('[role=dialog]').length===2");
+  await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true);
+  await button("Cancel", ".study-dialog");
+  await button("Back to Discover");
+  await click(
+    '[role=dialog] nav[aria-label="Mini Apps navigation"] button:first-child',
+  );
   await evaluate(
     "Array.from(document.querySelectorAll('[role=dialog] button')).find(b=>b.querySelector('strong')?.textContent==='Second book').click()",
   );

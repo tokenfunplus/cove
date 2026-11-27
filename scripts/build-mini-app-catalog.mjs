@@ -949,7 +949,7 @@ function detailHTML(releases) {
 <p class="eyebrow">From the app collection</p>
 <h1>${escaped(latest.name)}</h1>
 <p class="detail-description">${escaped(latest.description)}</p>
-<p class="detail-byline">Made by ${escaped(humanized(latest.publisher))}</p>
+<p class="detail-byline">Publisher ID: ${escaped(latest.publisher)}</p>
 <div class="facts">
 <p class="fact">
 <span class="fact-icon" aria-hidden="true">&#9633;</span>Saved on your Mac</p>
@@ -1017,7 +1017,7 @@ function listingCard(app) {
 <h2>${escaped(app.name)}</h2>
 <p class="card-description">${escaped(app.description)}</p>
 <div class="card-foot">
-<span class="byline">By ${escaped(humanized(app.publisher))}</span>
+<span class="byline">Publisher ID: ${escaped(app.publisher)}</span>
 <a class="text-link" href="${path}">View app <span aria-hidden="true">&rarr;</span>
 </a>
 </div>

@@ -102,7 +102,8 @@ public final class LauncherStateMachine: ObservableObject {
         return true
     }
 
-    public func openMiniApp(_ link: MiniAppLink, selection: UUID? = nil) {
+    @discardableResult
+    public func openMiniApp(_ link: MiniAppLink, selection: UUID? = nil) -> Bool {
         var items: [URLQueryItem]
         switch link {
         case .apps: items = []
@@ -111,11 +112,12 @@ public final class LauncherStateMachine: ObservableObject {
         case let .install(publisher, app, version):
             items = [.init(name: "publisher", value: publisher), .init(name: "app", value: app)]
             if let version { items.append(.init(name: "version", value: version)) }
-        case .pick: return
+        case .pick: return false
         }
         if let selection { items.append(.init(name: "selection", value: selection.uuidString.lowercased())) }
-        guard ensureReady(), let url = launchURL(intent: "apps", additionalItems: items) else { return }
+        guard ensureReady(), let url = launchURL(intent: "apps", additionalItems: items) else { return false }
         browser.open(url)
+        return true
     }
 
     public func quickPanelLaunchURL() -> URL? {

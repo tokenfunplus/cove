@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { miniApps } from "@/api/mini-apps";
@@ -143,4 +149,40 @@ test("saved feedback survives the authority form refreshing and clears when edit
     "x",
   );
   expect(screen.queryByText("Catalog settings saved.")).toBeNull();
+});
+
+test("saving unchanged empty defaults cannot pin a bundled-only override", async () => {
+  vi.spyOn(miniApps, "catalogSettings").mockResolvedValue({
+    url: "",
+    public_key: "",
+    defaults: { url: "", public_key: "" },
+    mode: "default",
+  });
+  const save = vi.spyOn(miniApps, "saveCatalogSettings");
+  const restore = vi.spyOn(miniApps, "useCatalogDefaults");
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <CatalogSettings expanded />
+    </QueryClientProvider>,
+  );
+  const button = (await screen.findByRole("button", {
+    name: "Save catalog settings",
+  })) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Use Cove defaults",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.submit(button.closest("form")!);
+  expect(save).not.toHaveBeenCalled();
+  expect(restore).not.toHaveBeenCalled();
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "Ed25519 public key" }),
+    " ",
+  );
+  expect(button.disabled).toBe(true);
 });

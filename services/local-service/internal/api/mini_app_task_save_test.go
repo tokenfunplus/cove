@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
@@ -44,13 +45,30 @@ func (model *pendingSaveRecorder) RetryAppTaskSave(ctx context.Context, instance
 	return nil
 }
 
+func (model *pendingSaveRecorder) DiscardAppTaskResult(ctx context.Context, instance, id string) error {
+	model.calls++
+	if instance != model.instance || id != model.id {
+		return chat.ErrAppTaskConflict
+	}
+	if model.saved {
+		return nil
+	}
+	if err := model.store.FinishAppTask(ctx, instance, id, "cancelled", "", "Discarded by the owner."); err != nil {
+		return err
+	}
+	model.saved = true
+	return nil
+}
+
 func TestAppTaskSaveRetryIsBoundToItsOwnerAndWorksAfterGrantRevocation(t *testing.T) {
-	for _, proposal := range []bool{false, true} {
+	for _, mode := range []string{"save-generation", "save-proposal", "discard-generation", "discard-proposal"} {
+		proposal := strings.HasSuffix(mode, "proposal")
+		discard := strings.HasPrefix(mode, "discard")
 		name := "generation"
 		if proposal {
 			name = "proposal"
 		}
-		t.Run(name, func(t *testing.T) {
+		t.Run(mode+"-"+name, func(t *testing.T) {
 			store, err := persistence.OpenSQLite(":memory:")
 			if err != nil {
 				t.Fatal(err)
@@ -111,10 +129,14 @@ func TestAppTaskSaveRetryIsBoundToItsOwnerAndWorksAfterGrantRevocation(t *testin
 			if err := json.Unmarshal(call("GET", "/activity", token, csrf, 200).Body.Bytes(), &activity); err != nil || len(activity.Activity) != 1 || activity.Activity[0].Status != "save_failed" {
 				t.Fatal("global activity hid the unsaved task", activity, err)
 			}
-			retry := prefix + "/tasks/" + model.id + "/retry-save"
+			endpoint := "/retry-save"
+			if discard {
+				endpoint = "/discard-result"
+			}
+			retry := prefix + "/tasks/" + model.id + endpoint
 			call("POST", retry, "", "", 401)
 			call("POST", retry, token, "", 403)
-			call("POST", "/instances/"+other.ID+"/tasks/"+model.id+"/retry-save", token, csrf, 404)
+			call("POST", "/instances/"+other.ID+"/tasks/"+model.id+endpoint, token, csrf, 404)
 			if model.calls != 0 {
 				t.Fatal("unauthorized retry reached the save operation")
 			}
@@ -129,7 +151,11 @@ func TestAppTaskSaveRetryIsBoundToItsOwnerAndWorksAfterGrantRevocation(t *testin
 				}
 			}
 			task, found, err := store.FindAppTask(t.Context(), book.ID, model.id)
-			if err != nil || !found || task.State != "completed" || task.Result != "Frozen result" || model.calls != 2 {
+			wantState, wantResult := "completed", "Frozen result"
+			if discard {
+				wantState, wantResult = "cancelled", ""
+			}
+			if err != nil || !found || task.State != wantState || task.Result != wantResult || model.calls != 2 {
 				t.Fatal("owner could not save its frozen result after revocation", task, err)
 			}
 		})

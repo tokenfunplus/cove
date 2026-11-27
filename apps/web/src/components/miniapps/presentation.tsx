@@ -19,12 +19,28 @@ export function canUpgrade(
   oldOrigin: string,
   newOrigin: string,
   legacyVerified = false,
+  beforeAuthority: {
+    catalog_authority?: string;
+    official_catalog?: boolean;
+  } = {},
+  afterAuthority: {
+    catalog_authority?: string;
+    official_catalog?: boolean;
+  } = {},
 ) {
   const sameOrigin =
-    (legacyVerified && (newOrigin === "builtin" || newOrigin === "catalog")) ||
-    oldOrigin === newOrigin ||
-    (oldOrigin === "builtin" && newOrigin === "catalog") ||
-    (oldOrigin === "catalog" && newOrigin === "builtin");
+    (oldOrigin === "local" && newOrigin === "local") ||
+    ((oldOrigin === "builtin" || legacyVerified) &&
+      (newOrigin === "builtin" ||
+        (newOrigin === "catalog" &&
+          afterAuthority.official_catalog === true))) ||
+    (oldOrigin === "catalog" &&
+      newOrigin === "catalog" &&
+      !!beforeAuthority.catalog_authority &&
+      beforeAuthority.catalog_authority === afterAuthority.catalog_authority) ||
+    (oldOrigin === "catalog" &&
+      newOrigin === "builtin" &&
+      beforeAuthority.official_catalog === true);
   return (
     sameOrigin &&
     before.publisher === after.publisher &&
@@ -32,6 +48,15 @@ export function canUpgrade(
     after.schema_version >= before.schema_version &&
     after.version.localeCompare(before.version, "en", { numeric: true }) > 0
   );
+}
+export function catalogSourceLabel(source: {
+  origin: string;
+  official_catalog?: boolean;
+}) {
+  if (source.origin === "builtin") return "Included with Cove";
+  if (source.origin === "catalog")
+    return source.official_catalog ? "Cove catalog" : "Custom signed catalog";
+  return "From a local file";
 }
 export const sectionStyle =
   "space-y-4 rounded-2xl border border-border bg-card p-4 sm:p-5";

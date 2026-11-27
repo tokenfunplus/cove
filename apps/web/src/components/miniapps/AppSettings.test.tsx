@@ -48,6 +48,8 @@ test("reviews the latest catalog update and applies it only to the chosen instan
     version: "1.10.0",
     digest: "next-digest",
     origin: "catalog",
+    catalog_authority: "official-key",
+    official_catalog: true,
   };
   const candidate = {
     ...pkg,

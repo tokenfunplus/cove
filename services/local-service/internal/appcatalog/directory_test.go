@@ -229,7 +229,7 @@ func TestOldTrustCacheIsReverifiedAndFailedSavesDoNotChangeAuthority(t *testing.
 	}
 }
 
-func TestDirectoryCachesOnlySuccessfulCurrentVerifiedResultsUntilExpiry(t *testing.T) {
+func TestDirectoryCachesVerifiedResultsAndBriefBundledFailures(t *testing.T) {
 	public, key, _ := ed25519.GenerateKey(nil)
 	config := Catalog{URL: "https://cache.example/catalog.json", PublicKey: base64.StdEncoding.EncodeToString(public)}
 	source := []byte(`{"publisher":"author","app":"notes","name":"Notes","version":"1.0.0","schema_version":1}`)
@@ -264,9 +264,22 @@ func TestDirectoryCachesOnlySuccessfulCurrentVerifiedResultsUntilExpiry(t *testi
 	if _, err := directory.List(t.Context()); err == nil || calls != 2 {
 		t.Fatal("expired cache survived a network failure", err, calls)
 	}
-	if _, err := directory.List(t.Context()); err == nil || calls != 3 {
-		t.Fatal("failed result was cached", err, calls)
+	fallback, fallbackErr := directory.List(t.Context())
+	if fallbackErr == nil || calls != 2 {
+		t.Fatal("brief failure cache missed", fallbackErr, calls)
 	}
+	for _, entry := range fallback {
+		if entry.Origin != "builtin" || entry.CatalogAuthority != "" || entry.OfficialCatalog {
+			t.Fatal("failure cache attested a remote release", entry)
+		}
+	}
+	if directory.cachedUntil.After(time.Now().Add(5 * time.Second)) {
+		t.Fatal("failure cache is not brief")
+	}
+	if _, err := directory.List(cancelled); !errors.Is(err, context.Canceled) || calls != 2 {
+		t.Fatal("failure cache hid cancellation", err, calls)
+	}
+	directory.cachedUntil = time.Time{}
 	code = 200
 	now := time.Now().UTC()
 	raw, _ := json.Marshal(SignedIndex{Format: 2, Sequence: 2, IssuedAt: now, ExpiresAt: now.Add(5 * time.Second), Packages: [][]byte{source}})
@@ -286,7 +299,7 @@ func TestDirectoryCachesOnlySuccessfulCurrentVerifiedResultsUntilExpiry(t *testi
 	if !directory.cachedUntil.IsZero() {
 		t.Fatal("URL change retained cached releases")
 	}
-	if _, err := directory.List(t.Context()); err != nil || calls != 5 {
+	if _, err := directory.List(t.Context()); err != nil || calls != 4 {
 		t.Fatal("new URL reused a previous cache", err, calls)
 	}
 }

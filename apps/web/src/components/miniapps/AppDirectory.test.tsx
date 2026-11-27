@@ -51,7 +51,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function show(section?: DirectorySection, navigate?: (path: string) => void) {
+function show(
+  section?: DirectorySection,
+  navigate?: (path: string, replace?: boolean) => void,
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -80,6 +83,105 @@ test("the embedded app picker keeps administration hidden and loads Discover onl
   await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(2));
   expect(screen.queryByRole("button", { name: "More app options" })).toBeNull();
 });
+
+test("version changes replace the detail entry instead of adding browser history", async () => {
+  window.history.replaceState(
+    null,
+    "",
+    "/apps?section=catalog&app=studio%2Freview&version=1.10.0",
+  );
+  const navigate = vi.fn();
+  show("catalog", navigate);
+  const version = await screen.findByRole("combobox", { name: "App version" });
+  await userEvent.setup().selectOptions(version, "1.0.0");
+  expect(navigate).toHaveBeenCalledWith(
+    "/apps?section=catalog&app=studio%2Freview&version=1.0.0",
+    true,
+  );
+});
+
+test("an unavailable requested version is explicit and never silently replaced", async () => {
+  window.history.replaceState(
+    null,
+    "",
+    "/apps?section=catalog&app=studio%2Freview&version=0.9.0",
+  );
+  const navigate = vi.fn();
+  show("catalog", navigate);
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain(
+    "Version 0.9.0 of studio/review is not available in the current catalog.",
+  );
+  expect(screen.queryByRole("combobox", { name: "App version" })).toBeNull();
+  expect(miniApps.catalogPreview).not.toHaveBeenCalled();
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "View available versions" }));
+  expect(navigate).toHaveBeenCalledWith(
+    "/apps?section=catalog&app=studio%2Freview&version=1.10.0",
+    true,
+  );
+});
+
+test.each(["key-a", "key-b"])(
+  "downloaded packages retain authority when offering upgrades (%s)",
+  async (authority) => {
+    const book = {
+      id: "saved-book",
+      name: "My review book",
+      release_id: "old",
+      revision: 1,
+      enabled: true,
+      grants: ["records.query"],
+    };
+    vi.mocked(miniApps.instances).mockResolvedValue({ instances: [book] });
+    vi.mocked(miniApps.releases).mockResolvedValue({
+      packages: [
+        {
+          id: "old",
+          digest: "old",
+          origin: "catalog",
+          catalog_authority: "key-a",
+          package: { ...review, version: "1.0.0" },
+        },
+      ],
+    });
+    vi.spyOn(miniApps, "localPackage").mockResolvedValue({
+      id: "new",
+      digest: "new",
+      origin: "catalog",
+      catalog_authority: authority,
+      official_catalog: false,
+      package: review,
+    });
+    show("mine");
+    await screen.findByText("My review book");
+    await userEvent.setup().upload(
+      screen.getByLabelText("Choose a Mini App package"),
+      new File([JSON.stringify(review)], "review.coveapp", {
+        type: "application/json",
+      }),
+    );
+    await screen.findByRole("dialog", { name: "Review installation" });
+    expect(
+      screen.getByText("Custom signed catalog", { exact: false }),
+    ).toBeTruthy();
+    if (authority === "key-a") {
+      expect(
+        (
+          screen.getByRole("combobox", {
+            name: "Update an existing copy",
+          }) as HTMLSelectElement
+        ).value,
+      ).toBe(book.id);
+    } else {
+      expect(
+        screen.queryByRole("combobox", { name: "Update an existing copy" }),
+      ).toBeNull();
+      expect(screen.getByRole("textbox", { name: "App name" })).toBeTruthy();
+    }
+  },
+);
 
 test("Discover defaults to the newest release and keeps older versions in app details", async () => {
   const install = vi.spyOn(miniApps, "catalogInstall");
