@@ -17,6 +17,9 @@ import (
 // App tasks share model admission with conversations and debates. The instance
 // owns the frozen input and candidate output, independent of chat history.
 type AppTaskInput struct {
+	// InstanceChanges protects the final grant check and worker registration
+	// against instance revocation. Catalog discovery runs outside this lock.
+	InstanceChanges                                                              sync.Locker
 	BrowserOwner                                                                 string
 	CandidateSchema                                                              json.RawMessage
 	Instance, ID, Fingerprint, Request, Prompt, ProviderID, ModelID, Destination string
@@ -46,26 +49,37 @@ func (s *Service) StartAppTask(ctx context.Context, in AppTaskInput, authorize f
 	if !ok || s.profiles == nil || s.provider == nil {
 		return persistence.AppTask{}, errors.New("model tasks unavailable")
 	}
-	s.startMu.Lock()
-	defer s.startMu.Unlock()
-	if task, found, err := store.FindAppTask(ctx, in.Instance, in.ID); err != nil || found {
+	check := func() (persistence.AppTask, error) {
+		if err := authorize(); err != nil {
+			return persistence.AppTask{}, err
+		}
+		task, found, err := store.FindAppTask(ctx, in.Instance, in.ID)
 		if found && task.Fingerprint != in.Fingerprint {
 			return persistence.AppTask{}, ErrAppTaskConflict
 		}
-		return task, err
+		if found || err != nil {
+			return task, err
+		}
+		return persistence.AppTask{}, s.requireGenerationIdle(ctx)
 	}
-	if err := s.requireGenerationIdle(ctx); err != nil {
-		return persistence.AppTask{}, err
+	unlock := s.lockAppAdmission(in.InstanceChanges)
+	existing, err := check()
+	unlock()
+	if err != nil || existing.ID != "" {
+		return existing, err
 	}
 	if in.LocalOnly && (in.ProviderID != localmodels.ProviderID || !localmodels.IsChatModel(in.ModelID)) {
 		return persistence.AppTask{}, ErrLocalOnly
 	}
-	if err := authorize(); err != nil {
-		return persistence.AppTask{}, err
+
+	c, resolveErr := s.resolveAppTarget(ctx, in)
+	unlock = s.lockAppAdmission(in.InstanceChanges)
+	defer unlock()
+	if existing, err := check(); err != nil || existing.ID != "" {
+		return existing, err
 	}
-	c, err := s.resolveAppTarget(ctx, in)
-	if err != nil {
-		return persistence.AppTask{}, err
+	if resolveErr != nil {
+		return persistence.AppTask{}, resolveErr
 	}
 	if c.profile.Kind == provider.KindNearAIPreset && (!c.isSecure() || in.BrowserOwner == "" || in.ValidateProposal != nil || len(in.ProposalTools) > 0) {
 		return persistence.AppTask{}, ErrAppBrowserModel
@@ -77,9 +91,6 @@ func (s *Service) StartAppTask(ctx context.Context, in AppTaskInput, authorize f
 		return persistence.AppTask{}, ErrAppDestination
 	}
 	if err := s.checkResolvedProfile(ctx, c.profile); err != nil {
-		return persistence.AppTask{}, err
-	}
-	if err := authorize(); err != nil {
 		return persistence.AppTask{}, err
 	}
 	if c.isSecure() {
@@ -122,6 +133,20 @@ func (s *Service) StartAppTask(ctx context.Context, in AppTaskInput, authorize f
 		close(done)
 	}()
 	return persistence.AppTask{ID: in.ID, State: "running"}, nil
+}
+
+func (s *Service) lockAppAdmission(changes sync.Locker) func() {
+	// Wait for any grant changes before entering Chat's shared start section.
+	if changes != nil {
+		changes.Lock()
+	}
+	s.startMu.Lock()
+	return func() {
+		s.startMu.Unlock()
+		if changes != nil {
+			changes.Unlock()
+		}
+	}
 }
 
 func (s *Service) readAppCompletion(ctx context.Context, input provider.CompletionInput) (string, error) {

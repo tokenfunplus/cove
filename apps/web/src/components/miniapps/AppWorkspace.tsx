@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   MiniAppAction,
   MiniAppFields,
   MiniAppInstance,
   MiniAppPackage,
+  MiniAppResult,
   MiniAppSurface,
 } from "@cove/api-contract";
 import { ChevronLeft, Settings2, Check } from "lucide-react";
@@ -174,9 +175,11 @@ function AppView({
   page: MiniAppPackage["pages"][number];
 }) {
   const cache = useQueryClient();
-  const actions = page.actions.filter((id) =>
-    pkg.actions[id].surfaces.includes(surface),
-  );
+  const actionIDs = surface === "page" ? page.actions : [
+    ...page.actions,
+    ...Object.keys(pkg.actions).filter((id) => !pkg.pages.some((p) => p.actions.includes(id))),
+  ];
+  const actions = actionIDs.filter((id) => pkg.actions[id].surfaces.includes(surface));
   const autoQuery = actions.find(
     (id) =>
       pkg.actions[id].op === "query" &&
@@ -195,7 +198,7 @@ function AppView({
   const [selectedRefs, setSelected] = useState<Record<string, number>>({});
   const [feedback, setFeedback] = useState("");
   const canQuery = instance.grants.includes("records.query");
-  const rows = useQuery({
+  const rows = useInfiniteQuery({
     queryKey: [
       "mini-app-records",
       instance.id,
@@ -204,9 +207,12 @@ function AppView({
       surface,
       query,
     ],
-    queryFn: () =>
+    initialPageParam: "",
+    getNextPageParam: (last: MiniAppResult) => last.next_cursor,
+    queryFn: ({ pageParam }) =>
       miniApps.invoke(instance.id, {
         action: query!.action,
+        cursor: pageParam || undefined,
         surface,
         inputs: query!.inputs,
         operation_id: crypto.randomUUID(),
@@ -214,7 +220,7 @@ function AppView({
     enabled: !!query && canQuery,
     retry: false,
   });
-  const records = rows.data?.records ?? [];
+  const records = rows.data?.pages.flatMap((page) => page.records ?? []) ?? [];
   const selected = records.filter((r) => selectedRefs[r.id] === r.revision);
   const transfer = useMutation({
     retry: false,
@@ -366,6 +372,7 @@ function AppView({
                 aria-label={"Select record " + (i + 1)}
                 type="checkbox"
                 checked={selectedRefs[record.id] === record.revision}
+                disabled={selected.length >= 50 && selectedRefs[record.id] !== record.revision}
                 onChange={(e) => {
                   const checked = e.target.checked;
                   setSelected((old) => {
@@ -382,6 +389,16 @@ function AppView({
               />
             </div>
           ))}
+          {rows.hasNextPage && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={rows.isFetching}
+              onClick={() => void rows.fetchNextPage()}
+            >
+              Load more records
+            </Button>
+          )}
           {instance.grants.includes("chat.attach") && records.length > 0 && (
             <Button
               disabled={!selected.length || transfer.isPending}

@@ -80,7 +80,7 @@ func (s *Service) StartProposal(ctx context.Context, model ModelExecutor, instan
 		}
 		return nil
 	}
-	return model.StartAppTask(ctx, chat.AppTaskInput{Instance: instanceID, ID: req.OperationID, Fingerprint: digest(frozen), Request: string(frozen), Prompt: prompt, ProviderID: req.ProviderID, ModelID: req.ModelID, Destination: req.Destination, LocalOnly: req.LocalOnly, ProposalTools: tools, ValidateProposal: func(body string) (string, error) {
+	return model.StartAppTask(ctx, chat.AppTaskInput{InstanceChanges: &s.InstanceChanges, Instance: instanceID, ID: req.OperationID, Fingerprint: digest(frozen), Request: string(frozen), Prompt: prompt, ProviderID: req.ProviderID, ModelID: req.ModelID, Destination: req.Destination, LocalOnly: req.LocalOnly, ProposalTools: tools, ValidateProposal: func(body string) (string, error) {
 		return normalizeProposal(body, aliases, release.Package)
 	}}, check)
 }

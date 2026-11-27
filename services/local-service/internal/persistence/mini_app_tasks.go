@@ -22,10 +22,21 @@ type AppTask struct {
 	Fingerprint  string                  `json:"-"`
 }
 
+// ProposalRevision is present in every persisted proposal, including v1 rows.
+const generationTaskPredicate = " AND json_type(request,'$.ProposalRevision') IS NULL"
+
 func (s *SQLiteStore) AppTask(ctx context.Context, instance, id string) (AppTask, error) {
+	return s.appTask(ctx, instance, id, true)
+}
+
+func (s *SQLiteStore) appTask(ctx context.Context, instance, id string, generationOnly bool) (AppTask, error) {
 	var t AppTask
 	var verification, snapshot string
-	err := s.db.QueryRowContext(ctx, "SELECT id,state,result,detail,fingerprint,verification,snapshot FROM mini_app_tasks WHERE instance_id=? AND id=?", instance, id).Scan(&t.ID, &t.State, &t.Result, &t.Error, &t.Fingerprint, &verification, &snapshot)
+	query := "SELECT id,state,result,detail,fingerprint,verification,snapshot FROM mini_app_tasks WHERE instance_id=? AND id=?"
+	if generationOnly {
+		query += generationTaskPredicate
+	}
+	err := s.db.QueryRowContext(ctx, query, instance, id).Scan(&t.ID, &t.State, &t.Result, &t.Error, &t.Fingerprint, &verification, &snapshot)
 	if err == nil && snapshot != "" {
 		t.Browser = true
 		err = json.Unmarshal([]byte(snapshot), &t.Snapshot)
@@ -52,7 +63,7 @@ func (s *SQLiteStore) RecoverAppTasks(ctx context.Context) error {
 }
 
 func (s *SQLiteStore) FindAppTask(ctx context.Context, instance, id string) (AppTask, bool, error) {
-	task, err := s.AppTask(ctx, instance, id)
+	task, err := s.appTask(ctx, instance, id, false)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AppTask{}, false, nil
 	}
@@ -65,7 +76,7 @@ func (s *SQLiteStore) ListAppTasks(ctx context.Context, instance string) ([]AppT
  coalesce(json_extract(request,'$.Target.surface'),''),
  coalesce(json_extract(request,'$.Target.providerId'),''),
  coalesce(json_extract(request,'$.Target.modelId'),'')
- FROM mini_app_tasks WHERE instance_id=? ORDER BY rowid DESC LIMIT 30`, instance)
+ FROM mini_app_tasks WHERE instance_id=?`+generationTaskPredicate+` ORDER BY rowid DESC LIMIT 30`, instance)
 	if err != nil {
 		return nil, err
 	}

@@ -51,7 +51,7 @@ func (s *Service) Attach(ctx context.Context, id string, req AttachmentRequest) 
 			return err
 		}
 		visible := map[string]Record{}
-		for _, row := range query(rows, a, req.Inputs, s.now()).Records {
+		for _, row := range queryRecords(rows, a, req.Inputs, s.now()) {
 			visible[row.ID] = row
 		}
 		out = Attachment{InstanceID: id, ReleaseID: r.ID, Action: req.Action}
@@ -122,7 +122,7 @@ func (s *Service) StartModel(ctx context.Context, model ModelExecutor, id string
 			return empty, err
 		}
 	}
-	return model.StartAppTask(ctx, chat.AppTaskInput{BrowserOwner: in.BrowserOwner, CandidateSchema: candidates, Instance: id, ID: in.OperationID, Fingerprint: digest(frozen), Request: string(frozen), Prompt: result.Prompt, ProviderID: in.ProviderID, ModelID: in.ModelID, Destination: in.Destination, LocalOnly: in.LocalOnly}, func() error {
+	return model.StartAppTask(ctx, chat.AppTaskInput{InstanceChanges: &s.InstanceChanges, BrowserOwner: in.BrowserOwner, CandidateSchema: candidates, Instance: id, ID: in.OperationID, Fingerprint: digest(frozen), Request: string(frozen), Prompt: result.Prompt, ProviderID: in.ProviderID, ModelID: in.ModelID, Destination: in.Destination, LocalOnly: in.LocalOnly}, func() error {
 		current, err := s.Instance(ctx, id)
 		if err != nil {
 			return err

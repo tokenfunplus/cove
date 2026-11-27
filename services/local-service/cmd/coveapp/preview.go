@@ -47,6 +47,20 @@ func inPreview(source []byte, run func(workspace, miniapps.Package) error) error
 	return run(workspace{service: service, id: instance.ID}, pkg)
 }
 
+// Commands exercise the complete query in their isolated, single-writer instance.
+func (w workspace) invoke(call miniapps.Invocation) (miniapps.Result, error) {
+	ctx := context.Background()
+	result, err := w.service.Invoke(ctx, w.id, call)
+	for err == nil && result.NextCursor != "" {
+		call.Cursor = result.NextCursor
+		var page miniapps.Result
+		page, err = w.service.Invoke(ctx, w.id, call)
+		result.Records = append(result.Records, page.Records...)
+		result.NextCursor = page.NextCursor
+	}
+	return result, err
+}
+
 func preview(source []byte, out io.Writer) error {
 	return inPreview(source, func(w workspace, pkg miniapps.Package) error {
 		fmt.Fprintf(out, "%s %s\n%s\n", pkg.Name, pkg.Version, pkg.Description)
@@ -58,7 +72,7 @@ func preview(source []byte, out io.Writer) error {
 				if action.Op != "query" || len(action.Inputs) != 0 {
 					continue
 				}
-				result, err := w.service.Invoke(context.Background(), w.id, miniapps.Invocation{
+				result, err := w.invoke(miniapps.Invocation{
 					Action: id, Surface: "page", OperationID: "preview", Inputs: map[string]any{},
 				})
 				if err != nil {
@@ -141,8 +155,7 @@ func (w workspace) step(pkg miniapps.Package, step scenarioStep, previous []mini
 		row := previous[index]
 		call.Records = append(call.Records, miniapps.RecordRef{ID: row.ID, Revision: row.Revision})
 	}
-	ctx := context.Background()
-	result, err := w.service.Invoke(ctx, w.id, call)
+	result, err := w.invoke(call)
 	if err != nil {
 		return empty, err
 	}
@@ -151,7 +164,7 @@ func (w workspace) step(pkg miniapps.Package, step scenarioStep, previous []mini
 			return empty, errors.New("write returned no preview")
 		}
 		call.Confirm = result.Confirmation
-		result, err = w.service.Invoke(ctx, w.id, call)
+		result, err = w.invoke(call)
 		if err != nil {
 			return empty, err
 		}

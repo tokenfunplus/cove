@@ -25,13 +25,14 @@ const MaxPackage = 1 << 20
 const maxIndex = 8 << 20
 
 type Entry struct {
-	Publisher string `json:"publisher"`
-	App       string `json:"app"`
-	Version   string `json:"version"`
-	Name      string `json:"name"`
-	Digest    string `json:"digest"`
-	Origin    string `json:"origin"`
-	Raw       []byte `json:"-"`
+	Publisher     string `json:"publisher"`
+	App           string `json:"app"`
+	Version       string `json:"version"`
+	SchemaVersion int    `json:"schema_version"`
+	Name          string `json:"name"`
+	Digest        string `json:"digest"`
+	Origin        string `json:"origin"`
+	Raw           []byte `json:"-"`
 }
 
 type Catalog struct {
@@ -40,12 +41,13 @@ type Catalog struct {
 }
 
 func entry(raw []byte, origin string) (Entry, error) {
-	var identity struct{ Publisher, App, Version, Name string }
-	if len(raw) > MaxPackage || json.Unmarshal(raw, &identity) != nil || identity.App == "" || identity.Publisher == "" || identity.Version == "" {
+	var item Entry
+	if len(raw) > MaxPackage || json.Unmarshal(raw, &item) != nil || item.App == "" || item.Publisher == "" || item.Version == "" || item.SchemaVersion < 1 {
 		return Entry{}, errors.New("invalid catalog entry")
 	}
 	digest := sha256.Sum256(raw)
-	return Entry{identity.Publisher, identity.App, identity.Version, identity.Name, hex.EncodeToString(digest[:]), origin, raw}, nil
+	item.Digest, item.Origin, item.Raw = hex.EncodeToString(digest[:]), origin, raw
+	return item, nil
 }
 
 func (c Catalog) remote(ctx context.Context) ([][]byte, error) {

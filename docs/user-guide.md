@@ -22,6 +22,10 @@ Open **Mini Apps** from the Launcher, browse the catalog, and choose **Japanese 
 
 In Chat or the Quick Panel, open Mini Apps from the composer tools and choose your book. Select due questions to add them to your draft. You can edit the draft before sending it. In the book's **Study material** view you can save a passage or ask a model to generate candidate questions. Review the selected model and destination, then choose the candidates to save. Open instance settings to change permissions or export a personal backup. See the [authoring guide](mini-apps.md) to develop a personal app.
 
+Your records, attachments, permissions and saved model results live in Cove’s local database on this Mac. Checking for app updates downloads the catalog and compares versions on your Mac. Choosing a cloud model sends the reviewed request to that provider. Select **Only on this Mac** to use a Cove-managed local model.
+
+For a bundled or catalog app, open the instance’s **Settings → Check for updates**. Review the version and permissions, then choose **Upgrade instance** to update that instance in place. Added permissions start unchecked. If a data migration fails, Cove keeps the previous release and records. For a personal app, choose **My apps → Import package**, open the newer file and select the existing instance under **Install for**. Other instances can stay on their current versions.
+
 ## Use the Quick Panel
 
 Choose **Open Quick Panel** from the Cove menu bar. To open it from any app, enable **Launcher Settings > Quick Panel Shortcut: ⌃⌥C**, then press **Control-Option-C**. When Cove is ready, the panel opens with the composer focused so you can type immediately.

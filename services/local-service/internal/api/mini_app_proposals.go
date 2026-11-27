@@ -13,8 +13,6 @@ func (s *Server) appProposals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, ctx := r.PathValue("id"), r.Context()
-	s.appChanges.Lock()
-	defer s.appChanges.Unlock()
 	if r.Method == "POST" {
 		var req miniapps.ProposalRequest
 		if !appInput(w, r, &req) {
@@ -24,6 +22,8 @@ func (s *Server) appProposals(w http.ResponseWriter, r *http.Request) {
 		appReply(w, result, err)
 		return
 	}
+	s.apps.InstanceChanges.Lock()
+	defer s.apps.InstanceChanges.Unlock()
 	taskID := r.PathValue("task")
 	if taskID == "" {
 		surface := r.URL.Query().Get("surface")

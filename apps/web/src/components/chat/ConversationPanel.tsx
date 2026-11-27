@@ -2,7 +2,7 @@ import {
   InteractiveAnswer,
   type CardContinue,
 } from "@/components/interactive/InteractiveAnswer";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { EditPromptDialog } from "./EditPromptDialog";
 import {
   ChatExperienceContext,
@@ -31,6 +31,7 @@ import { ConversationWelcome } from "@/components/chat/ConversationWelcome";
 import { generationFailureMessage } from "@/components/chat/generation-status";
 import { StopGenerationButton } from "@/components/chat/GenerationProgress";
 import { AssistantMessage } from "@/components/chat/AssistantMessage";
+import { MiniAppSourceLinks } from "./MiniAppSourceLinks";
 import { MessageMeta } from "@/components/chat/MessageMeta";
 import {
   LiveModelComparisonGrid,
@@ -144,6 +145,15 @@ export function ConversationPanel({
   activeModelSet?: ActiveModelSet;
   profiles?: ProviderProfile[];
 }) {
+  const promptsWithAppSources = useMemo(() => {
+    const prompts = new Map<string, string>();
+    for (const message of view?.messages ?? []) {
+      if (message.role === "user" && message.body.includes("cove://open/")) {
+        prompts.set(message.id, message.body);
+      }
+    }
+    return prompts;
+  }, [view?.messages]);
   const retryLocalOnly = Boolean(
     execution?.localOnly || attachmentDraft?.localOnly,
   );
@@ -239,7 +249,10 @@ export function ConversationPanel({
     { batch: GenerationBatch; target: GenerationBatch["targets"][number] }
   >();
   const assistantMessageIDByTargetOrGenerationID = new Map<string, string>();
+  const appSourceByBatch = new Map<string, string>();
   for (const batch of allGenerationBatches) {
+    const prompt = promptsWithAppSources.get(batch.user_message_id ?? "");
+    if (prompt) appSourceByBatch.set(batch.id, prompt);
     for (const target of batch.targets) {
       if (target.generation.assistant_message_id) {
         batchTargetByAssistantMessageID.set(
@@ -310,6 +323,7 @@ export function ConversationPanel({
   const liveBatch = liveTurn?.batchId
     ? allGenerationBatches.find((batch) => batch.id === liveTurn.batchId)
     : generationBatch;
+  const liveAppSource = liveTurn?.userBody ?? appSourceByBatch.get(liveBatch?.id ?? "");
   const generationActive =
     generationBatch?.state === "pending" ||
     generationBatch?.state === "streaming" ||
@@ -560,6 +574,7 @@ export function ConversationPanel({
                                   ? onCancelTarget
                                   : undefined
                               }
+                              appSourcePrompt={appSourceByBatch.get(generationTarget.batch.id)}
                               messages={view.messages}
                               onRetry={onRetry}
                               onSelectAnswer={onSelectAnswer}
@@ -670,6 +685,11 @@ export function ConversationPanel({
                                 {message.body}
                               </p>
                             )}
+                            <MiniAppSourceLinks
+                              userBody={message.role === "user"
+                                ? promptsWithAppSources.get(message.id)
+                                : appSourceByBatch.get(message.generation_batch_id ?? generationTarget?.batch.id ?? "")}
+                            />
                             {message.role === "user" &&
                               onEditPrompt &&
                               (() => {
@@ -773,12 +793,14 @@ export function ConversationPanel({
                     >
                       {liveTurn.userBody}
                     </p>
+                    <MiniAppSourceLinks userBody={liveTurn.userBody} />
                   </article>
                 ) : null}
                 {liveTargets.length > 0 &&
                 liveComparison &&
                 !liveComparisonAlreadyInHistory ? (
                   <LiveModelComparisonGrid
+                    appSourcePrompt={liveAppSource}
                     localOnly={retryLocalOnly}
                     busy={isSending}
                     batch={liveBatch}
@@ -857,6 +879,7 @@ export function ConversationPanel({
                             )}
                           />
                         ) : null}
+                        <MiniAppSourceLinks userBody={liveAppSource} />
                         {target.phase === "stopped" ? (
                           <p className={messagesStyles.message_state}>
                             {copy.generationStopped}

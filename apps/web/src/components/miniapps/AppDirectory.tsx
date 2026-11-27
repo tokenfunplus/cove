@@ -342,24 +342,31 @@ function InstanceRow({
   );
 }
 
-function PackagePreview({
+export function PackagePreview({
   pkg,
   previous,
   source,
   close,
   open,
+  targetInstance,
 }: {
   pkg: MiniAppPackage;
   previous: MiniAppInstance[];
   source: Source;
   close: () => void;
   open: Props["open"];
+  targetInstance?: MiniAppInstance;
 }) {
   const cache = useQueryClient();
   const [name, setName] = useState(pkg.name);
-  const [upgradeId, setUpgrade] = useState("");
-  const upgrade = previous.find((i) => i.id === upgradeId);
-  const [grants, setGrants] = useState<string[]>([...pkg.capabilities]);
+  const [selectedId, setUpgrade] = useState("");
+  const upgradeId = targetInstance?.id ?? selectedId;
+  const upgrade = targetInstance ?? previous.find((i) => i.id === upgradeId);
+  const [grants, setGrants] = useState<string[]>(() =>
+    targetInstance
+      ? targetInstance.grants.filter((cap) => pkg.capabilities.includes(cap))
+      : [...pkg.capabilities],
+  );
   const install = useMutation({
     retry: false,
     mutationFn: async (create: boolean) => {
@@ -395,7 +402,8 @@ function PackagePreview({
       </div>
       {pkg.description && <p>{pkg.description}</p>}
       <fieldset disabled={install.isPending} className="space-y-4">
-        {previous.length > 0 && (
+        {targetInstance && <p>Update {targetInstance.name} to version {pkg.version}.</p>}
+        {!targetInstance && previous.length > 0 && (
           <label className={labelStyle}>
             Install for
             <select
@@ -443,7 +451,7 @@ function PackagePreview({
                 ? "Create instance"
                 : "Install and create instance"}
           </Button>
-          {source.kind !== "installed" && (
+          {!targetInstance && source.kind !== "installed" && (
             <Button variant="outline" onClick={() => install.mutate(false)}>
               Install package only
             </Button>

@@ -15,6 +15,7 @@ const segment = encodeURIComponent;
 const instanceURL = (id: string) => root + "/instances/" + segment(id);
 export interface CatalogEntry {
   origin: string;
+  schema_version: number;
   publisher: string;
   app: string;
   version: string;

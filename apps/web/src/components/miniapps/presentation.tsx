@@ -3,13 +3,15 @@ import type {
   MiniAppFields,
   MiniAppInstance,
   MiniAppPackage,
-  MiniAppRecord,
 } from "@cove/api-contract";
+import { appBookmark } from "@/lib/mini-app-snapshot";
 import { Button } from "@/components/ui/button";
+
+export { appBookmark, snapshot } from "@/lib/mini-app-snapshot";
 
 export function canUpgrade(
   before: MiniAppPackage,
-  after: MiniAppPackage,
+  after: Pick<MiniAppPackage, "publisher" | "app" | "version" | "schema_version">,
   oldOrigin: string,
   newOrigin: string,
 ) {
@@ -97,32 +99,6 @@ export function OpenApp({
         {children ?? "Open in browser"}
       </a>
     </Button>
-  );
-}
-export function appBookmark(id: string, view: string) {
-  return (
-    "cove://open/" + encodeURIComponent(id) + "/" + encodeURIComponent(view)
-  );
-}
-export function snapshot(
-  instance: MiniAppInstance,
-  action: string,
-  view: string,
-  rows: MiniAppRecord[],
-) {
-  return (
-    "Reference from " +
-    instance.name +
-    " (" +
-    action +
-    ")\n" +
-    appBookmark(instance.id, view) +
-    "\n" +
-    JSON.stringify(
-      rows.map(({ id, revision, fields }) => ({ id, revision, fields })),
-      null,
-      2,
-    )
   );
 }
 const capNames: Record<string, string> = {

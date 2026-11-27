@@ -68,6 +68,8 @@ A page has an `id`, a `title`, and an ordered array of named actions. The
 host builds controls for the actions and their input types. Put the main page
 first. Each referenced action includes `page` in its `surfaces`. Include
 `chat` and/or `panel` to expose the same operation from other surfaces.
+Actions can also declare only `chat` or `panel`. They appear in the matching
+picker and its model suggestions without requiring a page binding.
 
 | Operation | Required capability | Declaration and behavior |
 | --- | --- | --- |
@@ -75,6 +77,19 @@ first. Each referenced action includes `page` in its `surfaces`. Include
 | `create` | `records.commit` | Define a `values` assignment for every field. Saving a candidate is an explicit create action. |
 | `update` | `records.commit` | Define `values` for the changed fields. The caller selects records and provides the expected revision for each. |
 | `generate` | `ai.generate` | Supply a `prompt` and a `text_input` naming a text input. The user selects and approves the model destination. An optional `candidate_action` references a create action with the same or broader surface support. Candidate objects use the field names and types of that action's inputs. |
+
+For generation, the named text input supplies the source passage. The host
+sends any other declared inputs as a JSON object of named, typed parameters.
+For example, an action can request a passage, a question count and a target
+language. The model receives all three values reviewed by the user.
+
+An uncapped query returns up to 50 records per request. Continue it by passing
+the returned `next_cursor` as `cursor` with the same action, inputs and
+surface. The host checks grants on every page. A change to records on an
+earlier page can invalidate the cursor and require a fresh query. Equal sort
+values retain creation order. An explicit `limit` caps the entire result.
+The host's **Load more records** control preserves selections across pages;
+up to 50 selected records can be attached or updated at once.
 
 A query can name one field of its collection in `reveal_field`. The host
 initially collapses that field in each result. For example, the Review Book
@@ -185,7 +200,9 @@ revisions, and the identity and digest of the installed release. Text imported
 from files appears in the backup when it was saved as a record. Keep the backup
 private. Retain a copy of the matching package or access to its catalog release.
 
-Restoring a backup requires that exact release from the same origin. Cove
+Restoring a backup requires the original publisher, app, version and content
+digest. For an official release, either the bundle or the signed catalog can
+supply those exact bytes. A personal import requires the same personal package. Cove
 validates the complete record set and creates a separate disabled instance.
 Enable the restored instance and choose its grants to use it. Running tasks,
 temporary file-picker results, chat history, model configuration, and grants stay

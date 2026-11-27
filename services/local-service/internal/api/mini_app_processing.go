@@ -96,8 +96,8 @@ func (s *Server) appSpeech(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Serialize grant admission and job creation with instance revocation.
-		s.appChanges.Lock()
-		defer s.appChanges.Unlock()
+		s.apps.InstanceChanges.Lock()
+		defer s.apps.InstanceChanges.Unlock()
 	}
 	if err := s.apps.CheckCapability(ctx, id, "speech.speak"); err != nil {
 		appReply(w, nil, err)

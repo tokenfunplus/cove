@@ -31,6 +31,7 @@ type Record struct {
 	Fields   map[string]any `json:"fields"`
 }
 type Invocation struct {
+	Cursor      string           `json:"cursor,omitempty"`
 	Items       []map[string]any `json:"items,omitempty"`
 	Action      string           `json:"action"`
 	Surface     string           `json:"surface"`
@@ -40,6 +41,7 @@ type Invocation struct {
 	Confirm     string           `json:"confirm,omitempty"`
 }
 type Result struct {
+	NextCursor   string   `json:"next_cursor,omitempty"`
 	Records      []Record `json:"records"`
 	Confirmation string   `json:"confirmation,omitempty"`
 	Prompt       string   `json:"prompt,omitempty"`
@@ -99,7 +101,7 @@ func include(row Record, a Action, inputs map[string]any, now time.Time) bool {
 	}
 	return true
 }
-func query(rows []Record, a Action, inputs map[string]any, now time.Time) Result {
+func queryRecords(rows []Record, a Action, inputs map[string]any, now time.Time) []Record {
 	selected := []Record{}
 	for _, r := range rows {
 		if include(r, a, inputs, now) {
@@ -109,11 +111,37 @@ func query(rows []Record, a Action, inputs map[string]any, now time.Time) Result
 	if k := a.OrderBy; k != "" {
 		slices.SortStableFunc(selected, func(x, y Record) int { return compare(x.Fields[k], y.Fields[k]) })
 	}
-	limit := a.Limit
-	if limit == 0 {
-		limit = 50
+	// Rows arrive in creation order, the stable tiebreaker for equal sort values.
+	if a.Limit > 0 {
+		selected = selected[:min(len(selected), a.Limit)]
 	}
-	return Result{Records: selected[:min(len(selected), limit)]}
+	return selected
+}
+
+// Cursors identify a prefix of the current ordered result. A change to a
+// previously loaded page requires a refresh before appending more records.
+func queryPage(records []Record, limit int, cursor string) (Result, error) {
+	pageSize := max(50, limit) // Preserve the full result of existing explicitly capped actions.
+	fingerprint := sha256.New()
+	current := ""
+	for start := 0; ; start += pageSize {
+		end := min(start+pageSize, len(records))
+		page := records[start:end]
+		next := ""
+		if end < len(records) {
+			for _, row := range page {
+				fmt.Fprintf(fingerprint, "%s:%d\n", row.ID, row.Revision)
+			}
+			next = hex.EncodeToString(fingerprint.Sum(nil))
+		}
+		if current == cursor {
+			return Result{Records: page, NextCursor: next}, nil
+		}
+		if next == "" {
+			return Result{}, ErrConflict
+		}
+		current = next
+	}
 }
 func inputOK(inputs map[string]any, fields map[string]string) bool {
 	if len(inputs) != len(fields) {
@@ -131,6 +159,13 @@ func generate(p Package, a Action, inputs map[string]any) Result {
 	if a.CandidateAction != "" {
 		schema, _ := json.Marshal(p.Actions[a.CandidateAction].Inputs)
 		instruction += fmt.Sprintf("\nReturn only a JSON array of candidate objects, each matching these named fields and types: %s.", schema)
+	}
+	if len(inputs) > 1 {
+		parameters := maps.Clone(inputs)
+		delete(parameters, a.TextInput)
+		// Invoke has already validated the values as finite JSON scalars.
+		encoded, _ := json.Marshal(parameters)
+		instruction += "\n\nUser-selected parameters (JSON):\n" + string(encoded)
 	}
 	return Result{Records: []Record{}, Prompt: instruction + "\n\nSource material:\n" + inputs[a.TextInput].(string)}
 }
@@ -157,6 +192,9 @@ func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result
 		}
 		if !slices.Contains(a.Surfaces, req.Surface) || !slices.Contains(i.Grants, capability(a.Op)) {
 			return ErrDenied
+		}
+		if req.Cursor != "" && (a.Op != "query" || len(req.Cursor) != sha256.Size*2) {
+			return invalid("query cursor")
 		}
 		if req.Items != nil {
 			if a.Op != "create" || len(req.Inputs) != 0 || len(req.Items) == 0 || len(req.Items) > 50 {
@@ -186,8 +224,8 @@ func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result
 		}
 		now := s.now()
 		if a.Op == "query" {
-			out = query(rows, a, req.Inputs, now)
-			return nil
+			out, err = queryPage(queryRecords(rows, a, req.Inputs, now), a.Limit, req.Cursor)
+			return err
 		}
 		out, err = s.write(tx, i, a, rows, req, now)
 		return err

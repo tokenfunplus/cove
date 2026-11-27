@@ -3,7 +3,6 @@ package miniapps
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -88,6 +87,33 @@ func decodeBackup(raw []byte) (Backup, error) {
 	return b, nil
 }
 
+// Archived releases may move between the bundle and the signed catalog.
+// A personal import is always resolved within its original distribution channel.
+func releaseForBackup(tx *persistence.MiniAppStore, b Backup) (Release, error) {
+	builtin := releaseID("builtin", b.Publisher, b.App, b.Version)
+	catalog := releaseID("catalog", b.Publisher, b.App, b.Version)
+	candidates := []string{b.ReleaseID}
+	switch b.ReleaseID {
+	case builtin:
+		candidates = append(candidates, catalog)
+	case catalog:
+		candidates = append(candidates, builtin)
+	}
+	for _, id := range candidates {
+		r, err := loadRelease(tx, id)
+		if errors.Is(err, ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return Release{}, err
+		}
+		if r.Digest == b.Digest && r.Package.Publisher == b.Publisher && r.Package.App == b.App && r.Package.Version == b.Version {
+			return r, nil
+		}
+	}
+	return Release{}, ErrBackupRelease
+}
+
 // Restore creates a separate disabled instance. Validate the snapshot as typed
 // literal data; expressions in user text must never be evaluated on restore.
 func (s *Service) Restore(ctx context.Context, raw []byte) (Instance, error) {
@@ -97,17 +123,11 @@ func (s *Service) Restore(ctx context.Context, raw []byte) (Instance, error) {
 	}
 	var restored Instance
 	err = s.store.MiniAppTransaction(ctx, func(tx *persistence.MiniAppStore) error {
-		release, err := loadRelease(tx, backup.ReleaseID)
-		if errors.Is(err, ErrNotFound) || errors.Is(err, sql.ErrNoRows) {
-			return ErrBackupRelease
-		}
+		release, err := releaseForBackup(tx, backup)
 		if err != nil {
 			return err
 		}
 		p := release.Package
-		if release.Digest != backup.Digest || p.Publisher != backup.Publisher || p.App != backup.App || p.Version != backup.Version {
-			return ErrBackupRelease
-		}
 		if len(backup.Collections) != len(p.Collections) {
 			return invalid("backup collection list")
 		}

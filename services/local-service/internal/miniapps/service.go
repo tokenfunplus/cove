@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,9 +49,12 @@ type UpgradeRequest struct {
 }
 
 type Service struct {
-	store  *persistence.SQLiteStore
-	secret [32]byte
-	now    func() time.Time
+	// InstanceChanges synchronizes the host's grant changes and their side effects
+	// with the short admission step for files, speech and model work.
+	InstanceChanges sync.Mutex
+	store           *persistence.SQLiteStore
+	secret          [32]byte
+	now             func() time.Time
 }
 
 func New(store *persistence.SQLiteStore) *Service {
@@ -59,6 +63,10 @@ func New(store *persistence.SQLiteStore) *Service {
 	return s
 }
 func digest(raw []byte) string { hash := sha256.Sum256(raw); return hex.EncodeToString(hash[:]) }
+func releaseID(origin, publisher, app, version string) string {
+	return digest([]byte(origin + "/" + publisher + "/" + app + "/" + version))
+}
+
 func Preview(raw []byte, origin string) (Release, error) {
 	p, err := Validate(raw)
 	if err != nil {
@@ -73,7 +81,7 @@ func Preview(raw []byte, origin string) (Release, error) {
 	default:
 		return Release{}, invalid("package origin")
 	}
-	id := digest([]byte(origin + "/" + p.Publisher + "/" + p.App + "/" + p.Version))
+	id := releaseID(origin, p.Publisher, p.App, p.Version)
 	return Release{ID: id, Package: p, Origin: origin, Digest: digest(raw)}, nil
 }
 func lookup(err error) error {

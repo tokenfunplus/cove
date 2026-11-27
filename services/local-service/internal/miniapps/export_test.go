@@ -7,6 +7,66 @@ import (
 	"testing"
 )
 
+func TestRestoreAcrossDistributionChannels(t *testing.T) {
+	for _, tc := range []struct {
+		from, to    string
+		changeBytes bool
+		wantRestore bool
+	}{
+		{"builtin", "catalog", false, true},
+		{"catalog", "builtin", false, true},
+		{"builtin", "catalog", true, false},
+		{"local", "catalog", false, false},
+		{"catalog", "local", false, false},
+	} {
+		t.Run(tc.from+"-to-"+tc.to, func(t *testing.T) {
+			ctx := t.Context()
+			srcDB, source := storeAt(t, ":memory:")
+			defer srcDB.Close()
+			dstDB, destination := storeAt(t, ":memory:")
+			defer dstDB.Close()
+			data := example(t)
+			original, err := source.Install(ctx, data, tc.from)
+			if err != nil {
+				t.Fatal(err)
+			}
+			book, err := source.Create(ctx, CreateRequest{ReleaseID: original.ID, Name: "Personal copy", Grants: original.Package.Capabilities})
+			if err != nil {
+				t.Fatal(err)
+			}
+			export, err := source.Export(ctx, book.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			backup, err := json.Marshal(export)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.changeBytes {
+				data = append(data, '\n')
+			}
+			installed, err := destination.Install(ctx, data, tc.to)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := destination.Restore(ctx, backup)
+			if !tc.wantRestore {
+				if !errors.Is(err, ErrBackupRelease) {
+					t.Fatalf("expected missing release, got %v", err)
+				}
+				return
+			}
+			if err != nil || got.ReleaseID != installed.ID || got.Enabled || len(got.Grants) != 0 {
+				t.Fatalf("unexpected restore: %+v, %v", got, err)
+			}
+			restored, err := destination.Export(ctx, got.ID)
+			if err != nil || !reflect.DeepEqual(restored.Collections, export.Collections) {
+				t.Fatalf("restored records differ: %v", err)
+			}
+		})
+	}
+}
+
 func TestRestorePreservesRecordsInSeparateDisabledInstance(t *testing.T) {
 	db, s := storeAt(t, ":memory:")
 	defer db.Close()

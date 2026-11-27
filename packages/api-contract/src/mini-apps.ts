@@ -73,6 +73,7 @@ export interface MiniAppRecord {
 }
 
 export interface MiniAppInvocation {
+  cursor?: string;
   items?: MiniAppFields[];
   action: string;
   surface: MiniAppSurface;
@@ -83,6 +84,7 @@ export interface MiniAppInvocation {
 }
 
 export interface MiniAppResult {
+  next_cursor?: string;
   records?: MiniAppRecord[];
   confirmation?: string;
   prompt?: string;

@@ -4,6 +4,7 @@ import type { MiniAppInstance, MiniAppPackage } from "@cove/api-contract";
 import { appKeys, miniApps } from "@/api/mini-apps";
 import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
 import { Button } from "@/components/ui/button";
+import { PackagePreview } from "./AppDirectory";
 import {
   ErrorMessage,
   Grants,
@@ -31,6 +32,21 @@ export function AppSettings({
   const current = releases.data?.packages.find(
     (p) => p.id === instance.release_id,
   );
+  const check = useMutation({
+    retry: false,
+    mutationFn: async () => {
+      if (!current) throw new Error("The installed release is unavailable.");
+      const { packages } = await miniApps.catalog();
+      const [entry] = packages
+        .filter((entry) => canUpgrade(pkg, entry, current.origin, entry.origin))
+        .sort((a, b) =>
+          b.version.localeCompare(a.version, "en", { numeric: true }),
+        );
+      return entry
+        ? { entry, candidate: await miniApps.catalogPreview(entry) }
+        : null;
+    },
+  });
   const choices =
     releases.data?.packages.filter(
       (r) =>
@@ -73,13 +89,45 @@ export function AppSettings({
     },
     onSettled: () => cache.invalidateQueries({ queryKey: appKeys.instances }),
   });
+  if (check.data) {
+    return (
+      <PackagePreview
+        pkg={check.data.candidate}
+        source={{ kind: "catalog", entry: check.data.entry }}
+        targetInstance={instance}
+        previous={[]}
+        open={check.reset}
+        close={check.reset}
+      />
+    );
+  }
   return (
     <section className={sectionStyle}>
       <h2 className="text-lg font-semibold">Instance settings</h2>
       <p className="text-sm text-muted-foreground">
         {pkg.publisher} / {pkg.app} · {pkg.version}
       </p>
-      <fieldset disabled={save.isPending} className="space-y-4">
+      {current && current.origin !== "local" && (
+        <div className="space-y-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={check.isPending || save.isPending}
+            onClick={() => check.mutate()}
+          >
+            {check.isPending ? "Checking for updates…" : "Check for updates"}
+          </Button>
+          {check.isSuccess && <p role="status">No compatible update in this catalog.</p>}
+          <ErrorMessage error={check.error} />
+        </div>
+      )}
+      {current?.origin === "local" && (
+        <p className="text-sm">
+          To update this personal app, import a newer package in My apps and
+          choose this instance.
+        </p>
+      )}
+      <fieldset disabled={save.isPending || check.isPending} className="space-y-4">
         {choices.length > 1 && (
           <label className={labelStyle}>
             Installed release

@@ -40,8 +40,8 @@ func (s *Server) appBrowserStep(w http.ResponseWriter, r *http.Request, step str
 		}
 		in.ClaimID, phase = input.ClaimID, input.Phase
 	}
-	s.appChanges.Lock()
-	defer s.appChanges.Unlock()
+	s.apps.InstanceChanges.Lock()
+	defer s.apps.InstanceChanges.Unlock()
 	if err := s.apps.CheckCapability(ctx, id, "ai.generate"); err != nil {
 		appReply(w, nil, err)
 		return

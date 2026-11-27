@@ -2,6 +2,13 @@
 
 A standard Cove installation includes Japanese Review Book and Reading Inbox. Open Mini Apps in the Launcher to install either release. A browser session can also preview a personal package from disk. Personal and catalog releases have distinct identities. The installer reserves the publisher `cove` for trusted distribution.
 
+**Settings → Check for updates** compares the current instance with releases
+in the configured directory. Cove downloads the signed index and checks
+versions locally. Instance IDs, permissions and user records stay on the Mac.
+The user reviews the latest compatible release and approves its permissions
+before migration. Personal packages can be updated by importing a newer
+version from their author.
+
 ## Build a CoveWeb directory
 
 Run the catalog builder on the publishing machine with a private Ed25519 PEM key. Keep the private key outside source control and outside the static site.

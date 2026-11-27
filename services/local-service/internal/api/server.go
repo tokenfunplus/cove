@@ -17,7 +17,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -55,7 +54,6 @@ type Config struct {
 type Server struct {
 	apps            *miniapps.Service
 	appStore        *persistence.SQLiteStore
-	appChanges      sync.Mutex
 	files           appFileBroker
 	catalog         appcatalog.Catalog
 	searchService   *websearch.Service

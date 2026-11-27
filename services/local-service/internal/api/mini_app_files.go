@@ -48,8 +48,8 @@ func (b *appFileBroker) invalidate(instance string) {
 
 func (s *Server) appFiles(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	s.appChanges.Lock()
-	defer s.appChanges.Unlock()
+	s.apps.InstanceChanges.Lock()
+	defer s.apps.InstanceChanges.Unlock()
 	if err := s.apps.CheckCapability(r.Context(), id, "mac.files.pick"); err != nil {
 		appReply(w, nil, err)
 		return

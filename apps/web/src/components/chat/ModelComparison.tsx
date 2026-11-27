@@ -1,3 +1,4 @@
+import { MiniAppSourceLinks } from "./MiniAppSourceLinks";
 import { ComparisonSummary } from "@/components/chat/ComparisonSummary";
 import { comparisonStyles } from "@/styles/comparison";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ import {
 export function ModelComparisonResultGrid({
   busy = false,
   localOnly = false,
+  appSourcePrompt,
   batch,
   messages,
   liveTargets,
@@ -27,6 +29,7 @@ export function ModelComparisonResultGrid({
 }: {
   busy?: boolean;
   localOnly?: boolean;
+  appSourcePrompt?: string;
   batch: GenerationBatch;
   messages: ConversationView["messages"];
   liveTargets?: NonNullable<LiveTurn["targets"]>;
@@ -161,6 +164,7 @@ export function ModelComparisonResultGrid({
             );
           })}
       </div>
+      <MiniAppSourceLinks userBody={appSourcePrompt} />
       <ComparisonSummary
         targetCount={batch.targets.length}
         verifiedCount={verifiedCount}
@@ -175,6 +179,7 @@ export function ModelComparisonResultGrid({
 export function LiveModelComparisonGrid({
   busy = false,
   localOnly = false,
+  appSourcePrompt,
   batch,
   targets,
   onCancelTarget,
@@ -185,6 +190,7 @@ export function LiveModelComparisonGrid({
 }: {
   busy?: boolean;
   localOnly?: boolean;
+  appSourcePrompt?: string;
   batch?: GenerationBatch;
   targets: NonNullable<LiveTurn["targets"]>;
   onCancelTarget?: (batchID: string, generationID: string) => void;
@@ -318,6 +324,7 @@ export function LiveModelComparisonGrid({
           );
         })}
       </div>
+      <MiniAppSourceLinks userBody={appSourcePrompt} />
       <ComparisonSummary
         targetCount={targets.length}
         verifiedCount={verifiedCount}

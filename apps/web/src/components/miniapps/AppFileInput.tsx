@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { LocalServiceError } from "@/api/client";
 import { miniApps } from "@/api/mini-apps";
 import { Button } from "@/components/ui/button";
 import { ErrorMessage } from "./presentation";
@@ -27,6 +28,9 @@ export function AppFileInput({
         ? false
         : 800,
   });
+  const expired =
+    file.error instanceof LocalServiceError &&
+    file.error.envelope.error.code === "not_found";
   const reset = start.reset;
   useEffect(() => {
     if (
@@ -40,7 +44,17 @@ export function AppFileInput({
   }, [op, file.data, onChoose, reset]);
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {op && (!file.data || file.data.state === "pending") ? (
+      {op && file.isError && !expired ? (
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          disabled={file.isFetching}
+          onClick={() => void file.refetch()}
+        >
+          Retry file status
+        </Button>
+      ) : op && !expired && (!file.data || file.data.state === "pending") ? (
         <Button asChild size="xs" variant="outline">
           <a href={"cove://pick/" + encodeURIComponent(op.id)}>
             Open Mac file picker
@@ -65,7 +79,9 @@ export function AppFileInput({
       {file.data?.state === "failed" && (
         <ErrorMessage error="The file could not be imported." />
       )}
-      <ErrorMessage error={start.error ?? file.error} />
+      <ErrorMessage
+        error={start.error ?? (expired ? "File selection expired. Choose a file again." : file.error)}
+      />
     </div>
   );
 }

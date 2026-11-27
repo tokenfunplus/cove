@@ -28,7 +28,7 @@ func (s *Server) appRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	instance, err := s.apps.Restore(r.Context(), raw)
 	if errors.Is(err, miniapps.ErrBackupRelease) {
-		writeError(w, http.StatusConflict, "missing_release", "Install the exact package version and origin used by this backup, then restore it again.")
+		writeError(w, http.StatusConflict, "missing_release", "Install the exact package version used by this backup. Official releases can come from the bundle or signed catalog. Personal releases require the original imported package.")
 		return
 	}
 	appReply(w, instance, err)

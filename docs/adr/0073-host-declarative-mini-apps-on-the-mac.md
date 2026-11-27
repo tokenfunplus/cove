@@ -18,6 +18,12 @@ installing packages are separate from allowing an instance to access a Mac
 selection or send user input to a model. A deep link conveys navigation intent.
 The authenticated Local Service resolves the target and enforces grants.
 
+The bundle and the configured signed catalog share a release authority.
+When restoring a personal instance backup, either channel can supply the
+exact official package recorded in the backup. Restoration verifies its
+publisher, app, version and SHA-256 digest. A locally imported release
+retains its separate identity.
+
 This extends the existing boundaries in [ADR 0012](0012-make-chat-the-local-service-application-facade.md)
 and [ADR 0063](0063-add-json-interactive-chat-cards.md). Chat owns model
 execution and access to Provider credentials. A Mini App owns the requests it

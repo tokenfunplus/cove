@@ -151,6 +151,8 @@ export async function runMiniAppsAcceptance({
   await snapshot("mini-app-questions");
 
   await button("Settings");
+  await button("Check for updates");
+  await until("document.body.textContent.includes('No compatible update in this catalog.')");
   await cdp("Browser.setDownloadBehavior", {
     behavior: "allow",
     downloadPath: temp,

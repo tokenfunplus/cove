@@ -1,9 +1,9 @@
 package api
 
 import (
-	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 	"net/http"
 
+	"github.com/tokenfunplus/cove/services/local-service/internal/localsecurity"
 	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
 )
 
@@ -14,10 +14,11 @@ func (s *Server) appTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx, instance := r.Context(), r.PathValue("id")
-	s.appChanges.Lock()
-	defer s.appChanges.Unlock()
-	authorize := func() error { return s.apps.CheckCapability(ctx, instance, "ai.generate") }
-	if err := authorize(); err != nil {
+	if r.Method != "POST" {
+		s.apps.InstanceChanges.Lock()
+		defer s.apps.InstanceChanges.Unlock()
+	}
+	if err := s.apps.CheckCapability(ctx, instance, "ai.generate"); err != nil {
 		appReply(w, nil, err)
 		return
 	}
@@ -28,10 +29,11 @@ func (s *Server) appTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != "POST" {
 		id := r.PathValue("task")
-		if r.Method == "DELETE" {
-			model.StopAppTask(instance, id)
-		}
 		t, err := s.appStore.AppTask(ctx, instance, id)
+		if err == nil && r.Method == "DELETE" {
+			model.StopAppTask(instance, id)
+			t, err = s.appStore.AppTask(ctx, instance, id)
+		}
 		appReply(w, t, err)
 		return
 	}

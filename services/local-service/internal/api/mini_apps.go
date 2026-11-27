@@ -171,8 +171,8 @@ func (s *Server) appInstance(w http.ResponseWriter, r *http.Request) {
 		appReply(w, map[string]any{"instance": inst, "package": release.Package}, err)
 		return
 	}
-	s.appChanges.Lock()
-	defer s.appChanges.Unlock()
+	s.apps.InstanceChanges.Lock()
+	defer s.apps.InstanceChanges.Unlock()
 	var result any
 	var err error
 	switch {
