@@ -41,9 +41,9 @@ export function ensureWorkspaceEntry(rebase = false) {
   return entry;
 }
 
-class WorkspaceNavigationEvent extends PopStateEvent {}
+const workspaceEvents = new WeakSet<Event>();
 export const isWorkspaceNavigation = (event: Event) =>
-  event instanceof WorkspaceNavigationEvent;
+  workspaceEvents.has(event);
 
 /** Request Chat's existing draft/generation protection before changing history. */
 export function navigateWorkspace(path: string, replace = false) {
@@ -58,9 +58,11 @@ export function navigateWorkspace(path: string, replace = false) {
       if (replace) window.history.replaceState(state, "", destination.href);
       else window.history.pushState(state, "", destination.href);
     }
-    window.dispatchEvent(
-      new WorkspaceNavigationEvent("popstate", { state: window.history.state }),
-    );
+    const event = new PopStateEvent("popstate", {
+      state: window.history.state,
+    });
+    workspaceEvents.add(event);
+    window.dispatchEvent(event);
   };
   const destination = new URL(path, window.location.href);
   if (

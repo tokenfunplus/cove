@@ -231,3 +231,27 @@ test("a native hash change invalidates a pending numeric traversal", async () =>
     "/#native-fragment",
   );
 });
+
+test.each([
+  { oldURL: "", newURL: "" },
+  { oldURL: "not-an-absolute-url", newURL: "http://localhost/#fragment" },
+  { oldURL: "http://localhost/", newURL: "invalid" },
+])(
+  "ignores incomplete or malformed synthetic hash events: $oldURL / $newURL",
+  (urls) => {
+    render(<App />);
+    const entry = workspaceEntry()!;
+    const error = vi.fn();
+    window.addEventListener("error", error);
+    try {
+      act(() => window.dispatchEvent(new HashChangeEvent("hashchange", urls)));
+      expect(workspaceEntry()).toEqual(entry);
+      expect(
+        screen.getByRole("heading", { name: "Chat workspace" }),
+      ).toBeTruthy();
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener("error", error);
+    }
+  },
+);

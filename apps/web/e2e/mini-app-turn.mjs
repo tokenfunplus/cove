@@ -10,6 +10,7 @@ export async function runMiniAppTurn({
   origin,
   profile,
   requests,
+  snapshot,
 }) {
   const settings = await api("/api/settings");
   await api("/api/settings", "PATCH", {
@@ -313,6 +314,11 @@ export async function runMiniAppTurn({
   );
   await fill("#generation-input", "");
   await loadPage("Page.navigate", { url: origin + "/apps" });
+  await until('!!document.querySelector(".mini-app-shell")');
+  await until("!!history.state?.['cove.workspace-history.v1']");
+  const appsEntry = await evaluate(
+    "({href:location.href,state:history.state})",
+  );
   await click('a[href="/"]');
   await until(
     `!!document.querySelector('button[aria-label="New conversation"]')`,
@@ -320,13 +326,66 @@ export async function runMiniAppTurn({
   await click('button[aria-label="New conversation"]');
   await until('!!document.querySelector("#generation-input")');
   await fill("#generation-input", "Keep my unsent workspace draft");
+  const chatEntry = await evaluate(
+    "({href:location.href,state:history.state})",
+  );
+  const historyLength = await evaluate("history.length");
+  const requestsBeforeHistory = requests.length;
+  const restoredChat =
+    "location.href===" +
+    JSON.stringify(chatEntry.href) +
+    " && JSON.stringify(history.state)===" +
+    JSON.stringify(JSON.stringify(chatEntry.state));
   await evaluate("history.back()");
   await until("document.body.textContent.includes('Discard unsent draft?')");
+  await until(restoredChat);
+  await snapshot("mini-app-history-stay");
   await button("Stay", "[role=dialog]");
   assert.equal(
     await evaluate('document.querySelector("#generation-input").value'),
     "Keep my unsent workspace draft",
   );
-  assert.equal(await evaluate("location.pathname"), "/");
-  await fill("#generation-input", "");
+  assert.equal(await evaluate("location.href"), chatEntry.href);
+  assert.equal(await evaluate("history.length"), historyLength);
+  assert.deepEqual(await evaluate("history.state"), chatEntry.state);
+
+  // Staying must preserve the actual prior entry, so Back can offer it again.
+  await evaluate("history.back()");
+  await until("document.body.textContent.includes('Discard unsent draft?')");
+  await until(restoredChat);
+  await button("Discard and continue", "[role=dialog]");
+  await until(
+    "location.href===" +
+      JSON.stringify(appsEntry.href) +
+      " && !!document.querySelector('.mini-app-shell')",
+  );
+  assert.deepEqual(await evaluate("history.state"), appsEntry.state);
+  assert.equal(await evaluate("history.length"), historyLength);
+  await snapshot("mini-app-history-leave");
+
+  // Leave traverses instead of replacing the entry: Forward still reaches Chat.
+  await evaluate("history.forward()");
+  await until(
+    "location.href===" +
+      JSON.stringify(chatEntry.href) +
+      " && !!document.querySelector('#generation-input')",
+  );
+  assert.deepEqual(await evaluate("history.state"), chatEntry.state);
+  assert.equal(
+    await evaluate("document.querySelector('#generation-input').value"),
+    "",
+  );
+  assert.equal(await evaluate("history.length"), historyLength);
+  await evaluate("history.back()");
+  await until(
+    "location.href===" +
+      JSON.stringify(appsEntry.href) +
+      " && !!document.querySelector('.mini-app-shell')",
+  );
+  assert.deepEqual(await evaluate("history.state"), appsEntry.state);
+  assert.equal(
+    requests.length,
+    requestsBeforeHistory,
+    "History confirmation must not invoke a model",
+  );
 }

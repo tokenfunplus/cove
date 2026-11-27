@@ -106,8 +106,14 @@ export function App() {
       commit();
     };
     const hashChanged = (event: HashChangeEvent) => {
-      const before = new URL(event.oldURL),
+      if (!event.oldURL || !event.newURL) return;
+      let before: URL, after: URL;
+      try {
+        before = new URL(event.oldURL);
         after = new URL(event.newURL);
+      } catch {
+        return;
+      }
       if (
         before.pathname + before.search !== after.pathname + after.search ||
         restoring.current
