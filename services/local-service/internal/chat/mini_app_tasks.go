@@ -34,6 +34,7 @@ type AppTaskStore interface {
 }
 type appTaskWorker struct {
 	browser *browserAppTask
+	pending *appTaskSettlement
 	sync.Mutex
 	instance, id string
 	cancel       context.CancelFunc
@@ -58,9 +59,20 @@ func (s *Service) StartAppTask(ctx context.Context, in AppTaskInput, authorize f
 			return persistence.AppTask{}, ErrAppTaskConflict
 		}
 		if found || err != nil {
-			return task, err
+			return s.ProjectAppTask(in.Instance, task), err
 		}
-		return persistence.AppTask{}, s.requireGenerationIdle(ctx)
+		if s.hasPendingAppTaskSave() {
+			return persistence.AppTask{}, ErrAppTaskSavePending
+		}
+		if err := s.requireGenerationIdle(ctx); err != nil {
+			return persistence.AppTask{}, err
+		}
+		// A worker may have finished while the shared idle check waited for its
+		// lock. Its pending settlement is established before releasing that slot.
+		if s.hasPendingAppTaskSave() {
+			return persistence.AppTask{}, ErrAppTaskSavePending
+		}
+		return persistence.AppTask{}, nil
 	}
 	unlock := s.lockAppAdmission(in.InstanceChanges)
 	existing, err := check()
@@ -136,7 +148,7 @@ func (s *Service) StartAppTask(ctx context.Context, in AppTaskInput, authorize f
 		} else if err != nil || run.Err() != nil {
 			state, result, detail = "failed", "", "The model task did not complete."
 		}
-		_ = store.FinishAppTask(context.Background(), in.Instance, in.ID, state, result, detail)
+		s.settleAppTaskLocked(store, appTaskSettlement{instance: in.Instance, id: in.ID, state: state, result: result, detail: detail})
 		w.instance, w.id, w.cancel, w.done = "", "", nil, nil
 		close(done)
 	}()
@@ -229,10 +241,12 @@ func (s *Service) StopAppTask(instance, id string) {
 	w.Lock()
 	if w.cancel == nil || (instance != "" && instance != w.instance) || (id != "" && id != w.id) {
 		w.Unlock()
+		s.flushPendingAppTaskOnStop(instance, id)
 		return
 	}
 	w.cancel()
 	done := w.done
 	w.Unlock()
 	<-done
+	s.flushPendingAppTaskOnStop(instance, id)
 }

@@ -48,3 +48,25 @@ func TestCandidatesDetectSavedAndRepeatedContentIncludingArchive(t *testing.T) {
 		t.Fatal("inspected records after read access was revoked", err)
 	}
 }
+
+func TestCandidateValidationIsPerItemAndDoesNotHideValidResults(t *testing.T) {
+	db, service := storeAt(t, ":memory:")
+	defer db.Close()
+	raw, _ := os.ReadFile("../appcatalog/packages/japanese-review-book-1.1.coveapp")
+	release, err := service.Install(t.Context(), raw, "builtin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	book, err := service.Create(t.Context(), CreateRequest{ReleaseID: release.ID, Name: "Mixed candidates", Grants: release.Package.Capabilities})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.CheckCandidates(t.Context(), book.ID, CandidateCheckRequest{ExpectedRevision: book.Revision, Action: "review.suggestQuestions", Surface: "page", Items: []map[string]any{
+		{"question": "Valid question", "answer": "Valid answer"},
+		{"question": "Missing answer"},
+		{"question": "Valid question", "answer": "Valid answer"},
+	}})
+	if err != nil || !reflect.DeepEqual(result.Duplicates, []int{2}) || len(result.Invalid) != 1 || result.Invalid[0].Index != 1 || result.Invalid[0].Message == "" {
+		t.Fatal(result, err)
+	}
+}

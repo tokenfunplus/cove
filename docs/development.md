@@ -86,7 +86,7 @@ Current source builds migrate the schema 16 database through schema 32. Schema 2
 | 28 | Refreshed PDF source snapshots for Project search indexes | Existing indexes use the saved Project source snapshot until refreshed. Saved conversations and original files are retained. |
 | 29 | Interactive card definitions, saved values, and submission state | Existing chat history stays readable. Earlier Cove builds reject the upgraded database. |
 | 30 | Mini App packages, independent instances, scoped records, attachments and task history | Existing Chat data stays unchanged. Older services reject the upgraded database. |
-| 31 | Persisted Mini App browser-task delivery receipts | Verified browser results can acknowledge interrupted delivery without re-running the model. |
+| 31 | Mini App conversation scopes, activity and bounded task/receipt history | Compact fingerprints retain write idempotency after detailed results expire; browser-task delivery receipts use existing request metadata. |
 | 32 | Per-instance cloud model permission | Existing instances default to cloud access off. Local records, attachments and declared grants are preserved. |
 
 Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).

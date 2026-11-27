@@ -32,7 +32,7 @@ func TestCandidateChecksUseAuthenticatedInstanceRecords(t *testing.T) {
 	}
 	server := NewServer(Config{Store: store, LaunchToken: "launch-token"})
 	token, csrf := launchBrowserSession(t, server)
-	req := miniapps.CandidateCheckRequest{ExpectedRevision: instance.Revision, Action: "review.suggestQuestions", Surface: "page", Items: []map[string]any{{"question": "New card", "answer": "New answer"}, {"question": "New card", "answer": "New answer"}}}
+	req := miniapps.CandidateCheckRequest{ExpectedRevision: instance.Revision, Action: "review.suggestQuestions", Surface: "page", Items: []map[string]any{{"question": "New card", "answer": "New answer"}, {"question": "Missing answer"}, {"question": "New card", "answer": "New answer"}}}
 	encoded, err := json.Marshal(req)
 	if err != nil {
 		t.Fatal(err)
@@ -57,12 +57,13 @@ func TestCandidateChecksUseAuthenticatedInstanceRecords(t *testing.T) {
 			t.Fatal(response.Code, response.Body.String())
 		}
 		var result struct {
-			Duplicates []int `json:"duplicates"`
+			Duplicates []int                     `json:"duplicates"`
+			Invalid    []miniapps.CandidateIssue `json:"invalid"`
 		}
 		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
 			t.Fatal(err)
 		}
-		if len(result.Duplicates) != 1 || result.Duplicates[0] != 1 {
+		if len(result.Duplicates) != 1 || result.Duplicates[0] != 2 || len(result.Invalid) != 1 || result.Invalid[0].Index != 1 {
 			t.Fatal(result)
 		}
 	}

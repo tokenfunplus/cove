@@ -7,9 +7,14 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { QueryClientContext, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClientContext,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { appKeys, miniApps } from "@/api/mini-apps";
 import { Button } from "@/components/ui/button";
+import { miniAppInventoryRevision } from "@/lib/mini-app-inventory";
 import type {
   MiniAppInstance,
   MiniAppRelease,
@@ -49,10 +54,18 @@ export function appDiscoveryQuestion(text: string) {
   const question = text.trim();
   return (
     /^(?:find|show|list)(?:\s+my)?\s+due\s+questions[.!?]?$/i.test(question) ||
-    /^(?:which|what)\s+(?:mini\s+)?apps?\s+(?:(?:can|may)\s+i\s+(?:use|access)(?:\s+(?:here|in\s+(?:this|my)\s+chat|with\s+cove))?|(?:are|do\s+i\s+have)\s+(?:installed|available)(?:\s+(?:here|locally|in\s+(?:this|my)\s+chat))?)[.!?]?$/i.test(question) ||
-    /^(?:list\s+my\s+app\s+actions|show\s+(?:my\s+)?apps)[.!?]?$/i.test(question) ||
-    /^(?:\u6211|\u8fd9\u91cc|\u5f53\u524d\u5bf9\u8bdd\u4e2d)?(?:\u6709|\u80fd\u7528|\u53ef\u4ee5\u4f7f\u7528)\u54ea\u4e9b(?:\u672c\u5730|\u5df2\u5b89\u88c5\u7684?|\u5c0f)?\u5e94\u7528[?\uff1f\u3002!\uff01]?$/.test(question) ||
-    /^\u5217\u51fa(?:\u6211\u7684)?(?:\u5df2\u5b89\u88c5\u7684?)?(?:\u5c0f)?\u5e94\u7528(?:\u52a8\u4f5c)?[?\uff1f\u3002!\uff01]?$/.test(question)
+    /^(?:which|what)\s+(?:mini\s+)?apps?\s+(?:(?:can|may)\s+i\s+(?:use|access)(?:\s+(?:here|in\s+(?:this|my)\s+chat|with\s+cove))?|(?:are|do\s+i\s+have)\s+(?:installed|available)(?:\s+(?:here|locally|in\s+(?:this|my)\s+chat))?)[.!?]?$/i.test(
+      question,
+    ) ||
+    /^(?:list\s+my\s+app\s+actions|show\s+(?:my\s+)?apps)[.!?]?$/i.test(
+      question,
+    ) ||
+    /^(?:\u6211|\u8fd9\u91cc|\u5f53\u524d\u5bf9\u8bdd\u4e2d)?(?:\u6709|\u80fd\u7528|\u53ef\u4ee5\u4f7f\u7528)\u54ea\u4e9b(?:\u672c\u5730|\u5df2\u5b89\u88c5\u7684?|\u5c0f)?\u5e94\u7528[?\uff1f\u3002!\uff01]?$/.test(
+      question,
+    ) ||
+    /^\u5217\u51fa(?:\u6211\u7684)?(?:\u5df2\u5b89\u88c5\u7684?)?(?:\u5c0f)?\u5e94\u7528(?:\u52a8\u4f5c)?[?\uff1f\u3002!\uff01]?$/.test(
+      question,
+    )
   );
 }
 
@@ -70,20 +83,21 @@ export function mentionedApps(text: string, apps: ReturnType<typeof chatApps>) {
         String.raw`(?:^|[^\p{L}\p{N}_])@${name}(?![\p{L}\p{N}_])`,
         "iu",
       );
-      const english = new RegExp(
-        String.raw`\b(?:from|in|using|with)\s+(?:my\s+)?${name}(?![\p{L}\p{N}_])`,
-        "iu",
-      );
-      // Chinese action phrases do not require spaces around an app name.
-      const chinese = new RegExp(
-        String.raw`(?:\u4ece|\u5728|\u4f7f\u7528|\u7528)(?:\u6211\u7684)?\s*${name}(?![A-Za-z0-9_])`,
-        "iu",
-      );
-      return (
-        explicit.test(question) || english.test(question) || chinese.test(question)
-      );
+      return explicit.test(question);
     });
   });
+}
+
+export function appDiscoveryIntent(
+  text: string,
+  apps: ReturnType<typeof chatApps>,
+) {
+  const matches = mentionedApps(text, apps);
+  return {
+    matches,
+    discover:
+      apps.length > 0 && (appDiscoveryQuestion(text) || matches.length > 0),
+  };
 }
 
 export function useChatApps(enabled = true) {
@@ -98,7 +112,21 @@ export function useChatApps(enabled = true) {
   );
   const instances = useQuery({
     queryKey: appKeys.instances,
-    queryFn: miniApps.instances,
+    queryFn: async () => {
+      const revision = miniAppInventoryRevision();
+      const result = await miniApps.instances();
+      if (revision === miniAppInventoryRevision()) {
+        cache.setQueryData(appKeys.presence, result.instances.length > 0);
+      } else {
+        // A second mutation may arrive during the first inventory request.
+        // Refresh after that request settles, including when its result was empty.
+        window.setTimeout(() => {
+          cache.setQueryData(appKeys.presence, true);
+          void cache.invalidateQueries({ queryKey: appKeys.instances });
+        }, 0);
+      }
+      return result;
+    },
     retry: false,
     enabled: enabled && hasApps,
   });
@@ -109,7 +137,8 @@ export function useChatApps(enabled = true) {
     enabled: enabled && !!instances.data?.instances.length,
   });
   return useMemo(
-    () => chatApps(instances.data?.instances ?? [], releases.data?.packages ?? []),
+    () =>
+      chatApps(instances.data?.instances ?? [], releases.data?.packages ?? []),
     [instances.data, releases.data],
   );
 }
@@ -122,7 +151,10 @@ export function ChatDiscoveryBridge(props: {
   return cache ? <ChatDiscoveryQueries {...props} /> : null;
 }
 
-function ChatDiscoveryQueries({ enabled, change }: {
+function ChatDiscoveryQueries({
+  enabled,
+  change,
+}: {
   enabled: boolean;
   change: (apps: ReturnType<typeof chatApps>) => void;
 }) {

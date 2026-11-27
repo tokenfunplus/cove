@@ -58,3 +58,89 @@ test("a signing authority change previews its key and requires a separate confir
     expect(save).toHaveBeenCalledWith(old.url, "next-key", old),
   );
 });
+
+test("restoring Cove defaults reviews the packaged key before removing the custom override", async () => {
+  const old = {
+    url: "https://custom.example/catalog.json",
+    public_key: "custom-key",
+  };
+  const defaults = {
+    url: "https://official.example/catalog.json",
+    public_key: "official-key",
+  };
+  vi.spyOn(miniApps, "catalogSettings").mockResolvedValue({
+    ...old,
+    defaults,
+    mode: "custom" as const,
+  });
+  const restore = vi
+    .spyOn(miniApps, "useCatalogDefaults")
+    .mockResolvedValue(undefined);
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        })
+      }
+    >
+      <CatalogSettings expanded />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Use Cove defaults" }),
+  );
+  await screen.findByText(/The new signing key is official-key/);
+  expect(restore).not.toHaveBeenCalled();
+  await user.click(
+    screen.getByRole("button", { name: "Confirm signing authority" }),
+  );
+  await waitFor(() => expect(restore).toHaveBeenCalledWith(old));
+});
+
+test("saved feedback survives the authority form refreshing and clears when edited", async () => {
+  const before = {
+    url: "https://old.example/catalog.json",
+    public_key: "old-key",
+  };
+  const after = {
+    url: "https://old.example/catalog.json",
+    public_key: "new-key",
+    mode: "custom" as const,
+  };
+  vi.spyOn(miniApps, "catalogSettings")
+    .mockResolvedValueOnce(before)
+    .mockResolvedValue(after);
+  vi.spyOn(miniApps, "saveCatalogSettings").mockResolvedValue(undefined);
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        })
+      }
+    >
+      <CatalogSettings expanded />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  const key = await screen.findByRole("textbox", {
+    name: "Ed25519 public key",
+  });
+  await user.clear(key);
+  await user.type(key, "new-key");
+  await user.click(
+    screen.getByRole("button", { name: "Save catalog settings" }),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Confirm signing authority" }),
+  );
+  await screen.findByText("Current source: Custom directory.");
+  expect(await screen.findByText("Catalog settings saved.")).toBeTruthy();
+  await user.type(
+    screen.getByRole("textbox", { name: "Ed25519 public key" }),
+    "x",
+  );
+  expect(screen.queryByText("Catalog settings saved.")).toBeNull();
+});

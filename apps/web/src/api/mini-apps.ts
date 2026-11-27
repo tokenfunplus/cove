@@ -1,4 +1,5 @@
 import { fetchLocalService, request } from "./client";
+import { announceMiniAppInventoryChange } from "@/lib/mini-app-inventory";
 import type {
   MiniAppFields,
   MiniAppInstance,
@@ -20,6 +21,7 @@ export interface CatalogEntry {
   app: string;
   version: string;
   name: string;
+  description?: string;
   digest: string;
 }
 const releaseURL = (
@@ -36,6 +38,12 @@ const post = (data: unknown): RequestInit => ({
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify(data),
 });
+async function inventoryMutation<T>(result: Promise<T>): Promise<T> {
+  const value = await result;
+  announceMiniAppInventoryChange();
+  return value;
+}
+
 export const appKeys = {
   presence: ["mini-apps", "presence"] as const,
   instances: ["mini-apps", "instances"] as const,
@@ -86,7 +94,10 @@ export const miniApps = {
     surface: MiniAppSurface,
     items: MiniAppFields[],
   ) =>
-    request<{ duplicates: number[] }>(
+    request<{
+      duplicates: number[];
+      invalid?: { index: number; message: string }[];
+    }>(
       instanceURL(instance.id) + "/candidates/check",
       post({
         action,
@@ -96,7 +107,9 @@ export const miniApps = {
       }),
     ),
   removeRelease: (id: string) =>
-    request<void>(root + "/packages/" + segment(id), { method: "DELETE" }),
+    inventoryMutation(
+      request<void>(root + "/packages/" + segment(id), { method: "DELETE" }),
+    ),
   hostActivity: (instance?: string) =>
     request<{ activity: HostActivity[] }>(
       root +
@@ -111,7 +124,13 @@ export const miniApps = {
       pending: boolean;
       id?: string;
       target?: { action: string; view: string; title: string; field: string };
-    }>(instanceURL(id) + "/native-selection?view=" + encodeURIComponent(view) + "&selection=" + encodeURIComponent(selection)),
+    }>(
+      instanceURL(id) +
+        "/native-selection?view=" +
+        encodeURIComponent(view) +
+        "&selection=" +
+        encodeURIComponent(selection),
+    ),
   takeNativeSelection: (instance: string, id: string) =>
     request<{ text: string }>(
       instanceURL(instance) + "/native-selection",
@@ -138,7 +157,20 @@ export const miniApps = {
     request<{ instances: MiniAppInstance[] }>(root + "/instances"),
   releases: () => request<{ packages: MiniAppRelease[] }>(root + "/packages"),
   catalogSettings: () =>
-    request<{ url: string; public_key: string }>(root + "/catalog-settings"),
+    request<{
+      url: string;
+      public_key: string;
+      mode?: "default" | "custom" | "bundled";
+      defaults?: { url: string; public_key: string };
+    }>(root + "/catalog-settings"),
+  useCatalogDefaults: (previous?: { url: string; public_key: string }) =>
+    request(root + "/catalog-settings", {
+      ...post({
+        use_defaults: true,
+        ...(previous ? { confirm_trust: true, previous } : {}),
+      }),
+      method: "PUT",
+    }),
   saveCatalogSettings: (
     url: string,
     public_key: string,
@@ -181,41 +213,57 @@ export const miniApps = {
     return response.json() as Promise<MiniAppPackage>;
   },
   catalogInstall: (entry: CatalogEntry) =>
-    request<MiniAppRelease>(
-      releaseURL(entry) + "/install",
-      post({ digest: entry.digest }),
+    inventoryMutation(
+      request<MiniAppRelease>(
+        releaseURL(entry) + "/install",
+        post({ digest: entry.digest }),
+      ),
     ),
-  localPackage: (raw: string, operation: "preview" | "install") =>
-    request<MiniAppRelease>(root + "/packages/" + operation, {
+  validateDraft: (raw: string) =>
+    request<MiniAppPackage>(root + "/packages/validate", {
       ...post({}),
       body: raw,
     }),
+  localPackage: (raw: string, operation: "preview" | "install") => {
+    const result = request<MiniAppRelease>(root + "/packages/" + operation, {
+      ...post({}),
+      body: raw,
+    });
+    return operation === "install" ? inventoryMutation(result) : result;
+  },
   create: (
     release_id: string,
     name: string,
     grants: string[],
     cloud_enabled = false,
   ) =>
-    request<MiniAppInstance>(
-      root + "/instances",
-      post({ release_id, name, grants, cloud_enabled }),
+    inventoryMutation(
+      request<MiniAppInstance>(
+        root + "/instances",
+        post({ release_id, name, grants, cloud_enabled }),
+      ),
     ),
   export: (id: string) => request<unknown>(instanceURL(id) + "/export"),
   restore: (raw: string) =>
-    request<MiniAppInstance>(root + "/instances/restore", {
-      ...post({}),
-      body: raw,
-    }),
-  remove: (id: string) => request<void>(instanceURL(id), { method: "DELETE" }),
+    inventoryMutation(
+      request<MiniAppInstance>(root + "/instances/restore", {
+        ...post({}),
+        body: raw,
+      }),
+    ),
+  remove: (id: string) =>
+    inventoryMutation(request<void>(instanceURL(id), { method: "DELETE" })),
   settings: (
     instance: MiniAppInstance,
     enabled: boolean,
     grants: string[],
     cloud_enabled = instance.cloud_enabled === true,
   ) =>
-    request<MiniAppInstance>(
-      instanceURL(instance.id) + "/settings",
-      post({ enabled, grants, cloud_enabled, revision: instance.revision }),
+    inventoryMutation(
+      request<MiniAppInstance>(
+        instanceURL(instance.id) + "/settings",
+        post({ enabled, grants, cloud_enabled, revision: instance.revision }),
+      ),
     ),
   upgrade: (
     instance: MiniAppInstance,
@@ -223,9 +271,16 @@ export const miniApps = {
     grants: string[],
     cloud_enabled = instance.cloud_enabled === true,
   ) =>
-    request<MiniAppInstance>(
-      instanceURL(instance.id) + "/upgrade",
-      post({ release_id, grants, cloud_enabled, revision: instance.revision }),
+    inventoryMutation(
+      request<MiniAppInstance>(
+        instanceURL(instance.id) + "/upgrade",
+        post({
+          release_id,
+          grants,
+          cloud_enabled,
+          revision: instance.revision,
+        }),
+      ),
     ),
   invoke: (id: string, command: MiniAppInvocation) =>
     request<MiniAppResult>(
@@ -290,6 +345,11 @@ export const miniApps = {
   ) => request<AppTask>(instanceURL(id) + "/tasks", post(data)),
   task: (id: string, task: string) =>
     request<AppTask>(instanceURL(id) + "/tasks/" + segment(task)),
+  retryTaskSave: (id: string, task: string) =>
+    request<void>(
+      instanceURL(id) + "/tasks/" + segment(task) + "/retry-save",
+      post({}),
+    ),
   cancel: (id: string, task: string) =>
     request<AppTask>(instanceURL(id) + "/tasks/" + segment(task), {
       method: "DELETE",
@@ -297,6 +357,7 @@ export const miniApps = {
 };
 
 export interface AppTask {
+  pending_save?: boolean;
   inputs?: MiniAppFields;
   destination?: string;
   browser?: boolean;
@@ -307,7 +368,7 @@ export interface AppTask {
   surface?: MiniAppSurface;
   modelId?: string;
   providerId?: string;
-  state: "running" | "completed" | "cancelled" | "failed";
+  state: "running" | "completed" | "cancelled" | "failed" | "save_failed";
   result?: string;
   error?: string;
 }

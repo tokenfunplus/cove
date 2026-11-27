@@ -48,6 +48,19 @@ Preferences from earlier versions reverify their cached release identities
 under these publisher rules before downloaded files gain catalog provenance.
 Installed app records and package bytes have their independent local ownership.
 
+Catalog settings distinguishes following Cove defaults, a pinned custom directory,
+and bundled-only operation. **Use Cove defaults** removes the override after any
+required signing-key confirmation. Saving a nonempty configuration identical to
+the packaged defaults also keeps default tracking. Explicit bundled-only and
+custom choices survive Cove updates. Legacy explicit settings remain pinned until
+the user chooses to follow defaults.
+
+Version and publisher histories are stored separately for each signing key.
+Switching directories cannot make another signer's conflicting release block the
+selected catalog. Returning to a signer retains its rollback checkpoint and its
+own immutable-version history. Ambiguous legacy histories are reverified without
+discarding existing rollback checkpoints or changing instance data.
+
 Successful verified indexes are cached in memory for up to thirty seconds,
 bounded by their signed expiration. Changing the URL or signing authority
 invalidates that cache. Failed and cancelled requests never populate it.

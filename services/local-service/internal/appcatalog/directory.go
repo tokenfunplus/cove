@@ -17,13 +17,26 @@ type checkpoint struct {
 	Digest   string `json:"digest"`
 }
 
+type authorityHistory struct {
+	Releases   map[string]bool   `json:"releases,omitempty"`
+	Versions   map[string]string `json:"versions,omitempty"`
+	Publishers map[string]bool   `json:"publishers,omitempty"`
+}
+
 type preferences struct {
-	TrustPolicy    int                   `json:"trust_policy,omitempty"`
-	ReleaseDigests map[string]bool       `json:"releases,omitempty"`
-	Versions       map[string]string     `json:"versions,omitempty"`
-	Publishers     map[string]bool       `json:"publishers,omitempty"`
-	Config         *Catalog              `json:"config,omitempty"`
-	Checkpoints    map[string]checkpoint `json:"checkpoints,omitempty"`
+	TrustPolicy    int                         `json:"trust_policy,omitempty"`
+	ReleaseDigests map[string]bool             `json:"releases,omitempty"`
+	Versions       map[string]string           `json:"versions,omitempty"`
+	Publishers     map[string]bool             `json:"publishers,omitempty"`
+	Config         *Catalog                    `json:"config,omitempty"`
+	Checkpoints    map[string]checkpoint       `json:"checkpoints,omitempty"`
+	Authorities    map[string]authorityHistory `json:"authorities,omitempty"`
+}
+
+type DirectorySettings struct {
+	Catalog
+	Defaults Catalog `json:"defaults"`
+	Mode     string  `json:"mode"`
 }
 
 // Directory persists the selected trust root and the newest verified index across Launcher sessions.
@@ -54,8 +67,17 @@ func Open(path string, defaults Catalog) (*Directory, error) {
 	}
 	// Older preferences did not distinguish the official signing authority from a
 	// user-selected directory. Reverify cached release identities under this policy.
-	if d.prefs.TrustPolicy < 1 {
+	if d.prefs.TrustPolicy < 2 {
+		// A legacy version history can only be attributed when exactly one key
+		// was ever accepted. Multi-authority histories must be reverified.
+		key := d.config().PublicKey
+		if _, known := d.prefs.Checkpoints[key]; key != "" && known && len(d.prefs.Checkpoints) == 1 {
+			d.prefs.Authorities = map[string]authorityHistory{key: {Versions: maps.Clone(d.prefs.Versions), Publishers: maps.Clone(d.prefs.Publishers)}}
+		}
 		d.prefs.ReleaseDigests = nil
+		d.prefs.Versions = nil
+		d.prefs.Publishers = nil
+		d.prefs.TrustPolicy = 2
 	}
 	return d, nil
 }
@@ -69,6 +91,17 @@ func (d *Directory) Config() Catalog {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.config()
+}
+func (d *Directory) Settings() DirectorySettings {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	mode := "custom"
+	if d.prefs.Config == nil {
+		mode = "default"
+	} else if d.prefs.Config.PublicKey == "" {
+		mode = "bundled"
+	}
+	return DirectorySettings{Catalog: d.config(), Defaults: d.defaults, Mode: mode}
 }
 func (d *Directory) save(next preferences) error {
 	if d.path != "" {
@@ -100,16 +133,21 @@ var ErrTrustConfirmation = errors.New("confirm the catalog signing authority bef
 var ErrCatalogChanged = errors.New("catalog settings changed; review the current signing authority")
 
 func (d *Directory) Configure(config Catalog) error {
-	return d.configure(config, nil)
+	return d.configure(config, nil, false)
 }
 
 // ReplaceTrust requires the authority shown in the confirmation to still be current.
 // Checkpoints remain scoped to their signing key and survive a trust change.
 func (d *Directory) ReplaceTrust(config, previous Catalog) error {
-	return d.configure(config, &previous)
+	return d.configure(config, &previous, false)
 }
 
-func (d *Directory) configure(config Catalog, previous *Catalog) error {
+// UseDefaults removes the local override, including when this build has no remote directory.
+func (d *Directory) UseDefaults(previous *Catalog) error {
+	return d.configure(d.defaults, previous, true)
+}
+
+func (d *Directory) configure(config Catalog, previous *Catalog, followDefaults bool) error {
 	if err := config.Validate(); err != nil {
 		return err
 	}
@@ -127,8 +165,8 @@ func (d *Directory) configure(config Catalog, previous *Catalog) error {
 	}
 	next := d.prefs
 	next.Config = &config
-	if current.PublicKey != config.PublicKey {
-		next.ReleaseDigests = nil
+	if followDefaults || config.PublicKey != "" && config == d.defaults {
+		next.Config = nil
 	}
 	if err := d.save(next); err != nil {
 		return err
@@ -168,12 +206,19 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 			return errors.New("catalog release index is older than the trusted revision")
 		}
 		next := d.prefs
-		next.TrustPolicy = 1
-		next.ReleaseDigests = make(map[string]bool, len(index.Packages))
-		next.Publishers = make(map[string]bool, len(d.prefs.Publishers))
-		maps.Copy(next.Publishers, d.prefs.Publishers)
-		next.Versions = make(map[string]string, len(d.prefs.Versions))
-		maps.Copy(next.Versions, d.prefs.Versions)
+		next.TrustPolicy = 2
+		next.Authorities = maps.Clone(d.prefs.Authorities)
+		if next.Authorities == nil {
+			next.Authorities = make(map[string]authorityHistory)
+		}
+		previous := d.prefs.Authorities[config.PublicKey]
+		history := authorityHistory{Releases: make(map[string]bool, len(index.Packages)), Publishers: maps.Clone(previous.Publishers), Versions: maps.Clone(previous.Versions)}
+		if history.Publishers == nil {
+			history.Publishers = make(map[string]bool)
+		}
+		if history.Versions == nil {
+			history.Versions = make(map[string]string)
+		}
 		for _, raw := range index.Packages {
 			e, err := entry(raw, "catalog")
 			if err != nil {
@@ -183,16 +228,17 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 				return errors.New("this signing authority cannot publish bundled app identities")
 			}
 			version := e.Publisher + "/" + e.App + "/" + e.Version
-			if digest, seen := next.Versions[version]; seen && digest != e.Digest {
+			if digest, seen := history.Versions[version]; seen && digest != e.Digest {
 				return errors.New("a published catalog release changed its contents")
 			}
-			next.Versions[version] = e.Digest
-			next.Publishers[e.Publisher] = true
-			next.ReleaseDigests[e.Digest] = true
+			history.Versions[version] = e.Digest
+			history.Publishers[e.Publisher] = true
+			history.Releases[e.Digest] = true
 		}
-		if prior.Digest == index.Digest && d.prefs.TrustPolicy == 1 && maps.Equal(d.prefs.ReleaseDigests, next.ReleaseDigests) {
+		if prior.Digest == index.Digest && maps.Equal(previous.Releases, history.Releases) {
 			return nil
 		}
+		next.Authorities[config.PublicKey] = history
 		next.Checkpoints = make(map[string]checkpoint, len(d.prefs.Checkpoints)+1)
 		maps.Copy(next.Checkpoints, d.prefs.Checkpoints)
 		next.Checkpoints[config.PublicKey] = checkpoint{Sequence: index.Sequence, Digest: index.Digest}
@@ -235,13 +281,13 @@ func cloneEntries(entries []Entry) []Entry {
 func (d *Directory) KnownRelease(digest string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.prefs.ReleaseDigests[digest]
+	return d.prefs.Authorities[d.config().PublicKey].Releases[digest]
 }
 
 func (d *Directory) KnownPublisher(name string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.prefs.Publishers[name]
+	return d.prefs.Authorities[d.config().PublicKey].Publishers[name]
 }
 
 // BundledDefaults takes only the public HTTPS endpoint and verification key from release resources.

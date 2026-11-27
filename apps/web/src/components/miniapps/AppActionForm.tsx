@@ -14,16 +14,16 @@ import { miniApps } from "@/api/mini-apps";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  ErrorMessage,
-  Fields,
-  humanize,
-  labelStyle,
-  sectionStyle,
-} from "./presentation";
+import { ChevronDown, SlidersHorizontal } from "lucide-react";
+import { ErrorMessage, labelStyle, sectionStyle } from "./presentation";
 import { AppModelTask } from "./AppModelTask";
 import { AppProcessing } from "./AppProcessing";
 import { AppFileInput } from "./AppFileInput";
+import {
+  AppRecordFields,
+  fieldLabel,
+  recordPrimaryField,
+} from "./AppRecordFields";
 
 interface Props {
   proposalKey?: string;
@@ -173,10 +173,116 @@ export function AppActionForm({
       x.trim().length > 0 ||
       action.defaults?.[key] === "",
   );
+  const editableFields = Object.entries(action.inputs ?? {}).filter(
+    ([key]) => !localFields.has(key),
+  );
+  const isAdditional = (key: string) =>
+    Object.hasOwn(action.defaults ?? {}, key) &&
+    key !== action.text_input &&
+    key !== action.count_input;
+  const contentFields = editableFields.filter(([key]) => !isAdditional(key));
+  const additionalFields = editableFields.filter(([key]) => isAdditional(key));
+  function renderField([key, type]: [
+    string,
+    NonNullable<MiniAppAction["inputs"]>[string],
+  ]) {
+    return (
+      <div key={key} className="space-y-1">
+        <label className={labelStyle}>
+          {key === action.count_input
+            ? "Number of results"
+            : key === action.limit_input
+              ? "Maximum results"
+              : fieldLabel(key)}
+          {type === "bool" ? (
+            <input
+              type="checkbox"
+              className="justify-self-start"
+              checked={!!inputs[key]}
+              onChange={(e) => update(key, e.target.checked)}
+            />
+          ) : type === "text" ? (
+            <Textarea
+              rows={key === action.text_input ? 6 : 3}
+              value={String(inputs[key])}
+              onChange={(e) => update(key, e.target.value)}
+            />
+          ) : (
+            <Input
+              type={type === "date" ? "date" : "number"}
+              min={
+                key === action.count_input || key === action.limit_input
+                  ? 1
+                  : undefined
+              }
+              max={
+                key === action.count_input
+                  ? 8
+                  : key === action.limit_input
+                    ? 200
+                    : undefined
+              }
+              value={String(inputs[key])}
+              onChange={(e) =>
+                update(
+                  key,
+                  type === "number" && e.target.value !== ""
+                    ? Number(e.target.value)
+                    : e.target.value,
+                )
+              }
+            />
+          )}
+        </label>
+        {type === "text" && (
+          <div className="flex flex-wrap items-center gap-2">
+            {instance.grants.includes("mac.files.pick") && (
+              <AppFileInput
+                instance={instance.id}
+                onChoose={(text) => update(key, text)}
+              />
+            )}
+            <AppProcessing
+              speechLanguage={pkg.speech_language}
+              instance={instance}
+              text={String(inputs[key])}
+              onSelect={(text) => update(key, text)}
+            />
+            {draft && instance.grants.includes("mac.selection.receive") && (
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={selection.isPending}
+                onClick={() => selection.mutate({ key, text: draft })}
+              >
+                {selectionSource
+                  ? "Use selected chat text"
+                  : "Use current draft"}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <section className={sectionStyle} aria-label={action.title}>
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="font-semibold">{action.title}</h3>
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold tracking-tight">
+            {action.title}
+          </h3>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {action.op === "query"
+              ? "Choose what to show in this view."
+              : action.op === "generate"
+                ? "Add your material, then choose a model to help."
+                : action.op === "delete"
+                  ? "You will review the selected items before deleting them."
+                  : "You will review your changes before they are saved."}
+          </p>
+        </div>
         <Button
           size="xs"
           variant="ghost"
@@ -196,7 +302,11 @@ export function AppActionForm({
           </p>
           {preview.rows.map((row) => (
             <div className="border-t border-border pt-2" key={row.id}>
-              <Fields fields={row.fields} />
+              <AppRecordFields
+                fields={row.fields}
+                primary={recordPrimaryField(pkg, target.collection)}
+                expanded
+              />
             </div>
           ))}
           <div className="flex flex-wrap gap-2">
@@ -228,86 +338,30 @@ export function AppActionForm({
                 Source · {label}
               </p>
             ))}
-            {Object.entries(action.inputs ?? {})
-              .filter(([key]) => !localFields.has(key))
-              .map(([key, type]) => (
-                <div key={key} className="space-y-1">
-                  <label className={labelStyle}>
-                    {humanize(key)}
-                    {type === "bool" ? (
-                      <input
-                        type="checkbox"
-                        className="justify-self-start"
-                        checked={!!inputs[key]}
-                        onChange={(e) => update(key, e.target.checked)}
-                      />
-                    ) : type === "text" ? (
-                      <Textarea
-                        rows={3}
-                        value={String(inputs[key])}
-                        onChange={(e) => update(key, e.target.value)}
-                      />
-                    ) : (
-                      <Input
-                        type={type === "date" ? "date" : "number"}
-                        min={
-                          key === action.count_input ||
-                          key === action.limit_input
-                            ? 1
-                            : undefined
-                        }
-                        max={
-                          key === action.count_input
-                            ? 8
-                            : key === action.limit_input
-                              ? 200
-                              : undefined
-                        }
-                        value={String(inputs[key])}
-                        onChange={(e) =>
-                          update(
-                            key,
-                            type === "number" && e.target.value !== ""
-                              ? Number(e.target.value)
-                              : e.target.value,
-                          )
-                        }
-                      />
-                    )}
-                  </label>
-                  {type === "text" && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {instance.grants.includes("mac.files.pick") && (
-                        <AppFileInput
-                          instance={instance.id}
-                          onChoose={(text) => update(key, text)}
-                        />
-                      )}
-                      <AppProcessing
-                        speechLanguage={pkg.speech_language}
-                        instance={instance}
-                        text={String(inputs[key])}
-                        onSelect={(text) => update(key, text)}
-                      />
-                      {draft &&
-                        instance.grants.includes("mac.selection.receive") && (
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            disabled={selection.isPending}
-                            onClick={() =>
-                              selection.mutate({ key, text: draft })
-                            }
-                          >
-                            {selectionSource
-                              ? "Use selected chat text"
-                              : "Use current draft"}
-                          </Button>
-                        )}
-                    </div>
-                  )}
+            {contentFields.map(renderField)}
+            {additionalFields.length > 0 && (
+              <details className="group/options rounded-xl border border-border/70 bg-muted/25 px-4 py-3">
+                <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                  <SlidersHorizontal
+                    className="size-3.5 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  {action.op === "query" ? "Filter options" : "More options"}
+                  <ChevronDown
+                    className="ml-auto size-3.5 text-muted-foreground transition-transform group-open/options:rotate-180"
+                    aria-hidden="true"
+                  />
+                </summary>
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  {action.op === "query"
+                    ? "Suggested filters are ready to use. Adjust them to narrow your results."
+                    : "We've filled these in for you. Adjust them if needed."}
+                </p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  {additionalFields.map(renderField)}
                 </div>
-              ))}
+              </details>
+            )}
           </fieldset>
           {action.op === "generate" ? (
             <AppModelTask

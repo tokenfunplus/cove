@@ -1,6 +1,11 @@
 import { expect, test } from "vitest";
 import type { MiniAppInstance, MiniAppRelease } from "@cove/api-contract";
-import { appDiscoveryQuestion, chatApps, mentionedApps } from "./AppDiscovery";
+import {
+  appDiscoveryQuestion,
+  appDiscoveryIntent,
+  chatApps,
+  mentionedApps,
+} from "./AppDiscovery";
 
 const instance: MiniAppInstance = {
   id: "book",
@@ -53,7 +58,7 @@ test("discovery uses only enabled instances and granted chat actions", () => {
     "Due questions",
   ]);
   expect(
-    mentionedApps("Find due records from Japanese study", available),
+    mentionedApps("@Japanese study find due records", available),
   ).toHaveLength(1);
   expect(
     mentionedApps(
@@ -66,7 +71,6 @@ test("discovery uses only enabled instances and granted chat actions", () => {
   expect(appDiscoveryQuestion("Find due questions")).toBe(true);
   expect(appDiscoveryQuestion("Help me write a web app")).toBe(false);
 });
-
 
 test.each([
   "Which apps use SQLite?",
@@ -92,36 +96,58 @@ test.each([
   expect(appDiscoveryQuestion(body)).toBe(true);
 });
 
-test("app names need an explicit mention or an app action phrase", () => {
+test("app names require an explicit mention before intercepting a message", () => {
   const available = chatApps([instance], [release]);
   for (const body of [
     "Help me study grammar",
     "What does Japanese study mean?",
     "Read from a studybook",
     "Contact reader@study.example for details",
-  ]) expect(mentionedApps(body, available)).toHaveLength(0);
-  for (const body of [
     "Find due records from Japanese study",
     "Find questions in my Study",
     "Using Study, list due questions",
-    "@Study list due questions",
     "Work with Japanese study",
-  ]) expect(mentionedApps(body, available)).toHaveLength(1);
-  const japanese = chatApps([
-    { ...instance, name: "\u65e5\u8bed\u590d\u4e60\u672c" },
-  ], [release]);
-  expect(mentionedApps(
-    "\u4ece\u6211\u7684\u65e5\u8bed\u590d\u4e60\u672c\u627e\u51fa\u4eca\u5929\u5230\u671f\u7684\u9898",
-    japanese,
-  )).toHaveLength(1);
+  ])
+    expect(mentionedApps(body, available)).toHaveLength(0);
+  for (const body of [
+    "@Study list due questions",
+    "@Japanese study list due questions",
+  ])
+    expect(mentionedApps(body, available)).toHaveLength(1);
+  const japanese = chatApps(
+    [{ ...instance, name: "\u65e5\u8bed\u590d\u4e60\u672c" }],
+    [release],
+  );
+  expect(
+    mentionedApps(
+      "@\u65e5\u8bed\u590d\u4e60\u672c \u627e\u51fa\u4eca\u5929\u5230\u671f\u7684\u9898",
+      japanese,
+    ),
+  ).toHaveLength(1);
 });
 
-
 test("literal app names cannot broaden the discovery match", () => {
-  const available = chatApps([
-    { ...instance, name: "Book (1)+" },
-  ], [{ ...release, package: { ...release.package, name: "Book (1)+" } }]);
-  expect(mentionedApps("Use records from Book (1)+", available)).toHaveLength(1);
+  const available = chatApps(
+    [{ ...instance, name: "Book (1)+" }],
+    [{ ...release, package: { ...release.package, name: "Book (1)+" } }],
+  );
+  expect(mentionedApps("@Book (1)+ use records", available)).toHaveLength(1);
   expect(mentionedApps("Use records from Book 1", available)).toHaveLength(0);
   expect(mentionedApps("Write about a notebook", available)).toHaveLength(0);
+});
+
+test("discovery leaves ordinary Chat usable without installed apps or with an ambiguous app name", () => {
+  for (const question of [
+    "What apps are available?",
+    "\u6211\u6709\u54ea\u4e9b\u5e94\u7528\uff1f",
+    "@Japanese show records",
+  ])
+    expect(appDiscoveryIntent(question, []).discover).toBe(false);
+  const apps = chatApps([{ ...instance, name: "Japanese" }], [release]);
+  expect(
+    appDiscoveryIntent("How do I say thanks in Japanese?", apps).discover,
+  ).toBe(false);
+  expect(appDiscoveryIntent("@Japanese show records", apps).discover).toBe(
+    true,
+  );
 });

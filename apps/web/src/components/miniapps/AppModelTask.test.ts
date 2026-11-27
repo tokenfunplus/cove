@@ -29,3 +29,20 @@ test("counted candidates accept a single fenced array and reject the entire mism
   ])
     expect(candidateRows(text, action, 1)).toEqual([]);
 });
+
+test("a malformed row does not discard well-typed candidates in the same counted result", () => {
+  expect(
+    candidateRows(
+      JSON.stringify([candidate, { question: "Missing answer" }]),
+      action,
+      2,
+    ),
+  ).toEqual([candidate]);
+  expect(
+    candidateRows(
+      JSON.stringify([{ ...candidate, extra: "unknown field" }, candidate]),
+      action,
+      2,
+    ),
+  ).toEqual([candidate]);
+});

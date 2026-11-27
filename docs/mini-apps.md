@@ -429,8 +429,13 @@ existing revision checks and creation-order tiebreaker.
 
 ## Workspace and model permissions
 
-The standalone Mini Apps workspace includes **Search workspace** (Command-K),
-**Host activity**, and **Agent packages**. The package editor loads exact example
+The standalone Mini Apps workspace separates **My apps** from **Discover**.
+Discover groups releases into one card per publisher and app, starts with the
+latest compatible version, and keeps older versions in its detail page. Card
+previews use the public package example data, never installed instance records.
+**Search workspace** (Command-K) opens apps and views. **More app options** contains
+activity, developer tools, installed versions, backup restore and catalog settings.
+The package editor loads exact example
 bytes, accepts a personal package file, validates installation, and downloads the
 edited source. Canceling an installation preview preserves its editor text.
 Unused package versions can be removed. A version referenced by an instance
@@ -454,7 +459,7 @@ controls. Restoring a data backup creates a disabled instance with cloud access
 off. Package upgrades preserve the current cloud choice unless explicitly changed.
 
 An App-scoped conversation can answer normally or propose a permitted action.
-**List my app actions**, **Find due questions**, and direct instance-name mentions
+**List my app actions**, **Find due questions**, and explicit `@Name` mentions
 open local discovery before sending. Inventory discovery reads app metadata and
 permissions without calling a model or attaching records. A conversation write
 uses a stable operation identity for its generation, instance and reviewed values.
@@ -479,3 +484,46 @@ miss counter to existing cards. The first miss keeps the card due today, the
 second and later misses schedule tomorrow, and marking learned resets the counter
 and schedules next week. These rules live in the package and use the same runtime
 as independent authors' apps.
+
+Installation reviews show the app name and individual read/write choices first.
+**More access** contains optional model, Chat and native capabilities; **Advanced**
+contains package-only installation. New access remains off by default. Fields
+with declared defaults can appear under **More options** in an action form; the
+same typed values and preview/confirmation contract apply. Record cards emphasize
+the authored practice front or text ordering, keep answers concealed, and leave
+every saved value inspectable in their details.
+
+The editor's **Validate draft** checks the same package contract as the author
+CLI and displays only the draft's example data. It does not attest a publisher,
+install anything, grant access or execute actions. This permits validating an
+unpublished update under an existing publisher; installation still requires the
+verified package source.
+
+If an App model result cannot be saved, Cove retries its frozen settlement before
+releasing the task. A continuing storage failure leaves one in-memory result with
+**Retry saving result** in the task and Activity. That action retries storage only,
+without another model call. Ordinary Chat remains available; new App model tasks
+wait until the result is saved or its owning instance is explicitly deleted. Keep
+Cove running until saving succeeds: restarting loses the unsaved result and marks
+the interrupted stored task failed without automatically running inference again.
+
+Successful package and instance changes notify other local browser tabs to
+refresh their app inventory. Notifications contain only an invalidation marker.
+An empty Chat does not poll for apps at startup or on focus. Confirmed changes
+refresh records but do not dismiss a different form opened while the response
+was in flight.
+
+### Study page presentation
+
+Pages that declare `practice` receive a study overview and a focused card session.
+The overview counts the currently loaded query results and identifies paginated
+queues; a session uses the selected cards, or the loaded cards if none are selected.
+Question lists in the same collection use the declared back field as a concealed
+answer. Practice writes still require a preview and confirmation, displaying only
+changed fields before saving. Failed confirmations retain the current card and
+operation so the user can retry safely.
+
+A generate action with `selection_inputs` can also be launched from an individual
+source record. The host fills its inputs from that record using the existing
+mapping. These presentations use package declarations, not publisher or app names,
+and require no package upgrade or data migration.

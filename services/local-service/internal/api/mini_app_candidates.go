@@ -10,6 +10,6 @@ func (s *Server) appCandidateCheck(w http.ResponseWriter, r *http.Request) {
 	if !appInput(w, r, &req) {
 		return
 	}
-	duplicates, err := s.apps.CandidateDuplicates(r.Context(), r.PathValue("id"), req)
-	appReply(w, map[string]any{"duplicates": duplicates}, err)
+	result, err := s.apps.CheckCandidates(r.Context(), r.PathValue("id"), req)
+	appReply(w, result, err)
 }

@@ -50,13 +50,28 @@ export async function runMiniAppTurn({
   await fill("#generation-input", "Which apps can I use in this chat?");
   await click('button[aria-label="Send message"]');
   await until('!!document.querySelector("[role=dialog]")');
-  assert.equal(requests.length, beforeDiscovery, "Discovering installed apps stays local");
+  assert.equal(
+    requests.length,
+    beforeDiscovery,
+    "Discovering installed apps stays local",
+  );
   await until('document.body.textContent.includes("Turn reading list")');
+  assert.equal(
+    await evaluate(
+      "document.querySelectorAll('[role=dialog] #mini-app-agent, [role=dialog] #mini-app-activity, [role=dialog] #mini-app-catalog-settings').length",
+    ),
+    0,
+    "The chat picker keeps developer and host administration out of the action flow",
+  );
   await button("Done", "[role=dialog]");
-  await fill("#generation-input", "Show records from Turn reading list");
+  await fill("#generation-input", "@Turn reading list show records");
   await click('button[aria-label="Send message"]');
   await until('!!document.querySelector("[role=dialog]")');
-  assert.equal(requests.length, beforeDiscovery, "Mentioning an instance requires explicit action selection");
+  assert.equal(
+    requests.length,
+    beforeDiscovery,
+    "Mentioning an instance requires explicit action selection",
+  );
   await until(
     'Array.from(document.querySelectorAll("summary")).some(e=>e.textContent==="Use app actions in my next message")',
   );
@@ -299,7 +314,9 @@ export async function runMiniAppTurn({
   await fill("#generation-input", "");
   await loadPage("Page.navigate", { url: origin + "/apps" });
   await click('a[href="/"]');
-  await until(`!!document.querySelector('button[aria-label="New conversation"]')`);
+  await until(
+    `!!document.querySelector('button[aria-label="New conversation"]')`,
+  );
   await click('button[aria-label="New conversation"]');
   await until('!!document.querySelector("#generation-input")');
   await fill("#generation-input", "Keep my unsent workspace draft");

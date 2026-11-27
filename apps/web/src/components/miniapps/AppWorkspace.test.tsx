@@ -140,6 +140,99 @@ test("loads the next page and attaches selections from both pages", async () => 
   );
 });
 
+test("refresh invalidates changed and removed selections while retaining unchanged records", async () => {
+  const original = [
+    { id: "changed", revision: 1, fields: { text: "Original" } },
+    { id: "removed", revision: 1, fields: { text: "Removed" } },
+    { id: "kept", revision: 1, fields: { text: "Unchanged" } },
+  ];
+  const invoke = vi
+    .spyOn(miniApps, "invoke")
+    .mockResolvedValue({ records: original });
+  const attachRecords = vi
+    .spyOn(miniApps, "attach")
+    .mockResolvedValue({ records: [original[2]] });
+  const attach = mount("panel");
+  const user = userEvent.setup();
+  await user.click(await screen.findByLabelText("Select record 1"));
+  await user.click(screen.getByLabelText("Select record 2"));
+  await user.click(screen.getByLabelText("Select record 3"));
+  await screen.findByRole("button", { name: "Add to current draft (3)" });
+  invoke.mockResolvedValue({
+    records: [
+      { ...original[0], revision: 2, fields: { text: "Updated" } },
+      original[2],
+    ],
+  });
+  await user.click(screen.getByRole("button", { name: "Refresh" }));
+  await screen.findByText("Updated");
+  await screen.findByRole("button", { name: "Add to current draft (1)" });
+  expect(
+    (screen.getByLabelText("Select record 1") as HTMLInputElement).checked,
+  ).toBe(false);
+  expect(
+    (screen.getByLabelText("Select record 2") as HTMLInputElement).checked,
+  ).toBe(true);
+  await user.click(
+    screen.getByRole("button", { name: "Add to current draft (1)" }),
+  );
+  await waitFor(() => expect(attach).toHaveBeenCalledOnce());
+  expect(attachRecords).toHaveBeenCalledWith(
+    "book",
+    expect.objectContaining({ records: [{ id: "kept", revision: 1 }] }),
+  );
+});
+
+test("opening a query form does not freeze the current record selection", async () => {
+  vi.spyOn(miniApps, "invoke").mockResolvedValue({
+    records: [{ id: "note", revision: 1, fields: { text: "One note" } }],
+  });
+  const filter = {
+    ...list,
+    title: "Find notes",
+    inputs: { term: "text" as const },
+  };
+  const withFilter = {
+    ...pkg,
+    actions: { ...pkg.actions, filter },
+    pages: [{ ...pkg.pages[0], actions: ["list", "filter"] }],
+  };
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: { queries: { retry: false, gcTime: 0 } },
+        })
+      }
+    >
+      <AppView
+        instance={{
+          id: "book",
+          name: "Notes",
+          release_id: "r",
+          revision: 1,
+          enabled: true,
+          grants: pkg.capabilities,
+        }}
+        pkg={withFilter}
+        page={withFilter.pages[0]}
+        surface="panel"
+        attach={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.click(await screen.findByLabelText("Select record 1"));
+  await user.click(screen.getByRole("button", { name: "Find notes" }));
+  await screen.findByLabelText("Term");
+  expect(
+    (screen.getByLabelText("Select record 1") as HTMLInputElement).disabled,
+  ).toBe(false);
+  expect(
+    (screen.getByLabelText("Select record 1") as HTMLInputElement).checked,
+  ).toBe(true);
+});
+
 test("editing freezes the selected record and a write-only chat proposal offers a local query", async () => {
   const rows = [
     { id: "a", revision: 1, fields: { text: "Original A" } },

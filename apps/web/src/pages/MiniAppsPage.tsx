@@ -3,13 +3,16 @@ import { observeBrowserSessionExpiry } from "@/api/client";
 import { useLocalSession } from "@/api/hooks/useSession";
 import { WorkspaceSearch } from "@/components/miniapps/WorkspaceSearch";
 import { Button } from "@/components/ui/button";
+import { ArrowLeft, Grid2X2 } from "lucide-react";
 import {
   AppDirectory,
   type InstallTarget,
+  type DirectorySection,
 } from "@/components/miniapps/AppDirectory";
 import { AppWorkspace } from "@/components/miniapps/AppWorkspace";
 import { appBookmark, ErrorMessage } from "@/components/miniapps/presentation";
 import { isConversationId } from "@/lib/launcher-intent";
+import "@/components/miniapps/mini-apps.css";
 
 const slug = /^[a-z][a-z0-9-]{0,47}$/;
 const validView = slug;
@@ -49,11 +52,11 @@ function subscribe(fn: () => void) {
   return () => window.removeEventListener("popstate", fn);
 }
 function navigate(path: string, replace = false) {
-  if (window.location.pathname !== path) {
+  if (window.location.pathname + window.location.search !== path) {
     if (replace) window.history.replaceState(null, "", path);
     else window.history.pushState(null, "", path);
-    window.dispatchEvent(new PopStateEvent("popstate"));
   }
+  window.dispatchEvent(new PopStateEvent("popstate"));
 }
 export default function MiniAppsPage({
   attach,
@@ -67,15 +70,21 @@ export default function MiniAppsPage({
   const path = address.split("?")[0]!;
   const { id, view, target, invalid } = route(path);
   const session = useLocalSession();
+  const querySection = new URLSearchParams(address.split("?")[1]).get(
+    "section",
+  );
+  const section: DirectorySection = [
+    "catalog",
+    "activity",
+    "agent",
+    "packages",
+    "restore",
+    "settings",
+  ].includes(querySection ?? "")
+    ? (querySection as DirectorySection)
+    : "mine";
   const [expired, setExpired] = useState(false);
   useEffect(() => observeBrowserSessionExpiry(() => setExpired(true)), []);
-  useEffect(() => {
-    if (!session.isSuccess || id || target) return;
-    const section = new URLSearchParams(window.location.search).get("section");
-    const element = document.getElementById("mini-app-" + section);
-    if (element instanceof HTMLDetailsElement) element.open = true;
-    element?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [address, session.isSuccess, id, target]);
   const open = useCallback(
     (instance: string, nextView?: string, replace?: boolean) => {
       navigate(
@@ -100,30 +109,43 @@ export default function MiniAppsPage({
             : "")
         : "cove://apps";
   return (
-    <main className="min-h-dvh bg-background px-4 py-6 text-foreground sm:px-8 sm:py-10">
-      <div className="mx-auto max-w-3xl space-y-6">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight">Mini Apps</h1>
-          <WorkspaceSearch navigate={(path) => navigate(path)} />
-          <Button asChild size="sm" variant="outline">
-            <a
-              href="/"
-              onClick={(e) => {
-                if (
-                  e.button ||
-                  e.ctrlKey ||
-                  e.metaKey ||
-                  e.altKey ||
-                  e.shiftKey
-                )
-                  return;
-                e.preventDefault();
-                navigate("/");
-              }}
-            >
-              Cove Chat
-            </a>
-          </Button>
+    <main className="mini-app-shell min-h-dvh bg-background px-5 pb-12 pt-5 text-foreground sm:px-10 sm:pt-7">
+      <div className="mx-auto max-w-5xl space-y-7 sm:space-y-9">
+        <header className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
+              <Grid2X2 size={17} />
+            </span>
+            <h1 className="text-base font-semibold tracking-tight">
+              Cove{" "}
+              <span className="ml-1 font-normal text-muted-foreground">
+                / Mini Apps
+              </span>
+            </h1>
+          </div>
+          <div className="flex items-center gap-1 sm:gap-3">
+            <WorkspaceSearch navigate={(path) => navigate(path)} />
+            <Button asChild size="sm" variant="ghost" className="!text-xs">
+              <a
+                href="/"
+                onClick={(e) => {
+                  if (
+                    e.button ||
+                    e.ctrlKey ||
+                    e.metaKey ||
+                    e.altKey ||
+                    e.shiftKey
+                  )
+                    return;
+                  e.preventDefault();
+                  navigate("/");
+                }}
+              >
+                <ArrowLeft className="hidden sm:block" />
+                Cove Chat
+              </a>
+            </Button>
+          </div>
         </header>
         {invalid ? (
           <p role="alert">Unknown app address.</p>
@@ -159,6 +181,8 @@ export default function MiniAppsPage({
             key={target ? JSON.stringify(target) : "directory"}
             open={open}
             target={target}
+            section={section}
+            navigate={navigate}
           />
         )}
       </div>

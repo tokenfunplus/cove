@@ -8,6 +8,7 @@ import (
 )
 
 type AppTask struct {
+	PendingSave  bool                    `json:"pending_save,omitempty"`
 	Inputs       json.RawMessage         `json:"inputs,omitempty"`
 	Destination  string                  `json:"destination,omitempty"`
 	Browser      bool                    `json:"browser,omitempty"`

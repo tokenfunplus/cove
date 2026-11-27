@@ -52,3 +52,48 @@ func TestCatalogAuthorityReplacementRequiresFreshConfirmation(t *testing.T) {
 		t.Fatal("confirmed reset did not select bundled releases")
 	}
 }
+
+func TestRestorePackagedCatalogDefaultsRequiresConfirmationAndExposesMode(t *testing.T) {
+	pub, _, _ := ed25519.GenerateKey(nil)
+	defaults := appcatalog.Catalog{URL: "https://official.example/catalog.json", PublicKey: base64.StdEncoding.EncodeToString(pub)}
+	directory, _ := appcatalog.Open(filepath.Join(t.TempDir(), "catalog.json"), defaults)
+	if err := directory.ReplaceTrust(appcatalog.Catalog{}, defaults); err != nil {
+		t.Fatal(err)
+	}
+	store, err := persistence.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(Config{LaunchToken: "launch-token", AppCatalog: directory, Store: store})
+	token, csrf := launchBrowserSession(t, server)
+	call := func(method string, body string, want int) appcatalog.DirectorySettings {
+		t.Helper()
+		r := httptest.NewRequest(method, "http://127.0.0.1:47123/api/mini-apps/catalog-settings", strings.NewReader(body))
+		r.Header.Set("Origin", "http://127.0.0.1:47123")
+		r.Header.Set("X-Cove-Session-Token", token)
+		r.Header.Set("X-Cove-CSRF-Token", csrf)
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		server.Handler().ServeHTTP(w, r)
+		if w.Code != want {
+			t.Fatal(w.Code, w.Body.String())
+		}
+		var settings appcatalog.DirectorySettings
+		if want == 200 {
+			if err := json.Unmarshal(w.Body.Bytes(), &settings); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return settings
+	}
+	initial := call("GET", "", 200)
+	if initial.Mode != "bundled" || initial.Defaults != defaults {
+		t.Fatal("packaged defaults not exposed", initial)
+	}
+	call("PUT", `{"use_defaults":true}`, 409)
+	got := call("PUT", `{"use_defaults":true,"confirm_trust":true,"previous":{"url":"","public_key":""}}`, 200)
+	if got.Catalog != defaults || got.Mode != "default" {
+		t.Fatal("failed to restore default tracking", got)
+	}
+}

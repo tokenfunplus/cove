@@ -10,6 +10,12 @@ import type {
 import { miniApps, type AppTask } from "@/api/mini-apps";
 import { AppModelTarget, useAppModelTarget } from "./AppModelTarget";
 import {
+  AppTaskSaveBlockedNotice,
+  AppTaskSaveNotice,
+  taskNeedsSave,
+  taskSavePendingError,
+} from "./AppTaskSaveNotice";
+import {
   startVerifiedAppTask,
   stopVerifiedAppTask,
 } from "@/lib/inference/mini-app-task";
@@ -21,6 +27,13 @@ export function candidateRows(
   action: MiniAppAction,
   expectedCount?: number,
 ): MiniAppFields[] {
+  return candidateBatch(body, action, expectedCount).rows;
+}
+function candidateBatch(
+  body: string,
+  action: MiniAppAction,
+  expectedCount?: number,
+): { rows: MiniAppFields[]; rejected: number } {
   try {
     const json = body.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, "$1");
     const fields = Object.entries(action.inputs ?? {});
@@ -30,7 +43,7 @@ export function candidateRows(
       rows.length > 100 ||
       (expectedCount !== undefined && rows.length !== expectedCount)
     )
-      return [];
+      return { rows: [], rejected: 0 };
     const valid = rows.filter(
       (row): row is MiniAppFields =>
         row !== null &&
@@ -48,9 +61,9 @@ export function candidateRows(
                   : "string"),
         ),
     );
-    return valid.length === rows.length ? valid : [];
+    return { rows: valid, rejected: rows.length - valid.length };
   } catch {
-    return [];
+    return { rows: [], rejected: 0 };
   }
 }
 function modelInputs(action: MiniAppAction, fields: MiniAppFields) {
@@ -110,10 +123,20 @@ export function AppModelTask({
   const previous = (history.data?.tasks ?? []).filter(
     (job) => job.action === actionId,
   );
-  const recent = started ?? previous.find((job) => job.state === "running");
+  const recent =
+    started ??
+    previous.find((job) => job.state === "running" || taskNeedsSave(job));
   const retryKey = useRef<{ key: string; id: string } | undefined>(undefined);
   const { poll, task } = useAppTaskStatus(instance.id, recent, "generation");
   const active = task?.state === "running";
+  const pendingById = new Map(
+    (history.data?.tasks ?? [])
+      .filter(taskNeedsSave)
+      .map((job) => [job.id, job]),
+  );
+  if (task && taskNeedsSave(task)) pendingById.set(task.id, task);
+  const pendingSaves = [...pendingById.values()];
+  const savePending = pendingSaves.length > 0;
   useEffect(() => {
     if (task?.state === "cancelled") cancelledBrowserTask.current = task.id;
     if (task && task.state !== "running") void history.refetch();
@@ -123,6 +146,10 @@ export function AppModelTask({
   const start = useMutation({
     retry: false,
     mutationFn: async () => {
+      if (savePending)
+        throw new Error(
+          "Save the waiting result before starting another model task.",
+        );
       if (!profile || !model) throw new Error("Choose a model.");
       setBrowserError(undefined);
       const data = {
@@ -193,10 +220,11 @@ export function AppModelTask({
         source?.[action.count_input] ?? action.defaults?.[action.count_input],
       )
     : undefined;
-  const raw =
+  const parsed =
     inputReady && generated && task?.result
-      ? candidateRows(task.result, generated, expectedCount)
-      : [];
+      ? candidateBatch(task.result, generated, expectedCount)
+      : { rows: [], rejected: 0 };
+  const raw = parsed.rows;
   const results = raw.map((row) => ({
     ...row,
     ...Object.fromEntries(
@@ -231,7 +259,21 @@ export function AppModelTask({
       className="space-y-3 border-t border-border pt-4"
       aria-label="Model task"
     >
-      <fieldset className="space-y-3" disabled={active || start.isPending}>
+      {pendingSaves.map((pending) => (
+        <AppTaskSaveNotice
+          key={pending.id}
+          instance={instance.id}
+          task={pending.id}
+          onSaved={() => {
+            setBrowserError(undefined);
+            if (pending.id === task?.id) setStarted(pending);
+          }}
+        />
+      ))}
+      <fieldset
+        className="space-y-3"
+        disabled={active || savePending || start.isPending}
+      >
         <AppModelTarget target={target} />
         {model && !active && (
           <div className="space-y-2 rounded-xl bg-muted p-3 text-sm">
@@ -249,6 +291,7 @@ export function AppModelTask({
           disabled={
             !profile ||
             !model ||
+            savePending ||
             Object.entries(inputs).some(
               ([key, v]) =>
                 typeof v === "string" &&
@@ -280,7 +323,8 @@ export function AppModelTask({
             <option value="">Select a previous task</option>
             {previous.map((t, i) => (
               <option key={t.id} value={t.id}>
-                {t.modelId} · {t.state} · {i + 1}
+                {t.modelId} · {taskNeedsSave(t) ? "save needed" : t.state} ·{" "}
+                {i + 1}
               </option>
             ))}
           </select>
@@ -291,12 +335,15 @@ export function AppModelTask({
           history.error ??
           profiles.error ??
           catalog.error ??
-          start.error ??
-          browserError ??
+          (taskSavePendingError(start.error) ? undefined : start.error) ??
+          (taskSavePendingError(browserError) ? undefined : browserError) ??
           poll.error ??
           cancel.error
         }
       />
+      {!savePending && (
+        <AppTaskSaveBlockedNotice error={start.error ?? browserError} />
+      )}
       {poll.isError && (
         <Button variant="outline" size="sm" onClick={() => void poll.refetch()}>
           Retry status
@@ -305,7 +352,9 @@ export function AppModelTask({
       {task && (
         <section className="space-y-3" aria-label="Model result">
           <p role="status" className="text-sm">
-            Task {task.state}
+            {taskNeedsSave(task)
+              ? "Task result needs saving"
+              : "Task " + task.state}
             {submitted ? " · " + submitted.model : ""}
           </p>
           {(task.inputs ?? submitted?.inputs) && (
@@ -343,6 +392,13 @@ export function AppModelTask({
           )}
           {task.error && <ErrorMessage error={task.error} />}
           <ErrorMessage error={duplicates.error} />
+          {parsed.rejected > 0 && (
+            <p role="status">
+              {parsed.rejected}{" "}
+              {parsed.rejected === 1 ? "candidate could" : "candidates could"}{" "}
+              not be read. You can still review the valid candidates.
+            </p>
+          )}
           {duplicates.isError && (
             <Button
               size="sm"
@@ -364,6 +420,7 @@ export function AppModelTask({
                 key={task.id}
                 rows={results}
                 duplicates={duplicates.data?.duplicates ?? []}
+                invalid={duplicates.data?.invalid ?? []}
                 checking={checkingDuplicates && !duplicates.isSuccess}
                 choose={choose}
                 canSave={instance.grants.includes("records.commit")}
@@ -392,9 +449,11 @@ function CandidateSelection({
   preview,
   canSave,
   duplicates,
+  invalid,
   checking,
 }: {
   duplicates: number[];
+  invalid: { index: number; message: string }[];
   checking: boolean;
   rows: MiniAppFields[];
   choose: (row: MiniAppFields) => void;
@@ -402,7 +461,11 @@ function CandidateSelection({
   canSave: boolean;
 }) {
   const [selection, setSelection] = useState<number[]>([]);
-  const selected = selection.filter((index) => !duplicates.includes(index));
+  const selected = selection.filter(
+    (index) =>
+      !duplicates.includes(index) &&
+      !invalid.some((item) => item.index === index),
+  );
   return (
     <div className="space-y-2">
       {checking && <p role="status">Checking for saved records…</p>}
@@ -429,6 +492,7 @@ function CandidateSelection({
                 !canSave ||
                 checking ||
                 duplicates.includes(index) ||
+                invalid.some((item) => item.index === index) ||
                 (!selected.includes(index) && selected.length >= 50)
               }
               onChange={(e) =>
@@ -442,6 +506,11 @@ function CandidateSelection({
             Select candidate {index + 1}
           </label>
           <Fields fields={row} />
+          {invalid.find((item) => item.index === index) && (
+            <p role="status" className="text-sm text-destructive">
+              {invalid.find((item) => item.index === index)!.message}
+            </p>
+          )}
           <Button
             size="sm"
             variant="outline"

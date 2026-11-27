@@ -99,3 +99,41 @@ Model-task admission, terminal state, browser settlement receipts and activity
 changes commit in one persistence transaction. Activity failure cannot leave a
 running task without its worker or acknowledge only part of a verified result.
 Restart recovery updates task and activity states together.
+
+## Directory preference modes and scoped histories
+
+An unset directory override follows the public URL and key packaged with the
+installed Cove version. Saving those exact configured defaults preserves that
+mode. A custom directory remains pinned across Cove updates; an explicitly empty
+selection stays bundled-only. Settings exposes the packaged defaults and a
+separate, confirmed action to restore default tracking.
+
+Release-version and publisher histories are scoped to the signing key, just like
+rollback checkpoints. Switching authorities cannot transfer a conflicting version
+history to another signer. Returning to an authority still enforces its prior
+sequence and immutable releases. Legacy histories with exactly one attributable
+signer retain their version history; ambiguous multi-signer histories are
+reverified while their rollback checkpoints remain intact. This refines the
+initial directory authority policy without changing installed instance data.
+
+Conversation interception requires an available app and explicit `@Name` for a
+named app. Discovery shortcuts stay local and preserve an existing draft.
+Candidate validation reports individual invalid rows so valid selections remain
+usable; committed batches retain their all-or-nothing validation. Debate retries
+transient delivery of a frozen verified result without claiming or charging a
+second inference, and never replaces it with an empty failure receipt.
+
+## Author drafts and task settlement recovery
+
+Structural draft validation is separate from installation authority. The editor
+may validate an unpublished package from a known publisher, but receives no
+release identity or verified-origin attestation and cannot access live records.
+Public package previews are validated before their original bytes are returned.
+
+Chat retries a frozen App task settlement without repeating inference. If storage
+remains unavailable, one pending settlement stays in service memory and blocks
+additional App model work while ordinary Chat continues. An authenticated owner
+can retry persistence without receiving data or restoring execution grants; an
+explicit instance deletion removes that instance's pending settlement. Accepted
+verified browser receipts remain idempotent. Restart cannot recover an unsaved
+in-memory output and never automatically repeats the paid request.

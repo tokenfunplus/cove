@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 export async function runReviewBookUpgrade({
+  snapshot,
+  cdp,
   api,
   goto,
   button,
@@ -99,9 +101,38 @@ export async function runReviewBookUpgrade({
   await goto(path + "/home");
   await readyRows(3);
   await button("Due for review");
+  const filterOptions =
+    "Array.from(document.querySelectorAll('summary')).find(element=>element.textContent.trim()==='Filter options')";
+  await until("!!(" + filterOptions + ")");
+  assert.equal(
+    await evaluate("(" + filterOptions + ").parentElement.open"),
+    false,
+  );
+  await evaluate("(" + filterOptions + ").click()");
+  await until("(" + filterOptions + ").parentElement.open");
   await fill('input[type="number"]', "1");
   await button("Find records");
   await readyRows(1);
+  await until(`!!document.querySelector('[aria-label="Study overview"]')`);
+  await evaluate("window.scrollTo(0, 0)");
+  await snapshot("study-book-overview");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  assert(
+    await evaluate("document.documentElement.scrollWidth <= window.innerWidth"),
+    "Study overview fits a narrow screen",
+  );
+  await snapshot("study-book-mobile");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 1000,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
   await button("Start practice (1)");
   await until("document.body.textContent.includes('Card 1 of 1')");
   const speech = await api(root + book.id + "/capabilities");
@@ -118,8 +149,11 @@ export async function runReviewBookUpgrade({
       "document.body.textContent.includes('No installed macOS Japanese voice')",
     );
   }
+  await evaluate("window.scrollTo(0, 0)");
+  await snapshot("study-book-practice");
   await button("Show answer");
   await button("Mark learned and review in a week");
+  await snapshot("study-book-confirmation");
   await button("Confirm change");
   await until("document.body.textContent.includes('Practice complete')");
   await button("Return to book");
@@ -189,8 +223,10 @@ export async function runReviewBookUpgrade({
   ).records[0];
   await button("Study material");
   await readyRows(1);
-  await click('[aria-label="Select record 1"]');
-  await button("Generate practice questions");
+  await evaluate(`document.querySelector('[aria-label="Select record 1"]').parentElement.querySelector('button').setAttribute('data-material-generate', '')`);
+  await click('[data-material-generate]');
+  await until(`document.querySelector('section[aria-label="Generate practice questions"] textarea')?.value === 'Mini App study fixture'`);
+  assert.equal(await evaluate(`document.querySelector('[aria-label="Select record 1"]').checked`), false, "A material can start generation without selecting it first");
   await fill('input[type="number"]', "1");
   await click("input[type=checkbox]:not([aria-label])");
   await until(

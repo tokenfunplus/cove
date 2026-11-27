@@ -1,7 +1,6 @@
 import {
   AppStarters,
-  appDiscoveryQuestion,
-  mentionedApps,
+  appDiscoveryIntent,
   ChatDiscoveryBridge,
   type chatApps,
 } from "./AppDiscovery";
@@ -110,9 +109,9 @@ export function ChatComposer({
   const [appsOpen, setAppsOpen] = useState(false);
   const [discoveryPrompt, setDiscoveryPrompt] = useState(false);
   const [initialApp, setInitialApp] = useState<string>();
-  const [availableApps, setAvailableApps] = useState<ReturnType<typeof chatApps>>(
-    [],
-  );
+  const [availableApps, setAvailableApps] = useState<
+    ReturnType<typeof chatApps>
+  >([]);
   function openApps(instance?: string) {
     setInitialApp(instance);
     setAppsOpen(true);
@@ -141,8 +140,8 @@ export function ChatComposer({
         ),
       );
     } else {
-      const matches = mentionedApps(draft, availableApps);
-      if (!quickPanel && (appDiscoveryQuestion(draft) || matches.length)) {
+      const { matches, discover } = appDiscoveryIntent(draft, availableApps);
+      if (!quickPanel && discover) {
         setDiscoveryPrompt(true);
         openApps(matches.length === 1 ? matches[0].instance.id : undefined);
         return;
@@ -221,8 +220,7 @@ export function ChatComposer({
     connectionReady &&
     !navigationBusy &&
     !isSending &&
-    (appDiscoveryQuestion(draft) ||
-      mentionedApps(draft, availableApps).length > 0);
+    appDiscoveryIntent(draft, availableApps).discover;
   const canSubmit = canSend || canDiscover;
   const actionLabel = isSending ? copy.stopGeneration : copy.sendMessage;
   function renderInput(sourceActions?: ReactNode, webpage?: WebpageAction) {
@@ -307,7 +305,7 @@ export function ChatComposer({
           <AppStarters
             apps={availableApps}
             open={(id, question) => {
-              if (question) onDraftChange(question);
+              if (question && !draft.trim()) onDraftChange(question);
               openApps(id);
             }}
           />

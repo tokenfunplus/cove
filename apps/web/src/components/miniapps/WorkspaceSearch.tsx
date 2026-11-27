@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { appKeys, miniApps } from "@/api/mini-apps";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -43,7 +44,7 @@ export function WorkspaceSearch({
   });
   const results = [
     { name: "My apps", path: "/apps", kind: "Workspace" },
-    { name: "App catalog", path: "/apps?section=catalog", kind: "Workspace" },
+    { name: "Discover apps", path: "/apps?section=catalog", kind: "Workspace" },
     { name: "Agent packages", path: "/apps?section=agent", kind: "Workspace" },
     {
       name: "Host activity",
@@ -82,13 +83,17 @@ export function WorkspaceSearch({
     <>
       <Button
         size="sm"
-        variant="outline"
+        variant="ghost"
+        aria-label="Search workspace"
+        className="!text-xs"
         onClick={() => {
           setTerm("");
           setOpen(true);
         }}
       >
-        Search workspace <kbd className="ml-1 text-xs">⌘K</kbd>
+        <Search />
+        <span className="hidden sm:inline">Search</span>
+        <kbd className="ml-2 hidden text-[10px] opacity-50 sm:inline">⌘K</kbd>
       </Button>
       {open && (
         <Dialog

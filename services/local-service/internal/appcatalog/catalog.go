@@ -33,6 +33,7 @@ type Entry struct {
 	Version        string `json:"version"`
 	SchemaVersion  int    `json:"schema_version"`
 	Name           string `json:"name"`
+	Description    string `json:"description,omitempty"`
 	Digest         string `json:"digest"`
 	Origin         string `json:"origin"`
 	Raw            []byte `json:"-"`

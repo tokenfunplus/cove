@@ -69,6 +69,7 @@ func (s *Server) miniAppRoutes(mux *http.ServeMux, session func(http.Handler) ht
 	register("GET", "/packages", s.appPackages)
 	register("DELETE", "/packages/{release}", s.appDeleteRelease)
 	register("GET", "/activity", s.appGlobalActivity)
+	register("POST", "/packages/validate", s.appPackages)
 	register("POST", "/packages/preview", s.appPackages)
 	register("POST", "/packages/install", s.appPackages)
 	register("GET", "/instances", s.appInstances)
@@ -96,12 +97,20 @@ func (s *Server) miniAppRoutes(mux *http.ServeMux, session func(http.Handler) ht
 			return
 		}
 		items, err := s.appStore.AppActivity(r.Context(), id)
+		if err == nil {
+			for index := range items {
+				if s.projectAppTask(id, persistence.AppTask{ID: items[index].Operation}).PendingSave {
+					items[index].Status = "save_failed"
+				}
+			}
+		}
 		appReply(w, map[string]any{"activity": items}, err)
 	})
 	register("GET", "/instances/{id}/tasks", s.appTasks)
 	register("POST", "/instances/{id}/tasks", s.appTasks)
 	register("GET", "/instances/{id}/tasks/{task}", s.appTasks)
 	register("DELETE", "/instances/{id}/tasks/{task}", s.appTasks)
+	register("POST", "/instances/{id}/tasks/{task}/retry-save", s.appRetryTaskSave)
 	register("POST", "/instances/{id}/files", s.appFiles)
 	register("GET", "/instances/{id}/files/{file}", s.appFiles)
 	control := localsecurity.RequireControlToken(s.controlToken, s.writeSecurityError)
@@ -144,6 +153,8 @@ func appReply(w http.ResponseWriter, value any, err error) {
 		writeError(w, 409, "preview_expired", "This change preview has expired. Preview the changes again.")
 	case errors.Is(err, miniapps.ErrDenied):
 		writeError(w, 403, "permission_denied", "This operation is unavailable for the instance and its current permissions.")
+	case errors.Is(err, chat.ErrAppTaskSavePending):
+		writeError(w, 409, "task_save_pending", "A Mini App result is waiting to be saved. Retry saving it from the app or Activity before starting another app model task.")
 	case errors.Is(err, miniapps.ErrConflict), errors.Is(err, chat.ErrAppTaskConflict):
 		writeError(w, 409, "conflict", "The instance, record, or operation has changed. Refresh and review it again.")
 	case errors.Is(err, miniapps.ErrNotFound), errors.Is(err, sql.ErrNoRows):
@@ -166,6 +177,12 @@ func (s *Server) appPackages(w http.ResponseWriter, r *http.Request) {
 	raw, err := readAppBody(w, r)
 	if err != nil {
 		appReply(w, nil, err)
+		return
+	}
+	if r.URL.Path == "/api/mini-apps/packages/validate" {
+		w.Header().Set("Cache-Control", "no-store")
+		item, err := miniapps.Validate(raw)
+		appReply(w, item, err)
 		return
 	}
 	origin, err := s.fileOrigin(r, raw)
@@ -254,12 +271,19 @@ func (s *Server) appCatalogSettings(w http.ResponseWriter, r *http.Request) {
 			appcatalog.Catalog
 			ConfirmTrust bool                `json:"confirm_trust"`
 			Previous     *appcatalog.Catalog `json:"previous,omitempty"`
+			UseDefaults  bool                `json:"use_defaults,omitempty"`
 		}
 		if !appInput(w, r, &input) {
 			return
 		}
 		var err error
-		if input.ConfirmTrust && input.Previous != nil {
+		if input.UseDefaults {
+			var previous *appcatalog.Catalog
+			if input.ConfirmTrust {
+				previous = input.Previous
+			}
+			err = s.catalog.UseDefaults(previous)
+		} else if input.ConfirmTrust && input.Previous != nil {
 			err = s.catalog.ReplaceTrust(input.Catalog, *input.Previous)
 		} else {
 			err = s.catalog.Configure(input.Catalog)
@@ -277,7 +301,7 @@ func (s *Server) appCatalogSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, 200, s.catalog.Config())
+	writeJSON(w, 200, s.catalog.Settings())
 }
 
 func (s *Server) appCatalog(w http.ResponseWriter, r *http.Request) {
@@ -329,6 +353,10 @@ func (s *Server) appCatalog(w http.ResponseWriter, r *http.Request) {
 			}
 			release, err := s.apps.Install(r.Context(), e.Raw, e.Origin)
 			appReply(w, release, err)
+			return
+		}
+		if _, err := miniapps.Validate(e.Raw); err != nil {
+			appReply(w, nil, err)
 			return
 		}
 		w.Header().Set("X-Cove-Package-Digest", e.Digest)
@@ -385,5 +413,12 @@ func (s *Server) appGlobalActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items, err := s.appStore.GlobalAppActivity(r.Context(), r.URL.Query().Get("instance"))
+	if err == nil {
+		for index := range items {
+			if s.projectAppTask(items[index].InstanceID, persistence.AppTask{ID: items[index].Operation}).PendingSave {
+				items[index].Status = "save_failed"
+			}
+		}
+	}
 	appReply(w, map[string]any{"activity": items}, err)
 }

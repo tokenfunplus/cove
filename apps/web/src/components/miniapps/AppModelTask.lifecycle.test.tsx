@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, test, expect, vi } from "vitest";
 import { miniApps, type AppTask } from "@/api/mini-apps";
+import { LocalServiceError } from "@/api/client";
 import {
   startVerifiedAppTask,
   stopVerifiedAppTask,
@@ -83,6 +84,70 @@ function form() {
     </QueryClientProvider>,
   );
 }
+test("an unsaved result blocks new generation and retries only the retained save", async () => {
+  let saved = false;
+  const waiting: AppTask = {
+    ...running,
+    browser: false,
+    state: "save_failed",
+    pending_save: true,
+    result: "Frozen model result",
+    inputs: { passage: "Paid input" },
+  };
+  const current = () =>
+    saved
+      ? { ...waiting, state: "completed" as const, pending_save: false }
+      : waiting;
+  vi.spyOn(miniApps, "tasks").mockImplementation(async () => ({
+    tasks: [current()],
+  }));
+  vi.spyOn(miniApps, "task").mockImplementation(async () => current());
+  const retry = vi
+    .spyOn(miniApps, "retryTaskSave")
+    .mockImplementation(async () => {
+      saved = true;
+    });
+  const start = vi.spyOn(miniApps, "startTask");
+  form();
+  const button = await screen.findByRole("button", {
+    name: "Retry saving result",
+  });
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Start model task",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.click(button);
+  await screen.findByText("Task completed");
+  await screen.findByText("Frozen model result");
+  expect(retry).toHaveBeenCalledExactlyOnceWith("book", "task");
+  expect(start).not.toHaveBeenCalled();
+  expect(startVerifiedAppTask).not.toHaveBeenCalled();
+});
+test("a pending save in another app directs recovery to Activity without retrying admission", async () => {
+  vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [] });
+  const start = vi
+    .spyOn(miniApps, "startTask")
+    .mockRejectedValue(
+      new LocalServiceError({
+        error: {
+          code: "task_save_pending",
+          message: "Another app has a pending save.",
+          details: null,
+          request_id: "fixture",
+        },
+      }),
+    );
+  form();
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  const recovery = await screen.findByRole("link", { name: "Open Mini Apps" });
+  expect(recovery.getAttribute("href")).toBe("cove://apps");
+  expect(screen.getByText(/choose Activity and retry saving/)).toBeTruthy();
+  expect(start).toHaveBeenCalledOnce();
+  expect(startVerifiedAppTask).not.toHaveBeenCalled();
+});
 test("starts the authorized browser job if the form closes before admission returns", async () => {
   vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [] });
   let resolveAdmission!: (value: AppTask) => void;
@@ -197,20 +262,22 @@ test("historical candidates wait for their frozen inputs before saving", async (
   });
 });
 
-test("saved candidate checks disable duplicate rows before another save", async () => {
+test("candidate checks isolate invalid and duplicate rows while valid candidates remain selectable", async () => {
   const job: AppTask = {
     ...running,
     state: "completed",
-    result: '[{"question":"One","answer":"A"},{"question":"Two","answer":"B"}]',
+    result:
+      '[{"question":"One","answer":"A"},{"question":"Two","answer":"B"},{"question":"Needs editing","answer":"Bad value"}]',
   };
   vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [job] });
   vi.spyOn(miniApps, "task").mockResolvedValue({
     ...job,
     inputs: { passage: "Saved input" },
   });
-  const check = vi
-    .spyOn(miniApps, "checkCandidates")
-    .mockResolvedValue({ duplicates: [1] });
+  const check = vi.spyOn(miniApps, "checkCandidates").mockResolvedValue({
+    duplicates: [1],
+    invalid: [{ index: 2, message: "Review this candidate before saving it." }],
+  });
   render(
     <QueryClientProvider
       client={
@@ -273,6 +340,30 @@ test("saved candidate checks disable duplicate rows before another save", async 
   expect(
     (screen.getByLabelText("Select candidate 2") as HTMLInputElement).disabled,
   ).toBe(true);
+  expect(
+    (screen.getByLabelText("Select candidate 1") as HTMLInputElement).disabled,
+  ).toBe(false);
+  expect(
+    (screen.getByLabelText("Select candidate 3") as HTMLInputElement).disabled,
+  ).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Use candidate 3",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
+  expect(
+    screen.getByText("Review this candidate before saving it."),
+  ).toBeDefined();
+  fireEvent.click(screen.getByLabelText("Select candidate 1"));
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Preview selected (1)",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(false);
   expect(
     screen.getByText("Select up to 50 candidates for one save."),
   ).toBeDefined();

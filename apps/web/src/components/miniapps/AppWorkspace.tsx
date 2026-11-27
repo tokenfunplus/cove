@@ -1,5 +1,8 @@
+import "./study-book.css";
+import { StudyDialog } from "./StudyDialog";
+import { BookOpen, Layers, FileText, ChevronRight } from "lucide-react";
 import { MacSelection } from "./MacSelection";
-import { useDeferredValue, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -15,7 +18,17 @@ import type {
   MiniAppRecord,
   MiniAppSurface,
 } from "@cove/api-contract";
-import { ChevronLeft, Settings2, Check } from "lucide-react";
+import {
+  ChevronLeft,
+  Settings2,
+  Check,
+  Plus,
+  Sparkles,
+  Search,
+  ListFilter,
+  Play,
+  X,
+} from "lucide-react";
 import { appKeys, miniApps } from "@/api/mini-apps";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -26,9 +39,9 @@ import { AppBlobs } from "./AppBlobs";
 import { AppProposal } from "./AppProposal";
 import { AppActionForm } from "./AppActionForm";
 import { AppSettings } from "./AppSettings";
+import { AppRecordFields, recordPrimaryField } from "./AppRecordFields";
 import {
   ErrorMessage,
-  Fields,
   OpenApp,
   CopyAppLink,
   sectionStyle,
@@ -85,6 +98,16 @@ export function AppWorkspace({ id, view, back, navigate, ...context }: Props) {
   const { instance, package: pkg } = item.data;
   const page = view ? pkg.pages.find((p) => p.id === view) : pkg.pages[0];
   const artwork = page?.image && pkg.assets?.[page.image];
+  const study = pkg.pages.find((p) => p.practice)?.practice;
+  const studyCollection = study && pkg.actions[study.query].collection;
+  const materialPage =
+    studyCollection &&
+    pkg.pages.find((p) =>
+      p.actions.some((id) => {
+        const action = pkg.actions[id];
+        return action.op === "create" && action.collection !== studyCollection;
+      }),
+    );
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -110,18 +133,43 @@ export function AppWorkspace({ id, view, back, navigate, ...context }: Props) {
           </Button>
         </div>
       </div>
-      <header>
-        <p className="text-sm text-muted-foreground">
-          {pkg.publisher} / {pkg.app} · v{pkg.version}
-        </p>
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight">
-          {instance.name}
-        </h2>
+      <header className="rounded-2xl border border-border/70 bg-card p-5 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            {study && (
+              <p className="study-kicker mb-2">
+                <BookOpen className="size-4" /> Your study space
+              </p>
+            )}
+            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              {instance.name}
+            </h2>
+          </div>
+          {materialPage &&
+            page?.id !== materialPage.id &&
+            !settings &&
+            instance.enabled && (
+              <Button
+                variant="outline"
+                onClick={() => navigate(id, materialPage.id)}
+              >
+                <Plus className="size-4" /> Add study material
+              </Button>
+            )}
+        </div>
         {pkg.description && (
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
             {pkg.description}
           </p>
         )}
+        <details className="mt-3 text-xs text-muted-foreground">
+          <summary className="w-fit cursor-pointer hover:text-foreground">
+            About this app
+          </summary>
+          <p className="mt-2 break-words">
+            {pkg.name} · v{pkg.version} · {pkg.publisher} / {pkg.app}
+          </p>
+        </details>
         {artwork && (
           <img
             className="mt-3 max-h-64 max-w-full rounded-lg object-contain"
@@ -159,7 +207,7 @@ export function AppWorkspace({ id, view, back, navigate, ...context }: Props) {
         <>
           <nav
             aria-label="App views"
-            className="flex flex-wrap gap-1 border-b border-border pb-2"
+            className="flex flex-wrap gap-1 border-b border-border/70 pb-3"
           >
             {pkg.pages.map((p) => (
               <Button
@@ -278,8 +326,27 @@ export function AppView({
       ? { id: proposal.action, initial: proposal.inputs, key: proposal.action }
       : undefined,
   );
-  const openForm = (id: string, initial?: MiniAppFields) =>
-    setForm({ id, initial, records: selected, key: crypto.randomUUID() });
+  const formIdentity = useRef(form?.key);
+  function closeForm() {
+    formIdentity.current = undefined;
+    setForm(undefined);
+  }
+  const openForm = (
+    id: string,
+    initial?: MiniAppFields,
+    target?: MiniAppRecord[],
+  ) => {
+    const key = crypto.randomUUID();
+    formIdentity.current = key;
+    setForm({
+      id,
+      initial,
+      records: ["update", "delete"].includes(pkg.actions[id].op)
+        ? (target ?? selected)
+        : undefined,
+      key,
+    });
+  };
   const [selectedRecords, setSelected] = useState<
     Record<string, MiniAppRecord>
   >({});
@@ -320,8 +387,34 @@ export function AppView({
     retry: false,
   });
   const records = rows.data?.pages.flatMap((page) => page.records ?? []) ?? [];
+  const selectionScope = JSON.stringify([query, search]);
+  const previousRows = useRef<
+    { scope: string; revisions: Map<string, number> } | undefined
+  >(undefined);
+  useEffect(() => {
+    if (!rows.data) return;
+    const revisions = new Map(
+      rows.data.pages
+        .flatMap((page) => page.records ?? [])
+        .map((record) => [record.id, record.revision]),
+    );
+    const previous = previousRows.current;
+    previousRows.current = { scope: selectionScope, revisions };
+    setSelected((selected) => {
+      const stale = Object.keys(selected).filter((id) =>
+        revisions.has(id)
+          ? revisions.get(id) !== selected[id].revision
+          : previous?.scope === selectionScope && previous.revisions.has(id),
+      );
+      if (!stale.length) return selected;
+      const next = { ...selected };
+      for (const id of stale) delete next[id];
+      return next;
+    });
+  }, [rows.data, selectionScope]);
   const selected = Object.values(selectedRecords);
   const [practiceRecords, setPracticeRecords] = useState<typeof records>();
+  const [detail, setDetail] = useState<MiniAppRecord>();
   const transfer = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -381,10 +474,14 @@ export function AppView({
     setQuery({ action, inputs });
     setFilter("");
     setSelected({});
-    setForm(undefined);
+    closeForm();
   }
-  function saved(count: number) {
-    setForm(undefined);
+  function saved(count: number, identity: string) {
+    void cache.invalidateQueries({
+      queryKey: ["mini-app-records", instance.id],
+    });
+    if (formIdentity.current !== identity) return;
+    closeForm();
     setSelected({});
     setFeedback(
       "Saved " +
@@ -395,45 +492,136 @@ export function AppView({
         instance.name +
         ".",
     );
-    void cache.invalidateQueries({
-      queryKey: ["mini-app-records", instance.id],
-    });
   }
-  if (practiceRecords && page.practice)
-    return (
+  const practicePanel =
+    practiceRecords && page.practice ? (
       <AppPractice
+        modal
         allowReading={instance.grants.includes("speech.speak")}
         instance={instance.id}
         revision={instance.revision}
         pkg={pkg}
         practice={page.practice}
         records={practiceRecords}
-        finish={() => setPracticeRecords(undefined)}
+        finish={() => {
+          setPracticeRecords(undefined);
+          setSelected({});
+        }}
         changed={() =>
           void cache.invalidateQueries({
             queryKey: ["mini-app-records", instance.id],
           })
         }
       />
+    ) : null;
+  function renderAction(id: string) {
+    const action = pkg.actions[id];
+    const allowed = instance.grants.includes(capability[action.op]);
+    const needsSelection =
+      (action.op === "update" || action.op === "delete") &&
+      (!selected.length ||
+        !query ||
+        pkg.actions[query.action].collection !== action.collection);
+    const active =
+      form?.id === id || (action.op === "query" && query?.action === id);
+    return (
+      <Button
+        key={id}
+        size="sm"
+        variant={
+          active
+            ? "secondary"
+            : action.op === "create"
+              ? "default"
+              : action.op === "query"
+                ? "ghost"
+                : "outline"
+        }
+        className="h-auto min-h-8 max-w-full whitespace-normal py-1.5 text-left"
+        disabled={!allowed || needsSelection}
+        onClick={() => choose(id)}
+        title={
+          !allowed
+            ? "Allow this capability in Settings"
+            : needsSelection
+              ? "Select records from this collection"
+              : undefined
+        }
+      >
+        {action.op === "create" && <Plus aria-hidden="true" />}
+        {action.op === "generate" && <Sparkles aria-hidden="true" />}
+        {action.title}
+      </Button>
     );
+  }
+  const study = pkg.pages.find((p) => p.practice)?.practice;
+  const studyCollection = study && pkg.actions[study.query].collection;
+  const isStudyList =
+    !!study &&
+    !!query &&
+    pkg.actions[query.action].collection === studyCollection;
+  const studySurface = !!study && surface === "page";
+  const isPracticeQuery =
+    surface === "page" &&
+    page.practice &&
+    query?.action === page.practice.query;
   const sourceLinks = query
     ? (pkg.collections[pkg.actions[query.action].collection!]?.links ?? {})
     : {};
   return (
-    <div className="space-y-4">
-      {surface === "page" &&
-        page.practice &&
-        query?.action === page.practice.query &&
-        records.length > 0 &&
-        instance.grants.includes("records.commit") && (
-          <Button
-            onClick={() =>
-              setPracticeRecords(selected.length ? selected : records)
-            }
-          >
-            Start practice ({selected.length || records.length})
-          </Button>
-        )}
+    <div className={studySurface ? "study-workspace space-y-5" : "space-y-4"}>
+      {practicePanel}
+      {isPracticeQuery && (
+        <section className="study-overview" aria-label="Study overview">
+          <div>
+            <span className="study-kicker">
+              <Layers className="size-4" /> Study session
+            </span>
+            <h3>Today’s review</h3>
+            <p>
+              {!canQuery
+                ? "Allow record access in Settings to see your review queue."
+                : rows.isPending
+                  ? "Getting your review queue ready…"
+                  : rows.isError
+                    ? "Your review queue could not be loaded. Try refreshing below."
+                    : records.length
+                      ? `${records.length}${rows.hasNextPage ? "+" : ""} ${records.length === 1 && !rows.hasNextPage ? "card" : "cards"} ready to practice${search ? " in these search results" : ""}. Take a moment to recall each answer before revealing it.`
+                      : search
+                        ? "No cards match your search. Try another phrase."
+                        : "You’re all caught up. Add study material or visit your question library to keep learning."}
+            </p>
+            {records.length > 0 && (
+              <Button
+                disabled={
+                  !instance.grants.includes("records.commit") || rows.isFetching
+                }
+                title={
+                  !instance.grants.includes("records.commit")
+                    ? "Allow saving changes in Settings to practice"
+                    : undefined
+                }
+                onClick={() =>
+                  setPracticeRecords(selected.length ? selected : records)
+                }
+                className="mt-5 h-11 gap-2 rounded-xl px-5"
+              >
+                <Play className="size-4" aria-hidden="true" /> Start practice (
+                {selected.length || records.length})
+              </Button>
+            )}
+            {rows.hasNextPage && (
+              <p className="mt-2 text-xs">
+                This session uses the loaded cards. Load more below to include
+                them.
+              </p>
+            )}
+          </div>
+          <div className="study-card-art" aria-hidden="true">
+            <BookOpen />
+          </div>
+        </section>
+      )}
       {surface === "page" &&
         instance.grants.includes("mac.selection.receive") && (
           <MacSelection instance={instance.id} view={page.id} open={openForm} />
@@ -458,35 +646,65 @@ export function AppView({
           </select>
         </label>
       )}
-      <div className="flex flex-wrap gap-2" aria-label="App actions">
-        {actions.map((id) => {
-          const act = pkg.actions[id];
-          const allowed = instance.grants.includes(capability[act.op]);
-          const needsSelection =
-            (act.op === "update" || act.op === "delete") &&
-            (!selected.length ||
-              !query ||
-              pkg.actions[query.action].collection !== act.collection);
-          return (
-            <Button
-              key={id}
-              size="sm"
-              variant={form?.id === id ? "secondary" : "outline"}
-              disabled={!allowed || needsSelection}
-              onClick={() => choose(id)}
-              title={
-                !allowed
-                  ? "Allow this capability in Settings"
-                  : needsSelection
-                    ? "Select records from this collection"
-                    : undefined
-              }
-            >
-              {act.title}
-            </Button>
-          );
-        })}
+      <div
+        className="flex flex-wrap items-center justify-between gap-3"
+        aria-label="App actions"
+      >
+        <div
+          className="flex flex-wrap items-center gap-1.5"
+          aria-label="View filters"
+        >
+          {actions.filter((id) => pkg.actions[id].op === "query").length >
+            0 && (
+            <ListFilter
+              className="mr-1 size-4 text-muted-foreground"
+              aria-hidden="true"
+            />
+          )}
+          {actions
+            .filter((id) => pkg.actions[id].op === "query")
+            .map(renderAction)}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {actions
+            .filter((id) => {
+              const op = pkg.actions[id].op;
+              return op === "create" || op === "generate";
+            })
+            .map(renderAction)}
+        </div>
       </div>
+      {(selected.length > 0 || proposal) &&
+        actions.some(
+          (id) =>
+            pkg.actions[id].op === "update" || pkg.actions[id].op === "delete",
+        ) && (
+          <div
+            className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/15 bg-primary/5 p-3"
+            aria-label="Selected item actions"
+          >
+            <span className="mr-1 text-xs font-medium">
+              {selected.length} selected
+            </span>
+            {actions
+              .filter(
+                (id) =>
+                  pkg.actions[id].op === "update" ||
+                  pkg.actions[id].op === "delete",
+              )
+              .map(renderAction)}
+            {selected.length > 0 && (
+              <Button
+                size="xs"
+                variant="ghost"
+                disabled={!!form?.records?.length}
+                onClick={() => setSelected({})}
+              >
+                <X aria-hidden="true" /> Clear selection
+              </Button>
+            )}
+          </div>
+        )}
       {!proposal && surface !== "page" && (
         <AppProposal
           instance={instance}
@@ -506,24 +724,86 @@ export function AppView({
           choose={openForm}
         />
       )}
-      {form && (
-        <AppActionForm
-          key={form.key}
-          instance={instance}
-          pkg={pkg}
-          actionId={form.id}
-          proposalKey={proposal?.origin}
-          surface={surface}
-          initial={form.initial}
-          selected={form.records ?? selected}
-          draft={draft}
-          selectionSource={selectionSource}
-          localRequired={localRequired}
-          close={() => setForm(undefined)}
-          query={performQuery}
-          saved={saved}
-          candidate={openForm}
-        />
+      {form &&
+        (studySurface ? (
+          <StudyDialog title={pkg.actions[form.id].title} close={closeForm}>
+            <AppActionForm
+              key={form.key}
+              instance={instance}
+              pkg={pkg}
+              actionId={form.id}
+              proposalKey={proposal?.origin}
+              surface={surface}
+              initial={form.initial}
+              selected={form.records ?? selected}
+              draft={draft}
+              selectionSource={selectionSource}
+              localRequired={localRequired}
+              close={closeForm}
+              query={performQuery}
+              saved={(count) => saved(count, form.key)}
+              candidate={openForm}
+            />
+          </StudyDialog>
+        ) : (
+          <AppActionForm
+            key={form.key}
+            instance={instance}
+            pkg={pkg}
+            actionId={form.id}
+            proposalKey={proposal?.origin}
+            surface={surface}
+            initial={form.initial}
+            selected={form.records ?? selected}
+            draft={draft}
+            selectionSource={selectionSource}
+            localRequired={localRequired}
+            close={closeForm}
+            query={performQuery}
+            saved={(count) => saved(count, form.key)}
+            candidate={openForm}
+          />
+        ))}
+      {detail && studySurface && (
+        <StudyDialog
+          title={isStudyList ? "Question details" : "Material details"}
+          close={() => setDetail(undefined)}
+        >
+          <AppRecordFields
+            fields={detail.fields}
+            primary={recordPrimaryField(
+              pkg,
+              query && pkg.actions[query.action].collection,
+            )}
+            reveal={isStudyList ? study?.back : undefined}
+            compact={isStudyList}
+          />
+          <div className="mt-6 flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => setDetail(undefined)}>
+              Close
+            </Button>
+            {actions
+              .filter(
+                (id) =>
+                  ["update", "delete"].includes(pkg.actions[id].op) &&
+                  pkg.actions[id].collection ===
+                    (query && pkg.actions[query.action].collection),
+              )
+              .map((id) => (
+                <Button
+                  key={id}
+                  variant="outline"
+                  disabled={!instance.grants.includes("records.commit")}
+                  onClick={() => {
+                    openForm(id, detail.fields, [detail]);
+                    setDetail(undefined);
+                  }}
+                >
+                  {pkg.actions[id].title}
+                </Button>
+              ))}
+          </div>
+        </StudyDialog>
       )}
       {feedback && (
         <p role="status" className="flex items-center gap-2 text-sm">
@@ -532,9 +812,25 @@ export function AppView({
         </p>
       )}
       {query && canQuery && (
-        <section className={sectionStyle}>
+        <section className="space-y-5 rounded-2xl border border-border/70 bg-card p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="font-semibold">{pkg.actions[query.action].title}</h3>
+            <div className="space-y-1">
+              <h3 className="font-semibold">
+                {pkg.actions[query.action].title}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {selected.length
+                  ? "Your selection stays local until you choose an action."
+                  : instance.grants.includes("records.commit") &&
+                      instance.grants.includes("chat.attach")
+                    ? "Select items to edit them or bring them into a chat."
+                    : instance.grants.includes("records.commit")
+                      ? "Select items to apply an action."
+                      : instance.grants.includes("chat.attach")
+                        ? "Select items to bring them into a chat."
+                        : "Saved in this app on your Mac."}
+              </p>
+            </div>
             <Button
               size="xs"
               variant="ghost"
@@ -544,9 +840,14 @@ export function AppView({
               Refresh
             </Button>
           </div>
-          <label className="grid gap-1 text-sm">
-            Filter records
+          <label className="relative block">
+            <span className="sr-only">Filter records</span>
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
             <Input
+              className="h-10 rounded-xl pl-9"
               type="search"
               value={filter}
               maxLength={256}
@@ -568,11 +869,18 @@ export function AppView({
           )}
           {records.map((record, i) => (
             <div
-              className="flex items-start gap-3 border-t border-border pt-3"
+              className={
+                (studySurface
+                  ? "study-record flex items-center gap-3 border p-4 "
+                  : "flex items-start gap-3 rounded-xl border p-4 transition-colors ") +
+                (selectedRefs[record.id] === record.revision
+                  ? "border-primary/30 bg-primary/4"
+                  : "border-border/70 bg-background/35 hover:border-primary/20")
+              }
               key={record.id}
             >
               <input
-                className="mt-1"
+                className="mt-1 size-4 shrink-0 accent-[var(--primary)]"
                 aria-label={"Select record " + (i + 1)}
                 type="checkbox"
                 checked={selectedRefs[record.id] === record.revision}
@@ -591,35 +899,133 @@ export function AppView({
                   });
                 }}
               />
-              <div className="min-w-0">
-                <Fields
-                  fields={Object.fromEntries(
-                    Object.entries(record.fields).filter(
-                      ([key]) =>
-                        !Object.hasOwn(sourceLinks, key) &&
-                        !Object.values(sourceLinks).some(
-                          (link) => link.label === key,
-                        ),
-                    ),
-                  )}
-                  reveal={pkg.actions[query.action].reveal_field}
-                />
-                {Object.entries(sourceLinks).map(([field, link]) =>
-                  record.fields[field] &&
-                  pkg.actions[link.query].surfaces.includes(surface) ? (
-                    <AppRecordSource
-                      key={field}
-                      instance={instance.id}
-                      revision={instance.revision}
-                      action={link.query}
-                      surface={surface}
-                      id={String(record.fields[field])}
-                      label={String(
-                        record.fields[link.label] || "Open material",
+              <div className="min-w-0 flex-1">
+                {studySurface ? (
+                  <button
+                    type="button"
+                    className="study-record-open"
+                    onClick={() => setDetail(record)}
+                  >
+                    <span className="study-record-icon">
+                      {isStudyList ? (
+                        <Layers className="size-5" />
+                      ) : (
+                        <FileText className="size-5" />
                       )}
-                    />
-                  ) : null,
+                    </span>
+                    <span className="min-w-0 flex-1 text-left">
+                      <strong className="block truncate text-sm font-semibold">
+                        {String(
+                          record.fields[
+                            recordPrimaryField(
+                              pkg,
+                              pkg.actions[query.action].collection,
+                            ) ?? ""
+                          ] ??
+                            Object.values(record.fields).find(
+                              (v) => typeof v === "string",
+                            ) ??
+                            "Open record",
+                        )}
+                      </strong>
+                      <span className="mt-1 block truncate text-xs text-muted-foreground">
+                        {isStudyList
+                          ? Object.values(sourceLinks)
+                              .map((link) =>
+                                String(record.fields[link.label] ?? ""),
+                              )
+                              .filter(Boolean)
+                              .join(" · ") || "Review question"
+                          : Object.entries(record.fields)
+                              .filter(
+                                ([key, v]) =>
+                                  key !==
+                                    recordPrimaryField(
+                                      pkg,
+                                      pkg.actions[query.action].collection,
+                                    ) && typeof v === "string",
+                              )
+                              .map(([, v]) => String(v))
+                              .join(" · ")}
+                      </span>
+                    </span>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                ) : (
+                  <AppRecordFields
+                    fields={Object.fromEntries(
+                      Object.entries(record.fields).filter(
+                        ([key]) =>
+                          !Object.hasOwn(sourceLinks, key) &&
+                          !Object.values(sourceLinks).some(
+                            (link) => link.label === key,
+                          ),
+                      ),
+                    )}
+                    primary={recordPrimaryField(
+                      pkg,
+                      pkg.actions[query.action].collection,
+                    )}
+                    reveal={
+                      pkg.actions[query.action].reveal_field ??
+                      (isStudyList ? study?.back : undefined)
+                    }
+                    compact={isStudyList}
+                  />
                 )}
+                {surface === "page" &&
+                  actions
+                    .filter((id) => {
+                      const action = pkg.actions[id];
+                      return (
+                        action.op === "generate" &&
+                        action.selection_inputs?.collection ===
+                          pkg.actions[query.action].collection
+                      );
+                    })
+                    .map((id) => (
+                      <Button
+                        key={id}
+                        size="sm"
+                        variant="outline"
+                        className="mt-3"
+                        disabled={!instance.grants.includes("ai.generate")}
+                        onClick={() =>
+                          openForm(
+                            id,
+                            Object.fromEntries(
+                              Object.entries(
+                                pkg.actions[id].selection_inputs!.fields,
+                              ).map(([input, field]) => [
+                                input,
+                                field === "$id"
+                                  ? record.id
+                                  : record.fields[field],
+                              ]),
+                            ),
+                          )
+                        }
+                      >
+                        <Sparkles className="size-4" /> {pkg.actions[id].title}
+                      </Button>
+                    ))}
+                {!studySurface &&
+                  Object.entries(sourceLinks).map(([field, link]) =>
+                    record.fields[field] &&
+                    pkg.actions[link.query].surfaces.includes(surface) ? (
+                      <AppRecordSource
+                        key={field}
+                        instance={instance.id}
+                        revision={instance.revision}
+                        action={link.query}
+                        surface={surface}
+                        id={String(record.fields[field])}
+                        label={String(
+                          record.fields[link.label] || "Open material",
+                        )}
+                      />
+                    ) : null,
+                  )}
               </div>
             </div>
           ))}

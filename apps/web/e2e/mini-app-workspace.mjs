@@ -9,10 +9,142 @@ export async function runMiniAppWorkspace({
   fill,
   click,
   cdp,
+  snapshot,
 }) {
+  const app = "cove/japanese-review-book";
+  const catalog = await api("/api/mini-apps/catalog");
+  const appCount = new Set(
+    catalog.packages.map((entry) => entry.publisher + "/" + entry.app),
+  ).size;
+  const before = (await api("/api/mini-apps/instances")).instances;
+  await goto("/apps?section=catalog");
+  await until(
+    "document.querySelectorAll('#mini-app-catalog article[data-app]').length===" +
+      appCount,
+  );
+  assert.equal(appCount, 2, "Historical releases share two distinct app cards");
+  assert.equal(
+    await evaluate(
+      "document.querySelectorAll('[data-app=" +
+        JSON.stringify(app) +
+        "]').length",
+    ),
+    1,
+  );
+  await until(
+    "Array.from(document.querySelectorAll('#mini-app-catalog article')).every(element=>!!element.querySelector('.mini-app-sample-card,.mini-app-sample-row,img'))",
+  );
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await evaluate("window.scrollTo(0,0)");
+  await snapshot("mini-app-market-desktop");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await until("document.documentElement.scrollWidth<=innerWidth+1");
+  await evaluate("window.scrollTo(0,0)");
+  await snapshot("mini-app-market-mobile");
+  await cdp("Emulation.setDeviceMetricsOverride", {
+    width: 1440,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  await fill('input[placeholder="Find an app"]', "Japanese");
+  await until(
+    "document.querySelectorAll('#mini-app-catalog article[data-app]').length===1",
+  );
+  assert.equal(
+    await evaluate(
+      "document.querySelector('#mini-app-catalog article').dataset.app",
+    ),
+    app,
+  );
+  await fill('input[placeholder="Find an app"]', "");
+  await until(
+    "document.querySelectorAll('#mini-app-catalog article[data-app]').length===" +
+      appCount,
+  );
+  await button("View app", '[data-app="' + app + '"]');
+  await until(
+    "document.querySelector('select[aria-label=" +
+      JSON.stringify("App version") +
+      "]')?.value==='1.2.0'",
+  );
+  assert.equal(
+    await evaluate(
+      "document.querySelector('select[aria-label=" +
+        JSON.stringify("App version") +
+        "]').options.length",
+    ),
+    3,
+    "Historical versions are available inside the detail page",
+  );
+  await snapshot("mini-app-market-detail");
+  await evaluate(
+    "{const select=document.querySelector('select[aria-label=" +
+      JSON.stringify("App version") +
+      "]'); select.value='1.1.0'; select.dispatchEvent(new Event('change',{bubbles:true}));}",
+  );
+  await until(
+    "new URLSearchParams(location.search).get('version')==='1.1.0' && Array.from(document.querySelectorAll('button')).some(element=>['Get app','Open app','Choose a copy'].includes(element.textContent.trim()) && !element.disabled)",
+  );
+  const installedAction = await evaluate(
+    "Array.from(document.querySelectorAll('button')).find(element=>['Open app','Choose a copy'].includes(element.textContent.trim()))?.textContent.trim()",
+  );
+  if (installedAction) {
+    const releases = (await api("/api/mini-apps/packages")).packages;
+    const copy = before.find((book) =>
+      releases.some(
+        (release) =>
+          release.id === book.release_id &&
+          release.package.publisher === "cove" &&
+          release.package.app === "japanese-review-book" &&
+          release.package.version === "1.1.0",
+      ),
+    );
+    assert(copy, "An exact installed version has an existing data owner");
+    await button(installedAction);
+    if (installedAction === "Choose a copy") await button(copy.name);
+    await until("location.pathname===" + JSON.stringify("/apps/" + copy.id));
+    assert.equal(
+      (await api("/api/mini-apps/instances/" + copy.id)).instance.id,
+      copy.id,
+    );
+    await goto(
+      "/apps?section=catalog&app=cove%2Fjapanese-review-book&version=1.1.0",
+    );
+    await button("Create another copy");
+  } else {
+    await button("Get app");
+  }
+  await until(
+    "!!document.querySelector('section[aria-label=" +
+      JSON.stringify("Choose app access") +
+      "]')",
+  );
+  await button("Cancel");
+  assert.deepEqual(
+    (await api("/api/mini-apps/instances")).instances,
+    before,
+    "Browsing app details, changing version and canceling review cannot install or update a copy",
+  );
+  await button("Back to Discover");
+  await until(
+    "document.querySelectorAll('#mini-app-catalog article[data-app]').length===" +
+      appCount,
+  );
+
   await goto("/apps?section=activity");
   await until(
-    "document.querySelector('#mini-app-activity')?.open && document.querySelectorAll('#mini-app-activity li').length>0",
+    "document.querySelector('#mini-app-activity')?.tagName==='SECTION' && document.querySelectorAll('#mini-app-activity li').length>0",
   );
   await cdp("Input.dispatchKeyEvent", {
     type: "keyDown",
@@ -27,13 +159,15 @@ export async function runMiniAppWorkspace({
     modifiers: 4,
   });
   await until(
-    "!!document.querySelector('[role=dialog] input[aria-label=\"App or page\"]')",
+    "!!document.querySelector('[role=dialog] input[aria-label=" +
+      JSON.stringify("App or page") +
+      "]')",
   );
   await fill('[aria-label="App or page"]', "Agent packages");
   await evaluate(
     "Array.from(document.querySelectorAll('[role=dialog] button')).find(button=>button.textContent.startsWith('Agent packages')).click()",
   );
-  await until("document.querySelector('#mini-app-agent')?.open");
+  await until("document.querySelector('#mini-app-agent')?.tagName==='SECTION'");
   const example =
     "Array.from(document.querySelectorAll('#mini-app-agent button')).find(button=>button.textContent.startsWith('Load Japanese Review Book example'))";
   await until("!!(" + example + ")");
@@ -59,8 +193,13 @@ export async function runMiniAppWorkspace({
     raw,
     "Canceling installation preserves the edited package source",
   );
-  await evaluate("document.querySelector('#mini-app-agent').open=true");
   await button("Validate and preview package", "#mini-app-agent");
+  const advanced =
+    "Array.from(document.querySelectorAll('summary')).find(element=>element.textContent.trim()==='Advanced')";
+  await until("!!(" + advanced + ")");
+  assert.equal(await evaluate("(" + advanced + ").parentElement.open"), false);
+  await evaluate("(" + advanced + ").click()");
+  await until("(" + advanced + ").parentElement.open");
   await button("Install package only");
   const releases = await api("/api/mini-apps/packages");
   const release = releases.packages.find(
@@ -69,24 +208,37 @@ export async function runMiniAppWorkspace({
       item.package.app === sample.app,
   );
   assert(release);
+  await click('button[aria-label="More app options"]');
+  await button("Manage installed versions");
   await fill(
     'input[placeholder="Apps, instances or publishers"]',
     "Editor notebook",
   );
-  await evaluate(
-    "Array.from(document.querySelectorAll('strong')).find(item=>item.textContent==='Editor notebook').parentElement.parentElement.setAttribute('data-editor-package','')",
-  );
-  await button("Remove package", "[data-editor-package]");
-  await button("Confirm package removal", "[data-editor-package]");
-  await until("!document.querySelector('[data-editor-package]')");
+  const row = '[data-release="' + release.id + '"]';
+  await until("!!document.querySelector(" + JSON.stringify(row) + ")");
+  await button("Remove package", row);
+  await button("Confirm package removal", row);
+  await until("!document.querySelector(" + JSON.stringify(row) + ")");
   assert(
     !(await api("/api/mini-apps/packages")).packages.some(
       (item) => item.id === release.id,
     ),
   );
-  await fill(
-    'input[placeholder="Apps, instances or publishers"]',
-    "Kana practice",
+  await goto("/apps");
+  await until(
+    "!!document.querySelector('input[placeholder=" +
+      JSON.stringify("Find an app") +
+      "]')",
   );
-  assert(await evaluate("document.body.textContent.includes('Kana practice')"));
+  await fill('input[placeholder="Find an app"]', "Kana practice");
+  await until(
+    "Array.from(document.querySelectorAll('button strong')).some(element=>element.textContent==='Kana practice')",
+  );
+  assert.equal(
+    await evaluate(
+      "Array.from(document.querySelectorAll('button strong')).some(element=>element.textContent==='Second book')",
+    ),
+    false,
+    "Searching My apps filters independent copies by their names",
+  );
 }

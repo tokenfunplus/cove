@@ -5,23 +5,26 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FileInput } from "@/components/ui/file-input";
 import { ErrorMessage, labelStyle, sectionStyle } from "./presentation";
+import { PublicAppPreview } from "./AppCatalog";
 
 export function PackageEditor({
   examples,
   preview,
   source,
   onChange: setSource,
+  expanded = false,
 }: {
   examples: CatalogEntry[];
   preview: (source: string) => Promise<void>;
   source: string;
   onChange: (source: string) => void;
+  expanded?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const catalog = useQuery({
     queryKey: appKeys.catalog,
     queryFn: miniApps.catalog,
-    enabled: open,
+    enabled: open || expanded,
     retry: false,
   });
   const builtin = new Map<string, CatalogEntry>();
@@ -53,6 +56,15 @@ export function PackageEditor({
       await preview(source);
     },
   });
+  const validation = useMutation({
+    mutationFn: async (draft: string) => {
+      if (new TextEncoder().encode(draft).length > 1024 * 1024)
+        throw new Error("Use a package of at most 1 MiB.");
+      return { source: draft, package: await miniApps.validateDraft(draft) };
+    },
+  });
+  const validDraft =
+    validation.data?.source === source ? validation.data.package : undefined;
   function download() {
     const blob = new Blob([source], { type: "application/json" });
     const link = document.createElement("a");
@@ -61,13 +73,23 @@ export function PackageEditor({
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
+  const Container = expanded ? "section" : "details";
   return (
-    <details
+    <Container
       id="mini-app-agent"
       className={sectionStyle}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onToggle={(event) => {
+        if (event.currentTarget instanceof HTMLDetailsElement)
+          setOpen(event.currentTarget.open);
+      }}
     >
-      <summary className="cursor-pointer font-semibold">Agent packages</summary>
+      {expanded ? (
+        <h3 className="font-semibold">Agent packages</h3>
+      ) : (
+        <summary className="cursor-pointer font-semibold">
+          Agent packages
+        </summary>
+      )}
       <p className="text-sm">
         Edit a package from your agent, validate it and review its installation.
         Use your own publisher when changing an example. The author CLI supplies
@@ -113,10 +135,19 @@ export function PackageEditor({
           onChange={(event) => {
             setSource(event.target.value);
             inspect.reset();
+            validation.reset();
           }}
         />
       </label>
       <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!source.trim() || validation.isPending}
+          onClick={() => validation.mutate(source)}
+        >
+          {validation.isPending ? "Validating draft…" : "Validate draft"}
+        </Button>
         <Button
           size="sm"
           disabled={!source.trim() || inspect.isPending}
@@ -133,7 +164,34 @@ export function PackageEditor({
           Download package
         </Button>
       </div>
-      <ErrorMessage error={load.error ?? inspect.error ?? catalog.error} />
-    </details>
+      {validDraft && (
+        <section
+          aria-label="Unpublished draft preview"
+          className="space-y-3 rounded-xl border border-border bg-muted/30 p-4"
+        >
+          <div>
+            <p role="status" className="text-sm font-semibold">
+              Draft is valid
+            </p>
+            <p className="mt-1 text-xs leading-6 text-muted-foreground">
+              Unpublished draft · This checks the app contract and shows example
+              content. Installation still verifies the package source and
+              permissions.
+            </p>
+          </div>
+          <div className="max-w-lg overflow-hidden rounded-xl">
+            <PublicAppPreview pkg={validDraft} name={validDraft.name} />
+          </div>
+        </section>
+      )}
+      <ErrorMessage
+        error={
+          load.error ??
+          inspect.error ??
+          (validation.variables === source ? validation.error : undefined) ??
+          catalog.error
+        }
+      />
+    </Container>
   );
 }

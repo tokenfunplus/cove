@@ -9,33 +9,54 @@ import {
   selectStyle,
 } from "./presentation";
 import type { MiniAppInstance } from "@cove/api-contract";
+import { AppTaskSaveNotice } from "./AppTaskSaveNotice";
 
-export function HostActivity({ instances }: { instances: MiniAppInstance[] }) {
+export function HostActivity({
+  instances,
+  expanded = false,
+}: {
+  instances: MiniAppInstance[];
+  expanded?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [instance, setInstance] = useState("");
   const history = useQuery({
     queryKey: ["mini-app-host-activity", instance],
     queryFn: () => miniApps.hostActivity(instance || undefined),
-    enabled: open,
+    enabled: open || expanded,
     retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.activity.some((item) => item.status === "running")
+        ? 1000
+        : false,
   });
+  const Container = expanded ? "section" : "details";
   return (
-    <details
+    <Container
       id="mini-app-activity"
       className={sectionStyle}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onToggle={(event) => {
+        if (event.currentTarget instanceof HTMLDetailsElement)
+          setOpen(event.currentTarget.open);
+      }}
     >
-      <summary className="cursor-pointer font-semibold">Host activity</summary>
-      {open && (
+      {expanded ? (
+        <h3 className="font-semibold">Recent activity</h3>
+      ) : (
+        <summary className="cursor-pointer font-semibold">
+          Host activity
+        </summary>
+      )}
+      {(open || expanded) && (
         <>
           <label className={labelStyle}>
-            Instance
+            App
             <select
               className={selectStyle}
               value={instance}
               onChange={(event) => setInstance(event.target.value)}
             >
-              <option value="">All instances</option>
+              <option value="">All apps</option>
               {instances.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
@@ -63,16 +84,26 @@ export function HostActivity({ instances }: { instances: MiniAppInstance[] }) {
                 className="border-t border-border pt-3 text-sm"
               >
                 <strong>{item.instance_name}</strong> · {item.action} ·{" "}
-                {item.status}
+                {item.status === "save_failed"
+                  ? "Result needs saving"
+                  : item.status}
                 <br />
                 <span className="text-muted-foreground">
                   {item.surface} · {new Date(item.time * 1000).toLocaleString()}
                 </span>
+                {item.status === "save_failed" && (
+                  <div className="mt-3">
+                    <AppTaskSaveNotice
+                      instance={item.instance_id}
+                      task={item.operation_id}
+                    />
+                  </div>
+                )}
               </li>
             ))}
           </ol>
         </>
       )}
-    </details>
+    </Container>
   );
 }

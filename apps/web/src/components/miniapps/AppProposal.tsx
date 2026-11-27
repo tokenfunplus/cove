@@ -11,6 +11,12 @@ import { useAppTaskStatus } from "./use-app-task-status";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { AppModelTarget, useAppModelTarget } from "./AppModelTarget";
+import {
+  AppTaskSaveBlockedNotice,
+  AppTaskSaveNotice,
+  taskNeedsSave,
+  taskSavePendingError,
+} from "./AppTaskSaveNotice";
 import { ErrorMessage, Fields, labelStyle, sectionStyle } from "./presentation";
 
 interface Props {
@@ -78,9 +84,18 @@ function ProposalForm({
   const recent = started ?? history.data;
   const { poll, task } = useAppTaskStatus(instance.id, recent, "proposal");
   const busy = task?.state === "running";
+  const pendingById = new Map<string, AppTask>();
+  for (const job of [task, history.data])
+    if (job && taskNeedsSave(job)) pendingById.set(job.id, job);
+  const pendingSaves = [...pendingById.values()];
+  const savePending = pendingSaves.length > 0;
   const start = useMutation({
     retry: false,
     mutationFn: async () => {
+      if (savePending)
+        throw new Error(
+          "Save the waiting result before requesting another suggestion.",
+        );
       if (!profile || !model || !allowed.length || !question.trim())
         throw new Error("Choose a model and actions, then enter a question.");
       const command = {
@@ -127,7 +142,17 @@ function ProposalForm({
   }
   return (
     <div className="mt-3 space-y-3">
-      <fieldset className="space-y-3" disabled={busy || start.isPending}>
+      {pendingSaves.map((pending) => (
+        <AppTaskSaveNotice
+          key={pending.id}
+          instance={instance.id}
+          task={pending.id}
+        />
+      ))}
+      <fieldset
+        className="space-y-3"
+        disabled={busy || savePending || start.isPending}
+      >
         <fieldset>
           <legend className={labelStyle}>
             Actions to describe to the model
@@ -181,7 +206,13 @@ function ProposalForm({
           </div>
         )}
         <Button
-          disabled={!profile || !model || !question.trim() || !allowed.length}
+          disabled={
+            savePending ||
+            !profile ||
+            !model ||
+            !question.trim() ||
+            !allowed.length
+          }
           onClick={() => start.mutate()}
         >
           Request suggestion
@@ -190,13 +221,14 @@ function ProposalForm({
       <ErrorMessage
         error={
           history.error ??
-          start.error ??
+          (taskSavePendingError(start.error) ? undefined : start.error) ??
           poll.error ??
           cancel.error ??
           target.profiles.error ??
           target.catalog.error
         }
       />
+      {!savePending && <AppTaskSaveBlockedNotice error={start.error} />}
       {poll.isError && (
         <Button size="sm" variant="outline" onClick={() => void poll.refetch()}>
           Retry status
@@ -214,7 +246,9 @@ function ProposalForm({
       )}
       {task && (
         <p role="status" className="text-sm">
-          Suggestion {task.state}
+          {taskNeedsSave(task)
+            ? "Suggestion result needs saving"
+            : "Suggestion " + task.state}
           {task.state === "failed"
             ? ". You can choose an action manually."
             : ""}

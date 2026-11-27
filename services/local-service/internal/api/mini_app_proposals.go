@@ -32,6 +32,10 @@ func (s *Server) appProposals(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		recent, err := s.appStore.LatestAppProposal(ctx, id, surface)
+		if err == nil && recent != nil {
+			projected := s.projectAppTask(id, *recent)
+			recent = &projected
+		}
 		appReply(w, recent, err)
 		return
 	}
@@ -39,6 +43,9 @@ func (s *Server) appProposals(w http.ResponseWriter, r *http.Request) {
 	if err == nil && r.Method == "DELETE" {
 		executor.StopAppTask(id, taskID)
 		result, err = s.appStore.AppProposalTask(ctx, id, taskID)
+	}
+	if err == nil {
+		result = s.projectAppTask(id, result)
 	}
 	appReply(w, result, err)
 }

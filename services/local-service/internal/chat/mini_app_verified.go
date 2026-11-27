@@ -60,7 +60,7 @@ func (s *Service) beginBrowserAppTask(ctx context.Context, in AppTaskInput, snap
 		if errors.Is(run.Err(), context.DeadlineExceeded) {
 			state, detail = "failed", "The browser did not complete verification before the task expired."
 		}
-		_ = store.FinishAppTask(context.Background(), in.Instance, in.ID, state, "", detail)
+		s.settleAppTaskLocked(store, appTaskSettlement{instance: in.Instance, id: in.ID, state: state, detail: detail})
 		w.releaseBrowser()
 	}()
 	return persistence.AppTask{ID: in.ID, State: "running", Browser: true, Snapshot: &snapshot}, nil
@@ -134,6 +134,9 @@ func (s *Service) SettleAppBrowser(ctx context.Context, instance, id, owner stri
 		}
 		return nil
 	}
+	if pending := w.pending; pending != nil && pending.instance == instance && pending.id == id && pending.receipt == receipt {
+		return ErrAppTaskSavePending
+	}
 	b, err := w.ownedBrowser(instance, id, owner)
 	if err != nil {
 		return err
@@ -155,8 +158,9 @@ func (s *Service) SettleAppBrowser(ctx context.Context, instance, id, owner stri
 		v.VerifiedAt = &now
 		state, body, detail = "completed", input.Body, ""
 	}
-	if err = s.store.(browserAppStore).FinishBrowserAppTask(ctx, instance, id, state, body, detail, v, receipt); err != nil {
-		return err
+	if err = s.settleAppTaskLocked(s.store.(browserAppStore), appTaskSettlement{instance: instance, id: id, state: state, result: body, detail: detail, verification: &v, receipt: receipt}); err != nil {
+		w.releaseBrowser()
+		return ErrAppTaskSavePending
 	}
 	w.releaseBrowser()
 	return nil

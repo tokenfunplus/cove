@@ -17,12 +17,30 @@ type CandidateCheckRequest struct {
 	Items            []map[string]any `json:"items"`
 }
 
-// CandidateDuplicates compares user-authored fields in the candidate's destination
-// collection, including archived records. It returns positions, never record data.
+type CandidateIssue struct {
+	Index   int    `json:"index"`
+	Message string `json:"message"`
+}
+
+type CandidateCheckResult struct {
+	Duplicates []int            `json:"duplicates"`
+	Invalid    []CandidateIssue `json:"invalid"`
+}
+
 func (s *Service) CandidateDuplicates(ctx context.Context, id string, req CandidateCheckRequest) ([]int, error) {
-	duplicates := []int{}
+	result, err := s.CheckCandidates(ctx, id, req)
+	if err == nil && len(result.Invalid) > 0 {
+		err = ErrInvalid
+	}
+	return result.Duplicates, err
+}
+
+// CheckCandidates compares user-authored fields against the destination collection,
+// including archived records, and isolates invalid rows without returning record data.
+func (s *Service) CheckCandidates(ctx context.Context, id string, req CandidateCheckRequest) (CandidateCheckResult, error) {
+	result := CandidateCheckResult{Duplicates: []int{}, Invalid: []CandidateIssue{}}
 	if len(req.Items) > 100 {
-		return nil, ErrInvalid
+		return result, ErrInvalid
 	}
 	err := s.store.MiniAppTransaction(ctx, func(tx *persistence.MiniAppStore) error {
 		instance, err := loadInstance(tx, id)
@@ -90,15 +108,16 @@ func (s *Service) CandidateDuplicates(ctx context.Context, id string, req Candid
 		for index, raw := range req.Items {
 			item, err := actionInputs(target, raw, s.now())
 			if err != nil {
-				return err
+				result.Invalid = append(result.Invalid, CandidateIssue{Index: index, Message: "These values do not meet the app's requirements. Review this candidate before saving it."})
+				continue
 			}
 			key := signature(item, true)
 			if len(fields) > 0 && seen[key] {
-				duplicates = append(duplicates, index)
+				result.Duplicates = append(result.Duplicates, index)
 			}
 			seen[key] = true
 		}
 		return nil
 	})
-	return duplicates, err
+	return result, err
 }
