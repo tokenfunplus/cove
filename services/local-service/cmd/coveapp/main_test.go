@@ -17,6 +17,46 @@ import (
 const packageDir = "../../internal/appcatalog/packages"
 const fixturesDir = "../../../../packages/api-contract/fixtures/mini-apps"
 
+func TestValidateStandardInput(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		source  []byte
+		wantErr string
+	}{
+		{name: "valid package", source: starter},
+		{name: "oversized input", source: bytes.Repeat([]byte(" "), (2<<20)+1), wantErr: "input exceeds 2 MiB"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input, err := os.CreateTemp(t.TempDir(), "stdin-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { input.Close() })
+			if _, err = input.Write(tc.source); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = input.Seek(0, io.SeekStart); err != nil {
+				t.Fatal(err)
+			}
+			previous := os.Stdin
+			os.Stdin = input
+			t.Cleanup(func() { os.Stdin = previous })
+			var output bytes.Buffer
+			err = run([]string{"validate", "-"}, &output)
+			if tc.wantErr != "" {
+				if err == nil || err.Error() != tc.wantErr {
+					t.Fatalf("got %v, want %q", err, tc.wantErr)
+				}
+			} else if err != nil || !strings.Contains(output.String(), "is valid") {
+				t.Fatalf("standard input validation: %v; output %q", err, output.String())
+			}
+			if _, err = input.Stat(); err != nil {
+				t.Fatalf("validation closed standard input: %v", err)
+			}
+		})
+	}
+}
+
 func TestAuthorBuildAndPack(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "source.json")

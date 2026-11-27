@@ -23,7 +23,9 @@ const usage = `Usage:
   coveapp preview SOURCE [--browser [--fixture SCENARIO.json] [--allow blobs.import] [--model-endpoint LOOPBACK_URL]]
   coveapp upgrade-test OLD NEW FIXTURE.json
   coveapp test SOURCE SCENARIO.json
-  coveapp pack SOURCE OUTPUT.coveapp`
+  coveapp pack SOURCE OUTPUT.coveapp
+
+Use - as SOURCE to read up to 2 MiB from standard input.`
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
@@ -100,13 +102,17 @@ func run(args []string, out io.Writer) error {
 }
 
 func readBounded(path string) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
+	var input io.Reader = os.Stdin
+	if path != "-" {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		input = f
 	}
-	defer f.Close()
 	const maxBytes = 2 << 20
-	b, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+	b, err := io.ReadAll(io.LimitReader(input, maxBytes+1))
 	if len(b) > maxBytes {
 		return nil, errors.New("input exceeds 2 MiB")
 	}

@@ -1031,7 +1031,7 @@ for (const file of files) {
   const data = await readFile(file);
   const check = spawnSync(
     join(root, "scripts/go"),
-    ["run", "./cmd/coveapp", "validate", "/dev/stdin"],
+    ["run", "./cmd/coveapp", "validate", "-"],
     {
       cwd: join(root, "services/local-service"),
       encoding: "utf8",
