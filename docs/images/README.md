@@ -2,6 +2,8 @@
 
 | File | Content and source |
 | --- | --- |
+| `interactive-card-expanded.png` | Interactive card polish source build at `81e032b`, 2026-11-26, 1440 × 900: centered quiz card, filled selection, feedback, and stable save/destination controls. |
+| `interactive-budget-mobile-dark.png` | The same isolated production-browser fixture at 390 × 844 in dark mode: a linked allocation ring, remaining amount, and progress bar. |
 | `provider-presets-menu.png` | Provider setup source build, 2026-11-26, 1440 × 900: the connection menu offers NearAI, five cloud/local templates, and a blank compatible connection. |
 | `provider-presets-local.png` | The same production-browser fixture: LM Studio defaults to loopback and None authentication, with an explicit Bearer option for protected servers. |
 | `cove-quick-panel-compact.png` | Quick Panel source build, 2026-11-24, 1240 × 360. The native window opens at its compact size with the composer focused. |
@@ -43,3 +45,5 @@ The custom-control captures use an empty temporary data directory with dark mode
 The Debate speech captures use synthetic paused Debate sessions in temporary storage. No Provider request was made. Existing Kitten bundle files were hard-linked into that disposable fixture for real native synthesis; everyday preferences, conversations, credentials, and model selections were not copied. The audio player advanced from Lumen to Atlas, paused/resumed successfully, and stopped with Debate. Missing-model navigation retained the intervention draft.
 
 The local-search filter captures come from the `local-capabilities` scenario in `apps/web/e2e/acceptance.mjs`. They use an empty temporary workspace with no installed models or personal documents. They establish layout and control behavior, not native retrieval quality.
+
+The interactive card captures come from the `interactive` scenario in `apps/web/e2e/acceptance.mjs`. They use synthetic prompts and model responses, a loopback scripted Provider, temporary storage, and explicitly enabled disposable file credentials. They show implemented UI states rather than real model quality, live inference, or personal conversation data.
