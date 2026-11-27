@@ -527,3 +527,12 @@ A generate action with `selection_inputs` can also be launched from an individua
 source record. The host fills its inputs from that record using the existing
 mapping. These presentations use package declarations, not publisher or app names,
 and require no package upgrade or data migration.
+
+The standalone study workspace uses compact question and material rows. Opening a
+row shows its details in a focus-managed dialog; single-record edits bind that
+record's revision independently of bulk selection. Source links remain available
+inside question details. Generation forms can select saved materials through the
+same `selection_inputs` mapping, with paginated loading and local read grants.
+Practice and action dialogs preserve the underlying list and return keyboard focus
+when closed. The catalog shares this dialog pattern for reviewed installations;
+its sidebar links to installed instances, author tools, and host activity.

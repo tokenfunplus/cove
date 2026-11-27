@@ -285,6 +285,7 @@ export function AppDirectory({
       </div>
     </div>
   );
+  let installation;
   if (preview && ready) {
     const origin =
       preview.source.kind === "installed"
@@ -292,8 +293,9 @@ export function AppDirectory({
         : preview.source.kind === "catalog"
           ? preview.source.entry.origin
           : (preview.source.origin ?? "local");
-    return (
+    installation = (
       <PackagePreview
+        dialog
         key={
           preview.pkg.publisher +
           "/" +
@@ -327,6 +329,7 @@ export function AppDirectory({
   }
   return (
     <div className="space-y-8">
+      {installation}
       <FileInput
         ref={file}
         accept=".coveapp,.json"
@@ -507,11 +510,11 @@ export function AppDirectory({
               <div>
                 <p className="mini-app-eyebrow">The app collection</p>
                 <h2 className="mt-2 text-3xl font-semibold tracking-tight sm:text-[40px]">
-                  Find your next little helper.
+                  App catalog
                 </h2>
                 <p className="mt-4 max-w-xl text-sm leading-7 text-muted-foreground">
-                  Find a little helper for your everyday. Pick an app, make your
-                  own copy, and keep what you save on your Mac.
+                  Find an app for your everyday and install a personal copy.
+                  Everything you save stays on your Mac.
                 </p>
               </div>
               {!target && (
@@ -575,6 +578,23 @@ export function AppDirectory({
                       key={versions[0].publisher + "/" + versions[0].app}
                       versions={versions}
                       view={showDetail}
+                      install={(entry) =>
+                        inspect.mutate({ kind: "catalog", entry })
+                      }
+                      openInstalled={() => {
+                        const copies = allBooks.filter((book) =>
+                          installed.some(
+                            (release) =>
+                              release.id === book.release_id &&
+                              release.origin !== "local" &&
+                              release.package.publisher ===
+                                versions[0].publisher &&
+                              release.package.app === versions[0].app,
+                          ),
+                        );
+                        if (copies.length === 1) open(copies[0].id);
+                        else showDetail(versions[0]);
+                      }}
                       installed={allBooks.some((book) =>
                         installed.some(
                           (release) =>

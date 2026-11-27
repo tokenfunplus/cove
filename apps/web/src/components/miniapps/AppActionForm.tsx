@@ -1,3 +1,4 @@
+import { StudyMaterialPicker } from "./StudyMaterialPicker";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type {
@@ -338,6 +339,16 @@ export function AppActionForm({
                 Source · {label}
               </p>
             ))}
+            {action.op === "generate" && action.selection_inputs && (
+              <StudyMaterialPicker
+                instance={instance}
+                pkg={pkg}
+                action={action}
+                inputs={inputs}
+                surface={surface}
+                choose={(values) => setInputs((old) => ({ ...old, ...values }))}
+              />
+            )}
             {contentFields.map(renderField)}
             {additionalFields.length > 0 && (
               <details className="group/options rounded-xl border border-border/70 bg-muted/25 px-4 py-3">

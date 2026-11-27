@@ -76,7 +76,7 @@ test("the embedded app picker keeps administration hidden and loads Discover onl
   await userEvent
     .setup()
     .click(screen.getByRole("button", { name: "Discover" }));
-  await screen.findByRole("heading", { name: "Find your next little helper." });
+  await screen.findByRole("heading", { name: "App catalog" });
   await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(2));
   expect(screen.queryByRole("button", { name: "More app options" })).toBeNull();
 });

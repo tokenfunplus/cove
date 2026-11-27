@@ -133,7 +133,13 @@ export function AppWorkspace({ id, view, back, navigate, ...context }: Props) {
           </Button>
         </div>
       </div>
-      <header className="rounded-2xl border border-border/70 bg-card p-5 sm:p-6">
+      <header
+        className={
+          study
+            ? "py-3 sm:py-5"
+            : "rounded-2xl border border-border/70 bg-card p-5 sm:p-6"
+        }
+      >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             {study && (
@@ -141,7 +147,13 @@ export function AppWorkspace({ id, view, back, navigate, ...context }: Props) {
                 <BookOpen className="size-4" /> Your study space
               </p>
             )}
-            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            <h2
+              className={
+                study
+                  ? "text-3xl font-semibold tracking-tight sm:text-4xl"
+                  : "text-2xl font-semibold tracking-tight sm:text-3xl"
+              }
+            >
               {instance.name}
             </h2>
           </div>
@@ -770,7 +782,15 @@ export function AppView({
           close={() => setDetail(undefined)}
         >
           <AppRecordFields
-            fields={detail.fields}
+            fields={Object.fromEntries(
+              Object.entries(detail.fields).filter(
+                ([key]) =>
+                  !Object.hasOwn(sourceLinks, key) &&
+                  !Object.values(sourceLinks).some(
+                    (link) => link.label === key,
+                  ),
+              ),
+            )}
             primary={recordPrimaryField(
               pkg,
               query && pkg.actions[query.action].collection,
@@ -778,6 +798,20 @@ export function AppView({
             reveal={isStudyList ? study?.back : undefined}
             compact={isStudyList}
           />
+          {Object.entries(sourceLinks).map(([field, link]) =>
+            detail.fields[field] &&
+            pkg.actions[link.query].surfaces.includes(surface) ? (
+              <AppRecordSource
+                key={field}
+                instance={instance.id}
+                revision={instance.revision}
+                action={link.query}
+                surface={surface}
+                id={String(detail.fields[field])}
+                label={String(detail.fields[link.label] || "Open material")}
+              />
+            ) : null,
+          )}
           <div className="mt-6 flex flex-wrap justify-end gap-2">
             <Button variant="outline" onClick={() => setDetail(undefined)}>
               Close

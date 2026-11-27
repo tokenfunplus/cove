@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { observeBrowserSessionExpiry } from "@/api/client";
 import { useLocalSession } from "@/api/hooks/useSession";
+import { AppSidebar } from "@/components/miniapps/AppSidebar";
 import { WorkspaceSearch } from "@/components/miniapps/WorkspaceSearch";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Grid2X2 } from "lucide-react";
@@ -109,7 +110,19 @@ export default function MiniAppsPage({
             : "")
         : "cove://apps";
   return (
-    <main className="mini-app-shell min-h-dvh bg-background px-5 pb-12 pt-5 text-foreground sm:px-10 sm:pt-7">
+    <main
+      className={
+        "mini-app-shell min-h-dvh bg-background px-5 pb-12 pt-5 text-foreground sm:px-10 sm:pt-7 " +
+        (session.isSuccess && !expired ? "mini-app-with-sidebar" : "")
+      }
+    >
+      {session.isSuccess && !expired && (
+        <AppSidebar
+          current={target ? "catalog" : section}
+          instance={id}
+          navigate={navigate}
+        />
+      )}
       <div className="mx-auto max-w-5xl space-y-7 sm:space-y-9">
         <header className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">

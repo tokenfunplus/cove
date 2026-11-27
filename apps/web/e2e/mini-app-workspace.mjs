@@ -32,7 +32,7 @@ export async function runMiniAppWorkspace({
     1,
   );
   await until(
-    "Array.from(document.querySelectorAll('#mini-app-catalog article')).every(element=>!!element.querySelector('.mini-app-sample-card,.mini-app-sample-row,img'))",
+    "Array.from(document.querySelectorAll('#mini-app-catalog article')).every(element=>!!element.querySelector('.catalog-art[data-ready=true]'))",
   );
   await cdp("Emulation.setDeviceMetricsOverride", {
     width: 1440,
@@ -72,7 +72,7 @@ export async function runMiniAppWorkspace({
     "document.querySelectorAll('#mini-app-catalog article[data-app]').length===" +
       appCount,
   );
-  await button("View app", '[data-app="' + app + '"]');
+  await click('[data-app="' + app + '"] .mini-app-card-cover');
   await until(
     "document.querySelector('select[aria-label=" +
       JSON.stringify("App version") +

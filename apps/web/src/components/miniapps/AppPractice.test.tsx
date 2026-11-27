@@ -174,3 +174,43 @@ test("a paginated queue labels the loaded session honestly and keeps practice re
     ).toBeDefined(),
   );
 });
+
+test("opens a question in a dialog and binds its write action without requiring checkbox selection", async () => {
+  const invoke = vi
+    .spyOn(miniApps, "invoke")
+    .mockResolvedValue({ records: [record] });
+  const page = { ...book.pages[0], actions: ["due", "learn"] };
+  mount(
+    <AppView
+      instance={{
+        id: "book",
+        name: "Book",
+        release_id: "release",
+        revision: 1,
+        enabled: true,
+        grants: ["records.query", "records.commit"],
+      }}
+      pkg={book}
+      page={page}
+      surface="page"
+      attach={vi.fn()}
+    />,
+  );
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: /First question/ }),
+  );
+  await screen.findByRole("dialog", { name: "Question details" });
+  await user.click(screen.getByRole("button", { name: "Mark learned" }));
+  await screen.findByRole("dialog", { name: "Mark learned" });
+  await user.click(screen.getByRole("button", { name: "Preview changes" }));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith(
+      "book",
+      expect.objectContaining({
+        action: "learn",
+        records: [{ id: "one", revision: 2 }],
+      }),
+    ),
+  );
+});

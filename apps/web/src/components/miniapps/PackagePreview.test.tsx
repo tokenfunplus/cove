@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { MiniAppInstance, MiniAppPackage } from "@cove/api-contract";
 import { miniApps } from "@/api/mini-apps";
@@ -177,4 +178,74 @@ test("switching from an updated copy to a new copy resets cloud permission", asy
       }) as HTMLInputElement
     ).checked,
   ).toBe(false);
+});
+
+test("an installation dialog locks all close controls until settlement, then restores close and focus", async () => {
+  let rejectInstall!: (error: Error) => void;
+  vi.spyOn(miniApps, "localPackage").mockImplementation(
+    () =>
+      new Promise((_, reject) => {
+        rejectInstall = reject;
+      }),
+  );
+  const create = vi.spyOn(miniApps, "create");
+  const closed = vi.fn();
+  function Preview() {
+    const [visible, setVisible] = useState(false);
+    return (
+      <>
+        <button onClick={() => setVisible(true)}>Review app</button>
+        {visible && (
+          <PackagePreview
+            dialog
+            pkg={pkg}
+            previous={[]}
+            source={{ kind: "local", raw: "fixture", origin: "local" }}
+            close={() => {
+              closed();
+              setVisible(false);
+            }}
+            open={vi.fn()}
+          />
+        )}
+      </>
+    );
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <Preview />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  const trigger = screen.getByRole("button", { name: "Review app" });
+  await user.click(trigger);
+  await screen.findByRole("dialog", { name: "Review installation" });
+  await user.click(screen.getByRole("button", { name: "Install app" }));
+  const close = screen.getByRole("button", {
+    name: "Close dialog",
+  }) as HTMLButtonElement;
+  const cancel = screen.getByRole("button", { name: "Cancel" });
+  expect(close.disabled).toBe(true);
+  expect(cancel.matches(":disabled")).toBe(true);
+  await user.click(close);
+  await user.click(cancel);
+  await user.keyboard("{Escape}");
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(closed).not.toHaveBeenCalled();
+  await act(async () =>
+    rejectInstall(new Error("Package storage unavailable")),
+  );
+  await screen.findByText("Package storage unavailable");
+  expect(close.disabled).toBe(false);
+  expect(cancel.matches(":disabled")).toBe(false);
+  expect(create).not.toHaveBeenCalled();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+  expect(closed).toHaveBeenCalledOnce();
+  await user.click(trigger);
+  await screen.findByRole("dialog");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
 });

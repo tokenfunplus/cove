@@ -10,6 +10,7 @@ import { appKeys, miniApps, type CatalogEntry } from "@/api/mini-apps";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorMessage, labelStyle, selectStyle } from "./presentation";
+import { StudyDialog } from "./StudyDialog";
 
 export type PackageSource =
   | { kind: "local"; raw: string; origin?: string }
@@ -106,6 +107,7 @@ export function PackagePreview({
   open,
   targetInstance,
   versions = {},
+  dialog = false,
 }: {
   pkg: MiniAppPackage;
   previous: MiniAppInstance[];
@@ -114,6 +116,7 @@ export function PackagePreview({
   open: OpenApp;
   targetInstance?: MiniAppInstance;
   versions?: Record<string, string>;
+  dialog?: boolean;
 }) {
   const cache = useQueryClient();
   const formId = useId();
@@ -217,7 +220,7 @@ export function PackagePreview({
     );
   };
 
-  return (
+  const content = (
     <section className="mx-auto w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card">
       <header className="border-b border-border/70 px-5 py-6 sm:px-8 sm:py-7">
         <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -431,5 +434,16 @@ export function PackagePreview({
         </footer>
       </fieldset>
     </section>
+  );
+  return dialog ? (
+    <StudyDialog
+      title="Review installation"
+      close={close}
+      busy={install.isPending}
+    >
+      {content}
+    </StudyDialog>
+  ) : (
+    content
   );
 }

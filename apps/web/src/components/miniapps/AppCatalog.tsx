@@ -185,14 +185,54 @@ export function PublicAppPreview({
   );
 }
 
+export function CatalogArtwork({
+  pkg,
+  name,
+}: {
+  pkg?: MiniAppPackage;
+  name: string;
+}) {
+  const page = pkg?.pages.find((p) => p.image);
+  const asset = page?.image && pkg?.assets?.[page.image];
+  if (asset)
+    return (
+      <div className="catalog-art" data-ready="true">
+        <img
+          src={"data:" + asset.mime + ";base64," + asset.data}
+          alt={asset.alt}
+        />
+      </div>
+    );
+  const study = pkg?.pages.some((p) => p.practice);
+  return (
+    <div
+      className={
+        "catalog-art " + (study ? "catalog-art--book" : "catalog-art--folder")
+      }
+      data-ready={!!pkg}
+      aria-label={name + " cover"}
+      role="img"
+    >
+      <span className="catalog-object">
+        <i />
+        <b />
+      </span>
+    </div>
+  );
+}
+
 export function CatalogCard({
   versions,
   view,
   installed,
+  openInstalled,
+  install,
 }: {
   versions: CatalogEntry[];
   view: (entry: CatalogEntry) => void;
   installed: boolean;
+  openInstalled?: () => void;
+  install?: (entry: CatalogEntry) => void;
 }) {
   const entry = versions[0];
   const card = useRef<HTMLElement>(null);
@@ -230,7 +270,7 @@ export function CatalogCard({
         aria-label={"View " + entry.name}
         onClick={() => view(entry)}
       >
-        <PublicAppPreview pkg={preview.data} name={entry.name} />
+        <CatalogArtwork pkg={preview.data} name={entry.name} />
       </button>
       <div className="px-6 pb-6 pt-5">
         <div className="flex items-start justify-between gap-3">
@@ -240,7 +280,7 @@ export function CatalogCard({
           {installed && (
             <span className="mini-app-installed">
               <Check size={12} />
-              Added
+              Installed
             </span>
           )}
         </div>
@@ -249,7 +289,7 @@ export function CatalogCard({
             preview.data?.description ??
             "A small workspace to make your own."}
         </p>
-        <div className="mt-5 flex items-center justify-between gap-3">
+        <div className="mt-5 flex items-center justify-between gap-3 border-t border-border pt-4">
           <span className="text-xs text-muted-foreground">
             By {humanize(entry.publisher)}
           </span>
@@ -257,9 +297,20 @@ export function CatalogCard({
             variant="ghost"
             size="sm"
             className="gap-2 rounded-full"
-            onClick={() => view(entry)}
+            onClick={() =>
+              installed && openInstalled
+                ? openInstalled()
+                : install
+                  ? install(entry)
+                  : view(entry)
+            }
           >
-            View app <ArrowRight />
+            {installed && openInstalled
+              ? "Open app"
+              : install
+                ? "Install"
+                : "View app"}{" "}
+            <ArrowRight />
           </Button>
         </div>
       </div>

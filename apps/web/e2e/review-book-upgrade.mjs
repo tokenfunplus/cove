@@ -163,10 +163,10 @@ export async function runReviewBookUpgrade({
   await readyRows(1);
   await click('[aria-label="Select record 1"]');
   await button("Edit question and answer");
-  await fill(
-    'section[aria-label="Edit question and answer"] textarea',
-    "Corrected card",
+  await evaluate(
+    `Array.from(document.querySelectorAll('section[aria-label="Edit question and answer"] label')).find(label => label.firstChild.textContent.trim() === 'Question').querySelector('textarea').setAttribute('data-edit-question', '')`,
   );
+  await fill("[data-edit-question]", "Corrected card");
   await button("Preview changes");
   await button("Confirm changes");
   await until(
@@ -223,10 +223,20 @@ export async function runReviewBookUpgrade({
   ).records[0];
   await button("Study material");
   await readyRows(1);
-  await evaluate(`document.querySelector('[aria-label="Select record 1"]').parentElement.querySelector('button').setAttribute('data-material-generate', '')`);
-  await click('[data-material-generate]');
-  await until(`document.querySelector('section[aria-label="Generate practice questions"] textarea')?.value === 'Mini App study fixture'`);
-  assert.equal(await evaluate(`document.querySelector('[aria-label="Select record 1"]').checked`), false, "A material can start generation without selecting it first");
+  await evaluate(
+    `Array.from(document.querySelector('[aria-label="Select record 1"]').parentElement.querySelectorAll('button')).find(button => button.textContent.includes('Generate practice questions')).setAttribute('data-material-generate', '')`,
+  );
+  await click("[data-material-generate]");
+  await until(
+    `document.querySelector('section[aria-label="Generate practice questions"] textarea')?.value === 'Mini App study fixture'`,
+  );
+  assert.equal(
+    await evaluate(
+      `document.querySelector('[aria-label="Select record 1"]').checked`,
+    ),
+    false,
+    "A material can start generation without selecting it first",
+  );
   await fill('input[type="number"]', "1");
   await click("input[type=checkbox]:not([aria-label])");
   await until(
@@ -275,6 +285,9 @@ export async function runReviewBookUpgrade({
   );
   await button("Question library");
   await readyRows(3);
+  await evaluate(
+    `Array.from(document.querySelectorAll('.study-record-open')).find(button => button.textContent.includes('Lesson passage')).click()`,
+  );
   await button("Source · Lesson passage");
   await until("document.body.textContent.includes('Mini App study fixture')");
   const linked = (
