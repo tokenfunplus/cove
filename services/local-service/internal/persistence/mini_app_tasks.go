@@ -8,6 +8,8 @@ import (
 )
 
 type AppTask struct {
+	Inputs       json.RawMessage         `json:"inputs,omitempty"`
+	Destination  string                  `json:"destination,omitempty"`
 	Browser      bool                    `json:"browser,omitempty"`
 	Verification *GenerationVerification `json:"verification,omitempty"`
 	Snapshot     *ProviderSnapshot       `json:"snapshot,omitempty"`
@@ -23,7 +25,7 @@ type AppTask struct {
 }
 
 // ProposalRevision is present in every persisted proposal, including v1 rows.
-const generationTaskPredicate = " AND json_type(request,'$.ProposalRevision') IS NULL"
+const generationTaskPredicate = " AND state!='expired' AND json_type(request,'$.ProposalRevision') IS NULL"
 
 func (s *SQLiteStore) AppTask(ctx context.Context, instance, id string) (AppTask, error) {
 	return s.appTask(ctx, instance, id, true)
@@ -31,12 +33,15 @@ func (s *SQLiteStore) AppTask(ctx context.Context, instance, id string) (AppTask
 
 func (s *SQLiteStore) appTask(ctx context.Context, instance, id string, generationOnly bool) (AppTask, error) {
 	var t AppTask
-	var verification, snapshot string
-	query := "SELECT id,state,result,detail,fingerprint,verification,snapshot FROM mini_app_tasks WHERE instance_id=? AND id=?"
+	var verification, snapshot, inputs string
+	query := "SELECT id,state,result,detail,fingerprint,verification,snapshot,coalesce(json_extract(request,'$.Target.input'),''),coalesce(json_extract(request,'$.Target.destination'),''),coalesce(json_extract(request,'$.Target.modelId'),'') FROM mini_app_tasks WHERE instance_id=? AND id=?"
 	if generationOnly {
 		query += generationTaskPredicate
 	}
-	err := s.db.QueryRowContext(ctx, query, instance, id).Scan(&t.ID, &t.State, &t.Result, &t.Error, &t.Fingerprint, &verification, &snapshot)
+	err := s.db.QueryRowContext(ctx, query, instance, id).Scan(&t.ID, &t.State, &t.Result, &t.Error, &t.Fingerprint, &verification, &snapshot, &inputs, &t.Destination, &t.ModelID)
+	if err == nil && inputs != "" {
+		t.Inputs = json.RawMessage(inputs)
+	}
 	if err == nil && snapshot != "" {
 		t.Browser = true
 		err = json.Unmarshal([]byte(snapshot), &t.Snapshot)
@@ -48,12 +53,15 @@ func (s *SQLiteStore) appTask(ctx context.Context, instance, id string, generati
 }
 
 func (s *SQLiteStore) BeginAppTask(ctx context.Context, instance, id, fingerprint, frozen string) error {
-	_, err := s.db.ExecContext(ctx, "INSERT INTO mini_app_tasks(instance_id,id,fingerprint,request,state) VALUES(?,?,?,?,'running')", instance, id, fingerprint, frozen)
+	_, err := s.db.ExecContext(ctx, "INSERT INTO mini_app_tasks(instance_id,id,fingerprint,request,state,created_at) VALUES(?,?,?,?,'running',unixepoch())", instance, id, fingerprint, frozen)
 	return err
 }
 
 func (s *SQLiteStore) FinishAppTask(ctx context.Context, instance, id, state, result, detail string) error {
 	_, err := s.db.ExecContext(ctx, "UPDATE mini_app_tasks SET state=?,result=?,detail=? WHERE instance_id=? AND id=? AND state='running'", state, result, detail, instance, id)
+	if err == nil {
+		_, err = s.db.ExecContext(ctx, compactTasks, instance)
+	}
 	return err
 }
 
@@ -97,7 +105,7 @@ func (s *SQLiteStore) BeginBrowserAppTask(ctx context.Context, instance, id, fin
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, "INSERT INTO mini_app_tasks(instance_id,id,fingerprint,request,state,snapshot) VALUES(?,?,?,?,'running',?)", instance, id, fingerprint, frozen, string(data))
+	_, err = s.db.ExecContext(ctx, "INSERT INTO mini_app_tasks(instance_id,id,fingerprint,request,state,snapshot,created_at) VALUES(?,?,?,?,'running',?,unixepoch())", instance, id, fingerprint, frozen, string(data))
 	return err
 }
 func (s *SQLiteStore) FinishBrowserAppTask(ctx context.Context, instance, id, state, body, detail string, v GenerationVerification) error {
@@ -112,6 +120,9 @@ func (s *SQLiteStore) FinishBrowserAppTask(ctx context.Context, instance, id, st
 	count, err := res.RowsAffected()
 	if err == nil && count == 0 {
 		return sql.ErrNoRows
+	}
+	if err == nil {
+		_, err = s.db.ExecContext(ctx, compactTasks, instance)
 	}
 	return err
 }

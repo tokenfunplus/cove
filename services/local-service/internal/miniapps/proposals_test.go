@@ -88,3 +88,55 @@ func TestNativeProposalSchemaUsesTypedFields(t *testing.T) {
 		t.Fatal(schema)
 	}
 }
+
+func TestChatActionScopeAndTextWrappers(t *testing.T) {
+	db, service := storeAt(t, ":memory:")
+	defer db.Close()
+	_, i := setup(t, service)
+	scope := persistence.MiniAppScope{Instance: i.ID, Release: i.ReleaseID, Revision: i.Revision, Actions: []string{"inbox.queue"}}
+	actions, err := service.ChatActions(t.Context(), scope)
+	if err != nil || len(actions.Tools) != 1 {
+		t.Fatal(actions, err)
+	}
+	raw := `{"action":"choice_1","inputs":{}}`
+	for _, body := range []string{raw, "Suggested:\n```json\n" + raw + "\n```", "Suggestion: " + raw + "\nDone."} {
+		if _, err := actions.Normalize(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, body := range []string{"[" + raw + "]", raw + " or " + raw, `{"action":"choice_2","inputs":{}}`} {
+		if _, err := actions.Normalize(body); err == nil {
+			t.Fatal("accepted ambiguous or unselected action")
+		}
+	}
+	scope.Revision++
+	if _, err := service.ChatActions(t.Context(), scope); err == nil {
+		t.Fatal("accepted stale instance scope")
+	}
+}
+
+func TestStaleTurnCannotRunNewInstanceRevision(t *testing.T) {
+	db, s := storeAt(t, ":memory:")
+	defer db.Close()
+	_, i := setup(t, s)
+	scope := persistence.MiniAppScope{Instance: i.ID, Release: i.ReleaseID, Revision: i.Revision, Actions: []string{"inbox.queue"}}
+	query := read("inbox.queue")
+	query.ExpectedRevision = i.Revision
+	rows := call(t, s, i.ID, query).Records
+	if len(rows) == 0 {
+		t.Fatal("expected a record")
+	}
+	if _, err := s.Configure(t.Context(), i.ID, ConfigRequest{Revision: i.Revision, Enabled: true, Grants: i.Grants}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ChatActions(t.Context(), scope); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+	if _, err := s.Invoke(t.Context(), i.ID, query); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+	transfer := AttachmentRequest{ExpectedRevision: i.Revision, Surface: "chat", Action: "inbox.queue", Records: []RecordRef{{ID: rows[0].ID, Revision: rows[0].Revision}}}
+	if _, err := s.Attach(t.Context(), i.ID, transfer); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+}

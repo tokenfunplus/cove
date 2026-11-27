@@ -48,3 +48,15 @@ test("closing a field while a reading starts releases its instance-owned job",as
   await act(async()=>finish({id:"pending",state:"preparing"}));
   await waitFor(()=>expect(request).toHaveBeenCalledWith("/api/mini-apps/instances/book/speech/pending",{method:"DELETE",keepalive:true}));
 });
+
+test("Japanese kana uses an instance-owned Japanese voice only after a click",async()=>{
+  vi.mocked(request).mockRejectedValue(new Error("No installed macOS Japanese voice is available for local playback."));
+  const cache=new QueryClient();
+  render(<QueryClientProvider client={cache}>
+    <AppProcessing instance={{...base,grants:["speech.speak"]}} text={"\u306d\u3053"} onSelect={vi.fn()}/>
+  </QueryClientProvider>);
+  expect(request).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button",{name:"Read in Japanese"}));
+  expect(request).toHaveBeenCalledWith("/api/mini-apps/instances/book/speech",expect.objectContaining({body:JSON.stringify({text:"\u306d\u3053",language:"ja"})}));
+  await screen.findByText(/No installed macOS Japanese voice/);
+});

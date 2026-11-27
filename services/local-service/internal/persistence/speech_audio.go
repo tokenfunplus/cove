@@ -3,6 +3,7 @@ package persistence
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -70,4 +71,35 @@ func (files SpeechAudio) Clear() error {
 		}
 	}
 	return nil
+}
+
+// RenderChunk provides a private, seekable output file to a local speech engine.
+// The job directory is also cleared at startup after an unclean shutdown.
+func (files SpeechAudio) RenderChunk(id string, render func(string) error) ([]byte, error) {
+	directory, err := files.job(id)
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.CreateTemp(directory, "render-*.wav")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(file.Name())
+	if err = file.Close(); err != nil {
+		return nil, err
+	}
+	if err = render(file.Name()); err != nil {
+		return nil, err
+	}
+	file, err = os.Open(file.Name())
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	const limit = 12 << 20
+	wave, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if len(wave) > limit {
+		return nil, errors.New("speech audio chunk exceeds its limit")
+	}
+	return wave, err
 }

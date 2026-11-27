@@ -1,3 +1,4 @@
+import { runMiniAppTurn } from "./mini-app-turn.mjs";
 import { runMiniAppsAcceptance } from "./mini-apps.mjs";
 import { runInteractiveAcceptance } from "./interactive.mjs";
 import { runLocalCapabilitiesAcceptance } from "./local-capabilities.mjs";
@@ -120,6 +121,22 @@ const provider = http.createServer(async (request, response) => {
   }
 
   response.writeHead(200, { "Content-Type": "text/event-stream" });
+  if (prompt === "Make study questions for this app turn.") {
+    const content = JSON.stringify({action:"choice_1",inputs:{passage:"Mini App study fixture",count:1}});
+    response.end("data: " + JSON.stringify({choices:[{delta:{content}}]}) + "\n\ndata: [DONE]\n\n");
+    return;
+  }
+  if (prompt === "Bring me my reading list for this app turn.") {
+    const content = 'Suggestion:\n```json\n{"action":"choice_1","inputs":{}}\n```';
+    response.end("data: " + JSON.stringify({choices:[{delta:{content}}]}) + "\n\ndata: [DONE]\n\n");
+    return;
+  }
+  if (prompt.includes("Mini App excess candidate fixture")) {
+    const row = {question:"A candidate?",answer:"An answer."};
+    const content = "\u0060\u0060\u0060json\n" + JSON.stringify([row,row]) + "\n\u0060\u0060\u0060";
+    response.end("data: " + JSON.stringify({choices:[{delta:{content}}]}) + "\n\ndata: [DONE]\n\n");
+    return;
+  }
   if (prompt.includes("Mini App study fixture")) {
     const content = JSON.stringify([{ question: "Fixture question", answer: "Fixture answer" }]);
     response.end("data: " + JSON.stringify({choices:[{delta:{content}}]}) + "\n\ndata: [DONE]\n\n");
@@ -328,7 +345,7 @@ try {
       "--control-token",
       control,
       "--port",
-      "19520",
+      process.env.COVE_BROWSER_SERVICE_PORT ?? "19520",
       "--insecure-file-secret-store",
     ],
     {
@@ -705,7 +722,12 @@ try {
     );
     await cdp("Input.insertText", { text: value });
   }
-  if (process.env.COVE_BROWSER_SCENARIO === "mini-apps") {
+  if (process.env.COVE_BROWSER_SCENARIO === "mini-app-turn") {
+    await runMiniAppTurn({api,evaluate,until,click,fill,loadPage,origin,profile,requests});
+    assert.equal(exceptions.length,0);
+    socket.close();
+    console.log("Mini App conversation turn acceptance passed.");
+  } else if (process.env.COVE_BROWSER_SCENARIO === "mini-apps") {
     await runMiniAppsAcceptance({api, cdp, evaluate, until, click, fill, snapshot, reloadPage, loadPage, origin, profile, requests, temp});
     assert.equal(exceptions.length, 0);
     socket.close();

@@ -102,6 +102,49 @@
       "items": {
         "$ref": "#/$defs/migration"
       }
+    },
+    "min_host_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})$"
+    },
+    "assets": {
+      "type": "object",
+      "maxProperties": 8,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]{0,47}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "mime",
+          "alt",
+          "data"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "mime": {
+            "enum": [
+              "image/png",
+              "image/jpeg"
+            ]
+          },
+          "alt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "data": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "maxLength": 349528
+          }
+        }
+      }
+    },
+    "speech_language": {
+      "const": "ja",
+      "description": "Preferred local reading language. Requires speech.speak and a compatible local voice."
     }
   },
   "required": [
@@ -157,6 +200,25 @@
         "fields": {
           "$ref": "#/$defs/fields",
           "minProperties": 1
+        },
+        "links": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "query",
+              "label"
+            ]
+          }
         }
       },
       "required": [
@@ -205,7 +267,8 @@
             "query",
             "create",
             "update",
-            "generate"
+            "generate",
+            "delete"
           ]
         },
         "surfaces": {
@@ -266,6 +329,64 @@
           "type": "string",
           "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,47}$",
           "description": "A collection field initially collapsed in query results."
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "records",
+                "candidates",
+                "text"
+              ]
+            },
+            "fields": {
+              "$ref": "#/$defs/fields"
+            }
+          }
+        },
+        "defaults": {
+          "$ref": "#/$defs/row"
+        },
+        "limit_input": {
+          "type": "string",
+          "minLength": 1
+        },
+        "count_input": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "selection_inputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "collection": {
+              "type": "string",
+              "minLength": 1
+            },
+            "fields": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "required": [
+            "collection",
+            "fields"
+          ]
         }
       },
       "required": [
@@ -353,6 +474,127 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "delete"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "collection"
+            ],
+            "properties": {
+              "inputs": {
+                "maxProperties": 0
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "values"
+                  ]
+                },
+                {
+                  "required": [
+                    "order_by"
+                  ]
+                },
+                {
+                  "required": [
+                    "limit"
+                  ]
+                },
+                {
+                  "required": [
+                    "limit_input"
+                  ]
+                },
+                {
+                  "required": [
+                    "reveal_field"
+                  ]
+                },
+                {
+                  "required": [
+                    "prompt"
+                  ]
+                },
+                {
+                  "required": [
+                    "text_input"
+                  ]
+                },
+                {
+                  "required": [
+                    "count_input"
+                  ]
+                },
+                {
+                  "required": [
+                    "candidate_action"
+                  ]
+                },
+                {
+                  "required": [
+                    "candidate_bindings"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "limit_input"
+            ]
+          },
+          "then": {
+            "properties": {
+              "op": {
+                "const": "query"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "count_input"
+            ]
+          },
+          "then": {
+            "properties": {
+              "op": {
+                "const": "generate"
+              }
+            },
+            "required": [
+              "candidate_action"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "candidate_bindings"
+            ]
+          },
+          "then": {
+            "properties": {
+              "op": {
+                "const": "generate"
+              }
+            },
+            "required": [
+              "candidate_action"
+            ]
+          }
         }
       ]
     },
@@ -377,6 +619,44 @@
           },
           "minItems": 1,
           "uniqueItems": true
+        },
+        "practice": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 1
+            },
+            "front": {
+              "type": "string",
+              "minLength": 1
+            },
+            "back": {
+              "type": "string",
+              "minLength": 1
+            },
+            "outcomes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "query",
+            "front",
+            "back",
+            "outcomes"
+          ]
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
         }
       },
       "required": [

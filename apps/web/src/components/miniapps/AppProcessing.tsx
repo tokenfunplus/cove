@@ -23,7 +23,9 @@ export function AppProcessing({
   instance,
   text,
   onSelect,
+  speechLanguage,
 }: {
+  speechLanguage?: "ja";
   instance: MiniAppInstance;
   text: string;
   onSelect: (text: string) => void;
@@ -36,7 +38,16 @@ export function AppProcessing({
         <DocumentPicker path={path} onSelect={onSelect} />
       )}
       {instance.grants.includes("speech.speak") && (
-        <LocalReading path={path + "/speech"} text={text} />
+        <LocalReading
+          path={path + "/speech"}
+          text={text}
+          language={
+            /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text) ||
+            (speechLanguage === "ja" && /\p{Script=Han}/u.test(text))
+              ? "ja"
+              : undefined
+          }
+        />
       )}
     </>
   );
@@ -161,7 +172,15 @@ function DocumentPicker({
   );
 }
 
-function LocalReading({ path, text }: { path: string; text: string }) {
+export function LocalReading({
+  path,
+  text,
+  language,
+}: {
+  path: string;
+  text: string;
+  language?: "ja";
+}) {
   const [job, setJob] = useState<SpeechJob>();
   const [url, setURL] = useState("");
   const active = useRef(false);
@@ -177,7 +196,7 @@ function LocalReading({ path, text }: { path: string; text: string }) {
     };
   }, []);
   const start = useMutation({
-    mutationFn: () => request<SpeechJob>(path, command({ text })),
+    mutationFn: () => request<SpeechJob>(path, command({ text, language })),
     onSuccess: (created) => {
       if (active.current) setJob(created);
       else void stop(created.id).catch(() => {});
@@ -244,7 +263,11 @@ function LocalReading({ path, text }: { path: string; text: string }) {
           }
           onClick={() => start.mutate()}
         >
-          {start.isPending ? "Starting reading…" : "Read this text aloud"}
+          {start.isPending
+            ? "Starting reading…"
+            : language === "ja"
+              ? "Read in Japanese"
+              : "Read this text aloud"}
         </Button>
       ) : (
         <>

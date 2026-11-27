@@ -52,6 +52,7 @@ vi.mock("@/api", async (importOriginal) => {
   return {
     ...original,
     getSession: vi.fn(),
+    getBrowserAppTurn: vi.fn(),
     getConversations: vi.fn(),
     searchConversations: vi.fn(),
     createConversation: vi.fn(),
@@ -1388,6 +1389,20 @@ test("private inference uses only the service's frozen selected context", async 
   expect(transport.getGenerationBatchContext).toHaveBeenCalledWith(
     fixture.pendingBatch.id,
   );
+});
+
+test("a scoped verified turn passes reviewed app instructions through the signed transport", async () => {
+  const generation = configureNearAITarget(0, "private_tee");
+  generation.configuration_snapshot.mini_app = {instance:"local-only-id",release:"release",revision:1,actions:["reading.list"]};
+  vi.mocked(transport.getBrowserAppTurn).mockResolvedValue({instructions:"Return one JSON object for choice_1.",message:"List reading."});
+  const {user,composer}=await openWorkspace();
+  await user.type(composer, "List reading.");
+  await user.click(screen.getByRole("button",{name:"Send message"}));
+  await waitFor(()=>expect(privateInference.generate).toHaveBeenCalled());
+  const input=privateInference.generate.mock.calls[0][0];
+  expect(input.configuration.systemPrompt).toContain("Return one JSON object for choice_1.");
+  expect(input.message).toBe("List reading.");
+  expect(JSON.stringify(input)).not.toContain("local-only-id");
 });
 
 test("an earlier private target retry reuses its frozen context instead of later history", async () => {

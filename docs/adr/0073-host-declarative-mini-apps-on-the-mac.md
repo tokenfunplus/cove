@@ -56,3 +56,11 @@ Session. Settlement validates the receipt for the frozen target's privacy
 mode and saves it with the instance-owned task. Loss of the browser expires
 the task without exposing partial output. Both verified and ordinary model
 tasks use Chat's shared active-work admission.
+
+## Runtime 1.1
+
+The user can scope a normal conversation turn to named actions of one instance. The Generation configuration stores the authorized release and revision. The host checks them again before invoking the proposed action. Query results remain local until selected. Writes use a separate reviewed confirmation. An app-owned model task can start after the conversation releases its execution slot.
+
+Cove distinguishes runtime version, immutable package release, collection schema version and record revision. A downloaded file can reuse a trusted release when its exact digest matches the verified source. The signed catalog format adds expiry and a persistent per-key sequence checkpoint. Bundled releases remain available when remote verification fails. Finder-launched sessions can use packaged public trust settings or explicitly configured local preferences.
+
+SQLite schema 31 adds the conversation action scope and bounded, per-instance task and receipt history. Compact idempotency fingerprints outlive the stored result, while instance-owned records and attachments are retained. Older services reject this database version. Package migrations remain independent of the host database version.

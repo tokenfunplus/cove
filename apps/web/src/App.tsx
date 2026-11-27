@@ -1,11 +1,20 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState, useSyncExternalStore } from "react";
 import { ChatPage } from "@/pages/ChatPage";
 import { QuickPanelPage } from "@/pages/QuickPanelPage";
 import { createConversation } from "@/api/conversations";
 
 const MiniAppsPage = lazy(() => import("@/pages/MiniAppsPage"));
 
+function subscribeToLocation(notify: () => void) {
+  window.addEventListener("popstate", notify);
+  return () => window.removeEventListener("popstate", notify);
+}
+
 export function App() {
+  useSyncExternalStore(
+    subscribeToLocation,
+    () => window.location.pathname + window.location.search,
+  );
   const [incoming, setIncoming] = useState<{
     conversation: string;
     body: string;

@@ -48,6 +48,7 @@ type Job struct {
 	cleanupPending        bool
 }
 type Request struct {
+	SystemJapanese        bool
 	Volume                *float64
 	Threads               *int
 	Text                  string
@@ -131,22 +132,35 @@ func (manager *Manager) Start(ctx context.Context, owner string, input Request) 
 			break
 		}
 	}
-	model, err := manager.choose(settings, language, input.ModelID)
-	if err != nil {
-		return JobStatus{}, err
-	}
-	if !manager.RuntimeReady(model) {
-		return JobStatus{}, errors.New("The bundled local speech runtime is unavailable on this Mac.")
-	}
-	profile := settings.Profiles[model.ID]
-	if input.Profile != nil {
-		profile = *input.Profile
-		settings.Profiles[model.ID] = profile
-		if err = ValidateSettings(&settings); err != nil {
+	var model Model
+	var voice Voice
+	var profile persistence.SpeechProfile
+	if input.SystemJapanese {
+		language = "ja"
+		voice, err = installedJapaneseVoice(ctx)
+		if err != nil {
 			return JobStatus{}, err
 		}
+		model.ID = "macos-ja"
+		model.Name = "macOS Japanese speech"
+	} else {
+		model, err = manager.choose(settings, language, input.ModelID)
+		if err != nil {
+			return JobStatus{}, err
+		}
+		if !manager.RuntimeReady(model) {
+			return JobStatus{}, errors.New("The bundled local speech runtime is unavailable on this Mac.")
+		}
+		profile = settings.Profiles[model.ID]
+		if input.Profile != nil {
+			profile = *input.Profile
+			settings.Profiles[model.ID] = profile
+			if err = ValidateSettings(&settings); err != nil {
+				return JobStatus{}, err
+			}
+		}
+		voice, _ = model.Voice(profile.VoiceID)
 	}
-	voice, _ := model.Voice(profile.VoiceID)
 	if input.PreserveOtherReadings {
 		// An app cannot interrupt a reading in Chat or discard its WAV download.
 		manager.mu.Lock()
@@ -193,29 +207,32 @@ func (manager *Manager) Start(ctx context.Context, owner string, input Request) 
 	go func() {
 		defer close(job.done)
 		defer cancel()
-		err := manager.files.Verify(jobCtx, model.Bundle())
-		if err == nil {
-			err = manager.runWorker(jobCtx, model, profile, voice, language, settings.Threads, parts, func(wave []byte) error {
-				manager.mu.Lock()
-				index := job.ReadyChunks
-				over := job.bytes+int64(len(wave)) > 32<<20
-				manager.mu.Unlock()
-				if over {
-					return errors.New("This reading exceeds the audio limit. Select a shorter passage.")
-				}
-				if err := jobCtx.Err(); err != nil {
-					return err
-				}
-				if err := manager.audio.Write(id, index, wave); err != nil {
-					return err
-				}
-				manager.mu.Lock()
-				job.ReadyChunks++
-				job.bytes += int64(len(wave))
-				job.State = "generating"
-				manager.mu.Unlock()
-				return nil
-			})
+		receive := func(wave []byte) error {
+			manager.mu.Lock()
+			index := job.ReadyChunks
+			over := job.bytes+int64(len(wave)) > 32<<20
+			manager.mu.Unlock()
+			if over {
+				return errors.New("This reading exceeds the audio limit. Select a shorter passage.")
+			}
+			if err := jobCtx.Err(); err != nil {
+				return err
+			}
+			if err := manager.audio.Write(id, index, wave); err != nil {
+				return err
+			}
+			manager.mu.Lock()
+			job.ReadyChunks++
+			job.bytes += int64(len(wave))
+			job.State = "generating"
+			manager.mu.Unlock()
+			return nil
+		}
+		var err error
+		if input.SystemJapanese {
+			err = manager.synthesizeJapanese(jobCtx, id, voice, parts, receive)
+		} else if err = manager.files.Verify(jobCtx, model.Bundle()); err == nil {
+			err = manager.runWorker(jobCtx, model, profile, voice, language, settings.Threads, parts, receive)
 		}
 		manager.mu.Lock()
 		defer manager.mu.Unlock()

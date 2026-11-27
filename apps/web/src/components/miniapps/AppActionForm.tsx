@@ -31,6 +31,7 @@ interface Props {
   surface: MiniAppSurface;
   selected: MiniAppRecord[];
   draft?: string;
+  selectionSource?: "selection";
   localRequired: boolean;
   initial?: MiniAppFields;
   query: (id: string, inputs: MiniAppFields) => void;
@@ -43,10 +44,30 @@ function defaults(
   initial?: MiniAppFields,
 ): MiniAppFields {
   return Object.fromEntries(
-    Object.entries(action.inputs ?? {}).map(([k, t]) => [
-      k,
-      initial?.[k] ?? (t === "bool" ? false : t === "number" ? 0 : ""),
-    ]),
+    Object.entries(action.inputs ?? {}).map(([key, type]) => {
+      if (initial?.[key] !== undefined) return [key, initial[key]];
+      const value = action.defaults?.[key];
+      if (
+        type === "date" &&
+        typeof value === "string" &&
+        /^\$today(?:[+-]\d{1,4})?$/.test(value)
+      ) {
+        const day = new Date();
+        day.setDate(day.getDate() + Number(value.slice(6)));
+        return [
+          key,
+          [
+            day.getFullYear(),
+            String(day.getMonth() + 1).padStart(2, "0"),
+            String(day.getDate()).padStart(2, "0"),
+          ].join("-"),
+        ];
+      }
+      return [
+        key,
+        value ?? (type === "bool" ? false : type === "number" ? 0 : ""),
+      ];
+    }),
   );
 }
 export function AppActionForm({
@@ -56,6 +77,7 @@ export function AppActionForm({
   surface,
   selected,
   draft,
+  selectionSource,
   localRequired,
   initial,
   query,
@@ -72,7 +94,10 @@ export function AppActionForm({
   const call = useMutation({
     retry: false,
     mutationFn: async (command: MiniAppInvocation) => {
-      const result = await miniApps.invoke(instance.id, command);
+      const result = await miniApps.invoke(instance.id, {
+        ...command,
+        expected_instance_revision: instance.revision,
+      });
       if (result.confirmation)
         setPreview({
           command: { ...command, confirm: result.confirmation },
@@ -96,7 +121,7 @@ export function AppActionForm({
       inputs,
       operation_id: crypto.randomUUID(),
       surface,
-      ...(action.op === "update"
+      ...(action.op === "update" || action.op === "delete"
         ? { records: selected.map(({ id, revision }) => ({ id, revision })) }
         : {}),
     });
@@ -108,8 +133,29 @@ export function AppActionForm({
     pkg.actions[action.candidate_action]?.surfaces.includes(surface)
       ? pkg.actions[action.candidate_action]
       : undefined;
-  const complete = Object.values(inputs).every(
-    (x) => typeof x !== "string" || x.trim().length > 0,
+  const target = candidateAction || action;
+  const links = pkg.collections[target.collection ?? ""]?.links ?? {};
+  const localFields = new Set<string>();
+  const labels: string[] = [];
+  for (const [field, link] of Object.entries(links)) {
+    for (const destination of [field, link.label]) {
+      const expression = target.values?.[destination];
+      if (typeof expression !== "string" || !expression.startsWith("$input."))
+        continue;
+      const input = expression.slice(7);
+      const name = candidateAction ? action.candidate_bindings?.[input] : input;
+      if (name && Object.hasOwn(action.defaults ?? {}, name)) {
+        localFields.add(name);
+        if (destination === link.label && inputs[name])
+          labels.push(String(inputs[name]));
+      }
+    }
+  }
+  const complete = Object.entries(inputs).every(
+    ([key, x]) =>
+      typeof x !== "string" ||
+      x.trim().length > 0 ||
+      action.defaults?.[key] === "",
   );
   return (
     <section className={sectionStyle} aria-label={action.title}>
@@ -127,7 +173,8 @@ export function AppActionForm({
       {preview ? (
         <>
           <p className="text-sm">
-            Review {preview.rows.length} proposed{" "}
+            {action.op === "delete" ? "Permanently delete" : "Review"}{" "}
+            {preview.rows.length} proposed{" "}
             {preview.rows.length === 1 ? "record" : "records"} in{" "}
             <strong>{instance.name}</strong>.
           </p>
@@ -141,7 +188,9 @@ export function AppActionForm({
               disabled={call.isPending}
               onClick={() => call.mutate(preview.command)}
             >
-              Confirm changes
+              {action.op === "delete"
+                ? "Confirm permanent deletion"
+                : "Confirm changes"}
             </Button>
             <Button
               variant="outline"
@@ -158,66 +207,91 @@ export function AppActionForm({
       ) : (
         <>
           <fieldset className="space-y-3" disabled={call.isPending}>
-            {Object.entries(action.inputs ?? {}).map(([key, type]) => (
-              <div key={key} className="space-y-1">
-                <label className={labelStyle}>
-                  {humanize(key)}
-                  {type === "bool" ? (
-                    <input
-                      type="checkbox"
-                      className="justify-self-start"
-                      checked={!!inputs[key]}
-                      onChange={(e) => update(key, e.target.checked)}
-                    />
-                  ) : type === "text" ? (
-                    <Textarea
-                      rows={3}
-                      value={String(inputs[key])}
-                      onChange={(e) => update(key, e.target.value)}
-                    />
-                  ) : (
-                    <Input
-                      type={type === "date" ? "date" : "number"}
-                      value={String(inputs[key])}
-                      onChange={(e) =>
-                        update(
-                          key,
-                          type === "number" && e.target.value !== ""
-                            ? Number(e.target.value)
-                            : e.target.value,
-                        )
-                      }
-                    />
-                  )}
-                </label>
-                {type === "text" && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {instance.grants.includes("mac.files.pick") && (
-                      <AppFileInput
-                        instance={instance.id}
-                        onChoose={(text) => update(key, text)}
+            {labels.map((label, index) => (
+              <p key={index} className="text-sm">
+                Source · {label}
+              </p>
+            ))}
+            {Object.entries(action.inputs ?? {})
+              .filter(([key]) => !localFields.has(key))
+              .map(([key, type]) => (
+                <div key={key} className="space-y-1">
+                  <label className={labelStyle}>
+                    {humanize(key)}
+                    {type === "bool" ? (
+                      <input
+                        type="checkbox"
+                        className="justify-self-start"
+                        checked={!!inputs[key]}
+                        onChange={(e) => update(key, e.target.checked)}
+                      />
+                    ) : type === "text" ? (
+                      <Textarea
+                        rows={3}
+                        value={String(inputs[key])}
+                        onChange={(e) => update(key, e.target.value)}
+                      />
+                    ) : (
+                      <Input
+                        type={type === "date" ? "date" : "number"}
+                        min={
+                          key === action.count_input ||
+                          key === action.limit_input
+                            ? 1
+                            : undefined
+                        }
+                        max={
+                          key === action.count_input
+                            ? 8
+                            : key === action.limit_input
+                              ? 200
+                              : undefined
+                        }
+                        value={String(inputs[key])}
+                        onChange={(e) =>
+                          update(
+                            key,
+                            type === "number" && e.target.value !== ""
+                              ? Number(e.target.value)
+                              : e.target.value,
+                          )
+                        }
                       />
                     )}
-                    <AppProcessing
-                      instance={instance}
-                      text={String(inputs[key])}
-                      onSelect={(text) => update(key, text)}
-                    />
-                    {draft &&
-                      instance.grants.includes("mac.selection.receive") && (
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          disabled={selection.isPending}
-                          onClick={() => selection.mutate({ key, text: draft })}
-                        >
-                          Use current draft
-                        </Button>
+                  </label>
+                  {type === "text" && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {instance.grants.includes("mac.files.pick") && (
+                        <AppFileInput
+                          instance={instance.id}
+                          onChoose={(text) => update(key, text)}
+                        />
                       )}
-                  </div>
-                )}
-              </div>
-            ))}
+                      <AppProcessing
+                        speechLanguage={pkg.speech_language}
+                        instance={instance}
+                        text={String(inputs[key])}
+                        onSelect={(text) => update(key, text)}
+                      />
+                      {draft &&
+                        instance.grants.includes("mac.selection.receive") && (
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            disabled={selection.isPending}
+                            onClick={() =>
+                              selection.mutate({ key, text: draft })
+                            }
+                          >
+                            {selectionSource
+                              ? "Use selected chat text"
+                              : "Use current draft"}
+                          </Button>
+                        )}
+                    </div>
+                  )}
+                </div>
+              ))}
           </fieldset>
           {action.op === "generate" ? (
             <AppModelTask
@@ -244,7 +318,8 @@ export function AppActionForm({
               disabled={
                 !complete ||
                 call.isPending ||
-                (action.op === "update" && !selected.length)
+                ((action.op === "update" || action.op === "delete") &&
+                  !selected.length)
               }
               onClick={run}
             >

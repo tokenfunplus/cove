@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestSignedCatalogRejectsChangedPackage(t *testing.T) {
@@ -16,10 +17,10 @@ func TestSignedCatalogRejectsChangedPackage(t *testing.T) {
 	if err != nil || len(entries) < 2 {
 		t.Fatal("missing bundled apps", err)
 	}
-	payload, _ := json.Marshal(map[string]any{"format": 1, "packages": [][]byte{entries[0].Raw}})
+	payload, _ := json.Marshal(map[string]any{"format": 2, "sequence": 1, "issued_at": time.Now(), "expires_at": time.Now().Add(time.Hour), "packages": [][]byte{entries[0].Raw}})
 	envelope := map[string][]byte{"payload": payload, "signature": ed25519.Sign(private, payload)}
 	bytes, _ := json.Marshal(envelope)
-	if packages, err := verify(bytes, public); err != nil || len(packages) != 1 {
+	if packages, err := verify(bytes, public); err != nil || len(packages.Packages) != 1 {
 		t.Fatal(err)
 	}
 	envelope["payload"] = append(payload, ' ')

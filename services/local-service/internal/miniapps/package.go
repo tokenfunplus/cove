@@ -37,47 +37,73 @@ var capabilities = []string{"blobs.import", "records.query", "records.commit", "
 var surfaces = []string{"page", "chat", "panel"}
 
 type Package struct {
-	Format        int                         `json:"format"`
-	Publisher     string                      `json:"publisher"`
-	App           string                      `json:"app"`
-	Name          string                      `json:"name"`
-	Description   string                      `json:"description"`
-	Version       string                      `json:"version"`
-	SchemaVersion int                         `json:"schema_version"`
-	Capabilities  []string                    `json:"capabilities"`
-	Collections   map[string]Collection       `json:"collections"`
-	Pages         []Page                      `json:"pages"`
-	Actions       map[string]Action           `json:"actions"`
-	Seed          map[string][]map[string]any `json:"seed,omitempty"`
-	Migrations    []Migration                 `json:"migrations,omitempty"`
+	SpeechLanguage string                      `json:"speech_language,omitempty"`
+	Assets         map[string]ImageAsset       `json:"assets,omitempty"`
+	MinHostVersion string                      `json:"min_host_version,omitempty"`
+	Format         int                         `json:"format"`
+	Publisher      string                      `json:"publisher"`
+	App            string                      `json:"app"`
+	Name           string                      `json:"name"`
+	Description    string                      `json:"description"`
+	Version        string                      `json:"version"`
+	SchemaVersion  int                         `json:"schema_version"`
+	Capabilities   []string                    `json:"capabilities"`
+	Collections    map[string]Collection       `json:"collections"`
+	Pages          []Page                      `json:"pages"`
+	Actions        map[string]Action           `json:"actions"`
+	Seed           map[string][]map[string]any `json:"seed,omitempty"`
+	Migrations     []Migration                 `json:"migrations,omitempty"`
+}
+type RecordLink struct {
+	Query string `json:"query"`
+	Label string `json:"label"`
 }
 type Collection struct {
-	Fields map[string]string `json:"fields"`
+	Links  map[string]RecordLink `json:"links,omitempty"`
+	Fields map[string]string     `json:"fields"`
+}
+type Practice struct {
+	Query    string   `json:"query"`
+	Front    string   `json:"front"`
+	Back     string   `json:"back"`
+	Outcomes []string `json:"outcomes"`
 }
 type Page struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title"`
-	Actions []string `json:"actions"`
+	Image    string    `json:"image,omitempty"`
+	Practice *Practice `json:"practice,omitempty"`
+	ID       string    `json:"id"`
+	Title    string    `json:"title"`
+	Actions  []string  `json:"actions"`
 }
 type Predicate struct {
 	Field string `json:"field"`
 	Op    string `json:"op"`
 	Value any    `json:"value"`
 }
+type SelectionInputs struct {
+	Collection string            `json:"collection"`
+	Fields     map[string]string `json:"fields"`
+}
 type Action struct {
-	Title           string            `json:"title"`
-	Op              string            `json:"op"`
-	Collection      string            `json:"collection,omitempty"`
-	Inputs          map[string]string `json:"inputs"`
-	Surfaces        []string          `json:"surfaces"`
-	Where           []Predicate       `json:"where,omitempty"`
-	Values          map[string]any    `json:"values,omitempty"`
-	RevealField     string            `json:"reveal_field,omitempty"`
-	OrderBy         string            `json:"order_by,omitempty"`
-	Limit           int               `json:"limit,omitempty"`
-	Prompt          string            `json:"prompt,omitempty"`
-	TextInput       string            `json:"text_input,omitempty"`
-	CandidateAction string            `json:"candidate_action,omitempty"`
+	OutputSchema      *ActionOutput     `json:"output_schema,omitempty"`
+	Defaults          map[string]any    `json:"defaults,omitempty"`
+	LimitInput        string            `json:"limit_input,omitempty"`
+	CountInput        string            `json:"count_input,omitempty"`
+	Selection         *SelectionInputs  `json:"selection_inputs,omitempty"`
+	CandidateBindings map[string]string `json:"candidate_bindings,omitempty"`
+	Title             string            `json:"title"`
+	Op                string            `json:"op"`
+	Collection        string            `json:"collection,omitempty"`
+	Inputs            map[string]string `json:"inputs"`
+	Surfaces          []string          `json:"surfaces"`
+	Where             []Predicate       `json:"where,omitempty"`
+	Values            map[string]any    `json:"values,omitempty"`
+	RevealField       string            `json:"reveal_field,omitempty"`
+	OrderBy           string            `json:"order_by,omitempty"`
+	Limit             int               `json:"limit,omitempty"`
+	Prompt            string            `json:"prompt,omitempty"`
+	TextInput         string            `json:"text_input,omitempty"`
+	CandidateAction   string            `json:"candidate_action,omitempty"`
 }
 type Migration struct {
 	From     int                       `json:"from"`
@@ -170,7 +196,7 @@ func capability(op string) string {
 	switch op {
 	case "query":
 		return "records.query"
-	case "create", "update":
+	case "create", "update", "delete":
 		return "records.commit"
 	case "generate":
 		return "ai.generate"
@@ -223,6 +249,9 @@ func objectField(object reflect.Type, name string) (reflect.Type, bool) {
 	return nil, false
 }
 func scanTypedJSON(dec *json.Decoder, depth int, typ reflect.Type) error {
+	if typ != nil && typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
 	if depth > 24 {
 		return ErrInvalid
 	}
@@ -291,6 +320,18 @@ func Validate(raw []byte) (Package, error) {
 		if !key.MatchString(k) || len(c.Fields) == 0 || !validFields(c.Fields) {
 			return p, invalid("collection fields")
 		}
+		for field, link := range c.Links {
+			q := p.Actions[link.Query]
+			if c.Fields[field] != "text" || c.Fields[link.Label] != "text" || q.Op != "query" || len(q.Inputs) != 1 || q.Inputs["id"] != "text" || len(q.Where) != 1 || q.Where[0].Field != "$id" || q.Where[0].Op != "eq" || q.Where[0].Value != "$input.id" {
+				return p, invalid("record link lookup")
+			}
+		}
+	}
+	if err := validateAssets(p); err != nil {
+		return p, err
+	}
+	if err := validateHostContract(p); err != nil {
+		return p, err
 	}
 	for k, a := range p.Actions {
 		if !actionID.MatchString(k) || !short(a.Title, 100) || a.Inputs == nil || !validFields(a.Inputs) || len(a.Surfaces) == 0 || !subset(a.Surfaces, surfaces) || !slices.Contains(p.Capabilities, capability(a.Op)) {
@@ -304,6 +345,9 @@ func Validate(raw []byte) (Package, error) {
 	for _, page := range p.Pages {
 		if !slug.MatchString(page.ID) || seen[page.ID] || !short(page.Title, 100) || len(page.Actions) == 0 || !unique(page.Actions) {
 			return p, invalid("page definition")
+		}
+		if err := validatePractice(p, page); err != nil {
+			return p, err
 		}
 		seen[page.ID] = true
 		for _, id := range page.Actions {
@@ -355,6 +399,9 @@ func validValues(values map[string]any, fields, inputs map[string]string, all bo
 	return true
 }
 func validateAction(p Package, a Action) error {
+	if err := validateActionOptions(p, a); err != nil {
+		return err
+	}
 	if a.RevealField != "" && (a.Op != "query" || p.Collections[a.Collection].Fields[a.RevealField] == "") {
 		return invalid("query disclosure field")
 	}
@@ -375,12 +422,18 @@ func validateAction(p Package, a Action) error {
 		return invalid("record action collection or properties")
 	}
 	switch a.Op {
-	case "query":
+	case "query", "delete":
+		if a.Op == "delete" && (a.Limit != 0 || a.OrderBy != "" || len(a.Inputs) != 0) {
+			return invalid("delete definition")
+		}
 		if len(a.Values) > 0 || len(a.Where) > 12 || a.Limit < 0 || a.Limit > 200 || (a.OrderBy != "" && fields[a.OrderBy] == "") {
 			return invalid("query definition")
 		}
 		for _, w := range a.Where {
 			t := fields[w.Field]
+			if w.Field == "$id" {
+				t = "text"
+			}
 			if !expression(w.Value, t, a.Inputs) || !slices.Contains([]string{"eq", "ne", "lt", "lte", "gt", "gte"}, w.Op) || (t == "bool" && w.Op != "eq" && w.Op != "ne") {
 				return invalid("query predicate")
 			}

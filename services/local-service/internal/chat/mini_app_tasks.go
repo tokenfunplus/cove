@@ -54,7 +54,7 @@ func (s *Service) StartAppTask(ctx context.Context, in AppTaskInput, authorize f
 			return persistence.AppTask{}, err
 		}
 		task, found, err := store.FindAppTask(ctx, in.Instance, in.ID)
-		if found && task.Fingerprint != in.Fingerprint {
+		if found && (task.Fingerprint != in.Fingerprint || task.State == "expired") {
 			return persistence.AppTask{}, ErrAppTaskConflict
 		}
 		if found || err != nil {
@@ -93,8 +93,17 @@ func (s *Service) StartAppTask(ctx context.Context, in AppTaskInput, authorize f
 	if err := s.checkResolvedProfile(ctx, c.profile); err != nil {
 		return persistence.AppTask{}, err
 	}
+	params := persistence.GenerationParameters{}
+	if s.settings != nil {
+		prefs, err := s.settings.GetSettings(ctx)
+		if err != nil {
+			return persistence.AppTask{}, err
+		}
+		params.MaxTokens = prefs.GenerationParameters.MaxTokens
+	}
+	params = effectiveGenerationParameters(params, c.profile.Kind)
 	if c.isSecure() {
-		return s.beginBrowserAppTask(ctx, in, snapshotFor(c.profile, c.metadata.PrivacyMode))
+		return s.beginBrowserAppTask(ctx, in, snapshotFor(c.profile, c.metadata.PrivacyMode), params.MaxTokens)
 	}
 	if err := store.BeginAppTask(ctx, in.Instance, in.ID, in.Fingerprint, in.Request); err != nil {
 		return persistence.AppTask{}, err
@@ -107,8 +116,7 @@ func (s *Service) StartAppTask(ctx context.Context, in AppTaskInput, authorize f
 	w.Unlock()
 	go func() {
 		defer cancel()
-		limit := 2048
-		input := provider.CompletionInput{Profile: c.profile, Secret: c.secret, Messages: []provider.ProviderMessage{{Role: "user", Content: in.Prompt}}, GenerationParameters: provider.GenerationParameters{MaxTokens: &limit}}
+		input := provider.CompletionInput{Profile: c.profile, Secret: c.secret, Messages: []provider.ProviderMessage{{Role: "user", Content: in.Prompt}}, GenerationParameters: providerGenerationParameters(params)}
 		// Cove-managed workers and llama.cpp endpoints support constrained JSON decoding.
 		if len(in.CandidateSchema) > 0 && (c.profile.Kind == provider.KindLocal || c.metadata.Owner == "llamacpp" || c.metadata.Owner == "llama.cpp") {
 			input.StructuredOutput = &provider.StructuredOutput{Type: "json_schema", JSONSchema: provider.NamedOutputSchema{Name: "app_candidates", Schema: in.CandidateSchema}}
@@ -155,6 +163,10 @@ func (s *Service) readAppCompletion(ctx context.Context, input provider.Completi
 		return "", err
 	}
 	defer stream.Close()
+	return readAppStream(ctx, stream, len(input.Tools) > 0)
+}
+
+func readAppStream(ctx context.Context, stream provider.CompletionStream, allowTools bool) (string, error) {
 	var out strings.Builder
 	var calls provider.ToolCallAccumulator
 	for {
@@ -165,7 +177,7 @@ func (s *Service) readAppCompletion(ctx context.Context, input provider.Completi
 		switch e.Type {
 		case provider.EventDelta:
 			if len(e.ToolCalls) > 0 {
-				if len(input.Tools) == 0 {
+				if !allowTools {
 					return "", errors.New("unexpected model tool call")
 				}
 				if err := calls.Add(e.ToolCalls); err != nil {

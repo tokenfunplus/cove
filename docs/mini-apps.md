@@ -41,8 +41,8 @@ its pages, actions and the results of zero-input page queries. `test` uses
 the same isolated instance lifecycle to exercise a scenario. These commands use
 only the test instance and never load the user's conversations or credentials.
 Generate steps exercise the model input contract; model responses can be supplied
-as fixture inputs to the subsequent create action. To try the actual UI, import
-the packed file in Mini Apps and create a disposable instance.
+as fixture inputs to the subsequent create action. Use `preview SOURCE --browser` to open the actual app UI in an isolated
+workspace. The options below cover fixture data and model simulation.
 
 ## Write the package
 
@@ -76,6 +76,7 @@ picker and its model suggestions without requiring a page binding.
 | `query` | `records.query` | Choose a collection, optional `where` predicates, ascending `order_by` and a result `limit` of up to 200. Returns records with IDs, revisions and typed fields. |
 | `create` | `records.commit` | Define a `values` assignment for every field. Saving a candidate is an explicit create action. |
 | `update` | `records.commit` | Define `values` for the changed fields. The caller selects records and provides the expected revision for each. |
+| `delete` | `records.commit` | Delete selected records after a preview and explicit confirmation. Optional `where` predicates constrain eligible records. The commit checks the selection revisions, rechecks the predicates and returns record IDs and revisions with empty fields. The host clears old replay payloads containing those records and retains their operation fingerprints. |
 | `generate` | `ai.generate` | Supply a `prompt` and a `text_input` naming a text input. The user selects and approves the model destination. An optional `candidate_action` references a create action with the same or broader surface support. Candidate objects use the field names and types of that action's inputs. |
 
 For generation, the named text input supplies the source passage. The host
@@ -172,6 +173,45 @@ check. Run each scenario against a fresh instance.
 
 - [Japanese Review Book](../services/local-service/internal/appcatalog/packages/japanese-review-book.coveapp) schedules learned items for next week, missed items for tomorrow, and uses selected model candidates as new cards. Its [scenario](../packages/api-contract/fixtures/mini-apps/japanese-review-book.json) checks that page, Chat and Quick Panel actions share the same book.
 - [Reading Inbox](../services/local-service/internal/appcatalog/packages/reading-inbox.coveapp) combines the queue status and revisit date to calculate a reading list. Its [scenario](../packages/api-contract/fixtures/mini-apps/reading-inbox.json) defers one item and archives another.
+  [Reading Inbox 1.1](../services/local-service/internal/appcatalog/packages/reading-inbox-1.1.coveapp)
+  migrates existing entries with a deferral count of zero. Deferring a record
+  reads its previous count, increments it, and sets a return date two days
+  away on the first deferral or seven days away on subsequent deferrals.
+  Restoring it resets the count. The package's `if`, `add`, and `$record`
+  expressions implement these rules in the same host used for Review Book.
+  Run the [Reading Inbox upgrade fixture](../packages/api-contract/fixtures/mini-apps/reading-inbox-upgrade.json)
+  using the installed author kit:
+
+  ```sh
+  kit=/Applications/Cove.app/Contents/Resources/mini-apps
+  /Applications/Cove.app/Contents/MacOS/coveapp upgrade-test \
+    "$kit/examples/reading-inbox.coveapp" "$kit/examples/reading-inbox-1.1.coveapp" \
+    "$kit/scenarios/reading-inbox-upgrade.json"
+  ```
+
+
+
+### Review Book 1.1 and compatible action options
+
+Install the 1.1 release or upgrade an existing book in Settings. The schema
+migration adds archive and source fields to each existing question. Open
+Daily practice for a card-by-card session with an answer reveal and a confirmed
+outcome. In the question library, edit a selected question and answer or archive
+a card. The Archive view offers restore and permanent deletion with a preview.
+Select saved material before generating questions to attach its record link to
+the candidates. A linked card opens the material's current contents.
+
+The package uses the following host contract extensions.
+
+| Declaration | Behavior |
+| --- | --- |
+| Action `defaults` | Typed values for omitted inputs. A date input supports `$today` or a day offset. Extra keys and incorrect types are rejected. |
+| Query `limit_input` | Names a numeric input accepting a whole number from 1 through 200. `review.listDue` accepts `{"date":"2026-11-27","limit":3}`. |
+| Generate `count_input` | Names a numeric input accepting a whole number from 1 through 8. The reviewed parameter enters the prompt. The model picker checks the count before offering the candidates for saving. |
+| Action `selection_inputs` | Maps inputs to fields from one selected record of the declared collection. Use `$id` for the record identity. |
+| Generate `candidate_bindings` | Maps create-action input names to host-copied generate inputs. These values are drawn from the frozen task input when saving candidates. The model supplies the other fields. |
+| Collection `links` | Maps a reference field to a display-label field and a named lookup query. The query takes a single text input `id` and compares the scoped record's `$id` to `$input.id`. |
+| Page `practice` | Declares a query, two text fields to reveal in succession and one to four named update actions for scoring each record. The browser keeps the session's original record revisions through confirmation. |
 
 ## Release an update
 
@@ -217,9 +257,15 @@ model. The user chooses a specific result before its text enters the field.
 Use in a model request or saved record follows the ordinary action flow.
 
 An instance with `speech.speak` can offer **Read this text aloud** for a
-nonempty field of up to 6,000 characters. The selected local voice configuration
-governs supported languages. The existing speech registry supports English and
-Chinese. Install a compatible model through Discover. Playback uses temporary
+nonempty field of up to 6,000 characters. English and Chinese use the saved local
+voice configuration. Japanese uses an installed macOS Japanese voice on this Mac.
+Declare `speech_language: "ja"` to offer **Read in Japanese** on practice cards
+and select Japanese for kanji-only passages in text fields. Kana selects Japanese
+automatically. With the current permission, a client may POST `text` and
+`language: "ja"` to the instance speech endpoint. Voice discovery and synthesis
+run locally. A Mac without an installed Japanese voice reports it before creating
+a job. The temporary WAV, cancellation and session ownership follow the existing
+speech path. Playback uses temporary
 audio scoped to the instance and browser session. Changing grants, disabling
 the instance or deleting it stops outstanding readings for that instance.
 
@@ -243,10 +289,113 @@ write and transferring results into Chat each use the normal host controls.
 With **Only on this Mac** cleared, a generate action can offer a configured
 NearAI model. The initiating authenticated browser claims the task once and
 runs Cove's existing NearAI verification transport on the host-frozen input.
-Keep the view open while the task runs. The instance saves the resolved
+Keep the initiating browser tab open while the task runs. Closing the form or navigating inside the workspace keeps the verification worker running. A temporary status polling failure can be retried independently. The instance saves the resolved
 Provider Snapshot, verified answer and receipt. Private TEE requires model
 verification. Incognito and Chutes require gateway verification. A rejected
 receipt or an expired browser task produces a failed result with no candidate
 text. Later sessions can read the saved receipt in the model result.
 
 For a create action, an invocation may supply `items` with one to fifty complete input objects and an empty `inputs` object. One preview covers all proposed records. Confirming it commits the entire batch with one operation ID. The candidate picker uses this operation to save multiple model suggestions together.
+
+## Rehearse an upgrade
+
+Use the exact old and new packages and a JSON fixture. For the bundled Review Book:
+
+```sh
+kit=/Applications/Cove.app/Contents/Resources/mini-apps
+cli=/Applications/Cove.app/Contents/MacOS/coveapp
+"$cli" upgrade-test "$kit/examples/japanese-review-book.coveapp" \
+  "$kit/examples/japanese-review-book-1.1.coveapp" \
+  "$kit/scenarios/japanese-review-upgrade.json"
+```
+
+The [upgrade fixture](../packages/api-contract/fixtures/mini-apps/japanese-review-upgrade.json)
+shows the supported fields. `before` and `after` accept the same action steps
+and assertions as `test`. Selections refer to the preceding step within the
+same phase. Declare the previous user's `grants` explicitly to test a limited
+installation. Omitting the field grants the old package's declared capabilities
+in the disposable instance. An empty array means the user granted none.
+Fixtures may include attachments with a filename and base64-encoded `data`
+when the old instance has the `blobs.import` grant.
+
+The CLI installs the old release, runs the sample actions, then uses the
+production upgrade operation on that instance. It checks instance identity,
+the active release, and retention of still-declared grants. It compares
+record counts, IDs and existing field values in each previous collection,
+and checks every attachment's ID, name and bytes. An unchanged record keeps
+its revision. A migrated record must have a newer revision. Assert new
+defaults or business rules with `expect_fields` and `count` in `after`.
+A migration or assertion failure exits with a nonzero status.
+
+## Preview in a browser
+
+```sh
+"$cli" preview "$kit/examples/japanese-review-book.coveapp" --browser
+"$cli" preview my-reading.coveapp --browser --fixture reading-preview.json --allow blobs.import
+"$cli" preview study.coveapp --browser --model-endpoint http://127.0.0.1:8080/v1
+```
+
+The CLI opens the production browser UI on an ephemeral loopback port. The
+workspace uses an in-memory database and an in-memory credential store.
+Closing the CLI with Ctrl-C discards the instance, fixtures, and its grants.
+Both browser preview and `upgrade-test` recognize bundled examples by their
+exact bytes. Use your own publisher when adapting an example. Preview your
+personal package, then open **My apps** and import a newer file from that
+publisher to practice upgrading the same instance.
+For a CLI built from source, run `make build-web` before building `coveapp`.
+
+A browser fixture accepts `steps` to populate sample records and an optional
+`model_response` string for simulated generation. To preview candidate
+selection, supply a response in the format expected by your package. Select
+**Simulated author model** and **fixture-model** after clearing **Only on this
+Mac** in the model form. The simulated response is generated inside the CLI.
+Use the preview for app-owned generation tasks and selecting records for a
+Chat draft. To submit a normal conversation turn that can choose app actions,
+install the package in Cove.
+
+Use `--allow blobs.import` to try importing a real attachment into the preview.
+An explicit `--model-endpoint` replaces the simulated model with the indicated
+OpenAI-compatible loopback service. It must support unauthenticated access and
+the package must declare `ai.generate`. Choose the model in the preview and
+review the selected input before running it. The workspace has no connection to
+the installed Cove Launcher, model weights, or existing Provider Profiles.
+
+## Use an app in a conversation turn
+
+Open **Tools → Mini Apps**, choose an instance and expand **Use app actions in my next message**.
+Select the actions the chat model may propose and click **Use in next message**.
+The composer displays the app and number of selected actions. Enter the request in
+the ordinary chat composer and send it. This scope applies to one turn. A subsequent
+message can discuss selected results, or you can choose app actions for another turn.
+
+Cove checks the instance revision, release, surface and grants. The model receives
+only the selected action definitions alongside the ordinary conversation context.
+One compatible model or Cove-managed local model can propose a function call or a
+JSON action. Verified NearAI uses the existing signed-response transport with JSON proposals. Cove validates the saved response and its verification status before displaying controls. Model comparisons and Web search support
+manual app actions through the picker. The host validates proposals before
+publishing them. Opening a read response queries the instance locally. Use **Add to
+current draft** to share selected fields and choose when to send. Local source
+bookmarks, record identities and revisions stay out of the model input.
+
+Write responses preview the proposed changes and require confirmation. A generate
+response presents the app's task form after the conversation turn finishes. Review
+the input and destination and choose **Start model task**. The app owns the new
+task, its cancellation and candidate results. Changing an instance's grants or
+release retires replies that refer to the earlier revision.
+
+## Permissions, native selections and history
+
+New instances start with all permissions unchecked. The install preview lists compatible existing instances with the installed and incoming versions. A single matching instance is preselected for upgrade. With multiple matches, choose one explicitly. Creating a separate instance starts with independent data. Upgrades retain existing grants and ask for each newly requested capability.
+
+Use **Services → Send to Cove Mini App** in a Mac application to choose an enabled instance, action and field for selected text. The Launcher deposits the selection over its control channel. The receiving page offers a one-use import into that field before the user runs the action. Selections expire after ten minutes; a permission change invalidates them. **Ask Cove** continues to open the Quick Panel. A pending file request expires after two minutes; the Launcher renews its thirty-minute lease while the native picker remains open.
+
+`GET /api/mini-apps/instances/{id}/capabilities` reports the host contract version and a per-capability state of `available`, `setup_required`, `denied` or `unsupported`. Query with `local_only=true` for a managed-model task. This performs local readiness checks without running a model, installing weights or prompting for a file. The actual operation validates its specific target, inputs and grant again.
+
+The `min_host_version` field names the minimum Mini App runtime release. An action's `output_schema` names its result kind and typed fields. The validator checks it against the collection or candidate action. Packages may bundle up to eight PNG or JPEG images under `assets`, keyed by slug and containing `mime`, `alt` and base64 `data`. Use `image` on a page to reference one. The host and directory display these images with a limit of 256 KiB and 2,048 pixels per side per image.
+
+Instance settings show recent actions with their caller surface and outcome. The host keeps up to 100 activity entries for seven days. Confirmed writes retain the newest 64 full results and completed model tasks retain the newest 30 payloads, each subject to a seven-day lifetime and a 4 MiB payload budget per instance per category. Small operation fingerprints remain to prevent replayed writes and model charges. Saved records and user-imported attachments have their own lifecycle. Closing the app or retiring diagnostic history preserves them.
+
+Highlight a passage in a saved chat message and choose **Use selected text in an
+app**. Select an instance and text field, then choose **Use selected chat text**.
+The host checks its selection grant before copying the frozen passage into the
+field. The original chat draft is preserved.

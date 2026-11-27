@@ -2,7 +2,7 @@ import {
   InteractiveAnswer,
   type CardContinue,
 } from "@/components/interactive/InteractiveAnswer";
-import { useMemo, useState, type ReactNode } from "react";
+import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
 import { EditPromptDialog } from "./EditPromptDialog";
 import {
   ChatExperienceContext,
@@ -30,6 +30,7 @@ import { CoveMark } from "@/components/ui/CoveMark";
 import { ConversationWelcome } from "@/components/chat/ConversationWelcome";
 import { generationFailureMessage } from "@/components/chat/generation-status";
 import { StopGenerationButton } from "@/components/chat/GenerationProgress";
+import { SelectedTextToApp } from "./SelectedTextToApp";
 import { AssistantMessage } from "@/components/chat/AssistantMessage";
 import { MiniAppSourceLinks } from "./MiniAppSourceLinks";
 import { MessageMeta } from "@/components/chat/MessageMeta";
@@ -58,6 +59,8 @@ import {
 import { ArrowRight } from "lucide-react";
 import { useConversationScroll } from "@/hooks/chat/use-conversation-scroll";
 import type { ConversationNavigation } from "@/lib/workspace-types";
+
+const AppTurnAnswer = lazy(() => import("./AppTurnAnswer"));
 
 export function ConversationPanel({
   interactive,
@@ -110,7 +113,7 @@ export function ConversationPanel({
   copy?: ApplicationCopy;
   composerId?: string;
   isLoading?: boolean;
-  onSend?: () => void;
+  onSend?: (scope?: import("@cove/api-contract").MiniAppTurnScope, accepted?:()=>void) => void;
   onCancel?: () => void;
   onRetry?: (batchID: string, targetID: string) => void;
   onCreateConversation?: () => void;
@@ -590,6 +593,7 @@ export function ConversationPanel({
                               messagesStyles.message,
                               `message message--${message.role}`,
                             )}
+                            data-app-selection-source={view.id}
                             data-generation-target={generationTarget?.target.id}
                             data-timeline-anchor={
                               message.role === "user" ? message.id : undefined
@@ -643,7 +647,21 @@ export function ConversationPanel({
                                   snapshot,
                                 }}
                               >
-                                {cardGenerationId ? (
+                                {generationTarget?.target.generation.configuration_snapshot.mini_app ? (
+                                  <Suspense fallback={<p role="status">Opening app response…</p>}>
+                                    <AppTurnAnswer
+                                      key={message.id}
+                                      verifiedGeneration={generationTarget.target.generation.snapshot.provider_kind==="nearai" ? generationTarget.target.generation.id : undefined}
+                                      verification={generationTarget.target.generation.verification?.status}
+                                      scope={generationTarget.target.generation.configuration_snapshot.mini_app}
+                                      body={message.body}
+                                      draft={draft}
+                                      change={onDraftChange}
+                                      localRequired={retryLocalOnly || Boolean(generationTarget.batch.local_only)}
+                                      disabled={!!view.archived || !!isSending || !!navigationBusy}
+                                    />
+                                  </Suspense>
+                                ) : cardGenerationId ? (
                                   <InteractiveAnswer
                                     generationId={cardGenerationId}
                                     content={message.body}
@@ -869,7 +887,9 @@ export function ConversationPanel({
                             }
                           />
                         )}
-                        {target.assistantBody || target.reasoningBody ? (
+                        {liveGeneration?.configuration_snapshot.mini_app ? (
+                          <p role="status">Reviewing the selected app actions…</p>
+                        ) : target.assistantBody || target.reasoningBody ? (
                           <AssistantMessage
                             content={target.assistantBody}
                             reasoning={target.reasoningBody}
@@ -1085,6 +1105,7 @@ export function ConversationPanel({
             className="flex shrink-0 flex-col"
             data-workspace-region="composer"
           >
+            {showComposer && !isSending && !navigationBusy && onDraftChange && <SelectedTextToApp key={view.id} conversation={view.id} draft={draft ?? ""} change={onDraftChange} localRequired={retryLocalOnly} surface={quickPanel ? "panel" : "chat"}/>}
             {quickPanel && latestButton}
             {contextDispositionBatch && onSkipContext ? (
               <div

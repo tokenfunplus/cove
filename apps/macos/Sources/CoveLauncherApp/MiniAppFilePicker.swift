@@ -7,13 +7,26 @@ func pickMiniAppText(_ id: UUID, service: BundledServiceManager) async {
     struct Claim: Decodable { let instance: String }
     struct Reply: Encodable { let state: String; var name: String?; var text: String? }
     guard let data = try? await service.miniAppFileRequest(id),
-          let claim = try? JSONDecoder().decode(Claim.self, from: data) else { return }
+          let claim = try? JSONDecoder().decode(Claim.self, from: data) else { miniAppNotice("The file request expired. Open the file picker again from the app."); return }
     let panel = NSOpenPanel()
     panel.message = "Choose a UTF-8 text file for " + claim.instance
     panel.allowedContentTypes = [.plainText]
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
     NSApp.activate(ignoringOtherApps: true)
+    // Keep the lease while the system dialog is open. A crashed Launcher stops renewing.
+    let lease = Task {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+                try await service.renewMiniAppPicker(id)
+            } catch {
+                if Task.isCancelled { return }
+                // A brief IPC interruption leaves the current lease valid for thirty minutes.
+            }
+        }
+    }
+    defer { lease.cancel() }
     var reply = Reply(state: "cancelled")
     if await panel.begin() == .OK, let url = panel.url {
         reply = Reply(state: "failed")
@@ -27,5 +40,43 @@ func pickMiniAppText(_ id: UUID, service: BundledServiceManager) async {
         }
     }
     guard let body = try? JSONEncoder().encode(reply) else { return }
-    _ = try? await service.miniAppFileRequest(id, reply: body)
+    do { _ = try await service.miniAppFileRequest(id, reply: body) }
+    catch { miniAppNotice("Cove could not deliver the selection. Reopen the file picker from the app.") }
+}
+
+@MainActor
+func miniAppNotice(_ message: String) {
+    let alert = NSAlert()
+    alert.messageText = message
+    NSApp.activate(ignoringOtherApps: true)
+    alert.runModal()
+}
+
+@MainActor
+func chooseMiniAppForSelection(_ text: String, launcher: LauncherStateMachine, service: BundledServiceManager) async {
+    struct Target: Codable { let instance, name, view, action, title, field: String; let revision: Int }
+    struct Selection: Encodable { let target: Target; let text: String }
+    do {
+        try launcher.start()
+        let data = try await service.miniAppSelectionTargets()
+        let targets = try JSONDecoder().decode([Target].self, from: data)
+        guard !targets.isEmpty else {
+            miniAppNotice("Enable selection access and a text action in a Mini App's settings first.")
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "Send selected text to a Mini App"
+        let list = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 380, height: 28))
+        for target in targets { list.addItem(withTitle: target.name + " · " + target.title + " · " + target.field) }
+        alert.accessoryView = list
+        alert.addButton(withTitle: "Send selection")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let target = targets[list.indexOfSelectedItem]
+        try await service.stageMiniAppSelection(JSONEncoder().encode(Selection(target: target, text: text)))
+        if let id = UUID(uuidString: target.instance) { launcher.openMiniApp(.open(id, target.view)) }
+    } catch {
+        miniAppNotice("Cove could not send this selection. Check the app's permissions and try again.")
+    }
 }

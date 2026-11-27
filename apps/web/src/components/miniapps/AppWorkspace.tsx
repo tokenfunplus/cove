@@ -1,3 +1,4 @@
+import { MacSelection } from "./MacSelection";
 import { useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -11,6 +12,9 @@ import type {
 import { ChevronLeft, Settings2, Check } from "lucide-react";
 import { appKeys, miniApps } from "@/api/mini-apps";
 import { Button } from "@/components/ui/button";
+import { AppPractice } from "./AppPractice";
+import { AppRecordSource } from "./AppRecordSource";
+import { AppTurnScope } from "./AppTurnScope";
 import { AppBlobs } from "./AppBlobs";
 import { AppProposal } from "./AppProposal";
 import { AppActionForm } from "./AppActionForm";
@@ -24,6 +28,9 @@ import {
 } from "./presentation";
 
 export interface AppContext {
+  selectionSource?: "selection";
+  onScope?: (scope:import("@cove/api-contract").MiniAppTurnScope,name:string)=>void;
+  proposal?: {action:string;inputs:MiniAppFields;actions:string[]};
   surface: MiniAppSurface;
   draft?: string;
   localRequired?: boolean;
@@ -53,7 +60,7 @@ export function AppWorkspace({ id, view, back, navigate, ...context }: Props) {
           <p role="status">Opening app…</p>
         ) : (
           <>
-            <ErrorMessage error={item.error} />
+      <ErrorMessage error={item.error} />
             <Button onClick={() => void item.refetch()}>Retry</Button>
           </>
         )}
@@ -61,6 +68,7 @@ export function AppWorkspace({ id, view, back, navigate, ...context }: Props) {
     );
   const { instance, package: pkg } = item.data;
   const page = view ? pkg.pages.find((p) => p.id === view) : pkg.pages[0];
+  const artwork = page?.image && pkg.assets?.[page.image];
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -95,7 +103,9 @@ export function AppWorkspace({ id, view, back, navigate, ...context }: Props) {
             {pkg.description}
           </p>
         )}
+      {artwork && <img className="mt-3 max-h-64 max-w-full rounded-lg object-contain" alt={artwork.alt} src={"data:"+artwork.mime+";base64,"+artwork.data} />}
       </header>
+      {instance.enabled && !settings && context.onScope && <AppTurnScope key={instance.revision} pkg={pkg} instance={instance} choose={context.onScope} actions={Object.keys(pkg.actions).filter(id=>pkg.actions[id].surfaces.includes("chat") && instance.grants.includes(capability[pkg.actions[id].op]))}/>}
       <ErrorMessage error={item.error} />
       {settings ? (
         <AppSettings
@@ -157,11 +167,14 @@ export function AppWorkspace({ id, view, back, navigate, ...context }: Props) {
 const capability: Record<MiniAppAction["op"], string> = {
   query: "records.query",
   create: "records.commit",
+  delete: "records.commit",
   update: "records.commit",
   generate: "ai.generate",
 };
 
-function AppView({
+export function AppView({
+  selectionSource,
+  proposal,
   instance,
   pkg,
   page,
@@ -179,20 +192,21 @@ function AppView({
     ...page.actions,
     ...Object.keys(pkg.actions).filter((id) => !pkg.pages.some((p) => p.actions.includes(id))),
   ];
-  const actions = actionIDs.filter((id) => pkg.actions[id].surfaces.includes(surface));
+  const actions = (proposal?.actions ?? actionIDs).filter((id) => pkg.actions[id].surfaces.includes(surface));
+  const desired = proposal && pkg.actions[proposal.action];
   const autoQuery = actions.find(
     (id) =>
-      pkg.actions[id].op === "query" &&
-      !Object.keys(pkg.actions[id].inputs ?? {}).length,
+      pkg.actions[id].op === "query" && (!desired || pkg.actions[id].collection === desired.collection) &&
+      Object.keys(pkg.actions[id].inputs ?? {}).every((key) => Object.hasOwn(pkg.actions[id].defaults ?? {}, key)),
   );
   const [query, setQuery] = useState<
     { action: string; inputs: MiniAppFields } | undefined
-  >(() => (autoQuery ? { action: autoQuery, inputs: {} } : undefined));
+  >(() => proposal && desired?.op==="query" ? {action:proposal.action,inputs:proposal.inputs} : (autoQuery ? { action: autoQuery, inputs: {} } : undefined));
   const [form, setForm] = useState<{
     id: string;
     key: string;
     initial?: MiniAppFields;
-  }>();
+  } | undefined>(()=>proposal && desired?.op!=="query" ? {id:proposal.action,initial:proposal.inputs,key:proposal.action} : undefined);
   const openForm = (id: string, initial?: MiniAppFields) =>
     setForm({ id, initial, key: crypto.randomUUID() });
   const [selectedRefs, setSelected] = useState<Record<string, number>>({});
@@ -204,6 +218,7 @@ function AppView({
       instance.id,
       instance.release_id,
       page.id,
+      instance.revision,
       surface,
       query,
     ],
@@ -211,6 +226,7 @@ function AppView({
     getNextPageParam: (last: MiniAppResult) => last.next_cursor,
     queryFn: ({ pageParam }) =>
       miniApps.invoke(instance.id, {
+        expected_instance_revision: instance.revision,
         action: query!.action,
         cursor: pageParam || undefined,
         surface,
@@ -222,18 +238,22 @@ function AppView({
   });
   const records = rows.data?.pages.flatMap((page) => page.records ?? []) ?? [];
   const selected = records.filter((r) => selectedRefs[r.id] === r.revision);
+  const [practiceRecords, setPracticeRecords] = useState<typeof records>();
   const transfer = useMutation({
     retry: false,
     mutationFn: async () => {
       if (!query || !selected.length) return;
       const { records } = await miniApps.attach(instance.id, {
+        expected_instance_revision: instance.revision,
         action: query.action,
         inputs: query.inputs,
         surface,
         view: page.id,
         records: selected.map(({ id, revision }) => ({ id, revision })),
       });
-      await attach(snapshot(instance, query.action, page.id, records));
+      const collection = pkg.actions[query.action].collection;
+      const localFields = collection ? Object.keys(pkg.collections[collection].links ?? {}) : [];
+      await attach(snapshot(instance, query.action, page.id, records,localFields));
     },
   });
   function choose(id: string) {
@@ -241,7 +261,13 @@ function AppView({
     const act = pkg.actions[id];
     if (act.op === "query" && !Object.keys(act.inputs ?? {}).length)
       return performQuery(id, {});
-    openForm(id, selected.length === 1 ? selected[0].fields : undefined);
+    const record = selected.length === 1 ? selected[0] : undefined;
+    if (record && act.selection_inputs && query && act.selection_inputs.collection === pkg.actions[query.action].collection) {
+      const initial = Object.fromEntries(Object.entries(act.selection_inputs.fields).map(([input, field]) =>
+        [input, field === "$id" ? record.id : record.fields[field]]));
+      return openForm(id, initial);
+    }
+    openForm(id, record && (act.op === "update" || act.op === "generate") ? record.fields : undefined);
   }
   function performQuery(action: string, inputs: MiniAppFields) {
     if (
@@ -269,14 +295,21 @@ function AppView({
       queryKey: ["mini-app-records", instance.id],
     });
   }
+  if (practiceRecords && page.practice) return <AppPractice allowReading={instance.grants.includes("speech.speak")} instance={instance.id} revision={instance.revision} pkg={pkg} practice={page.practice}
+    records={practiceRecords} finish={() => setPracticeRecords(undefined)}
+    changed={() => void cache.invalidateQueries({queryKey: ["mini-app-records", instance.id]})}/>;
+  const sourceLinks = query ? pkg.collections[pkg.actions[query.action].collection!]?.links ?? {} : {};
   return (
     <div className="space-y-4">
+      {surface === "page" && page.practice && query?.action === page.practice.query && records.length > 0 && instance.grants.includes("records.commit") &&
+        <Button onClick={() => setPracticeRecords(selected.length ? selected : records)}>Start practice ({selected.length || records.length})</Button>}
+      {surface === "page" && instance.grants.includes("mac.selection.receive") && <MacSelection instance={instance.id} view={page.id} open={openForm}/>}
       <div className="flex flex-wrap gap-2" aria-label="App actions">
         {actions.map((id) => {
           const act = pkg.actions[id];
           const allowed = instance.grants.includes(capability[act.op]);
           const needsSelection =
-            act.op === "update" &&
+            (act.op === "update" || act.op === "delete") &&
             (!selected.length ||
               !query ||
               pkg.actions[query.action].collection !== act.collection);
@@ -300,7 +333,7 @@ function AppView({
           );
         })}
       </div>
-      {surface !== "page" && (
+      {!proposal && surface !== "page" && (
         <AppProposal
           instance={instance}
           pkg={pkg}
@@ -308,7 +341,7 @@ function AppView({
             const act = pkg.actions[id];
             return (
               instance.grants.includes(capability[act.op]) &&
-              (act.op !== "update" ||
+              ((act.op !== "update" && act.op !== "delete") ||
                 (!!selected.length &&
                   !!query &&
                   pkg.actions[query.action].collection === act.collection))
@@ -329,6 +362,7 @@ function AppView({
           initial={form.initial}
           selected={selected}
           draft={draft}
+          selectionSource={selectionSource}
           localRequired={localRequired}
           close={() => setForm(undefined)}
           query={performQuery}
@@ -383,10 +417,15 @@ function AppView({
                   });
                 }}
               />
+              <div className="min-w-0">
               <Fields
-                fields={record.fields}
+                fields={Object.fromEntries(Object.entries(record.fields).filter(([key]) => !Object.hasOwn(sourceLinks,key) && !Object.values(sourceLinks).some((link) => link.label === key)))}
                 reveal={pkg.actions[query.action].reveal_field}
               />
+              {Object.entries(sourceLinks).map(([field, link]) => record.fields[field] && pkg.actions[link.query].surfaces.includes(surface)
+                ? <AppRecordSource key={field} instance={instance.id} revision={instance.revision} action={link.query} surface={surface}
+                  id={String(record.fields[field])} label={String(record.fields[link.label] || "Open material")}/> : null)}
+              </div>
             </div>
           ))}
           {rows.hasNextPage && (

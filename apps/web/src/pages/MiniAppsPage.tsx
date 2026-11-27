@@ -47,9 +47,10 @@ function subscribe(fn: () => void) {
   window.addEventListener("popstate", fn);
   return () => window.removeEventListener("popstate", fn);
 }
-function navigate(path: string) {
+function navigate(path: string, replace = false) {
   if (window.location.pathname !== path) {
-    window.history.pushState(null, "", path);
+    if (replace) window.history.replaceState(null, "", path);
+    else window.history.pushState(null, "", path);
     window.dispatchEvent(new PopStateEvent("popstate"));
   }
 }
@@ -58,18 +59,26 @@ export default function MiniAppsPage({
 }: {
   attach: (body: string) => Promise<void>;
 }) {
-  const path = useSyncExternalStore(subscribe, () => window.location.pathname);
+  const address = useSyncExternalStore(
+    subscribe,
+    () => window.location.pathname + window.location.search,
+  );
+  const path = address.split("?")[0]!;
   const { id, view, target, invalid } = route(path);
   const session = useLocalSession();
   const [expired, setExpired] = useState(false);
   useEffect(() => observeBrowserSessionExpiry(() => setExpired(true)), []);
-  const open = useCallback((instance: string, nextView?: string) => {
-    navigate(
-      "/apps/" +
-        encodeURIComponent(instance) +
-        (nextView ? "/" + encodeURIComponent(nextView) : ""),
-    );
-  }, []);
+  const open = useCallback(
+    (instance: string, nextView?: string, replace?: boolean) => {
+      navigate(
+        "/apps/" +
+          encodeURIComponent(instance) +
+          (nextView ? "/" + encodeURIComponent(nextView) : ""),
+        replace,
+      );
+    },
+    [],
+  );
   const resume =
     id && view
       ? appBookmark(id, view)
@@ -88,7 +97,23 @@ export default function MiniAppsPage({
         <header className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-semibold tracking-tight">Mini Apps</h1>
           <Button asChild size="sm" variant="outline">
-            <a href="/">Cove Chat</a>
+            <a
+              href="/"
+              onClick={(e) => {
+                if (
+                  e.button ||
+                  e.ctrlKey ||
+                  e.metaKey ||
+                  e.altKey ||
+                  e.shiftKey
+                )
+                  return;
+                e.preventDefault();
+                navigate("/");
+              }}
+            >
+              Cove Chat
+            </a>
           </Button>
         </header>
         {invalid ? (
@@ -121,7 +146,7 @@ export default function MiniAppsPage({
             attach={attach}
           />
         ) : (
-          <AppDirectory key={path} open={open} target={target} />
+          <AppDirectory key={address} open={open} target={target} />
         )}
       </div>
     </main>

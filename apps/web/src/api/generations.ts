@@ -16,6 +16,7 @@ import {
 } from "@cove/api-contract";
 
 export type GenerationSelection = {
+  miniApp?: GenerationInput["mini_app"];
   interactive?: boolean;
   interaction?: import("@cove/api-contract").CardSubmission;
   localOnly?: boolean;
@@ -34,6 +35,7 @@ export function createGenerationBatch(
   selection: GenerationSelection,
 ): Promise<GenerationBatch> {
   const input: GenerationInput = {
+    mini_app: selection.miniApp,
     interactive: selection.interactive,
     interaction: selection.interaction,
     ...(selection.localOnly ? { local_only: true } : {}),
@@ -217,4 +219,12 @@ export function getProjectBatchContext(
   return request(
     `/api/generation-batches/${encodeURIComponent(id)}/context?format=project-v1`,
   );
+}
+
+export function getBrowserAppTurn(id: string, signal?: AbortSignal) {
+  return request<{
+    message?: string;
+    instructions?: string;
+    proposal?: { action: string; inputs: import("@cove/api-contract").MiniAppFields };
+  }>("/api/generations/" + encodeURIComponent(id) + "/app-turn", { signal });
 }

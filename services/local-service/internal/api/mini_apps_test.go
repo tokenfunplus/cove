@@ -67,12 +67,44 @@ func TestMiniAppInstallationNativeImportAndChatSnapshot(t *testing.T) {
 	var instance miniapps.Instance
 	call("POST", base+"/instances", miniapps.CreateRequest{ReleaseID: release.ID, Name: "Book", Grants: release.Package.Capabilities}, true, 200, &instance)
 	prefix := base + "/instances/" + instance.ID
+	var choices []selectionTarget
+	privateSelection := "/internal/control/mini-app-selection"
+	call("POST", privateSelection+"/targets", nil, false, 401, nil)
+	call("POST", privateSelection+"/targets", nil, true, 200, &choices)
+	if len(choices) == 0 {
+		t.Fatal("no eligible native selection action")
+	}
+	stage := map[string]any{"target": choices[0], "text": "Native fixture"}
+	call("POST", privateSelection+"/stage", stage, true, 200, nil)
+	call("POST", privateSelection+"/stage", map[string]any{"target": choices[0], "text": "Second fixture"}, true, 200, nil)
+	var pending struct {
+		ID      string
+		Pending bool
+		Target  selectionTarget
+	}
+	call("GET", prefix+"/native-selection", nil, true, 200, &pending)
+	if !pending.Pending || pending.Target != choices[0] {
+		t.Fatal("wrong selection target")
+	}
+	var selected struct{ Text string }
+	call("POST", prefix+"/native-selection", map[string]string{"id": pending.ID}, true, 200, &selected)
+	if selected.Text != "Native fixture" {
+		t.Fatal("missing selected text")
+	}
+	call("POST", prefix+"/native-selection", map[string]string{"id": pending.ID}, true, 409, nil)
+	call("GET", prefix+"/native-selection?view="+choices[0].View, nil, true, 200, &pending)
+	call("POST", prefix+"/native-selection", map[string]string{"id": pending.ID}, true, 200, &selected)
+	if selected.Text != "Second fixture" {
+		t.Fatal("a later native selection replaced a pending selection")
+	}
+	call("POST", privateSelection+"/stage", stage, true, 200, nil)
 	var file struct{ ID, URL string }
 	call("POST", prefix+"/files", nil, true, 200, &file)
 	private := "/internal/control/mini-app-files/" + file.ID
 	call("POST", private+"/claim", nil, false, 401, nil)
 	call("POST", private+"/claim", nil, true, 200, nil)
 	call("POST", private+"/claim", nil, true, 409, nil)
+	call("POST", private+"/renew", nil, true, 200, nil)
 	call("POST", private+"/finish", pickedText{State: "completed", Name: "notes.txt", Text: "example passage"}, true, 200, nil)
 	var content pickedText
 	call("GET", prefix+"/files/"+file.ID, nil, true, 200, &content)
@@ -93,6 +125,13 @@ func TestMiniAppInstallationNativeImportAndChatSnapshot(t *testing.T) {
 	}
 	call("POST", prefix+"/settings", miniapps.ConfigRequest{Revision: instance.Revision, Enabled: true, Grants: []string{"records.query"}}, true, 200, nil)
 	call("POST", prefix+"/attach", request, true, 403, nil)
+	call("GET", prefix+"/native-selection", nil, true, 403, nil)
+	call("POST", privateSelection+"/stage", stage, true, 403, nil)
+	var caps struct{ Capabilities map[string]string }
+	call("GET", prefix+"/capabilities", nil, true, 200, &caps)
+	if caps.Capabilities["records.query"] != "available" || caps.Capabilities["ai.generate"] != "denied" {
+		t.Fatal("capability readiness did not apply grants")
+	}
 	call("GET", prefix+"/files/"+file.ID, nil, true, 403, nil)
 	if n, err := store.ListConversations(context.Background()); err != nil || len(n) > 0 {
 		t.Fatal("app operation affected chat history", err)

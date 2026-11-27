@@ -15,13 +15,22 @@ export type MiniAppExpression =
     >;
 
 export interface MiniAppAction {
+  output_schema?: {
+    kind: "records" | "candidates" | "text";
+    fields?: Record<string, MiniAppFieldType>;
+  };
   title: string;
-  op: "query" | "create" | "update" | "generate";
+  op: "query" | "create" | "update" | "delete" | "generate";
   collection?: string;
   inputs?: Record<string, MiniAppFieldType>;
   surfaces: MiniAppSurface[];
   where?: { field: string; op: string; value: string | number | boolean }[];
   order_by?: string;
+  defaults?: MiniAppFields;
+  limit_input?: string;
+  count_input?: string;
+  selection_inputs?: { collection: string; fields: Record<string, string> };
+  candidate_bindings?: Record<string, string>;
   reveal_field?: string;
   limit?: number;
   values?: Record<string, MiniAppExpression>;
@@ -31,6 +40,9 @@ export interface MiniAppAction {
 }
 
 export interface MiniAppPackage {
+  assets?:Record<string,{mime:"image/png"|"image/jpeg";alt:string;data:string}>;
+  min_host_version?: string;
+  speech_language?: "ja";
   format: 1;
   publisher: string;
   app: string;
@@ -39,8 +51,25 @@ export interface MiniAppPackage {
   version: string;
   schema_version: number;
   capabilities: string[];
-  collections: Record<string, { fields: Record<string, MiniAppFieldType> }>;
-  pages: { id: string; title: string; actions: string[] }[];
+  collections: Record<
+    string,
+    {
+      fields: Record<string, MiniAppFieldType>;
+      links?: Record<string, { query: string; label: string }>;
+    }
+  >;
+  pages: {
+    image?:string;
+    id: string;
+    title: string;
+    actions: string[];
+    practice?: {
+      query: string;
+      front: string;
+      back: string;
+      outcomes: string[];
+    };
+  }[];
   actions: Record<string, MiniAppAction>;
   seed?: Record<string, MiniAppFields[]>;
   migrations?: {
@@ -73,6 +102,7 @@ export interface MiniAppRecord {
 }
 
 export interface MiniAppInvocation {
+  expected_instance_revision?: number;
   cursor?: string;
   items?: MiniAppFields[];
   action: string;

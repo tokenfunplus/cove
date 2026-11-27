@@ -43,12 +43,46 @@ export const appKeys = {
   catalog: ["mini-apps", "catalog"] as const,
 };
 export const miniApps = {
+  nativeSelection: (id: string, view: string) =>
+    request<{
+      pending: boolean;
+      id?: string;
+      target?: { action: string; view: string; title: string; field: string };
+    }>(instanceURL(id) + "/native-selection?view=" + encodeURIComponent(view)),
+  takeNativeSelection: (instance: string, id: string) =>
+    request<{ text: string }>(
+      instanceURL(instance) + "/native-selection",
+      post({ id }),
+    ),
+  activity: (id: string) =>
+    request<{
+      activity: {
+        operation_id: string;
+        action: string;
+        release_id: string;
+        surface: string;
+        status: string;
+        time: number;
+      }[];
+    }>(instanceURL(id) + "/activity"),
+  capabilities: (id: string) =>
+    request<{ host_version: string; capabilities: Record<string, string> }>(
+      instanceURL(id) + "/capabilities",
+    ),
   receiveSelection: (id: string, text: string) =>
     request<{ text: string }>(instanceURL(id) + "/selection", post({ text })),
   instances: () =>
     request<{ instances: MiniAppInstance[] }>(root + "/instances"),
   releases: () => request<{ packages: MiniAppRelease[] }>(root + "/packages"),
-  catalog: () => request<{ packages: CatalogEntry[] }>(root + "/catalog"),
+  catalogSettings: () =>
+    request<{ url: string; public_key: string }>(root + "/catalog-settings"),
+  saveCatalogSettings: (url: string, public_key: string) =>
+    request(root + "/catalog-settings", {
+      ...post({ url, public_key }),
+      method: "PUT",
+    }),
+  catalog: () =>
+    request<{ packages: CatalogEntry[]; warning?: string }>(root + "/catalog"),
   get: (id: string) =>
     request<{ instance: MiniAppInstance; package: MiniAppPackage }>(
       instanceURL(id),
@@ -105,13 +139,36 @@ export const miniApps = {
     id: string,
     data: Pick<
       MiniAppInvocation,
-      "action" | "inputs" | "surface" | "records"
+      "action" | "inputs" | "surface" | "records" | "expected_instance_revision"
     > & { view: string },
   ) =>
     request<{ records: MiniAppRecord[] }>(
       instanceURL(id) + "/attach",
       post(data),
     ),
+  latestProposal: (instance: string, surface: MiniAppSurface) =>
+    request<AppTask | null>(
+      instanceURL(instance) + "/proposals?surface=" + segment(surface),
+    ),
+  proposal: (instance: string, id: string) =>
+    request<AppTask>(instanceURL(instance) + "/proposals/" + segment(id)),
+  startProposal: (
+    instance: string,
+    command: {
+      actions: string[];
+      question: string;
+      surface: MiniAppSurface;
+      providerId: string;
+      modelId: string;
+      destination: string;
+      localOnly: boolean;
+      operationId: string;
+    },
+  ) => request<AppTask>(instanceURL(instance) + "/proposals", post(command)),
+  cancelProposal: (instance: string, id: string) =>
+    request<AppTask>(instanceURL(instance) + "/proposals/" + segment(id), {
+      method: "DELETE",
+    }),
   tasks: (id: string) =>
     request<{ tasks: AppTask[] }>(instanceURL(id) + "/tasks"),
   startFile: (id: string) =>
@@ -125,6 +182,7 @@ export const miniApps = {
     data: {
       action: string;
       surface: MiniAppSurface;
+      expected_instance_revision?: number;
       operationId: string;
       input: MiniAppFields;
       providerId: string;
@@ -142,6 +200,8 @@ export const miniApps = {
 };
 
 export interface AppTask {
+  inputs?: MiniAppFields;
+  destination?: string;
   browser?: boolean;
   snapshot?: import("@cove/api-contract").ProviderSnapshot;
   verification?: import("@cove/api-contract").GenerationVerification;

@@ -1,0 +1,631 @@
+{
+  "format": 1,
+  "publisher": "cove",
+  "app": "japanese-review-book",
+  "name": "Japanese Review Book",
+  "description": "Practice due questions, correct and archive cards, and return to the material you studied.",
+  "version": "1.1.0",
+  "schema_version": 2,
+  "capabilities": [
+    "records.query",
+    "records.commit",
+    "chat.attach",
+    "mac.files.pick",
+    "blobs.import",
+    "mac.selection.receive",
+    "ai.generate",
+    "documents.search",
+    "speech.speak"
+  ],
+  "collections": {
+    "questions": {
+      "fields": {
+        "question": "text",
+        "answer": "text",
+        "due": "date",
+        "mastered": "bool",
+        "archived": "bool",
+        "source": "text",
+        "sourceTitle": "text"
+      },
+      "links": {
+        "source": {
+          "query": "material.byId",
+          "label": "sourceTitle"
+        }
+      }
+    },
+    "materials": {
+      "fields": {
+        "title": "text",
+        "passage": "text"
+      }
+    }
+  },
+  "pages": [
+    {
+      "id": "home",
+      "title": "Daily practice",
+      "actions": [
+        "review.listDue",
+        "review.markLearned",
+        "review.practiceAgain"
+      ],
+      "practice": {
+        "query": "review.listDue",
+        "front": "question",
+        "back": "answer",
+        "outcomes": [
+          "review.markLearned",
+          "review.practiceAgain"
+        ]
+      }
+    },
+    {
+      "id": "questions",
+      "title": "Question library",
+      "actions": [
+        "review.listAll",
+        "review.listDue",
+        "review.listLearned",
+        "review.addQuestions",
+        "review.suggestQuestions",
+        "review.edit",
+        "review.archive"
+      ]
+    },
+    {
+      "id": "materials",
+      "title": "Study material",
+      "actions": [
+        "material.list",
+        "material.save",
+        "material.edit",
+        "review.suggestQuestions"
+      ]
+    },
+    {
+      "id": "archive",
+      "title": "Archive",
+      "actions": [
+        "review.listArchived",
+        "review.restore",
+        "review.delete"
+      ]
+    }
+  ],
+  "actions": {
+    "review.listDue": {
+      "title": "Due for review",
+      "op": "query",
+      "collection": "questions",
+      "inputs": {
+        "date": "date",
+        "limit": "number"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "due",
+          "op": "lte",
+          "value": "$input.date"
+        },
+        {
+          "field": "archived",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "reveal_field": "answer",
+      "order_by": "due",
+      "defaults": {
+        "date": "$today",
+        "limit": 200
+      },
+      "limit_input": "limit",
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "due": "date",
+          "mastered": "bool",
+          "archived": "bool",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "review.markLearned": {
+      "title": "Mark learned and review in a week",
+      "op": "update",
+      "collection": "questions",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "mastered": true,
+        "due": "$today+7"
+      },
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "due": "date",
+          "mastered": "bool",
+          "archived": "bool",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "review.practiceAgain": {
+      "title": "Practice again tomorrow",
+      "op": "update",
+      "collection": "questions",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "mastered": false,
+        "due": "$today+1"
+      },
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "due": "date",
+          "mastered": "bool",
+          "archived": "bool",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "review.listAll": {
+      "title": "All questions",
+      "op": "query",
+      "collection": "questions",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "order_by": "due",
+      "where": [
+        {
+          "field": "archived",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "due": "date",
+          "mastered": "bool",
+          "archived": "bool",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "review.addQuestions": {
+      "title": "Save a question",
+      "op": "create",
+      "collection": "questions",
+      "inputs": {
+        "question": "text",
+        "answer": "text",
+        "source": "text",
+        "sourceTitle": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "question": "$input.question",
+        "answer": "$input.answer",
+        "due": "$today",
+        "mastered": false,
+        "archived": false,
+        "source": "$input.source",
+        "sourceTitle": "$input.sourceTitle"
+      },
+      "defaults": {
+        "source": "",
+        "sourceTitle": ""
+      },
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "due": "date",
+          "mastered": "bool",
+          "archived": "bool",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "review.suggestQuestions": {
+      "title": "Generate practice questions",
+      "op": "generate",
+      "inputs": {
+        "passage": "text",
+        "count": "number",
+        "source": "text",
+        "sourceTitle": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "prompt": "Generate the requested count of useful Japanese study questions based only on the supplied passage. Give each question a concise answer. Preserve Japanese writing in examples.",
+      "text_input": "passage",
+      "candidate_action": "review.addQuestions",
+      "defaults": {
+        "count": 3,
+        "source": "",
+        "sourceTitle": ""
+      },
+      "count_input": "count",
+      "selection_inputs": {
+        "collection": "materials",
+        "fields": {
+          "passage": "passage",
+          "source": "$id",
+          "sourceTitle": "title"
+        }
+      },
+      "candidate_bindings": {
+        "source": "source",
+        "sourceTitle": "sourceTitle"
+      },
+      "output_schema": {
+        "kind": "candidates",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "material.list": {
+      "title": "View saved material",
+      "op": "query",
+      "collection": "materials",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "order_by": "title",
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "title": "text",
+          "passage": "text"
+        }
+      }
+    },
+    "material.save": {
+      "title": "Save study material",
+      "op": "create",
+      "collection": "materials",
+      "inputs": {
+        "title": "text",
+        "passage": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "title": "$input.title",
+        "passage": "$input.passage"
+      },
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "title": "text",
+          "passage": "text"
+        }
+      }
+    },
+    "review.listLearned": {
+      "title": "Learned questions",
+      "op": "query",
+      "collection": "questions",
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "inputs": {},
+      "where": [
+        {
+          "field": "mastered",
+          "op": "eq",
+          "value": true
+        },
+        {
+          "field": "archived",
+          "op": "eq",
+          "value": false
+        }
+      ],
+      "order_by": "due",
+      "reveal_field": "answer",
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "due": "date",
+          "mastered": "bool",
+          "archived": "bool",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "review.listArchived": {
+      "title": "Archived questions",
+      "op": "query",
+      "collection": "questions",
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "inputs": {},
+      "where": [
+        {
+          "field": "archived",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "order_by": "due",
+      "reveal_field": "answer",
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "due": "date",
+          "mastered": "bool",
+          "archived": "bool",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "review.edit": {
+      "title": "Edit question and answer",
+      "op": "update",
+      "collection": "questions",
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "inputs": {
+        "question": "text",
+        "answer": "text"
+      },
+      "values": {
+        "question": "$input.question",
+        "answer": "$input.answer"
+      },
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "due": "date",
+          "mastered": "bool",
+          "archived": "bool",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "review.archive": {
+      "title": "Archive selected questions",
+      "op": "update",
+      "collection": "questions",
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "inputs": {},
+      "values": {
+        "archived": true
+      },
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "due": "date",
+          "mastered": "bool",
+          "archived": "bool",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "review.restore": {
+      "title": "Restore selected questions",
+      "op": "update",
+      "collection": "questions",
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "inputs": {},
+      "values": {
+        "archived": false
+      },
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "question": "text",
+          "answer": "text",
+          "due": "date",
+          "mastered": "bool",
+          "archived": "bool",
+          "source": "text",
+          "sourceTitle": "text"
+        }
+      }
+    },
+    "review.delete": {
+      "title": "Permanently delete archived questions",
+      "op": "delete",
+      "collection": "questions",
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "inputs": {},
+      "where": [
+        {
+          "field": "archived",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "output_schema": {
+        "kind": "records",
+        "fields": {}
+      }
+    },
+    "material.edit": {
+      "title": "Edit study material",
+      "op": "update",
+      "collection": "materials",
+      "inputs": {
+        "title": "text",
+        "passage": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "title": "$input.title",
+        "passage": "$input.passage"
+      },
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "title": "text",
+          "passage": "text"
+        }
+      }
+    },
+    "material.byId": {
+      "title": "Find source material",
+      "op": "query",
+      "collection": "materials",
+      "inputs": {
+        "id": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "order_by": "title",
+      "output_schema": {
+        "kind": "records",
+        "fields": {
+          "title": "text",
+          "passage": "text"
+        }
+      },
+      "where": [
+        {
+          "field": "$id",
+          "op": "eq",
+          "value": "$input.id"
+        }
+      ]
+    }
+  },
+  "seed": {
+    "questions": [
+      {
+        "question": "What does \u306d\u3053 mean?",
+        "answer": "Cat",
+        "due": "$today",
+        "mastered": false,
+        "archived": false,
+        "source": "",
+        "sourceTitle": ""
+      },
+      {
+        "question": "What does \u3042\u3057\u305f mean?",
+        "answer": "Tomorrow",
+        "due": "$today",
+        "mastered": false,
+        "archived": false,
+        "source": "",
+        "sourceTitle": ""
+      },
+      {
+        "question": "What does \u307f\u305a mean?",
+        "answer": "Water",
+        "due": "$today",
+        "mastered": false,
+        "archived": false,
+        "source": "",
+        "sourceTitle": ""
+      }
+    ]
+  },
+  "min_host_version": "1.1.0",
+  "migrations": [
+    {
+      "from": 1,
+      "to": 2,
+      "defaults": {
+        "questions": {
+          "archived": false,
+          "source": "",
+          "sourceTitle": ""
+        }
+      }
+    }
+  ],
+  "speech_language": "ja"
+}

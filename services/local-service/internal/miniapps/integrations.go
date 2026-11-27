@@ -11,11 +11,12 @@ import (
 )
 
 type AttachmentRequest struct {
-	Action  string         `json:"action"`
-	Surface string         `json:"surface"`
-	View    string         `json:"view"`
-	Inputs  map[string]any `json:"inputs"`
-	Records []RecordRef    `json:"records"`
+	ExpectedRevision int64          `json:"expected_instance_revision,omitempty"`
+	Action           string         `json:"action"`
+	Surface          string         `json:"surface"`
+	View             string         `json:"view"`
+	Inputs           map[string]any `json:"inputs"`
+	Records          []RecordRef    `json:"records"`
 }
 
 type Attachment struct {
@@ -35,6 +36,9 @@ func (s *Service) Attach(ctx context.Context, id string, req AttachmentRequest) 
 		if err != nil {
 			return err
 		}
+		if req.ExpectedRevision != 0 && req.ExpectedRevision != i.Revision {
+			return ErrConflict
+		}
 		if !i.Enabled || !slices.Contains(i.Grants, "chat.attach") || !slices.Contains(i.Grants, "records.query") {
 			return ErrDenied
 		}
@@ -43,7 +47,9 @@ func (s *Service) Attach(ctx context.Context, id string, req AttachmentRequest) 
 			return err
 		}
 		a := r.Package.Actions[req.Action]
-		if a.Op != "query" || !slices.Contains(a.Surfaces, req.Surface) || !inputOK(req.Inputs, a.Inputs) {
+		now := s.now()
+		req.Inputs, err = actionInputs(a, req.Inputs, now)
+		if a.Op != "query" || !slices.Contains(a.Surfaces, req.Surface) || err != nil {
 			return ErrInvalid
 		}
 		rows, err := loadRecords(tx, id, a.Collection)
@@ -51,7 +57,7 @@ func (s *Service) Attach(ctx context.Context, id string, req AttachmentRequest) 
 			return err
 		}
 		visible := map[string]Record{}
-		for _, row := range queryRecords(rows, a, req.Inputs, s.now()) {
+		for _, row := range queryRecords(rows, a, req.Inputs, now) {
 			visible[row.ID] = row
 		}
 		out = Attachment{InstanceID: id, ReleaseID: r.ID, Action: req.Action}
@@ -76,15 +82,16 @@ type ModelExecutor interface {
 }
 
 type ModelRequest struct {
-	BrowserOwner string         `json:"-"`
-	Action       string         `json:"action"`
-	Input        map[string]any `json:"input"`
-	ProviderID   string         `json:"providerId"`
-	ModelID      string         `json:"modelId"`
-	Destination  string         `json:"destination"`
-	LocalOnly    bool           `json:"localOnly"`
-	OperationID  string         `json:"operationId"`
-	Surface      string         `json:"surface"`
+	ExpectedRevision int64          `json:"expected_instance_revision,omitempty"`
+	BrowserOwner     string         `json:"-"`
+	Action           string         `json:"action"`
+	Input            map[string]any `json:"input"`
+	ProviderID       string         `json:"providerId"`
+	ModelID          string         `json:"modelId"`
+	Destination      string         `json:"destination"`
+	LocalOnly        bool           `json:"localOnly"`
+	OperationID      string         `json:"operationId"`
+	Surface          string         `json:"surface"`
 }
 
 func (s *Service) StartModel(ctx context.Context, model ModelExecutor, id string, in ModelRequest) (persistence.AppTask, error) {
@@ -96,6 +103,9 @@ func (s *Service) StartModel(ctx context.Context, model ModelExecutor, id string
 	if err != nil {
 		return empty, err
 	}
+	if in.ExpectedRevision != 0 && in.ExpectedRevision != inst.Revision {
+		return empty, ErrConflict
+	}
 	release, err := s.Release(ctx, inst.ReleaseID)
 	if err != nil {
 		return empty, err
@@ -103,7 +113,7 @@ func (s *Service) StartModel(ctx context.Context, model ModelExecutor, id string
 	if release.Package.Actions[in.Action].Op != "generate" {
 		return empty, ErrInvalid
 	}
-	result, err := s.Invoke(ctx, id, Invocation{Action: in.Action, Surface: in.Surface, Inputs: in.Input, OperationID: in.OperationID})
+	result, err := s.Invoke(ctx, id, Invocation{ExpectedRevision: inst.Revision, Action: in.Action, Surface: in.Surface, Inputs: in.Input, OperationID: in.OperationID})
 	if err != nil {
 		return empty, err
 	}
@@ -116,8 +126,18 @@ func (s *Service) StartModel(ctx context.Context, model ModelExecutor, id string
 	}
 	var candidates json.RawMessage
 	if next := release.Package.Actions[in.Action].CandidateAction; next != "" {
-		object := proposalTool("candidate", next, release.Package.Actions[next]).Function.Parameters
-		candidates, err = json.Marshal(map[string]any{"type": "array", "items": object, "minItems": 1, "maxItems": 8})
+		action := release.Package.Actions[in.Action]
+		object := proposalTool("candidate", next, candidateDefinition(release.Package, action)).Function.Parameters
+		low, high := 1, 8
+		if action.CountInput != "" {
+			inputs, err := actionInputs(action, in.Input, s.now())
+			if err != nil {
+				return empty, err
+			}
+			high = int(inputs[action.CountInput].(float64))
+			low = high
+		}
+		candidates, err = json.Marshal(map[string]any{"type": "array", "items": object, "minItems": low, "maxItems": high})
 		if err != nil {
 			return empty, err
 		}

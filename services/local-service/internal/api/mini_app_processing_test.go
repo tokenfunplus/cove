@@ -26,7 +26,7 @@ func (s *testAppProcessing) SearchLocalDocuments(ctx context.Context, ids []stri
 	s.scope = ids
 	return retrieval.Results{Hits: []retrieval.Hit{{Selection: retrieval.Selection{DocumentID: ids[0]}, Text: query}}}, nil
 }
-func (s *testAppProcessing) ReadMiniAppText(ctx context.Context, id, session, text string) (speech.JobStatus, error) {
+func (s *testAppProcessing) ReadMiniAppText(ctx context.Context, id, session, text, language string) (speech.JobStatus, error) {
 	s.owners["fixture"] = chat.AppSpeechOwner(id, session)
 	return speech.JobStatus{ID: "fixture", State: "completed"}, nil
 }

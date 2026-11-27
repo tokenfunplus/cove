@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"sort"
@@ -25,19 +26,41 @@ const MaxPackage = 1 << 20
 const maxIndex = 8 << 20
 
 type Entry struct {
-	Publisher     string `json:"publisher"`
-	App           string `json:"app"`
-	Version       string `json:"version"`
-	SchemaVersion int    `json:"schema_version"`
-	Name          string `json:"name"`
-	Digest        string `json:"digest"`
-	Origin        string `json:"origin"`
-	Raw           []byte `json:"-"`
+	MinHostVersion string `json:"min_host_version,omitempty"`
+	Publisher      string `json:"publisher"`
+	App            string `json:"app"`
+	Version        string `json:"version"`
+	SchemaVersion  int    `json:"schema_version"`
+	Name           string `json:"name"`
+	Digest         string `json:"digest"`
+	Origin         string `json:"origin"`
+	Raw            []byte `json:"-"`
 }
 
 type Catalog struct {
-	URL       string
-	PublicKey string
+	URL       string `json:"url"`
+	PublicKey string `json:"public_key"`
+}
+
+func (c Catalog) Validate() error {
+	if c.URL == "" && c.PublicKey == "" {
+		return nil
+	}
+	u, err := url.Parse(c.URL)
+	key, e := base64.StdEncoding.DecodeString(c.PublicKey)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" || e != nil || len(key) != ed25519.PublicKeySize {
+		return errors.New("use an HTTPS index URL and a base64 Ed25519 public key")
+	}
+	return nil
+}
+
+type SignedIndex struct {
+	Format    int       `json:"format"`
+	Sequence  int64     `json:"sequence"`
+	IssuedAt  time.Time `json:"issued_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Packages  [][]byte  `json:"packages"`
+	Digest    string    `json:"-"`
 }
 
 func entry(raw []byte, origin string) (Entry, error) {
@@ -50,13 +73,15 @@ func entry(raw []byte, origin string) (Entry, error) {
 	return item, nil
 }
 
-func (c Catalog) remote(ctx context.Context) ([][]byte, error) {
-	u, err := url.Parse(c.URL)
-	key, e := base64.StdEncoding.DecodeString(c.PublicKey)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || e != nil || len(key) != ed25519.PublicKeySize {
-		return nil, errors.New("invalid catalog configuration")
+func (c Catalog) remote(ctx context.Context) (*SignedIndex, error) {
+	if err := c.Validate(); err != nil {
+		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	key, err := base64.StdEncoding.DecodeString(c.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -76,22 +101,24 @@ func (c Catalog) remote(ctx context.Context) ([][]byte, error) {
 	return verify(raw, key)
 }
 
-func verify(raw []byte, key ed25519.PublicKey) ([][]byte, error) {
+func verify(raw []byte, key ed25519.PublicKey) (*SignedIndex, error) {
 	var envelope struct{ Payload, Signature []byte }
 	if json.Unmarshal(raw, &envelope) != nil || !ed25519.Verify(key, envelope.Payload, envelope.Signature) {
 		return nil, errors.New("invalid catalog signature")
 	}
-	var index struct {
-		Format   int
-		Packages [][]byte
+	var index SignedIndex
+	now := time.Now().UTC()
+	if json.Unmarshal(envelope.Payload, &index) != nil || index.Format != 2 || index.Sequence <= 0 || len(index.Packages) > 128 ||
+		index.IssuedAt.IsZero() || index.IssuedAt.After(now.Add(5*time.Minute)) || !index.ExpiresAt.After(now) || !index.ExpiresAt.After(index.IssuedAt) || index.ExpiresAt.Sub(index.IssuedAt) > 31*24*time.Hour {
+		return nil, errors.New("invalid or expired signed catalog")
 	}
-	if json.Unmarshal(envelope.Payload, &index) != nil || index.Format != 1 || len(index.Packages) > 128 {
-		return nil, errors.New("invalid signed catalog")
-	}
-	return index.Packages, nil
+	sum := sha256.Sum256(envelope.Payload)
+	index.Digest = hex.EncodeToString(sum[:])
+	return &index, nil
 }
 
-func (c Catalog) List(ctx context.Context) ([]Entry, error) {
+func (c Catalog) List(ctx context.Context) ([]Entry, error) { return c.list(ctx, nil) }
+func (c Catalog) list(ctx context.Context, accept func(*SignedIndex) error) ([]Entry, error) {
 	files, err := bundled.ReadDir("packages")
 	if err != nil {
 		return nil, err
@@ -121,15 +148,23 @@ func (c Catalog) List(ctx context.Context) ([]Entry, error) {
 			return nil, err
 		}
 	}
+	var remoteErr error
 	if c.URL != "" || c.PublicKey != "" {
-		packages, err := c.remote(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, p := range packages {
-			if err := add(p, "catalog"); err != nil {
-				return nil, err
+		builtin := maps.Clone(all)
+		index, err := c.remote(ctx)
+		if err == nil {
+			for _, p := range index.Packages {
+				if err = add(p, "catalog"); err != nil {
+					break
+				}
 			}
+			if err == nil && accept != nil {
+				err = accept(index)
+			}
+		}
+		if err != nil {
+			all = builtin
+			remoteErr = err
 		}
 	}
 	entries := make([]Entry, 0, len(all))
@@ -146,5 +181,5 @@ func (c Catalog) List(ctx context.Context) ([]Entry, error) {
 		}
 		return a.Version < b.Version
 	})
-	return entries, nil
+	return entries, remoteErr
 }

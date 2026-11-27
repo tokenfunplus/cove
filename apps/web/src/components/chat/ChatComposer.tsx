@@ -12,6 +12,7 @@ import {
 import { lazy, Suspense, useEffect, useState, type ReactNode, type RefObject } from "react";
 import {
   type ConversationView,
+  type MiniAppTurnScope,
   type ProviderProfile,
 } from "@cove/api-contract";
 import { type ActiveModelSet } from "@/components/providers/model-selection";
@@ -58,7 +59,7 @@ type Props = {
   profiles: ProviderProfile[];
   draft: string;
   onDraftChange: (value: string) => void;
-  onSend: () => void;
+  onSend: (scope?: MiniAppTurnScope, accepted?:()=>void) => void;
   onCancel?: () => void;
   isSending: boolean;
   navigationBusy?: boolean;
@@ -93,6 +94,19 @@ export function ChatComposer({
   requiresContextChoice,
 }: Props) {
   const [appsOpen,setAppsOpen] = useState(false);
+  const [appTurn, setAppTurn] = useState<{
+    conversation: string;
+    name: string;
+    scope: MiniAppTurnScope;
+  }>();
+  const selectedApp = appTurn?.conversation === view.id ? appTurn : undefined;
+  const appTargetAllowed = activeModelSet.length === 1 && !webSearch?.enabled &&
+    profiles.some(profile => profile.id === activeModelSet[0].providerId);
+  function submit() {
+    if (selectedApp) {
+      onSend(selectedApp.scope, () => setAppTurn(current => current === selectedApp ? undefined : current));
+    } else onSend();
+  }
   useEffect(() => {
     const textarea = composerRef.current;
     if (!compact || !textarea) return;
@@ -151,6 +165,7 @@ export function ChatComposer({
   const canSend =
     connectionReady &&
     !localMismatch &&
+    (!selectedApp || appTargetAllowed) &&
     !navigationBusy &&
     !attachmentDraft?.invalid &&
     !isSending &&
@@ -235,10 +250,16 @@ export function ChatComposer({
     );
     return (
       <>
+        {selectedApp && <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span>Next message · {selectedApp.name} · {selectedApp.scope.actions.length} selected actions</span>
+          <Button type="button" variant="ghost" size="sm" onClick={()=>setAppTurn(undefined)}>Remove app</Button>
+          {!appTargetAllowed && <p role="status">Select one model and turn off web search to use these actions.</p>}
+        </div>}
         {appsOpen && (
           <Suspense fallback={null}>
             <ComposerAppPicker key={view.id} surface={quickPanel ? "panel" : "chat"}
               draft={draft} localRequired={execution?.localOnly} close={() => setAppsOpen(false)}
+              onScope={quickPanel ? undefined : (scope,name)=>{setAppTurn({conversation:view.id,scope,name});setAppsOpen(false);}}
               change={onDraftChange} busy={isSending || !!navigationBusy}/>
           </Suspense>
         )}
@@ -279,7 +300,7 @@ export function ChatComposer({
               })
             ) {
               event.preventDefault();
-              if (canSend) onSend();
+              if (canSend) submit();
             }
           }}
         />
@@ -409,7 +430,7 @@ export function ChatComposer({
       data-compact={compact ? "true" : undefined}
       onSubmit={(event) => {
         event.preventDefault();
-        if (event.target === event.currentTarget && canSend) onSend();
+        if (event.target === event.currentTarget && canSend) submit();
       }}
     >
       <div

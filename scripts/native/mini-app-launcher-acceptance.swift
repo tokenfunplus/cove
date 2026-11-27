@@ -1,26 +1,28 @@
-import Foundation
+import AppKit
+import CryptoKit
+@testable import CoveLauncher
 
-// Exercise the actual Launcher handoff and private picker transport without
-// opening a browser, a Finder window, or a file outside the fixture directory.
+// The default run supplies a synthetic file reply. The interactive run uses
+// the Launcher’s production AppKit panels in a separate, temporary instance.
 private final class CaptureBrowser: BrowserOpening {
     var launchURL: URL?
     func open(_ url: URL) { launchURL = url }
 }
 
-private enum FixtureFailure: Error { case mismatch }
+enum FixtureFailure: Error { case mismatch }
 
-private func expect(_ condition: Bool) throws {
+func expect(_ condition: Bool) throws {
     if !condition { throw FixtureFailure.mismatch }
 }
 
-private struct LocalClient {
+struct LocalClient {
     let origin: URL
     let token: String
     var csrf = ""
 
-    func call(_ path: String, body: [String: Any]? = nil, status: Int = 200) async throws -> [String: Any] {
+    func json(_ path: String, body: [String: Any]? = nil, status: Int = 200) async throws -> Any {
         guard let url = URL(string: path, relativeTo: origin)?.absoluteURL else { throw FixtureFailure.mismatch }
-        var request = URLRequest(url: url, timeoutInterval: 5)
+        var request = URLRequest(url: url, timeoutInterval: 120)
         request.setValue(token, forHTTPHeaderField: "X-Cove-Session-Token")
         if let body {
             request.httpMethod = "POST"
@@ -31,7 +33,11 @@ private struct LocalClient {
         }
         let (data, response) = try await URLSession.shared.data(for: request, delegate: LaunchRedirectObserver())
         try expect((response as? HTTPURLResponse)?.statusCode == status)
-        return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        return data.isEmpty ? [:] : try JSONSerialization.jsonObject(with: data)
+    }
+
+    func call(_ path: String, body: [String: Any]? = nil, status: Int = 200) async throws -> [String: Any] {
+        try await json(path, body: body, status: status) as? [String: Any] ?? [:]
     }
 }
 
@@ -51,12 +57,23 @@ private enum MiniAppLauncherAcceptance {
 
     @MainActor
     static func run() async throws {
-        guard CommandLine.arguments.count == 2 else { throw FixtureFailure.mismatch }
+        let options = Set(CommandLine.arguments.dropFirst(2))
+        guard CommandLine.arguments.count >= 2, options.isSubset(of: ["--interactive", "--managed", "--cloud", "--compatible", "--os-handoff"]) else {
+            throw FixtureFailure.mismatch
+        }
+        let interactive = options.contains("--interactive")
+        if interactive {
+            _ = NSApplication.shared
+            NSApp.setActivationPolicy(.accessory)
+            NSApp.finishLaunching()
+        }
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("cove-mini-app-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: temp) }
         setenv("COVE_DATA_DIR", temp.path, 1)
         setenv("COVE_INSECURE_FILE_SECRET_STORE", "1", 1)
+        unsetenv("COVE_APP_CATALOG_URL")
+        unsetenv("COVE_APP_CATALOG_PUBLIC_KEY")
         let service = BundledServiceManager(executableURL: URL(fileURLWithPath: CommandLine.arguments[1]), preferredPort: 19760,
                                             recoveryStart: 19761, recoveryEnd: 19790, insecureFileSecretStore: true)
         let browser = CaptureBrowser()
@@ -80,13 +97,13 @@ private enum MiniAppLauncherAcceptance {
             return client
         }
 
-        let client = try await handoff("cove://install/cove/japanese-review-book?version=1.0.0", "/apps/install/cove/japanese-review-book?version=1.0.0")
+        let client = try await handoff("cove://install/cove/japanese-review-book?version=1.1.0", "/apps/install/cove/japanese-review-book?version=1.1.0")
         let api = "/api/mini-apps"
         let catalog = try await client.call(api + "/catalog")
-        guard let entries = catalog["packages"] as? [[String: Any]], let book = entries.first(where: { $0["app"] as? String == "japanese-review-book" }),
+        guard let entries = catalog["packages"] as? [[String: Any]], let book = entries.first(where: { $0["app"] as? String == "japanese-review-book" && $0["version"] as? String == "1.1.0" }),
               let digest = book["digest"] as? String,
-              let release = try await client.call(api + "/catalog/cove/japanese-review-book/1.0.0/install", body: ["digest": digest])["id"] as? String,
-              let id = try await client.call(api + "/instances", body: ["release_id": release, "name": "Picker fixture", "grants": ["mac.files.pick"]])["id"] as? String
+              let release = try await client.call(api + "/catalog/cove/japanese-review-book/1.1.0/install", body: ["digest": digest])["id"] as? String,
+              let id = try await client.call(api + "/instances", body: ["release_id": release, "name": "Picker fixture", "grants": ["mac.files.pick", "mac.selection.receive", "ai.generate", "records.query", "records.commit"]])["id"] as? String
         else { throw FixtureFailure.mismatch }
         let instance = api + "/instances/" + id
         let other = try await handoff("cove://apps", "/apps")
@@ -94,17 +111,60 @@ private enum MiniAppLauncherAcceptance {
         guard let op = pending["id"] as? String, let pickerLink = pending["url"] as? String,
               let requestID = UUID(uuidString: op), let link = URL(string: pickerLink), MiniAppLink(link) == .pick(requestID)
         else { throw FixtureFailure.mismatch }
-        let claim = try await service.miniAppFileRequest(requestID)
-        try expect((try JSONSerialization.jsonObject(with: claim) as? [String: String])?["instance"] == "Picker fixture")
-        let reply = try JSONEncoder().encode(["state":"completed", "name":"fixture.txt", "text":"Fixture-only selected text"])
-        _ = try await service.miniAppFileRequest(requestID, reply: reply)
+        let text = "The Japanese word for water is mizu. Water freezes at zero degrees Celsius."
+        if interactive {
+            let file = temp.appendingPathComponent("lesson.txt")
+            try text.write(to: file, atomically: true, encoding: .utf8)
+            print("In the Mac file picker press Shift-Command-G and choose " + file.path)
+            await pickMiniAppText(requestID, service: service)
+        } else {
+            let claim = try await service.miniAppFileRequest(requestID)
+            try expect((try JSONSerialization.jsonObject(with: claim) as? [String: String])?["instance"] == "Picker fixture")
+            let reply = try JSONEncoder().encode(["state":"completed", "name":"lesson.txt", "text":text])
+            _ = try await service.miniAppFileRequest(requestID, reply: reply)
+        }
         let file = try await client.call(instance + "/files/" + op)
-        try expect(file["text"] as? String == "Fixture-only selected text")
+        try expect(file["text"] as? String == text)
         _ = try await other.call(instance + "/files/" + op, status: 404)
+        if interactive {
+            let board = NSPasteboard.withUniqueName()
+            defer { board.releaseGlobally() }
+            try expect(board.setString(text, forType: .string))
+            guard let selection = board.string(forType: .string) else { throw FixtureFailure.mismatch }
+            print("In the selection chooser pick a field of the Picker fixture instance.")
+            await chooseMiniAppForSelection(selection, launcher: launcher, service: service)
+        } else {
+            let targets = try await service.miniAppSelectionTargets()
+            guard let target = (try JSONSerialization.jsonObject(with: targets) as? [[String: Any]])?.first(where: {
+                $0["action"] as? String == "review.suggestQuestions" && $0["field"] as? String == "passage"
+            }) else { throw FixtureFailure.mismatch }
+            try await service.stageMiniAppSelection(JSONSerialization.data(withJSONObject: ["target": target, "text": text]))
+        }
+        let pendingText = try await client.call(instance + "/native-selection")
+        guard let selectionID = pendingText["id"] as? String,
+              (pendingText["target"] as? [String: Any])?["instance"] as? String == id else { throw FixtureFailure.mismatch }
+        let received = try await client.call(instance + "/native-selection", body: ["id":selectionID])
+        try expect(received["text"] as? String == text)
+        _ = try await client.call(instance + "/native-selection", body: ["id":selectionID], status: 409)
+        if options.contains("--managed") {
+            try await verifyManagedGeneration(client, instance: instance, temp: temp, text: text)
+        }
+        if options.contains("--compatible") {
+            try await verifyCompatibleGeneration(client, instance: instance, text: text)
+        }
+        if options.contains("--cloud") {
+            try await verifyCloudGeneration(client, instance: instance, text: text)
+        }
         launcher.stop()
         let resumed = try await handoff("cove://open/" + id + "/questions", "/apps/" + id + "/questions")
         _ = try await client.call("/api/session", status: 401)
         let details = try await resumed.call(instance)
         try expect((details["instance"] as? [String:Any])?["name"] as? String == "Picker fixture")
+        if options.contains("--os-handoff") {
+            launcher.stop()
+            let serviceURL = URL(fileURLWithPath: CommandLine.arguments[1]).standardizedFileURL
+            let bundle = serviceURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            try await verifySystemHandoff(bundle: bundle, data: temp, instance: id)
+        }
     }
 }

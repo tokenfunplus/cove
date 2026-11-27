@@ -19,7 +19,8 @@ var starter []byte
 const usage = `Usage:
   coveapp init PUBLISHER APP OUTPUT.json
   coveapp validate SOURCE
-  coveapp preview SOURCE
+  coveapp preview SOURCE [--browser [--fixture SCENARIO.json] [--allow blobs.import] [--model-endpoint LOOPBACK_URL]]
+  coveapp upgrade-test OLD NEW FIXTURE.json
   coveapp test SOURCE SCENARIO.json
   coveapp pack SOURCE OUTPUT.coveapp`
 
@@ -53,7 +54,19 @@ func run(args []string, out io.Writer) error {
 			return err
 		}
 		return writePackage(args[3], append(source, '\n'))
-	case "validate", "preview", "test", "pack":
+	case "upgrade-test":
+		if len(args) != 4 {
+			return errors.New(usage)
+		}
+		return upgradeTest(args[1], args[2], args[3], out)
+	case "preview":
+		if len(args) >= 3 && args[2] == "--browser" {
+			return browserCommand(args[1], args[3:], out)
+		}
+		if len(args) != 2 {
+			return errors.New(usage)
+		}
+	case "validate", "test", "pack":
 		want := 2
 		if args[0] == "test" || args[0] == "pack" {
 			want = 3

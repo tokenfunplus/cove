@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 )
 
 const miniAppsMigration = `
@@ -140,11 +141,32 @@ func (s *MiniAppStore) Invocation(instance, id string) (fingerprint string, resu
 	return
 }
 func (s *MiniAppStore) SaveInvocation(instance, id, fingerprint string, result []byte) error {
-	_, err := s.tx.ExecContext(s.ctx, "INSERT INTO mini_app_invocations(instance_id,id,fingerprint,result) VALUES(?,?,?,?)", instance, id, fingerprint, result)
+	_, err := s.tx.ExecContext(s.ctx, "INSERT INTO mini_app_invocations(instance_id,id,fingerprint,result,created_at) VALUES(?,?,?,?,unixepoch())", instance, id, fingerprint, result)
+	if err == nil {
+		_, err = s.tx.ExecContext(s.ctx, compactReceipts, instance)
+	}
 	return err
 }
 
 func (s *MiniAppStore) InstanceRecordBytes(instance string) (size int, err error) {
 	err = s.tx.QueryRowContext(s.ctx, "SELECT COALESCE(SUM(length(fields)),0) FROM mini_app_records WHERE instance_id=?", instance).Scan(&size)
 	return
+}
+
+func (s *MiniAppStore) DeleteRecords(instance, collection string, ids []string) error {
+	raw, err := json.Marshal(ids)
+	if err != nil {
+		return err
+	}
+	_, err = s.tx.ExecContext(s.ctx, `DELETE FROM mini_app_records WHERE instance_id=? AND collection=? AND id IN (SELECT value FROM json_each(?))`, instance, collection, string(raw))
+	if err != nil {
+		return err
+	}
+	// Earlier committed previews may contain previous versions of a deleted record.
+	// Retain the operation fingerprint so a retry cannot recreate the erased content.
+	_, err = s.tx.ExecContext(s.ctx, `UPDATE mini_app_invocations SET result=X''
+      WHERE instance_id=? AND length(result)>0 AND EXISTS (
+       SELECT 1 FROM json_each(CASE WHEN length(result)>0 THEN CAST(result AS TEXT) ELSE '{}' END,'$.records') r
+       WHERE json_extract(r.value,'$.id') IN (SELECT value FROM json_each(?)))`, instance, string(raw))
+	return err
 }

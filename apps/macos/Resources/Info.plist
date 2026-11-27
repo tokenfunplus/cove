@@ -32,6 +32,13 @@
   <key>NSServices</key>
   <array>
     <dict>
+      <key>NSMenuItem</key><dict><key>default</key><string>Send to Cove Mini App</string></dict>
+      <key>NSMessage</key><string>sendToMiniApp</string>
+      <key>NSPortName</key><string>Cove</string>
+      <key>NSRequiredContext</key><dict/>
+      <key>NSSendTypes</key><array><string>public.utf8-plain-text</string></array>
+    </dict>
+    <dict>
       <key>NSMenuItem</key>
       <dict>
         <key>default</key>

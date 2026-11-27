@@ -311,7 +311,7 @@ export function ChatPage({ incomingAppDraft, consumedAppDraft }: {
                             }
                             copy={copy}
                             isLoading={isLoadingConversation}
-                            onSend={() => void handleSend()}
+                            onSend={(miniApp,onAccepted) => void handleSend(miniApp ? {body:draft,miniApp,interactive:false,onAccepted} : undefined)}
                             onCancel={() => void handleCancel()}
                             onChooseModel={() => {
                               exitFocusMode();

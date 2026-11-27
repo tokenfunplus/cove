@@ -1,3 +1,4 @@
+import { runReviewBookUpgrade } from "./review-book-upgrade.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -29,6 +30,12 @@ export async function runMiniAppsAcceptance({
     );
     await click("[data-mini-target]");
   };
+  const grantBookAccess = async () => {
+    const selector = "fieldset fieldset input[type=checkbox]";
+    await until("document.querySelectorAll("+JSON.stringify(selector)+").length > 0");
+    assert.equal(await evaluate("document.querySelectorAll("+JSON.stringify(selector+":checked")+").length"),0);
+    await evaluate("document.querySelectorAll("+JSON.stringify(selector)+").forEach(el=>el.click())");
+  };
   const rowCount = () =>
     evaluate(
       "document.querySelectorAll('[aria-label^=\"Select record \"]').length",
@@ -52,6 +59,7 @@ export async function runMiniAppsAcceptance({
   await goto("/apps/install/cove/japanese-review-book?version=1.0.0");
   await button("Preview release");
   await fill("input:not([type])", "Kana practice");
+  await grantBookAccess();
   await button("Install and create instance");
   await readyRows(3);
   const disclosures =
@@ -77,6 +85,7 @@ export async function runMiniAppsAcceptance({
   await button("My apps");
   await button("New instance");
   await fill("input:not([type])", "Second book");
+  await grantBookAccess();
   await button("Create instance");
   await readyRows(3);
   const second = await evaluate("location.pathname.split('/')[2]");
@@ -152,7 +161,8 @@ export async function runMiniAppsAcceptance({
 
   await button("Settings");
   await button("Check for updates");
-  await until("document.body.textContent.includes('No compatible update in this catalog.')");
+  await until("Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Upgrade instance to 1.1.0')");
+  await button("Cancel");
   await cdp("Browser.setDownloadBehavior", {
     behavior: "allow",
     downloadPath: temp,
@@ -190,61 +200,72 @@ export async function runMiniAppsAcceptance({
     false,
   );
 
-  // Import a new release and update one existing local-author instance in place.
-  const pkg = JSON.parse(
-    await readFile(
-      "services/local-service/internal/appcatalog/packages/reading-inbox.coveapp",
-      "utf8",
-    ),
-  );
-  const old = await api("/api/mini-apps/packages/install", "POST", pkg);
-  const inbox = await api("/api/mini-apps/instances", "POST", {
-    release_id: old.id,
-    name: "Legacy inbox",
-    grants: pkg.capabilities,
-  });
-  const saved = await api("/api/mini-apps/instances/" + inbox.id + "/export");
-  const update = path.join(temp, "inbox-update.coveapp");
-  await writeFile(update, JSON.stringify({ ...pkg, version: "1.1.0" }));
-  await goto("/apps");
-  await until("!!document.querySelector('input[accept*=coveapp]')");
-  const pageRoot = await cdp("DOM.getDocument");
-  const importField = await cdp("DOM.querySelector", {
-    nodeId: pageRoot.root.nodeId,
-    selector: "input[accept*=coveapp]",
-  });
-  await cdp("DOM.setFileInputFiles", {
-    nodeId: importField.nodeId,
-    files: [update],
-  });
-  await until(
-    "!!document.querySelector('select option[value=" +
-      JSON.stringify(inbox.id) +
-      "]')",
-  );
-  await evaluate(
-    `{const s=document.querySelector("select");s.value=${JSON.stringify(inbox.id)};s.dispatchEvent(new Event("change",{bubbles:true}));}`,
-  );
+  // A third-party author can import both versions from files and update user records in place.
+  const packageDir = "services/local-service/internal/appcatalog/packages";
+  async function importInbox(filename) {
+    const pkg = JSON.parse(await readFile(path.join(packageDir, filename), "utf8"));
+    pkg.publisher = "local-reading-fixture";
+    const artifact = path.join(temp, filename);
+    await writeFile(artifact, JSON.stringify(pkg));
+    await goto("/apps");
+    await until("!!document.querySelector('input[accept*=coveapp]')");
+    const root = await cdp("DOM.getDocument");
+    const input = await cdp("DOM.querySelector", {
+      nodeId: root.root.nodeId, selector: "input[accept*=coveapp]",
+    });
+    await cdp("DOM.setFileInputFiles", { nodeId: input.nodeId, files: [artifact] });
+    await until(`document.body.textContent.includes(${JSON.stringify(pkg.version)}) && !!document.querySelector("fieldset fieldset")`);
+  }
+  await importInbox("reading-inbox.coveapp");
+  await fill("input:not([type])", "Legacy inbox");
+  await grantBookAccess();
+  await button("Install and create instance");
+  await readyRows(1);
+  const inbox = await evaluate("location.pathname.split('/')[2]");
+  const instanceURL = "/api/mini-apps/instances/" + inbox;
+  const runInbox = async (action, inputs = {}, records = []) => {
+    const invocation = { operation_id: randomUUID(), surface: "chat", inputs,
+      records: records.map(({ id, revision }) => ({ id, revision })) };
+    const url = instanceURL + "/actions/" + action;
+    const result = await api(url, "POST", invocation);
+    return result.confirmation
+      ? api(url, "POST", { ...invocation, confirm: result.confirmation })
+      : result;
+  };
+  const title = "A saved essay from before the update";
+  const { records: [saved] } = await runInbox("inbox.add", { title, note: "My own reading notes." });
+  const before = await api(instanceURL + "/export");
+  await importInbox("reading-inbox-1.1.coveapp");
+  await until(`document.querySelector("select")?.value === ${JSON.stringify(inbox)}`);
   await button("Upgrade instance to 1.1.0");
-  await until("location.pathname.includes(" + JSON.stringify(inbox.id) + ")");
-  assert.equal(
-    (await api("/api/mini-apps/instances/" + inbox.id)).package.version,
-    "1.1.0",
-  );
-  const content = (collections) =>
-    Object.fromEntries(
-      Object.entries(collections).map(([name, rows]) => [
-        name,
-        rows.map(({ id, fields }) => ({ id, fields })),
-      ]),
-    );
-  assert.deepEqual(
-    content(
-      (await api("/api/mini-apps/instances/" + inbox.id + "/export"))
-        .collections,
-    ),
-    content(saved.collections),
-  );
+  await until("location.pathname.includes(" + JSON.stringify(inbox) + ")");
+  assert.equal((await api(instanceURL)).package.version, "1.1.0");
+  const after = await api(instanceURL + "/export");
+  assert.deepEqual(after.collections.items, before.collections.items.map(row => ({
+    ...row, revision: row.revision + 1, fields: { ...row.fields, deferrals: 0 },
+  })));
+
+  await goto("/");
+  await until("!!document.querySelector('#generation-input')");
+  await click('button[aria-label="Tools"]');
+  await button("Mini Apps");
+  const inboxButton = `Array.from(document.querySelectorAll('[role=dialog] button')).find(b=>b.textContent.startsWith('Legacy inbox'))`;
+  await until("!!(" + inboxButton + ")");
+  await evaluate("(" + inboxButton + ").click()");
+  await readyRows(2);
+  const marker = `Array.from(document.querySelectorAll('[role=dialog] input[aria-label^="Select record"]')).find(e=>e.parentElement.textContent.includes(${JSON.stringify(title)}))`;
+  await until("!!(" + marker + ")");
+  await evaluate("(" + marker + ").click()");
+  await button("Add to current draft (1)");
+  await until(`document.querySelector('#generation-input')?.value.includes(${JSON.stringify(title)})`);
+  await fill("#generation-input", "");
+  const migrated = after.collections.items.find(row => row.id === saved.id);
+  const { records: [firstDefer] } = await runInbox("inbox.defer", {}, [migrated]);
+  const { records: [secondDefer] } = await runInbox("inbox.defer", {}, [firstDefer]);
+  assert.equal(firstDefer.fields.deferrals, 1);
+  assert.equal(secondDefer.fields.deferrals, 2);
+  assert.equal((Date.parse(secondDefer.fields.revisit) - Date.parse(firstDefer.fields.revisit)) / 86400000, 5);
+  assert.equal((await runInbox("inbox.upcoming")).records.some(row => row.id === saved.id), false);
 
   await goto("/?surface=quick-panel");
   await until("!!document.querySelector('#quick-panel-input')");
@@ -281,8 +302,12 @@ export async function runMiniAppsAcceptance({
     await evaluate("document.querySelector('#quick-panel-input').value"),
     "Panel study selection",
   );
-  // Force an expired proof on a mounted app to exercise real Local Service rejection.
+  // Clear the import before leaving the panel so its unsent-draft protection
+  // does not open a native beforeunload prompt during the next navigation.
   await fill("#quick-panel-input", "");
+  await until("document.querySelector('#quick-panel-input')?.value===''");
+  await runReviewBookUpgrade({ api, goto, button, until, evaluate, fill, click, readyRows, first, profile });
+  // Force an expired proof on a mounted app to exercise real Local Service rejection.
   await goto("/apps/" + first + "/home");
   await readyRows(3);
   await evaluate(`{const original=window.fetch; window.fetch=(url,options)=>{const headers=new Headers(options?.headers);

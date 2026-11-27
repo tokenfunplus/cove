@@ -150,13 +150,29 @@ public final class BundledServiceManager: ServiceManaging, ServiceStatusReading,
     }
 
     public func miniAppFileRequest(_ id: UUID, reply: Data? = nil) async throws -> Data {
-        guard let base = runningBaseURL() else { throw LauncherError.serviceDidNotBecomeReady }
         let path = "/internal/control/mini-app-files/" + id.uuidString.lowercased() + (reply == nil ? "/claim" : "/finish")
+        return try await miniAppControl(path, body: reply)
+    }
+
+    public func renewMiniAppPicker(_ id: UUID) async throws {
+        _ = try await miniAppControl("/internal/control/mini-app-files/" + id.uuidString.lowercased() + "/renew", body: nil)
+    }
+
+    public func miniAppSelectionTargets() async throws -> Data {
+        return try await miniAppControl("/internal/control/mini-app-selection/targets", body: nil)
+    }
+
+    public func stageMiniAppSelection(_ body: Data) async throws {
+        _ = try await miniAppControl("/internal/control/mini-app-selection/stage", body: body)
+    }
+
+    private func miniAppControl(_ path: String, body: Data?) async throws -> Data {
+        guard let base = runningBaseURL() else { throw LauncherError.serviceDidNotBecomeReady }
         var request = URLRequest(url: base.appendingPathComponent(path), timeoutInterval: 5)
         request.httpMethod = "POST"
         request.setValue(controlToken, forHTTPHeaderField: "X-Cove-Control-Token")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = reply
+        request.httpBody = body
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
         let (data, response) = try await session.data(for: request, delegate: LaunchRedirectObserver())

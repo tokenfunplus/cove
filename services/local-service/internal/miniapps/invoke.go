@@ -31,14 +31,15 @@ type Record struct {
 	Fields   map[string]any `json:"fields"`
 }
 type Invocation struct {
-	Cursor      string           `json:"cursor,omitempty"`
-	Items       []map[string]any `json:"items,omitempty"`
-	Action      string           `json:"action"`
-	Surface     string           `json:"surface"`
-	OperationID string           `json:"operation_id"`
-	Inputs      map[string]any   `json:"inputs"`
-	Records     []RecordRef      `json:"records,omitempty"`
-	Confirm     string           `json:"confirm,omitempty"`
+	ExpectedRevision int64            `json:"expected_instance_revision,omitempty"`
+	Cursor           string           `json:"cursor,omitempty"`
+	Items            []map[string]any `json:"items,omitempty"`
+	Action           string           `json:"action"`
+	Surface          string           `json:"surface"`
+	OperationID      string           `json:"operation_id"`
+	Inputs           map[string]any   `json:"inputs"`
+	Records          []RecordRef      `json:"records,omitempty"`
+	Confirm          string           `json:"confirm,omitempty"`
 }
 type Result struct {
 	NextCursor   string   `json:"next_cursor,omitempty"`
@@ -94,7 +95,11 @@ func compare(x, y any) int {
 }
 func include(row Record, a Action, inputs map[string]any, now time.Time) bool {
 	for _, w := range a.Where {
-		n := compare(row.Fields[w.Field], resolve(w.Value, inputs, now))
+		value := row.Fields[w.Field]
+		if w.Field == "$id" {
+			value = row.ID
+		}
+		n := compare(value, resolve(w.Value, inputs, now))
 		if !comparison(n, w.Op) {
 			return false
 		}
@@ -112,8 +117,12 @@ func queryRecords(rows []Record, a Action, inputs map[string]any, now time.Time)
 		slices.SortStableFunc(selected, func(x, y Record) int { return compare(x.Fields[k], y.Fields[k]) })
 	}
 	// Rows arrive in creation order, the stable tiebreaker for equal sort values.
-	if a.Limit > 0 {
-		selected = selected[:min(len(selected), a.Limit)]
+	limit := a.Limit
+	if a.LimitInput != "" {
+		limit = int(inputs[a.LimitInput].(float64))
+	}
+	if limit > 0 {
+		selected = selected[:min(len(selected), limit)]
 	}
 	return selected
 }
@@ -157,12 +166,15 @@ func inputOK(inputs map[string]any, fields map[string]string) bool {
 func generate(p Package, a Action, inputs map[string]any) Result {
 	instruction := a.Prompt
 	if a.CandidateAction != "" {
-		schema, _ := json.Marshal(p.Actions[a.CandidateAction].Inputs)
+		schema, _ := json.Marshal(candidateDefinition(p, a).Inputs)
 		instruction += fmt.Sprintf("\nReturn only a JSON array of candidate objects, each matching these named fields and types: %s.", schema)
 	}
 	if len(inputs) > 1 {
 		parameters := maps.Clone(inputs)
 		delete(parameters, a.TextInput)
+		for _, source := range a.CandidateBindings {
+			delete(parameters, source)
+		}
 		// Invoke has already validated the values as finite JSON scalars.
 		encoded, _ := json.Marshal(parameters)
 		instruction += "\n\nUser-selected parameters (JSON):\n" + string(encoded)
@@ -178,6 +190,9 @@ func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result
 		i, err := loadInstance(tx, id)
 		if err != nil {
 			return err
+		}
+		if req.ExpectedRevision != 0 && req.ExpectedRevision != i.Revision {
+			return ErrConflict
 		}
 		if !i.Enabled {
 			return ErrDenied
@@ -196,19 +211,33 @@ func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result
 		if req.Cursor != "" && (a.Op != "query" || len(req.Cursor) != sha256.Size*2) {
 			return invalid("query cursor")
 		}
+		original := req
+		now := s.now()
+		if date, _, ok := strings.Cut(req.Confirm, "."); ok {
+			reviewed, err := time.ParseInLocation(time.DateOnly, date, now.Location())
+			if err != nil {
+				return ErrConflict
+			}
+			now = reviewed
+		}
 		if req.Items != nil {
 			if a.Op != "create" || len(req.Inputs) != 0 || len(req.Items) == 0 || len(req.Items) > 50 {
 				return invalid("batch creation requires one to fifty input objects")
 			}
-			for _, item := range req.Items {
-				if !inputOK(item, a.Inputs) {
+			req.Items = slices.Clone(req.Items)
+			for n, item := range req.Items {
+				req.Items[n], err = actionInputs(a, item, now)
+				if err != nil {
 					return invalid("invalid item in create batch")
 				}
 			}
-		} else if !inputOK(req.Inputs, a.Inputs) {
-			return invalid("action inputs")
+		} else {
+			req.Inputs, err = actionInputs(a, req.Inputs, now)
+			if err != nil {
+				return err
+			}
 		}
-		if a.Op != "update" && len(req.Records) > 0 {
+		if a.Op != "update" && a.Op != "delete" && len(req.Records) > 0 {
 			return invalid("unexpected record selection")
 		}
 		if (a.Op == "query" || a.Op == "generate") && req.Confirm != "" {
@@ -216,28 +245,38 @@ func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result
 		}
 		if a.Op == "generate" {
 			out = generate(r.Package, a, req.Inputs)
-			return nil
+			return tx.RecordActivity(i.ID, req.OperationID, r.ID, req.Action, req.Surface, "prepared")
 		}
 		rows, err := loadRecords(tx, id, a.Collection)
 		if err != nil {
 			return err
 		}
-		now := s.now()
 		if a.Op == "query" {
 			out, err = queryPage(queryRecords(rows, a, req.Inputs, now), a.Limit, req.Cursor)
+			if err != nil {
+				return err
+			}
+			return tx.RecordActivity(i.ID, req.OperationID, r.ID, req.Action, req.Surface, "completed")
+		}
+		out, err = s.write(tx, i, a, rows, req, original, now)
+		if err != nil {
 			return err
 		}
-		out, err = s.write(tx, i, a, rows, req, now)
-		return err
+		status := "completed"
+		if out.Confirmation != "" {
+			status = "previewed"
+		}
+		return tx.RecordActivity(i.ID, req.OperationID, r.ID, req.Action, req.Surface, status)
 	})
 	return out, err
 }
-func (s *Service) write(tx *persistence.MiniAppStore, i Instance, a Action, rows []Record, req Invocation, now time.Time) (Result, error) {
+func (s *Service) write(tx *persistence.MiniAppStore, i Instance, a Action, rows []Record, req, original Invocation, now time.Time) (Result, error) {
 	var out Result
 	// Bind approval and replay to the instance, immutable release, caller and original input.
 	confirm := req.Confirm
 	req.Confirm = ""
-	requestData, err := json.Marshal(req)
+	original.Confirm = ""
+	requestData, err := json.Marshal(original)
 	if err != nil {
 		return out, err
 	}
@@ -245,7 +284,7 @@ func (s *Service) write(tx *persistence.MiniAppStore, i Instance, a Action, rows
 	receipt := digest([]byte(fingerprint + "/" + confirm))
 	prior, result, err := tx.Invocation(i.ID, req.OperationID)
 	if err == nil {
-		if prior != receipt {
+		if prior != receipt || len(result) == 0 {
 			return out, ErrConflict
 		}
 		err = json.Unmarshal(result, &out)
@@ -267,9 +306,10 @@ func (s *Service) write(tx *persistence.MiniAppStore, i Instance, a Action, rows
 		return Result{}, invalid("operation output limit")
 	}
 	mac := hmac.New(sha256.New, s.secret[:])
-	fmt.Fprintf(mac, "%s/%d/", fingerprint, i.Revision)
+	date := now.Format(time.DateOnly)
+	fmt.Fprintf(mac, "%s/%d/%s/", fingerprint, i.Revision, date)
 	mac.Write(encoded)
-	preview := hex.EncodeToString(mac.Sum(nil))
+	preview := date + "." + hex.EncodeToString(mac.Sum(nil))
 	if confirm == "" {
 		out.Confirmation = preview
 		return out, nil
@@ -286,9 +326,24 @@ func (s *Service) write(tx *persistence.MiniAppStore, i Instance, a Action, rows
 			return out, invalid("instance record limit")
 		}
 	}
-	for _, r := range proposed {
-		if err := saveRecord(tx, i.ID, a.Collection, r); err != nil {
+	if a.Op == "delete" {
+		ids := make([]string, len(proposed))
+		for n, r := range proposed {
+			ids[n] = r.ID
+			out.Records[n].Fields = map[string]any{}
+		}
+		if err := tx.DeleteRecords(i.ID, a.Collection, ids); err != nil {
 			return Result{}, err
+		}
+		encoded, err = json.Marshal(out)
+		if err != nil {
+			return Result{}, err
+		}
+	} else {
+		for _, r := range proposed {
+			if err := saveRecord(tx, i.ID, a.Collection, r); err != nil {
+				return Result{}, err
+			}
 		}
 	}
 	size, err := tx.InstanceRecordBytes(i.ID)
@@ -320,7 +375,7 @@ func propose(id string, rows []Record, a Action, req Invocation, now time.Time) 
 			proposed = append(proposed, record)
 		}
 		return proposed, nil
-	case "update":
+	case "update", "delete":
 		if len(req.Records) == 0 || len(req.Records) > 50 {
 			return nil, invalid("select between one and fifty records")
 		}
@@ -330,7 +385,7 @@ func propose(id string, rows []Record, a Action, req Invocation, now time.Time) 
 		}
 		for _, ref := range req.Records {
 			r, ok := byID[ref.ID]
-			if !ok || r.Revision != ref.Revision {
+			if !ok || r.Revision != ref.Revision || !include(r, a, req.Inputs, now) {
 				return nil, ErrConflict
 			}
 			delete(byID, ref.ID)

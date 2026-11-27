@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"slices"
 
 	"github.com/google/uuid"
 	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
@@ -70,11 +71,25 @@ func (s *Server) miniAppRoutes(mux *http.ServeMux, session func(http.Handler) ht
 	register("POST", "/instances/{id}/settings", s.appInstance)
 	register("POST", "/instances/{id}/upgrade", s.appInstance)
 	register("POST", "/instances/{id}/actions/{action}", s.appInvoke)
+	register("GET", "/catalog-settings", s.appCatalogSettings)
+	register("PUT", "/catalog-settings", s.appCatalogSettings)
 	register("GET", "/catalog", s.appCatalog)
 	register("GET", "/catalog/{publisher}/{app}/{version}", s.appCatalog)
 	register("POST", "/catalog/{publisher}/{app}/{version}/install", s.appCatalog)
 	register("POST", "/instances/{id}/attach", s.appAttach)
 	register("POST", "/instances/{id}/selection", s.appSelection)
+	register("GET", "/instances/{id}/native-selection", s.appNativeSelection)
+	register("POST", "/instances/{id}/native-selection", s.appNativeSelection)
+	register("GET", "/instances/{id}/capabilities", s.appCapabilities)
+	register("GET", "/instances/{id}/activity", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if _, err := s.apps.Instance(r.Context(), id); err != nil {
+			appReply(w, nil, err)
+			return
+		}
+		items, err := s.appStore.AppActivity(r.Context(), id)
+		appReply(w, map[string]any{"activity": items}, err)
+	})
 	register("GET", "/instances/{id}/tasks", s.appTasks)
 	register("POST", "/instances/{id}/tasks", s.appTasks)
 	register("GET", "/instances/{id}/tasks/{task}", s.appTasks)
@@ -82,7 +97,10 @@ func (s *Server) miniAppRoutes(mux *http.ServeMux, session func(http.Handler) ht
 	register("POST", "/instances/{id}/files", s.appFiles)
 	register("GET", "/instances/{id}/files/{file}", s.appFiles)
 	control := localsecurity.RequireControlToken(s.controlToken, s.writeSecurityError)
+	mux.Handle("POST /internal/control/mini-app-selection/targets", control(http.HandlerFunc(s.nativeSelection)))
+	mux.Handle("POST /internal/control/mini-app-selection/stage", control(http.HandlerFunc(s.nativeSelection)))
 	mux.Handle("POST /internal/control/mini-app-files/{file}/claim", control(http.HandlerFunc(s.nativeAppFile)))
+	mux.Handle("POST /internal/control/mini-app-files/{file}/renew", control(http.HandlerFunc(s.nativeAppFile)))
 	mux.Handle("POST /internal/control/mini-app-files/{file}/finish", control(http.HandlerFunc(s.nativeAppFile)))
 }
 
@@ -112,6 +130,8 @@ func appReply(w http.ResponseWriter, value any, err error) {
 	switch {
 	case errors.Is(err, miniapps.ErrInvalid):
 		writeError(w, 400, "validation", err.Error())
+	case errors.Is(err, miniapps.ErrReleaseContents):
+		writeError(w, 409, "release_conflict", "A package with this version already has different contents. Publish a new version.")
 	case errors.Is(err, miniapps.ErrDenied):
 		writeError(w, 403, "permission_denied", "This operation is unavailable for the instance and its current permissions.")
 	case errors.Is(err, miniapps.ErrConflict), errors.Is(err, chat.ErrAppTaskConflict):
@@ -138,12 +158,17 @@ func (s *Server) appPackages(w http.ResponseWriter, r *http.Request) {
 		appReply(w, nil, err)
 		return
 	}
+	origin, err := s.fileOrigin(r, raw)
+	if err != nil {
+		appReply(w, nil, err)
+		return
+	}
 	if r.URL.Path == "/api/mini-apps/packages/preview" {
-		item, err := miniapps.Preview(raw, "local")
+		item, err := miniapps.Preview(raw, origin)
 		appReply(w, item, err)
 		return
 	}
-	item, err := s.apps.Install(r.Context(), raw, "local")
+	item, err := s.apps.Install(r.Context(), raw, origin)
 	appReply(w, item, err)
 }
 func (s *Server) appInstances(w http.ResponseWriter, r *http.Request) {
@@ -213,19 +238,55 @@ func (s *Server) appInvoke(w http.ResponseWriter, r *http.Request) {
 	result, err := s.apps.Invoke(r.Context(), r.PathValue("id"), in)
 	appReply(w, result, err)
 }
+func (s *Server) appCatalogSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "PUT" {
+		var config appcatalog.Catalog
+		if !appInput(w, r, &config) {
+			return
+		}
+		if err := s.catalog.Configure(config); err != nil {
+			writeError(w, 400, "invalid_catalog", "Check the HTTPS URL and signing key. Once a signed catalog has been used, its signing key must match.")
+			return
+		}
+	}
+	writeJSON(w, 200, s.catalog.Config())
+}
+
 func (s *Server) appCatalog(w http.ResponseWriter, r *http.Request) {
-	entries, err := s.catalog.List(r.Context())
-	if err != nil {
+	var entries []appcatalog.Entry
+	var err error
+	if r.PathValue("publisher") != "" {
+		bundled, _ := (appcatalog.Catalog{}).List(r.Context())
+		for _, entry := range bundled {
+			if entry.Publisher == r.PathValue("publisher") && entry.App == r.PathValue("app") && entry.Version == r.PathValue("version") {
+				entries = []appcatalog.Entry{entry}
+				break
+			}
+		}
+	}
+	if len(entries) == 0 {
+		entries, err = s.catalog.List(r.Context())
+	}
+	if err != nil && len(entries) == 0 {
 		writeError(w, 502, "catalog_unavailable", "The configured Mini App catalog could not be verified.")
 		return
 	}
 	if r.PathValue("publisher") == "" {
-		writeJSON(w, 200, map[string]any{"packages": entries})
+		entries = slices.DeleteFunc(entries, func(e appcatalog.Entry) bool { return !miniapps.CompatibleHostVersion(e.MinHostVersion) })
+		response := map[string]any{"packages": entries}
+		if err != nil {
+			response["warning"] = "The configured catalog is unavailable or could not be verified. Showing bundled releases."
+		}
+		writeJSON(w, 200, response)
 		return
 	}
 	for _, e := range entries {
 		if e.Publisher != r.PathValue("publisher") || e.App != r.PathValue("app") || e.Version != r.PathValue("version") {
 			continue
+		}
+		if !miniapps.CompatibleHostVersion(e.MinHostVersion) {
+			writeError(w, 409, "incompatible_host", "This package requires a newer Mini App host.")
+			return
 		}
 		if r.Method == "POST" {
 			var in struct {

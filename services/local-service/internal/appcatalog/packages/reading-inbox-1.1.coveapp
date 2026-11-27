@@ -1,0 +1,214 @@
+{
+  "format": 1,
+  "publisher": "bookshelf",
+  "app": "reading-inbox",
+  "name": "Reading Inbox",
+  "description": "Keep a reading queue. Defer an item for two days the first time and a week on later deferrals. Restore it to start a new reading cycle.",
+  "version": "1.1.0",
+  "schema_version": 2,
+  "capabilities": [
+    "records.query",
+    "records.commit",
+    "chat.attach"
+  ],
+  "collections": {
+    "items": {
+      "fields": {
+        "title": "text",
+        "note": "text",
+        "status": "text",
+        "revisit": "date",
+        "deferrals": "number"
+      }
+    }
+  },
+  "pages": [
+    {
+      "id": "home",
+      "title": "Reading queue",
+      "actions": [
+        "inbox.queue",
+        "inbox.upcoming",
+        "inbox.add",
+        "inbox.defer",
+        "inbox.archive"
+      ]
+    },
+    {
+      "id": "library",
+      "title": "All reading",
+      "actions": [
+        "inbox.all",
+        "inbox.restore"
+      ]
+    }
+  ],
+  "actions": {
+    "inbox.queue": {
+      "title": "Ready to read",
+      "op": "query",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "status",
+          "op": "eq",
+          "value": "queued"
+        },
+        {
+          "field": "revisit",
+          "op": "lte",
+          "value": "$today"
+        }
+      ],
+      "order_by": "revisit"
+    },
+    "inbox.add": {
+      "title": "Add reading",
+      "op": "create",
+      "collection": "items",
+      "inputs": {
+        "title": "text",
+        "note": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "title": "$input.title",
+        "note": "$input.note",
+        "status": "queued",
+        "revisit": "$today",
+        "deferrals": 0
+      }
+    },
+    "inbox.defer": {
+      "title": "Defer reading",
+      "op": "update",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "status": "queued",
+        "revisit": {
+          "if": [
+            {
+              "eq": [
+                "$record.deferrals",
+                0
+              ]
+            },
+            "$today+2",
+            "$today+7"
+          ]
+        },
+        "deferrals": {
+          "add": [
+            "$record.deferrals",
+            1
+          ]
+        }
+      }
+    },
+    "inbox.archive": {
+      "title": "Archive selection",
+      "op": "update",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "status": "archived"
+      }
+    },
+    "inbox.all": {
+      "title": "All items",
+      "op": "query",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "order_by": "title"
+    },
+    "inbox.restore": {
+      "title": "Restore to queue",
+      "op": "update",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "status": "queued",
+        "revisit": "$today",
+        "deferrals": 0
+      }
+    },
+    "inbox.upcoming": {
+      "title": "Due within two days",
+      "op": "query",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "status",
+          "op": "eq",
+          "value": "queued"
+        },
+        {
+          "field": "revisit",
+          "op": "lte",
+          "value": "$today+2"
+        }
+      ],
+      "order_by": "revisit"
+    }
+  },
+  "seed": {
+    "items": [
+      {
+        "title": "An essay to revisit",
+        "note": "Capture the main claim after reading.",
+        "status": "queued",
+        "revisit": "$today",
+        "deferrals": 0
+      }
+    ]
+  },
+  "min_host_version": "1.1.0",
+  "migrations": [
+    {
+      "from": 1,
+      "to": 2,
+      "defaults": {
+        "items": {
+          "deferrals": 0
+        }
+      }
+    }
+  ]
+}

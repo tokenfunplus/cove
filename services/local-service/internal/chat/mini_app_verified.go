@@ -16,6 +16,7 @@ type browserAppStore interface {
 	FinishBrowserAppTask(context.Context, string, string, string, string, string, persistence.GenerationVerification) error
 }
 type browserAppTask struct {
+	maxTokens                   *int
 	ctx                         context.Context
 	owner, claim, phase, prompt string
 	snapshot                    persistence.ProviderSnapshot
@@ -24,11 +25,12 @@ type browserAppTask struct {
 var ErrAppVerification = errors.New("invalid Mini App browser verification")
 
 type BrowserAppContext struct {
-	Snapshot persistence.ProviderSnapshot `json:"snapshot"`
-	Prompt   string                       `json:"prompt"`
+	MaxTokens *int                         `json:"max_tokens"`
+	Snapshot  persistence.ProviderSnapshot `json:"snapshot"`
+	Prompt    string                       `json:"prompt"`
 }
 
-func (s *Service) beginBrowserAppTask(ctx context.Context, in AppTaskInput, snapshot persistence.ProviderSnapshot) (persistence.AppTask, error) {
+func (s *Service) beginBrowserAppTask(ctx context.Context, in AppTaskInput, snapshot persistence.ProviderSnapshot, maxTokens *int) (persistence.AppTask, error) {
 	store, ok := s.store.(browserAppStore)
 	if !ok {
 		return persistence.AppTask{}, ErrAppBrowserModel
@@ -37,7 +39,7 @@ func (s *Service) beginBrowserAppTask(ctx context.Context, in AppTaskInput, snap
 		return persistence.AppTask{}, err
 	}
 	run, cancel := context.WithTimeout(context.Background(), s.secureTimeout)
-	browser := &browserAppTask{ctx: run, owner: in.BrowserOwner, snapshot: snapshot, prompt: in.Prompt}
+	browser := &browserAppTask{maxTokens: maxTokens, ctx: run, owner: in.BrowserOwner, snapshot: snapshot, prompt: in.Prompt}
 	done := make(chan struct{})
 	w := &s.appTask
 	w.Lock()
@@ -88,7 +90,7 @@ func (s *Service) ClaimAppBrowser(instance, id, owner, claim string) (BrowserApp
 		return BrowserAppContext{}, ErrAppTaskConflict
 	}
 	b.claim = claim
-	return BrowserAppContext{Snapshot: b.snapshot, Prompt: b.prompt}, nil
+	return BrowserAppContext{Snapshot: b.snapshot, Prompt: b.prompt, MaxTokens: b.maxTokens}, nil
 }
 func (s *Service) ProgressAppBrowser(instance, id, owner, claim, phase string) error {
 	w := &s.appTask

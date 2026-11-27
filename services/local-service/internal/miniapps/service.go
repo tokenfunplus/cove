@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -118,6 +119,9 @@ func saveInstance(tx *persistence.MiniAppStore, i Instance) error {
 	}
 	return tx.SaveInstance(persistence.AppInstance{ID: i.ID, Name: i.Name, ReleaseID: i.ReleaseID, Enabled: i.Enabled, Revision: i.Revision, Grants: grants})
 }
+
+var ErrReleaseContents = fmt.Errorf("%w: a release with this version already has different contents; publish a new version", ErrConflict)
+
 func (s *Service) Install(ctx context.Context, raw []byte, origin string) (Release, error) {
 	r, err := Preview(raw, origin)
 	if err != nil {
@@ -127,7 +131,7 @@ func (s *Service) Install(ctx context.Context, raw []byte, origin string) (Relea
 		before, err := tx.Release(r.ID)
 		if err == nil {
 			if before.Digest != r.Digest {
-				return ErrConflict
+				return ErrReleaseContents
 			}
 			return nil
 		}

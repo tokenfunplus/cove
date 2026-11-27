@@ -22,7 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 30
+const schemaVersion = 31
 
 const defaultConversationTitle = "New conversation"
 
@@ -106,7 +106,16 @@ type GenerationParameters struct {
 // GenerationConfigurationSnapshot is the immutable workspace configuration
 // used for one Generation attempt. Nil sampling parameters deliberately retain
 // the Provider defaults, while zero is a configured value.
+// MiniAppScope is the user-selected authority for a single model turn.
+type MiniAppScope struct {
+	Instance string   `json:"instance"`
+	Release  string   `json:"release"`
+	Revision int64    `json:"revision"`
+	Actions  []string `json:"actions"`
+}
+
 type GenerationConfigurationSnapshot struct {
+	MiniApp      *MiniAppScope     `json:"mini_app,omitempty"`
 	SystemPrompt string            `json:"system_prompt"`
 	WebSearch    *websearch.Policy `json:"web_search,omitempty"`
 	GenerationParameters
@@ -337,6 +346,7 @@ type GenerationTargetInput struct {
 }
 
 type BeginGenerationBatchInput struct {
+	MiniApp              *MiniAppScope
 	Interactive          bool
 	Card                 *interactive.Submission
 	CardFingerprint      string
@@ -819,6 +829,12 @@ PRAGMA user_version=22;`); err != nil {
 	if version == 29 {
 		if _, err := tx.Exec(miniAppsMigration); err != nil {
 			return fmt.Errorf("apply SQLite migration 30: %w", err)
+		}
+		version = 30
+	}
+	if version == 30 {
+		if err := migrateMiniAppHistory(tx); err != nil {
+			return fmt.Errorf("apply SQLite migration 31: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -1478,7 +1494,7 @@ func (store *SQLiteStore) RecoverInterruptedGenerations(ctx context.Context) err
 	return tx.Commit()
 }
 
-const generationQuery = `SELECT id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, assistant_message_id, error_code, error_message, created_at, updated_at, generation_batch_id, generation_target_id, metrics, web_search_policy, web_search_info FROM generations`
+const generationQuery = `SELECT id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, verification_snapshot, assistant_message_id, error_code, error_message, created_at, updated_at, generation_batch_id, generation_target_id, metrics, web_search_policy, web_search_info, mini_app_scope FROM generations`
 
 func getGenerationTx(ctx context.Context, tx *sql.Tx, clientRequestID string) (Generation, error) {
 	return scanGeneration(tx.QueryRowContext(ctx, generationQuery+` WHERE client_request_id = ?`, clientRequestID))
@@ -1490,17 +1506,22 @@ func scanGeneration(row rowScanner) (Generation, error) {
 	var userMessageID string
 	var verificationSnapshot string
 	var metrics string
-	var webPolicy, webInfo string
+	var webPolicy, webInfo, appScope string
 	var assistantID, errorCode, errorMessage, batchID, targetID sql.NullString
 	var temperature, topP sql.NullFloat64
 	var maxTokens sql.NullInt64
 	var state string
 	var createdAt, updatedAt int64
-	if err := row.Scan(&generation.ID, &generation.ConversationID, &generation.ClientRequestID, &userMessageID, &state, &snapshot, &generation.ConfigurationSnapshot.SystemPrompt, &temperature, &topP, &maxTokens, &verificationSnapshot, &assistantID, &errorCode, &errorMessage, &createdAt, &updatedAt, &batchID, &targetID, &metrics, &webPolicy, &webInfo); err != nil {
+	if err := row.Scan(&generation.ID, &generation.ConversationID, &generation.ClientRequestID, &userMessageID, &state, &snapshot, &generation.ConfigurationSnapshot.SystemPrompt, &temperature, &topP, &maxTokens, &verificationSnapshot, &assistantID, &errorCode, &errorMessage, &createdAt, &updatedAt, &batchID, &targetID, &metrics, &webPolicy, &webInfo, &appScope); err != nil {
 		return Generation{}, err
 	}
 	if webPolicy != "" {
 		if err := json.Unmarshal([]byte(webPolicy), &generation.ConfigurationSnapshot.WebSearch); err != nil {
+			return Generation{}, err
+		}
+	}
+	if appScope != "" {
+		if err := json.Unmarshal([]byte(appScope), &generation.ConfigurationSnapshot.MiniApp); err != nil {
 			return Generation{}, err
 		}
 	}

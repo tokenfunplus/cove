@@ -19,8 +19,10 @@ import {
   selectStyle,
 } from "./presentation";
 
+import { CatalogSettings } from "./CatalogSettings";
+
 type Source =
-  | { kind: "local"; raw: string }
+  | { kind: "local"; raw: string; origin?: string }
   | { kind: "catalog"; entry: CatalogEntry }
   | { kind: "installed"; release: MiniAppRelease };
 export type InstallTarget = {
@@ -29,7 +31,7 @@ export type InstallTarget = {
   version?: string;
 };
 interface Props {
-  open: (id: string, view?: string) => void;
+  open: (id: string, view?: string, replace?: boolean) => void;
   target?: InstallTarget;
 }
 function matches(pkg: MiniAppPackage, target?: InstallTarget) {
@@ -103,7 +105,7 @@ export function AppDirectory({ open, target }: Props) {
         const release = await miniApps.localPackage(raw, "preview");
         return {
           pkg: release.package,
-          source: { kind: "local", raw } as Source,
+          source: { kind: "local", raw, origin: release.origin } as Source,
         };
       }
       const pkg =
@@ -120,12 +122,15 @@ export function AppDirectory({ open, target }: Props) {
   const onlyBook =
     ready && target && books.length === 1 ? books[0].id : undefined;
   useEffect(() => {
-    if (onlyBook) open(onlyBook);
+    if (onlyBook) open(onlyBook, undefined, true);
   }, [onlyBook, open]);
-  if (preview)
+  if (preview && ready)
     return (
       <PackagePreview
         {...preview}
+        versions={Object.fromEntries(
+          installed.map((r) => [r.id, r.package.version]),
+        )}
         previous={(instances.data?.instances ?? []).filter((i) => {
           const previous = installed.find((r) => r.id === i.release_id);
           const origin =
@@ -133,7 +138,7 @@ export function AppDirectory({ open, target }: Props) {
               ? preview.source.release.origin
               : preview.source.kind === "catalog"
                 ? preview.source.entry.origin
-                : "local";
+                : (preview.source.origin ?? "local");
           return (
             previous &&
             canUpgrade(previous.package, preview.pkg, previous.origin, origin)
@@ -144,13 +149,20 @@ export function AppDirectory({ open, target }: Props) {
       />
     );
   const error = instances.error ?? releases.error;
-  const entries = (catalog.data?.packages ?? []).filter(
-    (entry) =>
-      !target ||
-      (entry.app === target.app &&
-        entry.publisher === target.publisher &&
-        (!target.version || entry.version === target.version)),
-  );
+  const entries = (catalog.data?.packages ?? [])
+    .filter(
+      (entry) =>
+        !target ||
+        (entry.app === target.app &&
+          entry.publisher === target.publisher &&
+          (!target.version || entry.version === target.version)),
+    )
+    .sort(
+      (a, b) =>
+        a.publisher.localeCompare(b.publisher) ||
+        a.app.localeCompare(b.app) ||
+        b.version.localeCompare(a.version, "en", { numeric: true }),
+    );
   return (
     <div className="space-y-5">
       <section className={sectionStyle}>
@@ -251,6 +263,7 @@ export function AppDirectory({ open, target }: Props) {
         <section className={sectionStyle}>
           <h2 className="text-lg font-semibold">App catalog</h2>
           <ErrorMessage error={catalog.error} />
+          {catalog.data?.warning && <p role="status">{catalog.data.warning}</p>}
           {catalog.isPending && <p role="status">Loading catalog…</p>}
           {catalog.isSuccess && entries.length === 0 && (
             <p>No matching release in the catalog.</p>
@@ -278,6 +291,7 @@ export function AppDirectory({ open, target }: Props) {
           ))}
         </section>
       )}
+      <CatalogSettings />
       {installed.length > 0 && (
         <section className={sectionStyle}>
           <h2 className="text-lg font-semibold">Installed packages</h2>
@@ -349,6 +363,7 @@ export function PackagePreview({
   close,
   open,
   targetInstance,
+  versions = {},
 }: {
   pkg: MiniAppPackage;
   previous: MiniAppInstance[];
@@ -356,17 +371,26 @@ export function PackagePreview({
   close: () => void;
   open: Props["open"];
   targetInstance?: MiniAppInstance;
+  versions?: Record<string, string>;
 }) {
   const cache = useQueryClient();
   const [name, setName] = useState(pkg.name);
-  const [selectedId, setUpgrade] = useState("");
+  const firstTarget =
+    targetInstance ??
+    (source.kind !== "installed" && previous.length === 1
+      ? previous[0]
+      : undefined);
+  const [selectedId, setUpgrade] = useState(
+    firstTarget?.id ??
+      (source.kind !== "installed" && previous.length > 1 ? "choose" : ""),
+  );
   const upgradeId = targetInstance?.id ?? selectedId;
   const upgrade = targetInstance ?? previous.find((i) => i.id === upgradeId);
-  const [grants, setGrants] = useState<string[]>(() =>
-    targetInstance
-      ? targetInstance.grants.filter((cap) => pkg.capabilities.includes(cap))
-      : [...pkg.capabilities],
+  const [grants, setGrants] = useState<string[]>(
+    () =>
+      firstTarget?.grants.filter((cap) => pkg.capabilities.includes(cap)) ?? [],
   );
+  const submitting = useRef(false);
   const install = useMutation({
     retry: false,
     mutationFn: async (create: boolean) => {
@@ -391,18 +415,36 @@ export function PackagePreview({
       } else close();
     },
   });
+  function submit(create: boolean) {
+    if (submitting.current) return;
+    submitting.current = true;
+    install.mutate(create, {
+      onSettled: () => {
+        submitting.current = false;
+      },
+    });
+  }
   return (
     <section className={sectionStyle}>
       <div>
         <h2 className="text-xl font-semibold">{pkg.name}</h2>
         <p className="text-sm text-muted-foreground">
           {pkg.publisher} / {pkg.app} · {pkg.version} ·{" "}
-          {source.kind === "installed" ? source.release.origin : source.kind}
+          {source.kind === "installed"
+            ? source.release.origin
+            : source.kind === "local"
+              ? source.origin
+              : source.entry.origin}
         </p>
       </div>
       {pkg.description && <p>{pkg.description}</p>}
       <fieldset disabled={install.isPending} className="space-y-4">
-        {targetInstance && <p>Update {targetInstance.name} to version {pkg.version}.</p>}
+        {targetInstance && (
+          <p>
+            Update {targetInstance.name} from{" "}
+            {versions[targetInstance.release_id]} to {pkg.version}.
+          </p>
+        )}
         {!targetInstance && previous.length > 0 && (
           <label className={labelStyle}>
             Install for
@@ -415,36 +457,55 @@ export function PackagePreview({
                 setGrants(
                   target
                     ? target.grants.filter((g) => pkg.capabilities.includes(g))
-                    : [...pkg.capabilities],
+                    : [],
                 );
               }}
             >
-              <option value="">Create a new instance</option>
+              {previous.length > 1 && (
+                <option value="choose" disabled>
+                  Choose an instance to upgrade
+                </option>
+              )}
               {previous.map((i) => (
                 <option key={i.id} value={i.id}>
-                  Update {i.name}
+                  {i.name} · {versions[i.release_id]} → {pkg.version}
                 </option>
               ))}
+              <option value="">Create a separate new instance</option>
             </select>
           </label>
         )}
-        {!upgrade && (
+        {upgradeId === "" && (
           <label className={labelStyle}>
             Instance name
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              maxLength={120}
+              maxLength={100}
+              aria-invalid={new TextEncoder().encode(name.trim()).length > 100}
             />
           </label>
         )}
+        {upgradeId === "" &&
+          new TextEncoder().encode(name.trim()).length > 100 && (
+            <p role="alert">Use an instance name of at most 100 UTF-8 bytes.</p>
+          )}
         <Grants
           capabilities={pkg.capabilities}
           selected={grants}
           onChange={setGrants}
         />
         <div className="flex flex-wrap gap-2">
-          <Button disabled={!name.trim()} onClick={() => install.mutate(true)}>
+          <Button
+            disabled={
+              install.isPending ||
+              upgradeId === "choose" ||
+              (!upgrade &&
+                (!name.trim() ||
+                  new TextEncoder().encode(name.trim()).length > 100))
+            }
+            onClick={() => submit(true)}
+          >
             {upgrade
               ? "Upgrade instance to " + pkg.version
               : source.kind === "installed"
@@ -452,7 +513,11 @@ export function PackagePreview({
                 : "Install and create instance"}
           </Button>
           {!targetInstance && source.kind !== "installed" && (
-            <Button variant="outline" onClick={() => install.mutate(false)}>
+            <Button
+              variant="outline"
+              disabled={install.isPending}
+              onClick={() => submit(false)}
+            >
               Install package only
             </Button>
           )}

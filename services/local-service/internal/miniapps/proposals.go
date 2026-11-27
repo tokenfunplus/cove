@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
@@ -46,17 +47,11 @@ func (s *Service) StartProposal(ctx context.Context, model ModelExecutor, instan
 	if !instance.Enabled {
 		return empty, ErrDenied
 	}
-	aliases := map[string]string{}
-	var tools []provider.Tool
-	for index, id := range req.Actions {
-		action, exists := release.Package.Actions[id]
-		if !exists || !slices.Contains(action.Surfaces, req.Surface) || !slices.Contains(instance.Grants, capability(action.Op)) {
-			return empty, ErrDenied
-		}
-		name := fmt.Sprintf("choice_%d", index+1)
-		aliases[name] = id
-		tools = append(tools, proposalTool(name, id, action))
+	selected, err := appActionDefinitions(instance, release.Package, req.Actions, req.Surface)
+	if err != nil {
+		return empty, err
 	}
+	tools := selected.Tools
 	schemas, err := json.Marshal(tools)
 	if err != nil {
 		return empty, err
@@ -80,9 +75,7 @@ func (s *Service) StartProposal(ctx context.Context, model ModelExecutor, instan
 		}
 		return nil
 	}
-	return model.StartAppTask(ctx, chat.AppTaskInput{InstanceChanges: &s.InstanceChanges, Instance: instanceID, ID: req.OperationID, Fingerprint: digest(frozen), Request: string(frozen), Prompt: prompt, ProviderID: req.ProviderID, ModelID: req.ModelID, Destination: req.Destination, LocalOnly: req.LocalOnly, ProposalTools: tools, ValidateProposal: func(body string) (string, error) {
-		return normalizeProposal(body, aliases, release.Package)
-	}}, check)
+	return model.StartAppTask(ctx, chat.AppTaskInput{InstanceChanges: &s.InstanceChanges, Instance: instanceID, ID: req.OperationID, Fingerprint: digest(frozen), Request: string(frozen), Prompt: prompt, ProviderID: req.ProviderID, ModelID: req.ModelID, Destination: req.Destination, LocalOnly: req.LocalOnly, ProposalTools: tools, ValidateProposal: selected.Normalize}, check)
 }
 
 func proposalTool(alias, id string, a Action) provider.Tool {
@@ -95,7 +88,9 @@ func proposalTool(alias, id string, a Action) provider.Tool {
 			prop["format"] = "date"
 		}
 		props[key] = prop
-		required = append(required, key)
+		if _, optional := a.Defaults[key]; !optional {
+			required = append(required, key)
+		}
 	}
 	sort.Strings(required)
 	params, _ := json.Marshal(map[string]any{"type": "object", "additionalProperties": false, "properties": props, "required": required})
@@ -107,15 +102,69 @@ func normalizeProposal(body string, aliases map[string]string, pkg Package) (str
 	if len(body) > 60_000 {
 		return "", ErrInvalid
 	}
+	// Accept a single JSON object with a short presentation wrapper. Reject
+	// arrays, multiple candidates, and nested or unmatched surrounding braces.
+	start, end := strings.IndexByte(body, '{'), strings.LastIndexByte(body, '}')
+	if start < 0 || end < start || start > 256 || len(body)-end-1 > 256 || strings.ContainsAny(body[:start]+body[end+1:], "[]{}") {
+		return "", ErrInvalid
+	}
+	if json.Valid([]byte(strings.TrimSpace(body[:start]))) || json.Valid([]byte(strings.TrimSpace(body[end+1:]))) {
+		return "", ErrInvalid
+	}
+	body = body[start : end+1]
 	var candidate proposedAction
 	if err := decodeStrict([]byte(body), &candidate); err != nil {
 		return "", err
 	}
 	id, known := aliases[candidate.Action]
-	if !known || candidate.Inputs == nil || !inputOK(candidate.Inputs, pkg.Actions[id].Inputs) {
+	if _, err := actionInputs(pkg.Actions[id], candidate.Inputs, time.Now()); !known || candidate.Inputs == nil || err != nil {
 		return "", invalid("model proposed an unavailable action or invalid inputs")
 	}
 	candidate.Action = id
 	out, err := json.Marshal(candidate)
 	return string(out), err
+}
+
+// ChatActions resolves the exact release and grants selected for one ordinary Chat turn.
+func (s *Service) ChatActions(ctx context.Context, scope persistence.MiniAppScope) (chat.AppActions, error) {
+	var out chat.AppActions
+	if len(scope.Actions) == 0 || len(scope.Actions) > 16 || !unique(scope.Actions) {
+		return out, ErrInvalid
+	}
+	instance, err := s.Instance(ctx, scope.Instance)
+	if err != nil {
+		return out, err
+	}
+	if !instance.Enabled || instance.ReleaseID != scope.Release || instance.Revision != scope.Revision {
+		return out, ErrConflict
+	}
+	release, err := s.Release(ctx, scope.Release)
+	if err != nil {
+		return out, err
+	}
+	return appActionDefinitions(instance, release.Package, scope.Actions, "chat")
+}
+
+func appActionDefinitions(instance Instance, pkg Package, ids []string, surface string) (chat.AppActions, error) {
+	var out chat.AppActions
+	aliases := map[string]string{}
+	for index, id := range ids {
+		act, ok := pkg.Actions[id]
+		if !ok || !slices.Contains(act.Surfaces, surface) || !slices.Contains(instance.Grants, capability(act.Op)) {
+			return chat.AppActions{}, ErrDenied
+		}
+		alias := fmt.Sprintf("choice_%d", index+1)
+		aliases[alias] = id
+		out.Tools = append(out.Tools, proposalTool(alias, id, act))
+	}
+	out.Normalize = func(body string) (string, error) { return normalizeProposal(body, aliases, pkg) }
+	return out, nil
+}
+
+func (s *Service) AppName(ctx context.Context, id string) string {
+	instance, err := s.Instance(ctx, id)
+	if err != nil {
+		return ""
+	}
+	return instance.Name
 }

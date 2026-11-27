@@ -36,12 +36,13 @@ export function AppSettings({
     retry: false,
     mutationFn: async () => {
       if (!current) throw new Error("The installed release is unavailable.");
-      const { packages } = await miniApps.catalog();
+      const { packages, warning } = await miniApps.catalog();
       const [entry] = packages
         .filter((entry) => canUpgrade(pkg, entry, current.origin, entry.origin))
         .sort((a, b) =>
           b.version.localeCompare(a.version, "en", { numeric: true }),
         );
+      if (!entry && warning) throw new Error(warning);
       return entry
         ? { entry, candidate: await miniApps.catalogPreview(entry) }
         : null;
@@ -53,6 +54,18 @@ export function AppSettings({
         r.id === instance.release_id ||
         (current && canUpgrade(pkg, r.package, current.origin, r.origin)),
     ) ?? [];
+  const activity = useQuery({
+    queryKey: ["mini-app-activity", instance.id],
+    queryFn: () => miniApps.activity(instance.id),
+    enabled: false,
+    retry: false,
+  });
+  const readiness = useQuery({
+    queryKey: ["mini-app-readiness", instance.id, instance.revision],
+    queryFn: () => miniApps.capabilities(instance.id),
+    enabled: false,
+    retry: false,
+  });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const remove = useMutation({
     retry: false,
@@ -95,6 +108,7 @@ export function AppSettings({
         pkg={check.data.candidate}
         source={{ kind: "catalog", entry: check.data.entry }}
         targetInstance={instance}
+        versions={{ [instance.release_id]: pkg.version }}
         previous={[]}
         open={check.reset}
         close={check.reset}
@@ -107,6 +121,41 @@ export function AppSettings({
       <p className="text-sm text-muted-foreground">
         {pkg.publisher} / {pkg.app} · {pkg.version}
       </p>
+      <details
+        onToggle={(e) => {
+          if (e.currentTarget.open) void activity.refetch();
+        }}
+      >
+        <summary>Recent app activity</summary>
+        <ul>
+          {activity.data?.activity.map((row) => (
+            <li key={row.operation_id}>
+              {row.action} · {row.surface} · {row.status} ·{" "}
+              {new Date(row.time * 1000).toLocaleString()}
+            </li>
+          ))}
+        </ul>
+        {activity.data?.activity.length === 0 && <p>No activity yet.</p>}
+        <ErrorMessage error={activity.error} />
+      </details>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={readiness.isFetching}
+        onClick={() => void readiness.refetch()}
+      >
+        Check capability availability
+      </Button>
+      {readiness.data && (
+        <ul>
+          {Object.entries(readiness.data.capabilities).map(([name, state]) => (
+            <li key={name}>
+              {name} · {state.replaceAll("_", " ")}
+            </li>
+          ))}
+        </ul>
+      )}
+      <ErrorMessage error={readiness.error} />
       {current && current.origin !== "local" && (
         <div className="space-y-2">
           <Button
@@ -117,7 +166,9 @@ export function AppSettings({
           >
             {check.isPending ? "Checking for updates…" : "Check for updates"}
           </Button>
-          {check.isSuccess && <p role="status">No compatible update in this catalog.</p>}
+          {check.isSuccess && (
+            <p role="status">No compatible update in this catalog.</p>
+          )}
           <ErrorMessage error={check.error} />
         </div>
       )}
@@ -127,7 +178,10 @@ export function AppSettings({
           choose this instance.
         </p>
       )}
-      <fieldset disabled={save.isPending || check.isPending} className="space-y-4">
+      <fieldset
+        disabled={save.isPending || check.isPending}
+        className="space-y-4"
+      >
         {choices.length > 1 && (
           <label className={labelStyle}>
             Installed release

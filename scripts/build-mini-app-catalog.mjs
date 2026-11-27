@@ -44,6 +44,7 @@ const escaped = (text) =>
       })[char],
   );
 const pages = new Map();
+const artifacts = new Map();
 const packages = [];
 for (const file of files) {
   const data = await readFile(file);
@@ -63,11 +64,21 @@ for (const file of files) {
   const releases = pages.get(id) ?? [];
   if (releases.some((release) => release.version === app.version))
     throw new Error("Duplicate release: " + id + " " + app.version);
+  artifacts.set(id + "/" + app.version, data);
   releases.push(app);
   pages.set(id, releases);
   packages.push(data.toString("base64"));
 }
-const payload = Buffer.from(JSON.stringify({ format: 1, packages }));
+const issued = Date.now();
+const payload = Buffer.from(
+  JSON.stringify({
+    format: 2,
+    sequence: issued,
+    issued_at: new Date(issued).toISOString(),
+    expires_at: new Date(issued + 30 * 86400000).toISOString(),
+    packages,
+  }),
+);
 const envelope = JSON.stringify({
   payload: payload.toString("base64"),
   signature: sign(null, payload, key).toString("base64"),
@@ -93,7 +104,39 @@ try {
     releases.sort((a, b) =>
       b.version.localeCompare(a.version, "en", { numeric: true }),
     );
+    for (const release of releases) {
+      await writeFile(
+        join(directory, release.version + ".coveapp"),
+        artifacts.get(id + "/" + release.version),
+      );
+    }
     const title = releases[0].name;
+    const screens = releases[0].pages
+      .map((page) => {
+        const asset = releases[0].assets?.[page.image];
+        return (
+          "<figure>" +
+          (asset
+            ? '<img width="360" alt="' +
+              escaped(asset.alt) +
+              '" src="data:' +
+              asset.mime +
+              ";base64," +
+              escaped(asset.data) +
+              '">'
+            : "") +
+          "<figcaption><strong>" +
+          escaped(page.title) +
+          "</strong></figcaption><ul>" +
+          page.actions
+            .map(
+              (id) => "<li>" + escaped(releases[0].actions[id].title) + "</li>",
+            )
+            .join("") +
+          "</ul></figure>"
+        );
+      })
+      .join("");
     const detail = releases
       .map(
         (app) =>
@@ -101,20 +144,27 @@ try {
           escaped(app.version) +
           "</h2><p>" +
           escaped(app.description) +
+          "</p><p>Views: " +
+          escaped(app.pages.map((page) => page.title).join(", ")) +
           "</p><p>Capabilities: " +
           escaped(app.capabilities.join(", ")) +
           '</p><a href="cove://install/' +
           id +
           "?version=" +
           app.version +
-          '">Open in Cove</a></section>',
+          '">Open in Cove</a> · <a download href="' +
+          app.version +
+          '.coveapp">Download package</a></section>',
       )
       .join("");
     await writeFile(
       join(directory, "index.html"),
       html(
         title,
-        detail + '<p><a href="https://www.hicove.io/">Get Cove for Mac</a></p>',
+        detail +
+          "<h2>App screens</h2>" +
+          screens +
+          '<p><a href="https://www.hicove.io/">Get Cove for Mac</a></p>',
       ),
     );
     listing.push('<li><a href="' + id + '/">' + escaped(title) + "</a></li>");

@@ -195,3 +195,43 @@ After building web assets and an isolated Local Service executable, run `COVE_BR
 
 Use the [Mini App authoring guide](mini-apps.md) to scaffold a package, run
 an isolated preview, and test its rules against the production interpreter.
+
+### Mini App native acceptance on a Mac
+
+Build a package and point the [native acceptance harness](../scripts/native/test-mini-apps.sh)
+at the bundled Local Service. Its default run uses a temporary data directory,
+two authenticated sessions, a synthetic file reply, and the native selection
+target and one-time delivery APIs. A restart checks the stable instance link
+and invalidates the previous browser session.
+
+```sh
+service=/Applications/Cove.app/Contents/Resources/cove-local-service
+scripts/native/test-mini-apps.sh "$service" --os-handoff
+scripts/native/test-mini-apps.sh "$service" --interactive
+```
+
+`--os-handoff` sends a macOS Launch Services URL event to a cold, hidden copy
+of the packaged Launcher and opens the saved instance with the issued session.
+The scratch copy has a unique bundle ID and omits URL and Services registrations.
+The Launcher captures the temporary browser URL inside the fixture directory.
+This exercises the packaged executable's handling of a URL delivered by macOS.
+To verify the installed default handler, use a disposable macOS login, install
+the original bundle, quit Cove, and open a saved `cove://open/…` bookmark.
+
+`--interactive` opens the production `NSOpenPanel` and the Mini App selection
+chooser. Choose the generated lesson file printed by the runner, then choose a
+field on the **Picker fixture** instance. It checks the delivered text using
+a private pasteboard. To verify system-wide Services registration, use the
+disposable login, select a paragraph in TextEdit, and choose **Services → Send
+to Cove Mini App**. Select the destination book and confirm the text in its
+form before saving.
+
+The model modes process a synthetic lesson, require exactly two candidates,
+confirm their batch write, and query the saved records through the Chat action.
+They accept explicitly supplied test assets and destinations.
+
+| Mode | Inputs and coverage |
+| --- | --- |
+| `--managed` | Set `COVE_ACCEPTANCE_GGUF` and `COVE_ACCEPTANCE_MANAGED_MODEL` to an existing model file and its Cove catalog ID. The runner verifies the pinned size and SHA-256, copies the file into the disposable host, and requests **Only on this Mac** inference. The package must include the inference runtime. |
+| `--compatible` | Set `COVE_ACCEPTANCE_LOOPBACK_ENDPOINT` and `COVE_ACCEPTANCE_LOOPBACK_MODEL` for a running OpenAI-compatible service on `127.0.0.1`. The harness checks local-only denial before selecting the compatible target. |
+| `--cloud` | Set `COVE_ACCEPTANCE_CLOUD_ENDPOINT`, `COVE_ACCEPTANCE_CLOUD_MODEL`, and `COVE_ACCEPTANCE_CLOUD_KEY` for an authorized HTTPS test provider. This mode makes a real model request. The test-only key uses the temporary fixture secret store. The harness checks the input and destination, denies the local-only request, and verifies that revocation blocks the next call. |

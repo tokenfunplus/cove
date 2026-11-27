@@ -1,3 +1,4 @@
+import { useAppTaskStatus } from "./use-app-task-status";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
@@ -8,20 +9,29 @@ import type {
 } from "@cove/api-contract";
 import { miniApps, type AppTask } from "@/api/mini-apps";
 import { AppModelTarget, useAppModelTarget } from "./AppModelTarget";
-import { runVerifiedAppTask } from "@/lib/inference/mini-app-task";
+import {
+  startVerifiedAppTask,
+  stopVerifiedAppTask,
+} from "@/lib/inference/mini-app-task";
 import { Button } from "@/components/ui/button";
 import { ErrorMessage, Fields, labelStyle, selectStyle } from "./presentation";
 
 export function candidateRows(
   body: string,
   action: MiniAppAction,
+  expectedCount?: number,
 ): MiniAppFields[] {
   try {
     const json = body.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, "$1");
     const fields = Object.entries(action.inputs ?? {});
     const rows: unknown = JSON.parse(json);
-    if (!Array.isArray(rows) || rows.length > 100) return [];
-    return rows.filter(
+    if (
+      !Array.isArray(rows) ||
+      rows.length > 100 ||
+      (expectedCount !== undefined && rows.length !== expectedCount)
+    )
+      return [];
+    const valid = rows.filter(
       (row): row is MiniAppFields =>
         row !== null &&
         typeof row === "object" &&
@@ -38,10 +48,20 @@ export function candidateRows(
                   : "string"),
         ),
     );
+    return valid.length === rows.length ? valid : [];
   } catch {
     return [];
   }
 }
+function modelInputs(action: MiniAppAction, fields: MiniAppFields) {
+  const local = new Set(Object.values(action.candidate_bindings ?? {}));
+  return Object.fromEntries(
+    Object.entries(fields).filter(
+      ([name]) => !local.has(name) || name === action.text_input,
+    ),
+  );
+}
+
 export function AppModelTask({
   instance,
   actionId,
@@ -64,17 +84,6 @@ export function AppModelTask({
   choose: (row: MiniAppFields) => void;
 }) {
   const target = useAppModelTarget(localRequired, true);
-  const browser = useRef<
-    { id: string; controller: AbortController } | undefined
-  >(undefined);
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      browser.current?.controller.abort();
-    };
-  }, []);
   const [browserError, setBrowserError] = useState<unknown>();
   const { profile, model, policyLocal, profiles, catalog } = target;
   const [started, setStarted] = useState<AppTask>();
@@ -91,25 +100,14 @@ export function AppModelTask({
   const previous = (history.data?.tasks ?? []).filter(
     (job) => job.action === actionId,
   );
-  const recent = started ?? previous[0];
+  const recent = started ?? previous.find((job) => job.state === "running");
   const retryKey = useRef<{ key: string; id: string } | undefined>(undefined);
-  const poll = useQuery({
-    queryKey: ["mini-app-task", instance.id, recent?.id],
-    queryFn: () => miniApps.task(instance.id, recent!.id),
-    enabled: !!recent,
-    refetchInterval: (q) =>
-      q.state.status === "error" ||
-      (q.state.data && q.state.data.state !== "running")
-        ? false
-        : 700,
-    retry: false,
-  });
-  const task = poll.data ?? recent;
+  const { poll, task } = useAppTaskStatus(instance.id, recent, "generation");
   const active = task?.state === "running";
   useEffect(() => {
-    if (browser.current?.id === task?.id && (poll.isError || !active))
-      browser.current?.controller.abort();
-  }, [task?.id, poll.isError, active]);
+    if (task && task.state !== "running")
+      stopVerifiedAppTask(instance.id, task.id);
+  }, [instance.id, task?.id, task?.state]);
   const start = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -124,6 +122,7 @@ export function AppModelTask({
       if (retryKey.current?.key !== fingerprint)
         retryKey.current = { key: fingerprint, id: crypto.randomUUID() };
       const job = await miniApps.startTask(instance.id, {
+        expected_instance_revision: instance.revision,
         action: actionId,
         input: data.inputs,
         providerId: profile.id,
@@ -135,23 +134,7 @@ export function AppModelTask({
       });
       retryKey.current = undefined;
       if (job.browser && job.state === "running") {
-        if (!mounted.current) {
-          await miniApps.cancel(instance.id, job.id);
-          return job;
-        }
-        browser.current?.controller.abort();
-        const controller = new AbortController();
-        browser.current = { id: job.id, controller };
-        setBrowserError(undefined);
-        void runVerifiedAppTask(instance.id, job.id, controller.signal)
-          .catch((error) => {
-            if (!controller.signal.aborted && mounted.current)
-              setBrowserError(error);
-          })
-          .finally(() => {
-            if (browser.current?.controller === controller)
-              browser.current = undefined;
-          });
+        void startVerifiedAppTask(instance.id, job.id).catch(setBrowserError);
       }
       setSubmitted(data);
       return job;
@@ -164,15 +147,42 @@ export function AppModelTask({
   const cancel = useMutation({
     retry: false,
     mutationFn: async () => {
-      browser.current?.controller.abort();
-      return miniApps.cancel(instance.id, task!.id);
+      const cancelled = await miniApps.cancel(instance.id, task!.id);
+      stopVerifiedAppTask(instance.id, task!.id);
+      return cancelled;
     },
     onSuccess: () => {
       void poll.refetch();
     },
   });
-  const results =
-    candidate && task?.result ? candidateRows(task.result, candidate) : [];
+  const source = task?.inputs ?? submitted?.inputs;
+  const bindings = action.candidate_bindings ?? {};
+  const generated = candidate && {
+    ...candidate,
+    inputs: Object.fromEntries(
+      Object.entries(candidate.inputs ?? {}).filter(
+        ([key]) => !Object.hasOwn(bindings, key),
+      ),
+    ),
+  };
+  const expectedCount = action.count_input
+    ? Number(
+        source?.[action.count_input] ?? action.defaults?.[action.count_input],
+      )
+    : undefined;
+  const raw =
+    generated && task?.result
+      ? candidateRows(task.result, generated, expectedCount)
+      : [];
+  const results = raw.map((row) => ({
+    ...row,
+    ...Object.fromEntries(
+      Object.entries(bindings).map(([key, field]) => [
+        key,
+        source?.[field] ?? action.defaults?.[field] ?? "",
+      ]),
+    ),
+  }));
   return (
     <section
       className="space-y-3 border-t border-border pt-4"
@@ -180,7 +190,7 @@ export function AppModelTask({
     >
       <fieldset className="space-y-3" disabled={active || start.isPending}>
         <AppModelTarget target={target} />
-        {model && (
+        {model && !active && (
           <div className="space-y-2 rounded-xl bg-muted p-3 text-sm">
             <strong>
               Input to {profile?.name} / {model}
@@ -189,16 +199,23 @@ export function AppModelTask({
               {profile?.endpoint || "Cove-managed local worker"}
             </p>
             <p className="whitespace-pre-wrap">{action.prompt}</p>
-            <Fields fields={inputs} />
+            <Fields fields={modelInputs(action, inputs)} />
           </div>
         )}
         <Button
           disabled={
             !profile ||
             !model ||
-            Object.values(inputs).some(
-              (v) => typeof v === "string" && !v.trim(),
-            )
+            Object.entries(inputs).some(
+              ([key, v]) =>
+                typeof v === "string" &&
+                !v.trim() &&
+                action.defaults?.[key] !== "",
+            ) ||
+            (action.count_input !== undefined &&
+              (!Number.isInteger(inputs[action.count_input]) ||
+                Number(inputs[action.count_input]) < 1 ||
+                Number(inputs[action.count_input]) > 8))
           }
           onClick={() => start.mutate()}
         >
@@ -217,6 +234,7 @@ export function AppModelTask({
               setStarted(previous.find((t) => t.id === e.target.value));
             }}
           >
+            <option value="">Select a previous task</option>
             {previous.map((t, i) => (
               <option key={t.id} value={t.id}>
                 {t.modelId} · {t.state} · {i + 1}
@@ -247,6 +265,18 @@ export function AppModelTask({
             Task {task.state}
             {submitted ? " · " + submitted.model : ""}
           </p>
+          {(task.inputs ?? submitted?.inputs) && (
+            <div className="text-sm">
+              <strong>Submitted input</strong>
+              <Fields
+                fields={modelInputs(action, task.inputs ?? submitted!.inputs)}
+              />
+              <p>
+                {task.destination ?? submitted?.destination} ·{" "}
+                {task.modelId ?? submitted?.model}
+              </p>
+            </div>
+          )}
           {active && (
             <Button
               variant="outline"
@@ -280,6 +310,12 @@ export function AppModelTask({
               />
             ) : (
               <p className="whitespace-pre-wrap break-words text-sm">
+                {expectedCount !== undefined && (
+                  <strong className="block">
+                    Expected {expectedCount} valid candidates. Review the model
+                    response or try again.
+                  </strong>
+                )}
                 {task.result}
               </p>
             ))}

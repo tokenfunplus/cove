@@ -25,11 +25,17 @@ type fileRequest struct {
 }
 type appFileBroker struct {
 	sync.Mutex
-	requests map[string]*fileRequest
+	requests   map[string]*fileRequest
+	selections map[string]stagedSelection
 }
 
 func (b *appFileBroker) prune() {
 	now := time.Now()
+	for id, selection := range b.selections {
+		if !now.Before(selection.expires) {
+			delete(b.selections, id)
+		}
+	}
 	for id, q := range b.requests {
 		if !now.Before(q.expires) {
 			delete(b.requests, id)
@@ -39,6 +45,11 @@ func (b *appFileBroker) prune() {
 func (b *appFileBroker) invalidate(instance string) {
 	b.Lock()
 	defer b.Unlock()
+	for id, selection := range b.selections {
+		if selection.target.Instance == instance {
+			delete(b.selections, id)
+		}
+	}
 	for id, q := range b.requests {
 		if q.instance == instance {
 			delete(b.requests, id)
@@ -88,7 +99,8 @@ func (s *Server) appFiles(w http.ResponseWriter, r *http.Request) {
 func (s *Server) nativeAppFile(w http.ResponseWriter, r *http.Request) {
 	var answer pickedText
 	claim := r.Pattern == "POST /internal/control/mini-app-files/{file}/claim"
-	if !claim && !appInput(w, r, &answer) {
+	renew := r.Pattern == "POST /internal/control/mini-app-files/{file}/renew"
+	if !claim && !renew && !appInput(w, r, &answer) {
 		return
 	}
 	b := &s.files
@@ -104,8 +116,9 @@ func (s *Server) nativeAppFile(w http.ResponseWriter, r *http.Request) {
 		appReply(w, nil, miniapps.ErrConflict)
 		return
 	}
-	if claim {
+	if claim || renew {
 		q.claimed = true
+		q.expires = time.Now().Add(30 * time.Minute)
 		writeJSON(w, 200, map[string]string{"instance": q.label})
 		return
 	}
@@ -122,5 +135,6 @@ func (s *Server) nativeAppFile(w http.ResponseWriter, r *http.Request) {
 		appReply(w, nil, miniapps.ErrInvalid)
 		return
 	}
+	q.expires = time.Now().Add(2 * time.Minute)
 	writeJSON(w, 200, struct{}{})
 }

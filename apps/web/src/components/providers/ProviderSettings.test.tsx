@@ -9,6 +9,7 @@ import {
   shouldDismissProviderDialog,
 } from "@/components/providers/provider-feedback";
 import { applicationMessages } from "@/messages";
+import { generationErrorMessage } from "@/lib/error-messages";
 import type { ProviderProfile } from "@cove/api-contract";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
@@ -97,6 +98,15 @@ test("provider settings preserve distinct connection error states", () => {
     text: "The Provider rejected the API key",
     tone: "error",
   });
+});
+
+test("Chat and model selection explain the author preview restriction", () => {
+  const message = "Author preview supports Chat drafts and app-owned model tasks. Open the app in Cove to send a conversation turn or change settings.";
+  const error = new LocalServiceError({
+    error: { code: "author_preview_only", message, details: null, request_id: "local" },
+  });
+  expect(providerErrorMessage(error)).toBe(message);
+  expect(generationErrorMessage(error, applicationMessages("en"))).toBe(message);
 });
 
 test("saving a configured model dismisses the provider dialog", () => {

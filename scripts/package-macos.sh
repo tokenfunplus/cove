@@ -166,6 +166,18 @@ fi
 create_app_icon
 
 test -x "$cove_app/Contents/MacOS/Cove" || fail "Cove app executable is missing"
+if [ -n "${COVE_APP_CATALOG_DEFAULTS_FILE:-}" ]; then
+  node --input-type=module - "$COVE_APP_CATALOG_DEFAULTS_FILE" "$cove_app/Contents/Resources/mini-app-catalog-defaults.json" <<'JS'
+import { readFileSync, writeFileSync } from "node:fs";
+const [input, output] = process.argv.slice(2);
+const { url, public_key } = JSON.parse(readFileSync(input, "utf8"));
+const endpoint = new URL(url);
+if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || typeof public_key !== "string" || !/^[A-Za-z0-9+/]{43}=$/.test(public_key) || Buffer.from(public_key,"base64").length !== 32) {
+  throw new Error("Invalid Mini App catalog URL or Ed25519 public key.");
+}
+writeFileSync(output, JSON.stringify({ url, public_key }) + "\n");
+JS
+fi
 test -x "$cove_app/Contents/Resources/cove-local-service" || fail "Local Service executable is missing"
 test -d "$cove_app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle" || fail "Cove app resource bundle is missing"
 test -f "$cove_app/Contents/Info.plist" || fail "Cove app Info.plist is missing"

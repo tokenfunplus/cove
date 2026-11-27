@@ -92,6 +92,8 @@ cove_mount="$cove_package_dir/mount"
 test -x "$cove_app/Contents/MacOS/Cove"
 cove_kit="$cove_app/Contents/Resources/mini-apps"
 "$cove_app/Contents/MacOS/coveapp" test "$cove_kit/examples/japanese-review-book.coveapp" "$cove_kit/scenarios/japanese-review-book.json" >/dev/null
+"$cove_app/Contents/MacOS/coveapp" upgrade-test "$cove_kit/examples/japanese-review-book.coveapp" "$cove_kit/examples/japanese-review-book-1.1.coveapp" "$cove_kit/scenarios/japanese-review-upgrade.json" >/dev/null
+"$cove_app/Contents/MacOS/coveapp" upgrade-test "$cove_kit/examples/reading-inbox.coveapp" "$cove_kit/examples/reading-inbox-1.1.coveapp" "$cove_kit/scenarios/reading-inbox-upgrade.json" >/dev/null
 test -x "$cove_app/Contents/Resources/cove-local-service"
 test -d "$cove_app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle"
 test -f "$cove_app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle/CoveMenuBarTemplate.png"

@@ -17,6 +17,8 @@ func TestRestoreAcrossDistributionChannels(t *testing.T) {
 		{"catalog", "builtin", false, true},
 		{"builtin", "catalog", true, false},
 		{"local", "catalog", false, false},
+		{"local", "builtin", false, true},
+		{"local", "builtin", true, false},
 		{"catalog", "local", false, false},
 	} {
 		t.Run(tc.from+"-to-"+tc.to, func(t *testing.T) {
@@ -56,7 +58,15 @@ func TestRestoreAcrossDistributionChannels(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || got.ReleaseID != installed.ID || got.Enabled || len(got.Grants) != 0 {
+			expectedID := installed.ID
+			if tc.from == "local" {
+				expectedID = original.ID
+				restoredRelease, readErr := destination.Release(ctx, got.ReleaseID)
+				if readErr != nil || restoredRelease.Origin != "local" || restoredRelease.Digest != original.Digest {
+					t.Fatalf("personal backup lost its local lineage: %v", readErr)
+				}
+			}
+			if err != nil || got.ReleaseID != expectedID || got.Enabled || len(got.Grants) != 0 {
 				t.Fatalf("unexpected restore: %+v, %v", got, err)
 			}
 			restored, err := destination.Export(ctx, got.ID)

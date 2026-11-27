@@ -6,8 +6,8 @@ import type {
   MiniAppPackage,
   MiniAppSurface,
 } from "@cove/api-contract";
-import type { AppTask } from "@/api/mini-apps";
-import { request } from "@/api/client";
+import { miniApps, type AppTask } from "@/api/mini-apps";
+import { useAppTaskStatus } from "./use-app-task-status";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { AppModelTarget, useAppModelTarget } from "./AppModelTarget";
@@ -58,29 +58,21 @@ function ProposalForm({
   const [started, setStarted] = useState<AppTask>();
   const target = useAppModelTarget(localRequired);
   const { profile, model, policyLocal } = target;
-  const endpoint =
-    "/api/mini-apps/instances/" +
-    encodeURIComponent(instance.id) +
-    "/proposals";
   const retry = useRef<{ fingerprint: string; id: string } | undefined>(
     undefined,
   );
-  const history=useQuery({queryKey:["mini-app-latest-proposal",instance.id,instance.revision,surface],
-    queryFn:()=>request<AppTask|null>(endpoint+"?surface="+surface),retry:false});
-  const recent=started ?? history.data;
-  const poll = useQuery({
-    queryKey: ["mini-app-proposal", instance.id, recent?.id],
-    enabled: !!recent,
+  const history = useQuery({
+    queryKey: [
+      "mini-app-latest-proposal",
+      instance.id,
+      instance.revision,
+      surface,
+    ],
+    queryFn: () => miniApps.latestProposal(instance.id, surface),
     retry: false,
-    queryFn: () =>
-      request<AppTask>(endpoint + "/" + encodeURIComponent(recent!.id)),
-    refetchInterval: (q) =>
-      q.state.status === "error" ||
-      (q.state.data && q.state.data.state !== "running")
-        ? false
-        : 700,
   });
-  const task = poll.data ?? recent;
+  const recent = started ?? history.data;
+  const { poll, task } = useAppTaskStatus(instance.id, recent, "proposal");
   const busy = task?.state === "running";
   const start = useMutation({
     retry: false,
@@ -99,10 +91,9 @@ function ProposalForm({
       const fingerprint = JSON.stringify(command);
       if (retry.current?.fingerprint !== fingerprint)
         retry.current = { fingerprint, id: crypto.randomUUID() };
-      const result = await request<AppTask>(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...command, operationId: retry.current.id }),
+      const result = await miniApps.startProposal(instance.id, {
+        ...command,
+        operationId: retry.current.id,
       });
       retry.current = undefined;
       return result;
@@ -111,10 +102,7 @@ function ProposalForm({
   });
   const cancel = useMutation({
     retry: false,
-    mutationFn: () =>
-      request<AppTask>(endpoint + "/" + encodeURIComponent(task!.id), {
-        method: "DELETE",
-      }),
+    mutationFn: () => miniApps.cancelProposal(instance.id, task!.id),
     onSuccess: () => {
       void poll.refetch();
     },
@@ -197,7 +185,8 @@ function ProposalForm({
       </fieldset>
       <ErrorMessage
         error={
-          history.error ?? start.error ??
+          history.error ??
+          start.error ??
           poll.error ??
           cancel.error ??
           target.profiles.error ??

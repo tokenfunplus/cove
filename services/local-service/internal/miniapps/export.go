@@ -3,6 +3,7 @@ package miniapps
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -102,6 +103,9 @@ func releaseForBackup(tx *persistence.MiniAppStore, b Backup) (Release, error) {
 	for _, id := range candidates {
 		r, err := loadRelease(tx, id)
 		if errors.Is(err, ErrNotFound) {
+			if b.Publisher != "cove" && id == b.ReleaseID && id == releaseID("local", b.Publisher, b.App, b.Version) {
+				return restoreLocalPackageFromBundle(tx, b, builtin)
+			}
 			continue
 		}
 		if err != nil {
@@ -112,6 +116,30 @@ func releaseForBackup(tx *persistence.MiniAppStore, b Backup) (Release, error) {
 		}
 	}
 	return Release{}, ErrBackupRelease
+}
+
+// Earlier releases allowed a bundled third-party package file to be installed
+// locally. Restore the exact original local identity on a replacement Mac.
+func restoreLocalPackageFromBundle(tx *persistence.MiniAppStore, b Backup, builtin string) (Release, error) {
+	row, err := tx.Release(builtin)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Release{}, ErrBackupRelease
+	}
+	if err != nil {
+		return Release{}, err
+	}
+	if row.Origin != "builtin" || row.Digest != b.Digest {
+		return Release{}, ErrBackupRelease
+	}
+	local, err := Preview(row.Manifest, "local")
+	if err != nil {
+		return Release{}, err
+	}
+	if local.ID != b.ReleaseID || local.Digest != b.Digest {
+		return Release{}, ErrBackupRelease
+	}
+	row.ID, row.Origin = local.ID, local.Origin
+	return local, tx.AddRelease(row)
 }
 
 // Restore creates a separate disabled instance. Validate the snapshot as typed

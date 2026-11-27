@@ -75,6 +75,7 @@ func TestAuthorCanEvolveReadingInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	source = bytes.Replace(source, []byte(`"bookshelf"`), []byte(`"independent-studio"`), 1)
 	err = inPreview(source, func(w workspace, pkg miniapps.Package) error {
 		result, err := w.step(pkg, scenarioStep{Action: "inbox.add", Inputs: map[string]any{"title": "New issue", "note": "Read tomorrow."}}, nil, 1)
 		if err != nil {
@@ -94,7 +95,7 @@ func TestAuthorCanEvolveReadingInbox(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		release, err := w.service.Install(ctx, next, "builtin")
+		release, err := installAuthorPackage(ctx, w.service, next)
 		if err != nil {
 			return err
 		}

@@ -1,3 +1,4 @@
+import { getBrowserAppTurn } from "@/api";
 import { projectSystemPrompt, projectUserInput } from "@/lib/chat/project-context";
 import { useConversationCache } from "@/api/hooks/useConversations";
 import {
@@ -216,6 +217,12 @@ export function usePrivateGeneration({
         if (controller.signal.aborted)
           throw new DOMException("Generation stopped", "AbortError");
         const configuration = target.generation.configuration_snapshot;
+        const appInput = configuration.mini_app || (next.input_content ?? body).includes("cove://open/")
+          ? await getBrowserAppTurn(generationID,controller.signal)
+          : undefined;
+        if (appInput && (appInput.message === undefined || (configuration.mini_app && !appInput.instructions))) {
+          throw new Error("The app action scope is unavailable.");
+        }
         const { createSecureInferenceTransport } = await import(
           "@/lib/inference/secure-inference"
         );
@@ -333,13 +340,13 @@ export function usePrivateGeneration({
             },
             mode,
             configuration: {
-              systemPrompt: projectSystemPrompt(configuration.system_prompt,projectContext),
+              systemPrompt: projectSystemPrompt([configuration.system_prompt,appInput?.instructions].filter(Boolean).join("\n\n"),projectContext),
               temperature: configuration.temperature,
               topP: configuration.top_p,
               maxTokens: configuration.max_tokens,
             },
             context,
-            message: projectUserInput(next.input_content ?? body,projectContext),
+            message: projectUserInput(appInput?.message ?? next.input_content ?? body,projectContext),
           };
         const stream = configuration.web_search
           ? generateWithWebSearch(transport, inferenceInput, configuration.web_search, generationID, controller.signal)

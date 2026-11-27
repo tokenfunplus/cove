@@ -1,0 +1,18 @@
+{
+  "grants": ["records.query", "records.commit", "blobs.import"],
+  "attachments": [{"name": "lesson.txt", "data": "TG9jYWwgbGVzc29uLg=="}],
+  "before": [
+    {"action": "review.listDue", "count": 3},
+    {"action": "review.markLearned", "select": [0, 1, 2], "count": 3},
+    {"action": "review.addQuestions", "inputs": {"question": "A saved question?", "answer": "An old answer."}, "count": 1}
+  ],
+  "after": [
+    {"action": "review.listDue", "expect_fields": {"question": "A saved question?", "answer": "An old answer.", "archived": false}},
+    {"action": "review.edit", "select": [0], "inputs": {"question": "A saved question?", "answer": "A corrected answer."}, "count": 1},
+    {"action": "review.archive", "select": [0], "count": 1},
+    {"action": "review.listDue", "count": 0},
+    {"action": "review.listArchived", "count": 1, "expect_fields": {"answer": "A corrected answer."}},
+    {"action": "review.restore", "select": [0], "count": 1},
+    {"action": "review.listDue", "count": 1, "expect_fields": {"archived": false}}
+  ]
+}

@@ -9,6 +9,7 @@ import (
 	"io"
 	"slices"
 
+	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
 	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 )
@@ -21,30 +22,57 @@ type workspace struct {
 // Each command owns its in-memory database. The authoring runtime has no connection
 // to the user's local service, model transport or Launcher.
 func inPreview(source []byte, run func(workspace, miniapps.Package) error) error {
-	pkg, err := miniapps.Validate(source)
-	if err != nil {
-		return err
-	}
 	store, err := persistence.OpenSQLite(":memory:")
 	if err != nil {
 		return err
 	}
 	defer store.Close()
+	return withWorkspace(store, source, nil, run)
+}
+
+func withWorkspace(store *persistence.SQLiteStore, source []byte, grants []string, run func(workspace, miniapps.Package) error) error {
 	ctx := context.Background()
 	service := miniapps.New(store)
-	// The bundled examples use the reserved publisher. This origin exists only in
-	// this ephemeral database; the CLI cannot make a trusted release on the Mac.
-	release, err := service.Install(ctx, source, "builtin")
+	release, err := installAuthorPackage(ctx, service, source)
 	if err != nil {
 		return err
 	}
+	pkg := release.Package
+	if grants == nil {
+		grants = pkg.Capabilities
+	}
 	instance, err := service.Create(ctx, miniapps.CreateRequest{
-		ReleaseID: release.ID, Name: "Author preview", Grants: pkg.Capabilities,
+		ReleaseID: release.ID, Name: "Author preview", Grants: grants,
 	})
 	if err != nil {
 		return err
 	}
 	return run(workspace{service: service, id: instance.ID}, pkg)
+}
+
+// Only exact embedded releases have a trusted origin in this disposable workspace.
+func installAuthorPackage(ctx context.Context, service *miniapps.Service, source []byte) (miniapps.Release, error) {
+	candidate, err := miniapps.Preview(source, "builtin")
+	if err != nil {
+		return miniapps.Release{}, err
+	}
+	entries, err := (appcatalog.Catalog{}).List(ctx)
+	if err != nil {
+		return miniapps.Release{}, err
+	}
+	reserved := candidate.Package.Publisher == "cove"
+	for _, entry := range entries {
+		if entry.Digest == candidate.Digest {
+			return service.Install(ctx, source, entry.Origin)
+		}
+		if entry.Publisher == candidate.Package.Publisher {
+			reserved = true
+		}
+	}
+	if reserved {
+		return miniapps.Release{}, fmt.Errorf("%w: use your own publisher for a modified bundled example", miniapps.ErrInvalid)
+	}
+	return service.Install(ctx, source, "local")
 }
 
 // Commands exercise the complete query in their isolated, single-writer instance.
@@ -103,34 +131,48 @@ type scenarioStep struct {
 }
 
 func runScenario(source []byte, path string, out io.Writer) error {
+	var spec scenario
+	if err := readFixture(path, &spec); err != nil {
+		return err
+	}
+	if len(spec.Steps) == 0 {
+		return errors.New("provide at least one scenario step")
+	}
+	return inPreview(source, func(w workspace, pkg miniapps.Package) error {
+		return w.runSteps(pkg, spec.Steps, 0, out)
+	})
+}
+
+func readFixture(path string, value any) error {
 	b, err := readBounded(path)
 	if err != nil {
 		return err
 	}
-	var spec scenario
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&spec); err != nil {
+	if err = dec.Decode(value); err != nil {
 		return err
 	}
-	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("expected one scenario object")
+	if err = dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("expected one fixture object")
 	}
-	if len(spec.Steps) < 1 || len(spec.Steps) > 256 {
-		return errors.New("provide 1 to 256 scenario steps")
+	return nil
+}
+
+func (w workspace) runSteps(pkg miniapps.Package, steps []scenarioStep, offset int, out io.Writer) error {
+	if len(steps) > 256 {
+		return errors.New("provide at most 256 scenario steps")
 	}
-	return inPreview(source, func(w workspace, pkg miniapps.Package) error {
-		var previous []miniapps.Record
-		for index, step := range spec.Steps {
-			result, err := w.step(pkg, step, previous, index+1)
-			if err != nil {
-				return fmt.Errorf("step %d (%s): %w", index+1, step.Action, err)
-			}
-			previous = result.Records
-			fmt.Fprintf(out, "ok %d %s\n", index+1, step.Action)
+	var previous []miniapps.Record
+	for index, step := range steps {
+		result, err := w.step(pkg, step, previous, offset+index+1)
+		if err != nil {
+			return fmt.Errorf("step %d (%s): %w", index+1, step.Action, err)
 		}
-		return nil
-	})
+		previous = result.Records
+		fmt.Fprintf(out, "ok %d %s\n", index+1, step.Action)
+	}
+	return nil
 }
 
 func (w workspace) step(pkg miniapps.Package, step scenarioStep, previous []miniapps.Record, number int) (miniapps.Result, error) {
@@ -159,7 +201,7 @@ func (w workspace) step(pkg miniapps.Package, step scenarioStep, previous []mini
 	if err != nil {
 		return empty, err
 	}
-	if action.Op == "create" || action.Op == "update" {
+	if action.Op == "create" || action.Op == "update" || action.Op == "delete" {
 		if result.Confirmation == "" {
 			return empty, errors.New("write returned no preview")
 		}

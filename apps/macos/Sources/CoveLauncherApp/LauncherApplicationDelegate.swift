@@ -40,6 +40,20 @@ final class LauncherApplicationDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc(sendToMiniApp:userData:error:)
+    func sendToMiniApp(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString?>?) {
+        guard let text = pasteboard.string(forType: .string), !text.isEmpty, text.utf8.count <= 60000,
+              let launcher, let service else {
+            error?.pointee = "Select up to 60,000 bytes of text and reopen Cove." as NSString
+            return
+        }
+        Task { await chooseMiniAppForSelection(text, launcher: launcher, service: service) }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        launcher?.stop()
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         launcher?.openChatOrRecover()
         return false

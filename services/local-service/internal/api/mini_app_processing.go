@@ -74,7 +74,7 @@ func (s *Server) appDocumentSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 type appSpeechService interface {
-	ReadMiniAppText(context.Context, string, string, string) (speech.JobStatus, error)
+	ReadMiniAppText(context.Context, string, string, string, string) (speech.JobStatus, error)
 	SpeechStatus(string, string) (speech.JobStatus, error)
 	SpeechAudio(string, string, int) ([]byte, error)
 	StopSpeech(context.Context, string, string) error
@@ -89,7 +89,8 @@ func (s *Server) appSpeech(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Text string `json:"text"`
+		Text     string `json:"text"`
+		Language string `json:"language,omitempty"`
 	}
 	if r.Method == "POST" {
 		if !appInput(w, r, &input) {
@@ -114,7 +115,7 @@ func (s *Server) appSpeech(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch {
 	case r.Method == "POST":
-		result, err = service.ReadMiniAppText(ctx, id, session.ID, input.Text)
+		result, err = service.ReadMiniAppText(ctx, id, session.ID, input.Text, input.Language)
 	case r.Method == "DELETE":
 		err = service.StopSpeech(ctx, owner, job)
 		if err == nil {

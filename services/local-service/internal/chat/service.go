@@ -46,6 +46,7 @@ type ExpectedGenerationTarget struct {
 }
 
 type SendInput struct {
+	MiniApp              *persistence.MiniAppScope
 	Interactive          bool
 	Card                 *interactive.Submission
 	LocalOnly            bool
@@ -164,6 +165,7 @@ type GenerationEvent struct {
 }
 
 type Service struct {
+	appActions     AppActionSource
 	appTask        appTaskWorker
 	speech         localSpeech
 	localModels    *localmodels.Manager
