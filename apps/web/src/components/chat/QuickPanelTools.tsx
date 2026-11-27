@@ -1,4 +1,4 @@
-import { Check, Ellipsis, FileSearch, Globe, HardDrive, Link, ListFilter, LockKeyhole } from "lucide-react";
+import { Check, Ellipsis, LayoutGrid, FileSearch, Globe, HardDrive, Link, ListFilter, LockKeyhole } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useRef, useState } from "react";
 import { LocalDocumentsDialog } from "@/components/settings/LocalDocumentsDialog";
@@ -15,12 +15,13 @@ type Props = {
   context?: ToolAction;
   webSearch?: { enabled: boolean; disabled: boolean; toggle: () => void; budgetLabel?: string };
   localOnly?: { enabled: boolean; disabled: boolean; toggle: (enabled: boolean) => void };
+  onApps?: () => void;
   onManage?: () => void;
 };
 
 const itemStyle = "flex min-h-8 cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium outline-none data-highlighted:bg-muted data-disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0";
 
-export function QuickPanelTools({ attachments, disabled, webpage, context, webSearch, localOnly, onManage }: Props) {
+export function QuickPanelTools({ attachments, disabled, webpage, context, webSearch, localOnly, onManage, onApps }: Props) {
   const [documentSearchOpen, setDocumentSearchOpen] = useState(false);
   const afterClose = useRef<(() => void) | undefined>(undefined);
 
@@ -82,6 +83,9 @@ export function QuickPanelTools({ attachments, disabled, webpage, context, webSe
               <LockKeyhole aria-hidden="true" />Only on this Mac
               <DropdownMenu.ItemIndicator className="ml-auto"><Check aria-hidden="true" /></DropdownMenu.ItemIndicator>
             </DropdownMenu.CheckboxItem>}
+            {onApps && <DropdownMenu.Item className={itemStyle} onSelect={() => { afterClose.current = onApps; }}>
+              <LayoutGrid aria-hidden="true" />Mini Apps
+            </DropdownMenu.Item>}
             {onManage && <DropdownMenu.Item className={itemStyle} onSelect={() => { afterClose.current = onManage; }}>
               <HardDrive aria-hidden="true" />Manage local capabilities
             </DropdownMenu.Item>}

@@ -24,14 +24,22 @@ import { privacyStatusFromConversation } from "@/lib/verification/privacy-status
 
 import { useChatWorkspace } from "@/hooks/workspace/use-chat-workspace";
 import { useDebateTopic } from "@/api/hooks/useDebates";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DebateSetupDialog } from "@/components/debate/DebateSetupDialog";
 import { DebateWorkspace } from "@/components/debate/DebateWorkspace";
 import { MessagesSquare } from "lucide-react";
 
-export function ChatPage() {
+export function ChatPage({ incomingAppDraft, consumedAppDraft }: {
+  incomingAppDraft?: {conversation:string;body:string}; consumedAppDraft?: ()=>void;
+} = {}) {
   const [debateSetupOpen, setDebateSetupOpen] = useState(false);
   const workspace = useChatWorkspace();
+  useEffect(() => {
+    if (incomingAppDraft && workspace.selectedId === incomingAppDraft.conversation) {
+      workspace.setDraft(incomingAppDraft.body);
+      consumedAppDraft?.();
+    }
+  }, [incomingAppDraft, consumedAppDraft, workspace.selectedId, workspace.setDraft]);
   const narrowAnswerTools = useNarrowLayout("(width <= 900px)");
   const {
     appearance,

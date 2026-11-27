@@ -1,0 +1,216 @@
+{
+  "format": 1,
+  "publisher": "cove",
+  "app": "japanese-review-book",
+  "name": "Japanese Review Book",
+  "description": "Save study material, generate practice questions and review due cards.",
+  "version": "1.0.0",
+  "schema_version": 1,
+  "capabilities": [
+    "records.query",
+    "records.commit",
+    "chat.attach",
+    "mac.files.pick",
+    "blobs.import",
+    "mac.selection.receive",
+    "ai.generate",
+    "documents.search",
+    "speech.speak"
+  ],
+  "collections": {
+    "questions": {
+      "fields": {
+        "question": "text",
+        "answer": "text",
+        "due": "date",
+        "mastered": "bool"
+      }
+    },
+    "materials": {
+      "fields": {
+        "title": "text",
+        "passage": "text"
+      }
+    }
+  },
+  "pages": [
+    {
+      "id": "home",
+      "title": "Daily practice",
+      "actions": [
+        "review.listDue",
+        "review.markLearned",
+        "review.practiceAgain"
+      ]
+    },
+    {
+      "id": "questions",
+      "title": "Question library",
+      "actions": [
+        "review.listAll",
+        "review.addQuestions",
+        "review.suggestQuestions"
+      ]
+    },
+    {
+      "id": "materials",
+      "title": "Study material",
+      "actions": [
+        "material.list",
+        "material.save",
+        "review.suggestQuestions"
+      ]
+    }
+  ],
+  "actions": {
+    "review.listDue": {
+      "title": "Due for review",
+      "op": "query",
+      "collection": "questions",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "due",
+          "op": "lte",
+          "value": "$today"
+        }
+      ],
+      "reveal_field": "answer",
+      "order_by": "due"
+    },
+    "review.markLearned": {
+      "title": "Mark learned and review in a week",
+      "op": "update",
+      "collection": "questions",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "mastered": true,
+        "due": "$today+7"
+      }
+    },
+    "review.practiceAgain": {
+      "title": "Practice again tomorrow",
+      "op": "update",
+      "collection": "questions",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "mastered": false,
+        "due": "$today+1"
+      }
+    },
+    "review.listAll": {
+      "title": "All questions",
+      "op": "query",
+      "collection": "questions",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "order_by": "due"
+    },
+    "review.addQuestions": {
+      "title": "Save a question",
+      "op": "create",
+      "collection": "questions",
+      "inputs": {
+        "question": "text",
+        "answer": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "question": "$input.question",
+        "answer": "$input.answer",
+        "due": "$today",
+        "mastered": false
+      }
+    },
+    "review.suggestQuestions": {
+      "title": "Generate practice questions",
+      "op": "generate",
+      "inputs": {
+        "passage": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "prompt": "Create up to three useful Japanese study questions based only on the supplied passage. Give each question a concise answer. Preserve Japanese writing in examples.",
+      "text_input": "passage",
+      "candidate_action": "review.addQuestions"
+    },
+    "material.list": {
+      "title": "View saved material",
+      "op": "query",
+      "collection": "materials",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "order_by": "title"
+    },
+    "material.save": {
+      "title": "Save study material",
+      "op": "create",
+      "collection": "materials",
+      "inputs": {
+        "title": "text",
+        "passage": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "title": "$input.title",
+        "passage": "$input.passage"
+      }
+    }
+  },
+  "seed": {
+    "questions": [
+      {
+        "question": "What does \u306d\u3053 mean?",
+        "answer": "Cat",
+        "due": "$today",
+        "mastered": false
+      },
+      {
+        "question": "What does \u3042\u3057\u305f mean?",
+        "answer": "Tomorrow",
+        "due": "$today",
+        "mastered": false
+      },
+      {
+        "question": "What does \u307f\u305a mean?",
+        "answer": "Water",
+        "due": "$today",
+        "mastered": false
+      }
+    ]
+  }
+}

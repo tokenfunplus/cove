@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/api"
+	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
@@ -91,6 +92,9 @@ func run() error {
 		return err
 	}
 	defer store.Close()
+	if err := store.RecoverAppTasks(context.Background()); err != nil {
+		return err
+	}
 	if err := store.RecoverInterruptedGenerations(context.Background()); err != nil {
 		return err
 	}
@@ -117,6 +121,7 @@ func run() error {
 	localModels.SetDownloadNetwork(network)
 	providerSetup.SetLocalProvider(localModels)
 	chatService := chat.NewServiceWithSettings(store, providerSetup, localmodels.RoutedProvider{Local: localModels, Remote: provider.NewHTTPAdapter(nil)}, store)
+	defer chatService.StopAppTask("", "")
 	chatService.SetLocalModels(localModels, store)
 	speechDirectory := os.Getenv("COVE_SPEECH_RUNTIME")
 	if speechDirectory == "" {
@@ -158,7 +163,7 @@ func run() error {
 		handlers.Wait()
 	}()
 	chatService.SetDocumentParser(documents.ProcessParser(executable))
-	localAPI := api.NewServer(api.Config{SearchService: searchService, DownloadNetwork: network,
+	localAPI := api.NewServer(api.Config{AppCatalog: appcatalog.Catalog{URL: os.Getenv("COVE_APP_CATALOG_URL"), PublicKey: os.Getenv("COVE_APP_CATALOG_PUBLIC_KEY")}, SearchService: searchService, DownloadNetwork: network,
 		Security:      security,
 		ControlToken:  controlToken,
 		Store:         store,

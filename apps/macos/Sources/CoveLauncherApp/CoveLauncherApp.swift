@@ -26,6 +26,7 @@ struct CoveLauncherApp: App {
             launcher: stateMachine, browser: browser, resources: launcherResourceBundle, serviceStatus: service
         )
         _desktop = StateObject(wrappedValue: desktopActions)
+        applicationDelegate.service = service
         applicationDelegate.launcher = stateMachine
         applicationDelegate.desktop = desktopActions
     }
@@ -63,6 +64,9 @@ struct CoveLauncherApp: App {
                 }
                 .keyboardShortcut("o")
                 .disabled(isStarting)
+
+                Button("Mini Apps…") { launcher.openChatOrRecover(destination: .apps) }
+                    .disabled(isStarting)
 
                 Button {
                     launcher.openChatOrRecover(destination: .newChat)

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
+	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
 	"io"
 	"mime"
 	"net/http"
@@ -15,6 +17,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -33,6 +36,7 @@ import (
 const maxNvidiaEvidenceBytes = 2 << 20
 
 type Config struct {
+	AppCatalog      appcatalog.Catalog
 	SearchService   *websearch.Service
 	DownloadNetwork *downloadnetwork.Service
 	Security        *localsecurity.Manager
@@ -49,6 +53,11 @@ type Config struct {
 }
 
 type Server struct {
+	apps            *miniapps.Service
+	appStore        *persistence.SQLiteStore
+	appChanges      sync.Mutex
+	files           appFileBroker
+	catalog         appcatalog.Catalog
 	searchService   *websearch.Service
 	downloadNetwork *downloadnetwork.Service
 	security        *localsecurity.Manager
@@ -96,12 +105,18 @@ func NewServer(config Config) *Server {
 	if nvidiaNRASProxy == nil {
 		nvidiaNRASProxy = provider.NewNvidiaNRASProxy(nil)
 	}
-	return &Server{searchService: config.SearchService, downloadNetwork: config.DownloadNetwork, security: security, controlToken: config.ControlToken, shutdown: shutdown, settings: settings, chat: chatService, providerSetup: config.ProviderSetup, nearAIProxy: config.NearAIProxy, nvidiaNRASProxy: nvidiaNRASProxy}
+	appStore, _ := config.Store.(*persistence.SQLiteStore)
+	var apps *miniapps.Service
+	if appStore != nil {
+		apps = miniapps.New(appStore)
+	}
+	return &Server{apps: apps, appStore: appStore, catalog: config.AppCatalog, searchService: config.SearchService, downloadNetwork: config.DownloadNetwork, security: security, controlToken: config.ControlToken, shutdown: shutdown, settings: settings, chat: chatService, providerSetup: config.ProviderSetup, nearAIProxy: config.NearAIProxy, nvidiaNRASProxy: nvidiaNRASProxy}
 }
 
 func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	browserSession := server.security.RequireBrowserSession(server.writeSecurityError)
+	server.miniAppRoutes(mux, browserSession)
 	mux.HandleFunc("GET /launch", server.launch)
 	mux.Handle("GET /api/session", browserSession(http.HandlerFunc(server.session)))
 	mux.HandleFunc("GET /api/health", server.health)
@@ -287,6 +302,8 @@ func (server *Server) launch(writer http.ResponseWriter, request *http.Request) 
 	switch intent := query.Get("intent"); intent {
 	case "settings", "new-chat", "provider-setup":
 		fragment.Set("intent", intent)
+	case "apps":
+		destination = appDestination(request)
 	case "quick-panel":
 		destination = "/?surface=quick-panel"
 	case "conversation":

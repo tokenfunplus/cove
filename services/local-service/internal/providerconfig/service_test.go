@@ -330,3 +330,36 @@ func TestConnectionFieldValidationRetainsPreviewCatalogRevision(t *testing.T) {
 		})
 	}
 }
+
+func TestAppModelDestinationMismatchDoesNotContactProvider(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.URL.Path == "/v1/models" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"id": "m"}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "ok"})
+	}))
+	defer server.Close()
+	db, err := persistence.OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := NewService(db, credentials.NewMemoryStore(), server.Client())
+	p, err := s.Configure(t.Context(), ProfileInput{Kind: "openai_compatible", Name: "Fixture", Endpoint: server.URL, Model: "m", AuthMethod: "bearer", Secret: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := calls.Load()
+	if _, _, _, err = s.ResolveCatalogAt(t.Context(), p.ID, "https://old.example/v1"); !errors.Is(err, persistence.ErrProviderProfileChanged) {
+		t.Fatal("accepted changed destination", err)
+	}
+	if calls.Load() != count {
+		t.Fatal("sent model discovery to an unapproved destination")
+	}
+	if _, _, _, err = s.ResolveCatalogAt(t.Context(), p.ID, p.Endpoint); err != nil || calls.Load() != count+1 {
+		t.Fatal("expected exactly one approved catalog read", err)
+	}
+}

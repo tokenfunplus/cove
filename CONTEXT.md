@@ -165,3 +165,12 @@ A separate locally saved conversation created by editing a saved user turn. Its 
 _Avoid_: Edited original history, regenerated evidence
 
 Local speech is a managed processing capability, separate from chat Providers. Five pinned speech bundles can be installed in Discover and configured in On this Mac > Speech. Chat resolves saved assistant text and completed Debate participant bodies for bounded, session-owned local WAV jobs; persistence owns speech preferences (schema 27), bundle files, and temporary audio. Debate read aloud is opt-in and follows new turns sequentially without controlling generation. See [ADR 0055](docs/adr/0055-add-managed-local-speech-and-answer-reading.md), [ADR 0056](docs/adr/0056-read-debate-turns-with-local-speech.md), and [Local speech](docs/local-speech.md).
+
+**Mini App Package**:
+A versioned, data-only definition of an application with its own collections, pages, actions, and requested capabilities. A release pins the package bytes and origin. See [ADR 0073](docs/adr/0073-host-declarative-mini-apps-on-the-mac.md).
+
+**Mini App Instance**:
+A particular installed book or workspace on this Mac. Its local identifier, records, files, grants, and model tasks survive deletion of conversations that used the app.
+
+**Mini App Action**:
+A named package operation executed by the Local Service against a chosen instance. The app page, Chat, and Quick Panel share the same input validation, permission checks, and confirmation semantics.

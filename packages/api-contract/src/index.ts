@@ -671,3 +671,5 @@ export interface DownloadNetworkTest {
 
 export * from "./interactive";
 export * from "./interactive-source";
+
+export type * from "./mini-apps";

@@ -49,6 +49,7 @@ public enum ChatLaunchDestination: String {
     case chat
     case newChat = "new-chat"
     case settings
+    case apps
     case providerSetup = "provider-setup"
 }
 
@@ -99,6 +100,21 @@ public final class LauncherStateMachine: ObservableObject {
         guard ensureReady(), let url = launchURL(intent: "conversation", conversationID: id) else { return false }
         browser.open(url)
         return true
+    }
+
+    public func openMiniApp(_ link: MiniAppLink) {
+        var items: [URLQueryItem]
+        switch link {
+        case .apps: items = []
+        case let .open(id, view):
+            items = [.init(name: "instance", value: id.uuidString.lowercased()), .init(name: "view", value: view)]
+        case let .install(publisher, app, version):
+            items = [.init(name: "publisher", value: publisher), .init(name: "app", value: app)]
+            if let version { items.append(.init(name: "version", value: version)) }
+        case .pick: return
+        }
+        guard ensureReady(), let url = launchURL(intent: "apps", additionalItems: items) else { return }
+        browser.open(url)
     }
 
     public func quickPanelLaunchURL() -> URL? {
@@ -169,7 +185,7 @@ public final class LauncherStateMachine: ObservableObject {
         }
     }
 
-    private func launchURL(intent: String?, conversationID: UUID? = nil) -> URL? {
+    private func launchURL(intent: String?, conversationID: UUID? = nil, additionalItems: [URLQueryItem] = []) -> URL? {
         guard case let .ready(readiness) = state,
               var components = URLComponents(url: readiness.baseURL, resolvingAgainstBaseURL: false)
         else {
@@ -190,6 +206,7 @@ public final class LauncherStateMachine: ObservableObject {
         if let conversationID {
             components.queryItems?.append(URLQueryItem(name: "conversation_id", value: conversationID.uuidString.lowercased()))
         }
+        components.queryItems?.append(contentsOf: additionalItems)
         return components.url
     }
 
@@ -201,7 +218,7 @@ public final class LauncherStateMachine: ObservableObject {
     }
 }
 
-private final class LaunchRedirectObserver: NSObject, URLSessionTaskDelegate {
+final class LaunchRedirectObserver: NSObject, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void

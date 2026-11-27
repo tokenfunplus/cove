@@ -9,7 +9,7 @@ import {
   LockKeyhole,
   Square,
 } from "lucide-react";
-import { useEffect, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode, type RefObject } from "react";
 import {
   type ConversationView,
   type ProviderProfile,
@@ -30,6 +30,8 @@ import {
 import { DraftContext } from "@/components/chat/DraftContext";
 import { QuickPanelTools } from "@/components/chat/QuickPanelTools";
 import { type AttachmentDraft as AttachmentDraftState } from "@/hooks/chat/use-attachment-draft";
+
+const ComposerAppPicker = lazy(() => import("./ComposerAppPicker"));
 
 type Props = {
   interactive?: boolean;
@@ -90,6 +92,7 @@ export function ChatComposer({
   composerRef,
   requiresContextChoice,
 }: Props) {
+  const [appsOpen,setAppsOpen] = useState(false);
   useEffect(() => {
     const textarea = composerRef.current;
     if (!compact || !textarea) return;
@@ -188,6 +191,7 @@ export function ChatComposer({
                       toggle: execution.setLocalOnly,
                     }
                   }
+                  onApps={() => setAppsOpen(true)}
                   onManage={execution?.openLocalModels}
                 />
               )
@@ -216,6 +220,7 @@ export function ChatComposer({
         attachments={attachmentDraft}
         projectId={view.project_id}
         disabled={toolsDisabled}
+        onApps={() => setAppsOpen(true)}
         onManage={execution?.openLocalModels}
         compact={compact}
         actions={
@@ -230,6 +235,13 @@ export function ChatComposer({
     );
     return (
       <>
+        {appsOpen && (
+          <Suspense fallback={null}>
+            <ComposerAppPicker key={view.id} surface={quickPanel ? "panel" : "chat"}
+              draft={draft} localRequired={execution?.localOnly} close={() => setAppsOpen(false)}
+              change={onDraftChange} busy={isSending || !!navigationBusy}/>
+          </Suspense>
+        )}
         {view.project_id && (
           <ProjectInputSummary
             id={view.project_id}

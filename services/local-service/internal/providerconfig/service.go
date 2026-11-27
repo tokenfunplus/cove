@@ -148,13 +148,21 @@ func (service *Service) Resolve(ctx context.Context, id string) (Profile, creden
 
 // ResolveCatalog retrieves one current catalog for a resolved connection.
 func (service *Service) ResolveCatalog(ctx context.Context, id string) (Profile, credentials.Secret, []ModelMetadata, error) {
-	if id == localProviderID && service.local != nil {
-		profile, secret, err := service.Resolve(ctx, id)
-		return profile, secret, service.local.Metadata(), err
-	}
+	return service.ResolveCatalogAt(ctx, id, "")
+}
+
+// ResolveCatalogAt binds model discovery and credentials to the destination the
+// user reviewed. The same resolved profile is used for the outbound request.
+func (service *Service) ResolveCatalogAt(ctx context.Context, id, expectedEndpoint string) (Profile, credentials.Secret, []ModelMetadata, error) {
 	profile, secret, err := service.Resolve(ctx, id)
 	if err != nil {
 		return Profile{}, credentials.Secret{}, nil, err
+	}
+	if expectedEndpoint != "" && profile.Endpoint != expectedEndpoint {
+		return Profile{}, credentials.Secret{}, nil, persistence.ErrProviderProfileChanged
+	}
+	if id == localProviderID && service.local != nil {
+		return profile, secret, service.local.Metadata(), nil
 	}
 	metadata, err := service.adapter.ListModelMetadata(ctx, profile, secret)
 	if err == nil {

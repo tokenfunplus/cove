@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "publisher": "personal",
+  "app": "notes",
+  "name": "My notes",
+  "description": "Capture and list personal notes.",
+  "version": "1.0.0",
+  "schema_version": 1,
+  "capabilities": ["records.query", "records.commit", "chat.attach"],
+  "collections": {"notes": {"fields": {"text": "text"}}},
+  "pages": [{"id": "home", "title": "Notebook", "actions": ["notes.list", "notes.add"]}],
+  "actions": {
+    "notes.list": {
+      "inputs": {}, "title": "Read notes", "op": "query", "collection": "notes",
+      "surfaces": ["page", "chat", "panel"]
+    },
+    "notes.add": {
+      "title": "Add a note", "op": "create", "collection": "notes",
+      "inputs": {"text": "text"}, "values": {"text": "$input.text"},
+      "surfaces": ["page", "chat", "panel"]
+    }
+  }
+}

@@ -127,7 +127,7 @@ type Chat interface {
 }
 
 func (service *Service) HasActiveGenerationBatch() bool {
-	if service.debateBusy() {
+	if service.debateBusy() || service.appTaskBusy() {
 		return true
 	}
 	service.activeMu.Lock()
@@ -164,6 +164,7 @@ type GenerationEvent struct {
 }
 
 type Service struct {
+	appTask        appTaskWorker
 	speech         localSpeech
 	localModels    *localmodels.Manager
 	localDocuments retrieval.Store
@@ -303,7 +304,7 @@ func (service *Service) StartGeneration(ctx context.Context, input SendInput) (G
 // next send as busy after the previous answer is already complete.
 // Callers hold startMu, so another send cannot start while this check waits.
 func (service *Service) generationInProgress(ctx context.Context) (bool, error) {
-	if service.debateBusy() {
+	if service.debateBusy() || service.appTaskBusy() {
 		return true, nil
 	}
 	service.activeMu.Lock()

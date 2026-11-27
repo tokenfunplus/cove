@@ -190,3 +190,8 @@ Local speech adds a `build-speech-runtime` step to `build-service`. The pinned b
 ### Local capability recovery
 
 After building web assets and an isolated Local Service executable, run `COVE_BROWSER_SCENARIO=local-capabilities node apps/web/e2e/acceptance.mjs`. `COVE_BROWSER_SERVICE_BIN` can select the isolated executable. The scenario uses disposable data and verifies speech draft retention, empty preview editing, similarity controls, and desktop/mobile layouts. Native model inference and audio quality remain separate opt-in gates.
+
+## Mini App authors
+
+Use the [Mini App authoring guide](mini-apps.md) to scaffold a package, run
+an isolated preview, and test its rules against the production interpreter.

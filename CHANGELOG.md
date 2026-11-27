@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Install Japanese Review Book, Reading Inbox and personal declarative Mini Apps. Open independent instances from the Launcher, run their actions from Chat and the Quick Panel, and select records to bring into a draft.
+- Author, validate, preview, test and pack Mini Apps locally with the [Mini App development tools](docs/mini-apps.md). SQLite schema 30 adds instance-owned records, grants, action receipts and model tasks.
+
 ## 0.1.0-beta.14 - 2026-11-26
 
 ### Added

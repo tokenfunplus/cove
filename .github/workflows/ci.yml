@@ -40,6 +40,7 @@ jobs:
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" make test-web-browser
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=debate-focus COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/debate-focus node apps/web/e2e/acceptance.mjs
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=history COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/history node apps/web/e2e/acceptance.mjs
+          dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=mini-apps COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/mini-apps node apps/web/e2e/acceptance.mjs
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=debate-controls COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/debate-controls node apps/web/e2e/acceptance.mjs
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=web-sources COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/web-sources node apps/web/e2e/acceptance.mjs
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=web-search COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/web-search node apps/web/e2e/acceptance.mjs
@@ -84,6 +85,11 @@ jobs:
         env:
           COVE_INSECURE_FILE_SECRET_STORE: "1"
         run: make dmg
+      - name: Test Mini App Launcher intents and private picker transport
+        run: |
+          test "$(plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw -o - .artifacts/Cove.app/Contents/Info.plist)" = "cove"
+          swiftc -parse-as-library apps/macos/Sources/CoveLauncher/*.swift scripts/native/mini-app-launcher-acceptance.swift -o .artifacts/mini-app-launcher-test
+          .artifacts/mini-app-launcher-test .artifacts/Cove.app/Contents/Resources/cove-local-service
       - name: Verify test Secret Store is enabled
         run: test "$(plutil -extract CoveInsecureFileSecretStore raw -o - .artifacts/Cove.app/Contents/Info.plist)" = "true"
       - name: Run macOS package acceptance test

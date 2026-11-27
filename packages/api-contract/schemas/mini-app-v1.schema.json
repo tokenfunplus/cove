@@ -1,0 +1,447 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cove.local/schemas/mini-app-v1.schema.json",
+  "title": "Cove Mini App package (format 1)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "publisher": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,47}$"
+    },
+    "app": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,47}$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})\\.(0|[1-9][0-9]{0,5})$"
+    },
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "records.query",
+          "records.commit",
+          "chat.attach",
+          "mac.files.pick",
+          "mac.selection.receive",
+          "ai.generate",
+          "blobs.import",
+          "speech.speak",
+          "documents.search"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "collections": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/collection"
+      },
+      "minProperties": 1,
+      "maxProperties": 16,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+      }
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/page"
+      },
+      "minItems": 1,
+      "maxItems": 16
+    },
+    "actions": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/action"
+      },
+      "minProperties": 1,
+      "maxProperties": 64,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_.]{0,79}$"
+      }
+    },
+    "seed": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/row"
+        }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+      }
+    },
+    "migrations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/migration"
+      }
+    }
+  },
+  "required": [
+    "format",
+    "publisher",
+    "app",
+    "name",
+    "description",
+    "version",
+    "schema_version",
+    "capabilities",
+    "collections",
+    "pages",
+    "actions"
+  ],
+  "$defs": {
+    "fieldType": {
+      "enum": [
+        "text",
+        "date",
+        "bool",
+        "number"
+      ]
+    },
+    "value": {
+      "type": [
+        "string",
+        "number",
+        "boolean"
+      ]
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/fieldType"
+      },
+      "maxProperties": 40,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/value"
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "$ref": "#/$defs/fields",
+          "minProperties": 1
+        }
+      },
+      "required": [
+        "fields"
+      ]
+    },
+    "predicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "op": {
+          "enum": [
+            "eq",
+            "ne",
+            "lt",
+            "lte",
+            "gt",
+            "gte"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/value"
+        }
+      },
+      "required": [
+        "field",
+        "op",
+        "value"
+      ]
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "op": {
+          "enum": [
+            "query",
+            "create",
+            "update",
+            "generate"
+          ]
+        },
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "page",
+              "chat",
+              "panel"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "inputs": {
+          "$ref": "#/$defs/fields"
+        },
+        "collection": {
+          "type": "string",
+          "minLength": 1
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/updateExpression"
+          }
+        },
+        "where": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/predicate"
+          },
+          "maxItems": 12
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 200
+        },
+        "order_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        },
+        "text_input": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reveal_field": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,47}$",
+          "description": "A collection field initially collapsed in query results."
+        }
+      },
+      "required": [
+        "title",
+        "op",
+        "surfaces",
+        "inputs"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "query"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "collection"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "create"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "collection",
+              "values"
+            ],
+            "properties": {
+              "values": {
+                "$ref": "#/$defs/row"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "update"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "collection",
+              "values"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "generate"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "prompt",
+              "text_input",
+              "inputs"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "reveal_field"
+            ]
+          },
+          "then": {
+            "properties": {
+              "op": {
+                "const": "query"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "actions"
+      ]
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "to": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/row"
+          }
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "defaults"
+      ]
+    },
+    "updateExpression": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/value"
+        },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "if": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": {
+                "$ref": "#/$defs/updateExpression"
+              }
+            }
+          },
+          "patternProperties": {
+            "^(add|eq|ne|lt|lte|gt|gte)$": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/$defs/updateExpression"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -16,6 +16,12 @@ The Launcher menu offers Open Quick Panel, Open Chat, New Chat, and Settings. Wh
 
 Troubleshooting contains Restart Local Service, Open Data Folder, and Copy Diagnostics. The diagnostic summary excludes credentials, launch URLs, errors, and conversations. Check for Updates groups stable and explicit beta checks. After a newer release is found, the menu displays Update Available and keeps its download link available after dismissing the alert. About Cove contains the installed version/build and a Release Notes link for that exact version, including beta releases. Help & Feedback opens the user guide or issue tracker without submitting a report.
 
+## Use a Mini App
+
+Open **Mini Apps** from the Launcher, browse the catalog, and choose **Japanese Review Book**. Review its permissions and name your book. A second instance gets its own questions, permissions and study history. Under **Daily practice**, reveal an answer, select the questions you studied, and confirm a review action to update their due dates.
+
+In Chat or the Quick Panel, open Mini Apps from the composer tools and choose your book. Select due questions to add them to your draft. You can edit the draft before sending it. In the book's **Study material** view you can save a passage or ask a model to generate candidate questions. Review the selected model and destination, then choose the candidates to save. Open instance settings to change permissions or export a personal backup. See the [authoring guide](mini-apps.md) to develop a personal app.
+
 ## Use the Quick Panel
 
 Choose **Open Quick Panel** from the Cove menu bar. To open it from any app, enable **Launcher Settings > Quick Panel Shortcut: ⌃⌥C**, then press **Control-Option-C**. When Cove is ready, the panel opens with the composer focused so you can type immediately.

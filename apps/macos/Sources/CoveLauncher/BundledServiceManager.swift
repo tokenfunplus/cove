@@ -143,6 +143,27 @@ public final class BundledServiceManager: ServiceManaging, ServiceStatusReading,
         return payload.launchToken
     }
 
+    private func runningBaseURL() -> URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        return running?.readiness()?.baseURL
+    }
+
+    public func miniAppFileRequest(_ id: UUID, reply: Data? = nil) async throws -> Data {
+        guard let base = runningBaseURL() else { throw LauncherError.serviceDidNotBecomeReady }
+        let path = "/internal/control/mini-app-files/" + id.uuidString.lowercased() + (reply == nil ? "/claim" : "/finish")
+        var request = URLRequest(url: base.appendingPathComponent(path), timeoutInterval: 5)
+        request.httpMethod = "POST"
+        request.setValue(controlToken, forHTTPHeaderField: "X-Cove-Control-Token")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = reply
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
+        let (data, response) = try await session.data(for: request, delegate: LaunchRedirectObserver())
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw LauncherError.invalidReadiness }
+        return data
+    }
+
     public func fetchStatus(completion: @escaping @Sendable (Result<LauncherServiceStatus, Error>) -> Void) {
         lock.lock()
         let running = self.running

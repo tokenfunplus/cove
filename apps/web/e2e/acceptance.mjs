@@ -1,3 +1,4 @@
+import { runMiniAppsAcceptance } from "./mini-apps.mjs";
 import { runInteractiveAcceptance } from "./interactive.mjs";
 import { runLocalCapabilitiesAcceptance } from "./local-capabilities.mjs";
 import { runProjectsAcceptance } from "./projects.mjs";
@@ -119,6 +120,11 @@ const provider = http.createServer(async (request, response) => {
   }
 
   response.writeHead(200, { "Content-Type": "text/event-stream" });
+  if (prompt.includes("Mini App study fixture")) {
+    const content = JSON.stringify([{ question: "Fixture question", answer: "Fixture answer" }]);
+    response.end("data: " + JSON.stringify({choices:[{delta:{content}}]}) + "\n\ndata: [DONE]\n\n");
+    return;
+  }
   if (prompt === "Repaired nested UI fixture") {
     const body = 'Here are two weekend ideas.\n\n{"cove_ui":1,"title":"Repair a weekend choice","children":[{"type":"Choice","options":["A gallery","A walk"]],"continue":"Continue repaired"}}\n\nThis paragraph survives the repair.';
     response.end("data: " + JSON.stringify({choices:[{delta:{content:body}}]}) + "\n\ndata: [DONE]\n\n");
@@ -699,7 +705,12 @@ try {
     );
     await cdp("Input.insertText", { text: value });
   }
-  if (process.env.COVE_BROWSER_SCENARIO === "interactive") {
+  if (process.env.COVE_BROWSER_SCENARIO === "mini-apps") {
+    await runMiniAppsAcceptance({api, cdp, evaluate, until, click, fill, snapshot, reloadPage, loadPage, origin, profile, requests, temp});
+    assert.equal(exceptions.length, 0);
+    socket.close();
+    console.log("Mini App browser acceptance passed.");
+  } else if (process.env.COVE_BROWSER_SCENARIO === "interactive") {
     try {
       await runInteractiveAcceptance({
         api,

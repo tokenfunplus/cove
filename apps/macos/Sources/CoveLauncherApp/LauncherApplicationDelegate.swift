@@ -5,6 +5,17 @@ import CoveLauncher
 @MainActor
 final class LauncherApplicationDelegate: NSObject, NSApplicationDelegate {
     var launcher: LauncherStateMachine?
+    weak var service: BundledServiceManager?
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first, let link = MiniAppLink(url) else { return }
+        if case let .pick(id) = link {
+            guard let service else { return }
+            Task { await pickMiniAppText(id, service: service) }
+        } else {
+            launcher?.openMiniApp(link)
+        }
+    }
+
     weak var desktop: LauncherDesktopActions?
 
     func applicationDidFinishLaunching(_ notification: Notification) {

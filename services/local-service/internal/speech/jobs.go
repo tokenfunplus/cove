@@ -48,13 +48,14 @@ type Job struct {
 	cleanupPending        bool
 }
 type Request struct {
-	Volume         *float64
-	Threads        *int
-	Text           string
-	ConversationID string
-	ModelID        string
-	Profile        *persistence.SpeechProfile
-	RenderedText   bool
+	Volume                *float64
+	Threads               *int
+	Text                  string
+	ConversationID        string
+	ModelID               string
+	Profile               *persistence.SpeechProfile
+	RenderedText          bool
+	PreserveOtherReadings bool
 }
 
 func (manager *Manager) choose(settings persistence.SpeechSettings, language, override string) (Model, error) {
@@ -146,7 +147,25 @@ func (manager *Manager) Start(ctx context.Context, owner string, input Request) 
 		}
 	}
 	voice, _ := model.Voice(profile.VoiceID)
-	if err = manager.cancelMatching(ctx, func(*Job) bool { return true }); err != nil {
+	if input.PreserveOtherReadings {
+		// An app cannot interrupt a reading in Chat or discard its WAV download.
+		manager.mu.Lock()
+		foreign := 0
+		busy := false
+		for _, other := range manager.jobs {
+			if other.owner != owner {
+				foreign++
+				if other.State == "preparing" || other.State == "generating" {
+					busy = true
+				}
+			}
+		}
+		manager.mu.Unlock()
+		if busy || foreign >= 4 {
+			return JobStatus{}, errors.New("Another reading is in progress or awaiting playback. Finish it before starting this reading.")
+		}
+	}
+	if err = manager.cancelMatching(ctx, func(job *Job) bool { return !input.PreserveOtherReadings || job.owner == owner }); err != nil {
 		return JobStatus{}, err
 	}
 	var random [16]byte

@@ -4,13 +4,16 @@ import { failedVerificationForContract, secureVerificationForContract } from "./
 import type { SecureInferenceTransport } from "./secure-inference";
 
 type Commands = {
-  claim: () => Promise<DebateBrowserContext>;
+  claim: () => Promise<{
+    turn: Pick<DebateBrowserContext["turn"], "snapshot" | "configuration">;
+    messages: DebateBrowserContext["messages"];
+  }>;
   progress: (input: Omit<DebateBrowserProgress, "claim_id">) => Promise<void>;
   settle: (input: Omit<DebateBrowserResult, "claim_id">) => Promise<unknown>;
 };
 
-/** Executes a single claimed request; Chat owns the round and turn schedule. */
-export async function runDebateBrowserTurn(
+/** Runs an exclusively claimed browser request with the saved target and messages. */
+export async function runVerifiedBrowserTurn(
   commands: Commands,
   signal: AbortSignal,
   loadTransport: () => Promise<SecureInferenceTransport> = async () => (await import("./secure-inference")).createSecureInferenceTransport(),
@@ -41,7 +44,7 @@ export async function runDebateBrowserTurn(
   };
   try {
     checkAbort();
-    if (!mode || messages.length < 2) throw new Error("Unsupported browser debate request");
+    if (!mode || messages.length < 2) throw new Error("Unsupported browser verification request");
     const transport = await loadTransport();
     checkAbort();
     const stream = transport.generate({
@@ -55,7 +58,7 @@ export async function runDebateBrowserTurn(
       checkAbort();
       if (event.type === "delta" || event.type === "reasoning") {
         outputBytes += new TextEncoder().encode(event.delta).byteLength;
-        if (outputBytes > 256 * 1024) throw new Error("Debate output exceeded its limit");
+        if (outputBytes > 256 * 1024) throw new Error("Verified output exceeded its limit");
         if (event.delta) { lastDelta = performance.now(); firstDelta ??= lastDelta; }
         if (event.type === "delta") body += event.delta;
         else reasoning += event.delta;
@@ -86,3 +89,5 @@ export async function runDebateBrowserTurn(
     }
   }
 }
+
+export const runDebateBrowserTurn = runVerifiedBrowserTurn;
