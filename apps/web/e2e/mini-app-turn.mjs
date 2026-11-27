@@ -256,6 +256,9 @@ export async function runMiniAppTurn({
     'document.querySelector("[role=dialog]").textContent.includes("Saved 1 record")',
   );
 
+  await button("Done", "[role=dialog]");
+  await until('!document.querySelector("[role=dialog]")');
+  await fill("#generation-input", "");
   const material = () =>
     api(
       "/api/mini-apps/instances/" + reviewBook.id + "/actions/material.list",
@@ -282,10 +285,28 @@ export async function runMiniAppTurn({
     "Find the source conversation in the isolated acceptance database",
   );
   await api("/api/conversations/" + source.id, "DELETE");
-  assert(!(await api("/api/conversations")).some(chat => chat.id === source.id));
+  assert(
+    !(await api("/api/conversations")).some((chat) => chat.id === source.id),
+  );
   assert.deepEqual(
     (await material()).records,
     saved,
     "Deleting the source chat preserves the app's owned records",
   );
+  await fill("#generation-input", "");
+  await loadPage("Page.navigate", { url: origin + "/apps" });
+  await click('a[href="/"]');
+  await until(`!!document.querySelector('button[aria-label="New conversation"]')`);
+  await click('button[aria-label="New conversation"]');
+  await until('!!document.querySelector("#generation-input")');
+  await fill("#generation-input", "Keep my unsent workspace draft");
+  await evaluate("history.back()");
+  await until("document.body.textContent.includes('Discard unsent draft?')");
+  await button("Stay", "[role=dialog]");
+  assert.equal(
+    await evaluate('document.querySelector("#generation-input").value'),
+    "Keep my unsent workspace draft",
+  );
+  assert.equal(await evaluate("location.pathname"), "/");
+  await fill("#generation-input", "");
 }

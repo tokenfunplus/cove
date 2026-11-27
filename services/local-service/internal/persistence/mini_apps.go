@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 )
 
 const miniAppsMigration = `
@@ -112,18 +113,68 @@ func (s *MiniAppStore) DeleteInstance(id string) error {
 	return err
 }
 func (s *MiniAppStore) Records(instance, collection string) ([]AppRecord, error) {
-	rows, err := s.tx.QueryContext(s.ctx, "SELECT id,revision,fields FROM mini_app_records WHERE instance_id=? AND collection=? ORDER BY rowid", instance, collection)
+	return s.QueryAppRecords(instance, collection, AppRecordQuery{})
+}
+
+type AppRecordPredicate struct {
+	Field, Op string
+	Value     any
+}
+type AppRecordQuery struct {
+	Where   []AppRecordPredicate
+	OrderBy string
+	Limit   int
+	IDs     []string
+}
+
+// Select typed JSON fields inside SQLite before decoding record payloads in Go.
+func (s *MiniAppStore) QueryAppRecords(instance, collection string, filter AppRecordQuery) ([]AppRecord, error) {
+	query := "SELECT id,revision,fields FROM mini_app_records WHERE instance_id=? AND collection=?"
+	args := []any{instance, collection}
+	operators := map[string]string{"eq": "=", "ne": "!=", "lt": "<", "lte": "<=", "gt": ">", "gte": ">="}
+	for _, predicate := range filter.Where {
+		op := operators[predicate.Op]
+		if op == "" {
+			return nil, errors.New("invalid record comparison")
+		}
+		if predicate.Field == "$id" {
+			query += " AND id " + op + " ?"
+		} else {
+			query += " AND json_extract(CAST(fields AS TEXT),?) " + op + " ?"
+			args = append(args, "$."+predicate.Field)
+		}
+		args = append(args, predicate.Value)
+	}
+	if filter.IDs != nil {
+		ids, err := json.Marshal(filter.IDs)
+		if err != nil {
+			return nil, err
+		}
+		query += " AND id IN (SELECT value FROM json_each(?))"
+		args = append(args, string(ids))
+	}
+	if filter.OrderBy != "" {
+		query += " ORDER BY json_extract(CAST(fields AS TEXT),?) COLLATE BINARY, rowid"
+		args = append(args, "$."+filter.OrderBy)
+	} else {
+		query += " ORDER BY rowid"
+	}
+	if filter.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
+	}
+	rows, err := s.tx.QueryContext(s.ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var records []AppRecord
+	records := []AppRecord{}
 	for rows.Next() {
-		var r AppRecord
-		if err := rows.Scan(&r.ID, &r.Revision, &r.Fields); err != nil {
+		var record AppRecord
+		if err := rows.Scan(&record.ID, &record.Revision, &record.Fields); err != nil {
 			return nil, err
 		}
-		records = append(records, r)
+		records = append(records, record)
 	}
 	return records, rows.Err()
 }

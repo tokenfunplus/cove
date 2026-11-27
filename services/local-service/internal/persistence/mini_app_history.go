@@ -42,7 +42,7 @@ const compactReceipts = `WITH recent AS (
  (SELECT rid FROM recent WHERE position>64 OR bytes>4194304 OR created_at<unixepoch()-604800)`
 const compactTasks = `WITH recent AS (
  SELECT rowid AS rid,created_at,row_number() OVER (ORDER BY rowid DESC) AS position,
- sum(length(request)+length(result)+length(verification)+length(snapshot)) OVER (ORDER BY rowid DESC) AS bytes
+ sum(length(CAST(request AS BLOB))+length(CAST(result AS BLOB))+length(CAST(verification AS BLOB))+length(CAST(snapshot AS BLOB))) OVER (ORDER BY rowid DESC) AS bytes
  FROM mini_app_tasks WHERE instance_id=? AND state NOT IN ('running','expired'))
  UPDATE mini_app_tasks SET state='expired',request='{}',result='',snapshot='',verification='',detail=''
  WHERE rowid IN (SELECT rid FROM recent WHERE position>30 OR bytes>4194304 OR created_at<unixepoch()-604800)`

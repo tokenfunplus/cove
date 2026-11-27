@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 	"os"
+	"reflect"
 	"testing"
+	"time"
 )
 
 func TestQueryContinuationAndAttachmentAcrossPages(t *testing.T) {
@@ -73,5 +76,50 @@ func TestQueryContinuationAndAttachmentAcrossPages(t *testing.T) {
 	call(t, service, book.ID, study)
 	if _, err := service.Invoke(t.Context(), book.ID, readAll); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed order should invalidate old continuation: %v", err)
+	}
+}
+
+func TestSQLiteQueryMatchesTypedOrderingPredicatesAndLimits(t *testing.T) {
+	db, _ := storeAt(t, ":memory:")
+	defer db.Close()
+	now := time.Now()
+	err := db.MiniAppTransaction(t.Context(), func(tx *persistence.MiniAppStore) error {
+		if err := tx.AddRelease(persistence.AppRelease{ID: "r", Manifest: []byte("{}")}); err != nil {
+			return err
+		}
+		if err := tx.SaveInstance(persistence.AppInstance{ID: "i", ReleaseID: "r", Grants: []byte("[]")}); err != nil {
+			return err
+		}
+		rows := []Record{
+			{ID: "a", Revision: 1, Fields: map[string]any{"text": "a", "number": 1.0, "bool": false, "date": "2026-11-26"}},
+			{ID: "b", Revision: 2, Fields: map[string]any{"text": "\u65e5", "number": 2.0, "bool": true, "date": "2026-11-27"}},
+			{ID: "c", Revision: 3, Fields: map[string]any{"text": "\u65e5", "number": 2.0, "bool": true, "date": "2026-11-28"}},
+		}
+		for _, row := range rows {
+			if err := saveRecord(tx, "i", "items", row); err != nil {
+				return err
+			}
+		}
+		for field, value := range map[string]any{"text": "\u65e5", "number": 2.0, "bool": true, "date": "2026-11-27", "$id": "b"} {
+			for _, op := range []string{"eq", "ne", "lt", "lte", "gt", "gte"} {
+				for _, order := range []string{"", "number", "text", "bool", "date"} {
+					for _, limit := range []int{0, 1, 3} {
+						action := Action{Op: "query", Collection: "items", Where: []Predicate{{Field: field, Op: op, Value: value}}, OrderBy: order, Limit: limit}
+						got, err := actionRecords(tx, "i", action, nil, now)
+						if err != nil {
+							return err
+						}
+						want := queryRecords(rows, action, nil, now)
+						if !reflect.DeepEqual(got, want) {
+							t.Fatalf("%s %s order=%s limit=%d got=%v want=%v", field, op, order, limit, got, want)
+						}
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

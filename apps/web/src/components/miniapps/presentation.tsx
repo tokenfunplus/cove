@@ -1,21 +1,27 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type {
   MiniAppFields,
   MiniAppInstance,
   MiniAppPackage,
 } from "@cove/api-contract";
 import { appBookmark } from "@/lib/mini-app-snapshot";
+import { copyText } from "@/lib/clipboard";
 import { Button } from "@/components/ui/button";
 
 export { appBookmark, snapshot } from "@/lib/mini-app-snapshot";
 
 export function canUpgrade(
   before: MiniAppPackage,
-  after: Pick<MiniAppPackage, "publisher" | "app" | "version" | "schema_version">,
+  after: Pick<
+    MiniAppPackage,
+    "publisher" | "app" | "version" | "schema_version"
+  >,
   oldOrigin: string,
   newOrigin: string,
+  legacyVerified = false,
 ) {
   const sameOrigin =
+    (legacyVerified && (newOrigin === "builtin" || newOrigin === "catalog")) ||
     oldOrigin === newOrigin ||
     (oldOrigin === "builtin" && newOrigin === "catalog") ||
     (oldOrigin === "catalog" && newOrigin === "builtin");
@@ -99,6 +105,40 @@ export function OpenApp({
         {children ?? "Open in browser"}
       </a>
     </Button>
+  );
+}
+export function CopyAppLink({
+  instance,
+  view,
+}: {
+  instance: MiniAppInstance;
+  view: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [denied, setDenied] = useState(false);
+  const link = appBookmark(instance.id, view);
+  return (
+    <span className="inline-grid gap-1 text-sm">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={async () => {
+          const ok = await copyText(link);
+          setCopied(ok);
+          setDenied(!ok);
+        }}
+      >
+        {copied ? "Link copied" : "Copy local app link"}
+      </Button>
+      {denied && (
+        <input
+          aria-label="Local app link"
+          readOnly
+          value={link}
+          onFocus={(event) => event.target.select()}
+        />
+      )}
+    </span>
   );
 }
 const capNames: Record<string, string> = {

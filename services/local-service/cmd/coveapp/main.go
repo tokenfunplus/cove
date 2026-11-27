@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
 	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
 )
 
@@ -46,8 +47,8 @@ func run(args []string, out io.Writer) error {
 			return err
 		}
 		pkg.Publisher, pkg.App = args[1], args[2]
-		if pkg.Publisher == "cove" {
-			return errors.New("choose a publisher other than the reserved cove publisher")
+		if appcatalog.ReservedPublisher(pkg.Publisher) {
+			return errors.New("choose your own publisher; this publisher is reserved for bundled releases")
 		}
 		source, err := json.MarshalIndent(pkg, "", "  ")
 		if err != nil {

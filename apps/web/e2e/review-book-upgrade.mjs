@@ -39,6 +39,42 @@ export async function runReviewBookUpgrade({
       sourceTitle: "",
     });
   }
+  await button("Question library");
+  await readyRows(3);
+  await click('[aria-label="Select record 1"]');
+  await button("Edit question and answer");
+  assert(
+    await evaluate(
+      `document.querySelector('[aria-label="Select record 2"]').disabled`,
+    ),
+    "An editor keeps its target fixed",
+  );
+  await evaluate(
+    `document.querySelector('[aria-label="Select record 2"]').click()`,
+  );
+  await evaluate(
+    `Array.from(document.querySelectorAll('section[aria-label="Edit question and answer"] label')).find(label => label.firstChild.textContent.trim() === 'Question').querySelector('textarea').setAttribute('data-edit-question', '')`,
+  );
+  await fill("[data-edit-question]", "Reviewed first card");
+  await button("Preview changes");
+  await button("Confirm changes");
+  await until(
+    "!document.querySelector('section[aria-label=\"Edit question and answer\"]')",
+  );
+  const edited = (await api(root + book.id + "/export")).collections.questions;
+  assert.equal(
+    edited.filter((row) => row.fields.question === "Reviewed first card")
+      .length,
+    1,
+  );
+  for (const row of after.slice(1)) {
+    assert.deepEqual(
+      edited.find((saved) => saved.id === row.id),
+      row,
+      "Another question cannot be overwritten by changing selection",
+    );
+  }
+  await goto(path + "/home");
   await readyRows(3);
   await button("Due for review");
   await fill('input[type="number"]', "1");

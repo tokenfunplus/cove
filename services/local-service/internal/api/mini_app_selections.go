@@ -74,7 +74,7 @@ func (s *Server) nativeSelection(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				for field, t := range a.Inputs {
-					if t == "text" {
+					if t == "text" && !miniapps.HiddenInput(release.Package, a, field) {
 						targets = append(targets, selectionTarget{i.ID, i.Name, page.ID, id, a.Title, field, i.Revision})
 					}
 				}

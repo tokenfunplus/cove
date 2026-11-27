@@ -17,13 +17,29 @@ export function runVerifiedAppTask(
     encodeURIComponent(task) +
     "/browser/";
   const claim_id = crypto.randomUUID();
-  function send<T>(step: string, values: Record<string, unknown>) {
-    return request<T>(base + step, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ claim_id, ...values }),
-      ...(step === "settle" ? {} : { signal }),
-    });
+  async function send<T>(step: string, values: Record<string, unknown>) {
+    const body = JSON.stringify({ claim_id, ...values });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await request<T>(base + step, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          ...(step === "settle" ? {} : { signal }),
+        });
+      } catch (error) {
+        const code = (error as { envelope?: { error?: { code?: string } } })
+          ?.envelope?.error?.code;
+        const transient =
+          !code || code === "service_unavailable" || code === "mini_app_error";
+        // Claims never repeat a model call. Settlements reuse their exact verified bytes.
+        if (step === "claim" || !transient || attempt >= 7 || signal.aborted)
+          throw error;
+        await new Promise<void>((resolve) =>
+          setTimeout(resolve, Math.min(100 * 2 ** attempt, 2000)),
+        );
+      }
+    }
   }
   return runVerifiedBrowserTurn(
     {

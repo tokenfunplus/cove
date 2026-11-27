@@ -2,6 +2,9 @@ package chat
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -13,7 +16,8 @@ import (
 type browserAppStore interface {
 	AppTaskStore
 	BeginBrowserAppTask(context.Context, string, string, string, string, persistence.ProviderSnapshot) error
-	FinishBrowserAppTask(context.Context, string, string, string, string, string, persistence.GenerationVerification) error
+	FinishBrowserAppTask(context.Context, string, string, string, string, string, persistence.GenerationVerification, string) error
+	AppBrowserSettlement(context.Context, string, string, string) (bool, error)
 }
 type browserAppTask struct {
 	maxTokens                   *int
@@ -113,6 +117,23 @@ func (s *Service) SettleAppBrowser(ctx context.Context, instance, id, owner stri
 	w := &s.appTask
 	w.Lock()
 	defer w.Unlock()
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return ErrAppVerification
+	}
+	sum := sha256.Sum256(append([]byte(instance+"/"+id+"/"+owner+"/"), encoded...))
+	receipt := hex.EncodeToString(sum[:])
+	accepted, err := s.store.(browserAppStore).AppBrowserSettlement(ctx, instance, id, receipt)
+	if err != nil {
+		return err
+	}
+	if accepted {
+		// A previous update may have committed before its caller lost the response.
+		if w.browser != nil && w.instance == instance && w.id == id {
+			w.releaseBrowser()
+		}
+		return nil
+	}
 	b, err := w.ownedBrowser(instance, id, owner)
 	if err != nil {
 		return err
@@ -134,7 +155,7 @@ func (s *Service) SettleAppBrowser(ctx context.Context, instance, id, owner stri
 		v.VerifiedAt = &now
 		state, body, detail = "completed", input.Body, ""
 	}
-	if err = s.store.(browserAppStore).FinishBrowserAppTask(ctx, instance, id, state, body, detail, v); err != nil {
+	if err = s.store.(browserAppStore).FinishBrowserAppTask(ctx, instance, id, state, body, detail, v, receipt); err != nil {
 		return err
 	}
 	w.releaseBrowser()

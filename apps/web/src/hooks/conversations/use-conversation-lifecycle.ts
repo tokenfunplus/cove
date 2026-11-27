@@ -125,6 +125,22 @@ export function useConversationLifecycle({
     return () => window.removeEventListener("beforeunload", protectDraft);
   }, [hasDraft]);
 
+  useEffect(() => {
+    const protectWorkspace = (event: Event) => {
+      if (!hasDraft && !activeGeneration) return;
+      const intent = event as CustomEvent<{ proceed: () => Promise<void> }>;
+      event.preventDefault();
+      setConfirmation({
+        kind: "navigate",
+        discardDraft: hasDraft,
+        stopGeneration: activeGeneration,
+        navigationAction: intent.detail.proceed,
+      });
+    };
+    window.addEventListener("cove-workspace-navigation", protectWorkspace);
+    return () => window.removeEventListener("cove-workspace-navigation", protectWorkspace);
+  }, [hasDraft, activeGeneration, setConfirmation]);
+
   async function withNavigationBusy(action: () => Promise<unknown>) {
     setIsNavigating(true);
     try {

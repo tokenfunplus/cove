@@ -52,7 +52,7 @@ func (s *Service) Attach(ctx context.Context, id string, req AttachmentRequest) 
 		if a.Op != "query" || !slices.Contains(a.Surfaces, req.Surface) || err != nil {
 			return ErrInvalid
 		}
-		rows, err := loadRecords(tx, id, a.Collection)
+		rows, err := actionRecords(tx, id, a, req.Inputs, now)
 		if err != nil {
 			return err
 		}

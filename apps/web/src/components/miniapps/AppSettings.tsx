@@ -38,7 +38,15 @@ export function AppSettings({
       if (!current) throw new Error("The installed release is unavailable.");
       const { packages, warning } = await miniApps.catalog();
       const [entry] = packages
-        .filter((entry) => canUpgrade(pkg, entry, current.origin, entry.origin))
+        .filter((entry) =>
+          canUpgrade(
+            pkg,
+            entry,
+            current.origin,
+            entry.origin,
+            current.legacy_verified,
+          ),
+        )
         .sort((a, b) =>
           b.version.localeCompare(a.version, "en", { numeric: true }),
         );
@@ -52,7 +60,14 @@ export function AppSettings({
     releases.data?.packages.filter(
       (r) =>
         r.id === instance.release_id ||
-        (current && canUpgrade(pkg, r.package, current.origin, r.origin)),
+        (current &&
+          canUpgrade(
+            pkg,
+            r.package,
+            current.origin,
+            r.origin,
+            current.legacy_verified,
+          )),
     ) ?? [];
   const activity = useQuery({
     queryKey: ["mini-app-activity", instance.id],
@@ -156,7 +171,7 @@ export function AppSettings({
         </ul>
       )}
       <ErrorMessage error={readiness.error} />
-      {current && current.origin !== "local" && (
+      {current && (current.origin !== "local" || current.legacy_verified) && (
         <div className="space-y-2">
           <Button
             variant="outline"
@@ -172,7 +187,7 @@ export function AppSettings({
           <ErrorMessage error={check.error} />
         </div>
       )}
-      {current?.origin === "local" && (
+      {current?.origin === "local" && !current.legacy_verified && (
         <p className="text-sm">
           To update this personal app, import a newer package in My apps and
           choose this instance.

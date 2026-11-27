@@ -2962,3 +2962,19 @@ test("Quick Panel new chat and replacement imports protect a card question", asy
     act(() => setInteractiveDraftDirty("quick-question", false));
   }
 });
+
+test("browser workspace navigation protects an unsent chat draft",async()=>{
+ render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+ const input=await screen.findByRole("textbox",{name:"Send message"});
+ await waitFor(()=>expect((input as HTMLTextAreaElement).disabled).toBe(false));
+ await userEvent.type(input,"Keep this unsent draft");
+ act(()=>{
+  window.history.pushState(null,"","/apps");
+  window.dispatchEvent(new PopStateEvent("popstate"));
+ });
+ expect(window.location.pathname).toBe("/");
+ expect((input as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+ expect(await screen.findByText("Discard unsent draft?")).toBeDefined();
+ await userEvent.click(screen.getByRole("button",{name:"Stay"}));
+ expect((input as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+});

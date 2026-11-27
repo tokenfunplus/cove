@@ -141,7 +141,7 @@ export function AppDirectory({ open, target }: Props) {
                 : (preview.source.origin ?? "local");
           return (
             previous &&
-            canUpgrade(previous.package, preview.pkg, previous.origin, origin)
+            canUpgrade(previous.package, preview.pkg, previous.origin, origin, previous.legacy_verified)
           );
         })}
         close={() => setPreview(undefined)}

@@ -399,3 +399,29 @@ Highlight a passage in a saved chat message and choose **Use selected text in an
 app**. Select an instance and text field, then choose **Use selected chat text**.
 The host checks its selection grant before copying the frozen passage into the
 field. The original chat draft is preserved.
+
+## Recovery and compatibility
+
+An editor keeps the selected record IDs and revisions until the user closes or
+confirms it. A stale record requires a new preview. A scoped Chat write can
+use an authorized local query to select records even when that query was not
+shared with the model. Historical candidates become selectable after the
+saved task inputs load, retaining their material bindings.
+
+A legacy file install whose digest matches a bundled official release can
+upgrade to its trusted successor after the user's review. Modified personal
+packages retain their local origin. The author CLI reserves bundled publisher
+names during scaffolding. Validation and packing check the package contract;
+installation also checks the selected distribution authority.
+
+NearAI progress and result delivery retry temporary Local Service failures with
+the same claim and payload. Accepted settlements are idempotent for that exact
+browser and receipt, including after a service restart. A verified result is
+never replaced by an empty failure because its delivery was interrupted.
+Permanent service unavailability or closing the tab can still prevent delivery.
+
+Use **Copy local app link** on an app page to bookmark its stable
+`cove://open/...` address. It resolves the active Local Service port on this Mac.
+Queries apply typed filters, ordering and limits in SQLite before decoding
+record data. Writes load only their selected records. Pagination keeps its
+existing revision checks and creation-order tiebreaker.

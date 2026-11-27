@@ -88,6 +88,7 @@ export function AppModelTask({
   const { profile, model, policyLocal, profiles, catalog } = target;
   const [started, setStarted] = useState<AppTask>();
   const [submitted, setSubmitted] = useState<{
+    id: string;
     destination: string;
     model: string;
     inputs: MiniAppFields;
@@ -136,7 +137,7 @@ export function AppModelTask({
       if (job.browser && job.state === "running") {
         void startVerifiedAppTask(instance.id, job.id).catch(setBrowserError);
       }
-      setSubmitted(data);
+      setSubmitted({ ...data, id: job.id });
       return job;
     },
     onSuccess: (job) => {
@@ -155,7 +156,9 @@ export function AppModelTask({
       void poll.refetch();
     },
   });
-  const source = task?.inputs ?? submitted?.inputs;
+  const source =
+    task?.inputs ?? (submitted?.id === task?.id ? submitted?.inputs : undefined);
+  const inputReady = !!source;
   const bindings = action.candidate_bindings ?? {};
   const generated = candidate && {
     ...candidate,
@@ -171,7 +174,7 @@ export function AppModelTask({
       )
     : undefined;
   const raw =
-    generated && task?.result
+    inputReady && generated && task?.result
       ? candidateRows(task.result, generated, expectedCount)
       : [];
   const results = raw.map((row) => ({
@@ -299,7 +302,13 @@ export function AppModelTask({
             </details>
           )}
           {task.error && <ErrorMessage error={task.error} />}
+          {task.state === "completed" && !inputReady && (
+            <p role="status">
+              Loading the saved task input before using candidates…
+            </p>
+          )}
           {task.state === "completed" &&
+            inputReady &&
             (results.length ? (
               <CandidateSelection
                 key={task.id}

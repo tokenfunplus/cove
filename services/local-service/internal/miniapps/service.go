@@ -16,14 +16,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 )
 
 type Release struct {
-	ID      string  `json:"id"`
-	Origin  string  `json:"origin"`
-	Digest  string  `json:"digest"`
-	Package Package `json:"package"`
+	LegacyVerified bool    `json:"legacy_verified,omitempty"`
+	ID             string  `json:"id"`
+	Origin         string  `json:"origin"`
+	Digest         string  `json:"digest"`
+	Package        Package `json:"package"`
 }
 type Instance struct {
 	ID        string   `json:"id"`
@@ -97,6 +99,7 @@ func loadRelease(tx *persistence.MiniAppStore, id string) (r Release, err error)
 		return r, lookup(err)
 	}
 	r.ID, r.Digest, r.Origin = row.ID, row.Digest, row.Origin
+	r.LegacyVerified = row.Origin == "local" && appcatalog.IsBundledDigest(row.Digest)
 	err = json.Unmarshal(row.Manifest, &r.Package)
 	return
 }
@@ -294,7 +297,9 @@ func (s *Service) Upgrade(ctx context.Context, id string, req UpgradeRequest) (I
 		}
 		old, next := before.Package, after.Package
 		// The configured catalog signer is the release authority for all bundled apps.
-		sameOrigin := before.Origin == after.Origin || before.Origin == "builtin" && after.Origin == "catalog" || before.Origin == "catalog" && after.Origin == "builtin"
+		trustedAfter := after.Origin == "builtin" || after.Origin == "catalog"
+		trustedBefore := before.Origin == "builtin" || before.Origin == "catalog" || before.LegacyVerified
+		sameOrigin := before.Origin == after.Origin || trustedBefore && trustedAfter
 		if !sameOrigin || old.Publisher != next.Publisher || old.App != next.App || !newer(next.Version, old.Version) || next.SchemaVersion < old.SchemaVersion {
 			return invalid("incompatible upgrade")
 		}

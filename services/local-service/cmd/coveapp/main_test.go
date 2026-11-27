@@ -138,3 +138,11 @@ func TestAuthorCanEvolveReadingInbox(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestScaffoldRejectsKnownBundledPublishers(t *testing.T) {
+	for _, publisher := range []string{"cove", "bookshelf"} {
+		if err := run([]string{"init", publisher, "my-notes", filepath.Join(t.TempDir(), "app.json")}, io.Discard); err == nil {
+			t.Fatal("accepted reserved publisher", publisher)
+		}
+	}
+}

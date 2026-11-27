@@ -64,3 +64,16 @@ The user can scope a normal conversation turn to named actions of one instance. 
 Cove distinguishes runtime version, immutable package release, collection schema version and record revision. A downloaded file can reuse a trusted release when its exact digest matches the verified source. The signed catalog format adds expiry and a persistent per-key sequence checkpoint. Bundled releases remain available when remote verification fails. Finder-launched sessions can use packaged public trust settings or explicitly configured local preferences.
 
 SQLite schema 31 adds the conversation action scope and bounded, per-instance task and receipt history. Compact idempotency fingerprints outlive the stored result, while instance-owned records and attachments are retained. Older services reject this database version. Package migrations remain independent of the host database version.
+
+## Review follow-up
+
+An exact bundled digest can attest a legacy local file release for a reviewed
+upgrade to a trusted successor. This exception does not authorize modified
+personal bytes or changes based on publisher name alone. Existing instance
+identity and user records survive this transition.
+
+Verified Mini App settlements store a receipt in the task's existing request
+metadata. The receipt binds the exact response, browser session and claim.
+Delivery retries are idempotent after acceptance and do not repeat inference.
+This adds no host database migration. Record editors bind their target selection
+when opened, and cross-workspace navigation uses Chat's draft confirmation.

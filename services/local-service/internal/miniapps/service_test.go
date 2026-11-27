@@ -175,6 +175,15 @@ func TestUpgradePreservesRecordsAndRejectsIncompatibleChanges(t *testing.T) {
 	db, s := storeAt(t, ":memory:")
 	defer db.Close()
 	r, i := setup(t, s)
+	// Personal edits to a bundled example retain their independent local origin.
+	r.Package.Publisher = "personal-author"
+	r.Package.Description += " Personal edition."
+	r = newRelease(t, s, r.Package, "local")
+	var err error
+	i, err = s.Create(t.Context(), CreateRequest{ReleaseID: r.ID, Name: "Personal book", Grants: r.Package.Capabilities})
+	if err != nil {
+		t.Fatal(err)
+	}
 	orig := call(t, s, i.ID, read("inbox.all")).Records[0]
 	p := r.Package
 	p.Version = "1.1.0"
@@ -342,5 +351,43 @@ func TestSignedCatalogCanUpdateBundledIndependentPublisher(t *testing.T) {
 	after := call(t, s, i.ID, read("inbox.queue")).Records
 	if len(after) != 1 || after[0].ID != row.ID {
 		t.Fatal("record identity changed on catalog upgrade")
+	}
+}
+
+func TestLegacyOfficialFileCanUpgradeButModifiedFilesCannotClaimItsOrigin(t *testing.T) {
+	db, service := storeAt(t, ":memory:")
+	defer db.Close()
+	raw, err := os.ReadFile("../appcatalog/packages/reading-inbox.coveapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := service.Install(t.Context(), raw, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	book, err := service.Create(t.Context(), CreateRequest{ReleaseID: old.ID, Name: "Old file install", Grants: old.Package.Capabilities})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := call(t, service, book.ID, read("inbox.all")).Records
+	old, err = service.Release(t.Context(), old.ID)
+	if err != nil || !old.LegacyVerified {
+		t.Fatal("official old bytes were not recognized", err)
+	}
+	raw, err = os.ReadFile("../appcatalog/packages/reading-inbox-1.1.coveapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := service.Install(t.Context(), raw, "builtin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := service.Upgrade(t.Context(), book.ID, UpgradeRequest{Revision: book.Revision, ReleaseID: next.ID, Grants: book.Grants})
+	if err != nil || updated.ID != book.ID {
+		t.Fatal(updated, err)
+	}
+	after := call(t, service, book.ID, read("inbox.all")).Records
+	if len(after) != len(before) || after[0].ID != before[0].ID || after[0].Fields["note"] != before[0].Fields["note"] {
+		t.Fatal("old content changed")
 	}
 }

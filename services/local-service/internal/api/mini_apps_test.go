@@ -71,6 +71,11 @@ func TestMiniAppInstallationNativeImportAndChatSnapshot(t *testing.T) {
 	privateSelection := "/internal/control/mini-app-selection"
 	call("POST", privateSelection+"/targets", nil, false, 401, nil)
 	call("POST", privateSelection+"/targets", nil, true, 200, &choices)
+	for _, target := range choices {
+		if target.Field == "source" || target.Field == "sourceTitle" {
+			t.Fatal("native picker exposed an internal source binding", target)
+		}
+	}
 	if len(choices) == 0 {
 		t.Fatal("no eligible native selection action")
 	}

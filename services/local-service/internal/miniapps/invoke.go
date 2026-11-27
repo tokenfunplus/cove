@@ -51,19 +51,32 @@ type Result struct {
 var operationID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,96}$`)
 
 func loadRecords(tx *persistence.MiniAppStore, id, col string) ([]Record, error) {
-	rows, err := tx.Records(id, col)
+	return loadSelectedRecords(tx, id, col, persistence.AppRecordQuery{})
+}
+func loadSelectedRecords(tx *persistence.MiniAppStore, id, col string, filter persistence.AppRecordQuery) ([]Record, error) {
+	rows, err := tx.QueryAppRecords(id, col, filter)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]Record, 0, len(rows))
 	for _, row := range rows {
-		r := Record{ID: row.ID, Revision: row.Revision}
-		if err := json.Unmarshal(row.Fields, &r.Fields); err != nil {
+		record := Record{ID: row.ID, Revision: row.Revision}
+		if err := json.Unmarshal(row.Fields, &record.Fields); err != nil {
 			return nil, err
 		}
-		result = append(result, r)
+		result = append(result, record)
 	}
 	return result, nil
+}
+func actionRecords(tx *persistence.MiniAppStore, id string, action Action, inputs map[string]any, now time.Time) ([]Record, error) {
+	filter := persistence.AppRecordQuery{OrderBy: action.OrderBy, Limit: action.Limit}
+	if action.LimitInput != "" {
+		filter.Limit = int(inputs[action.LimitInput].(float64))
+	}
+	for _, predicate := range action.Where {
+		filter.Where = append(filter.Where, persistence.AppRecordPredicate{Field: predicate.Field, Op: predicate.Op, Value: resolve(predicate.Value, inputs, now)})
+	}
+	return loadSelectedRecords(tx, id, action.Collection, filter)
 }
 func saveRecord(tx *persistence.MiniAppStore, id, col string, r Record) error {
 	data, err := json.Marshal(r.Fields)
@@ -247,16 +260,27 @@ func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result
 			out = generate(r.Package, a, req.Inputs)
 			return tx.RecordActivity(i.ID, req.OperationID, r.ID, req.Action, req.Surface, "prepared")
 		}
-		rows, err := loadRecords(tx, id, a.Collection)
-		if err != nil {
-			return err
-		}
 		if a.Op == "query" {
+			rows, err := actionRecords(tx, id, a, req.Inputs, now)
+			if err != nil {
+				return err
+			}
 			out, err = queryPage(queryRecords(rows, a, req.Inputs, now), a.Limit, req.Cursor)
 			if err != nil {
 				return err
 			}
 			return tx.RecordActivity(i.ID, req.OperationID, r.ID, req.Action, req.Surface, "completed")
+		}
+		var rows []Record
+		if a.Op == "update" || a.Op == "delete" {
+			ids := make([]string, 0, len(req.Records))
+			for _, ref := range req.Records {
+				ids = append(ids, ref.ID)
+			}
+			rows, err = loadSelectedRecords(tx, id, a.Collection, persistence.AppRecordQuery{IDs: ids})
+			if err != nil {
+				return err
+			}
 		}
 		out, err = s.write(tx, i, a, rows, req, original, now)
 		if err != nil {

@@ -4,6 +4,7 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -92,4 +93,32 @@ func validatePractice(p Package, page Page) error {
 		}
 	}
 	return nil
+}
+
+// HiddenInput identifies local record bindings managed by the host, not user text fields.
+func HiddenInput(p Package, action Action, input string) bool {
+	target := action
+	if action.CandidateAction != "" {
+		target = p.Actions[action.CandidateAction]
+	}
+	for field, link := range p.Collections[target.Collection].Links {
+		for _, destination := range []string{field, link.Label} {
+			value, ok := target.Values[destination].(string)
+			if !ok {
+				continue
+			}
+			name, ok := strings.CutPrefix(value, "$input.")
+			if !ok {
+				continue
+			}
+			if action.CandidateAction != "" {
+				name = action.CandidateBindings[name]
+			}
+			if name == input {
+				_, exists := action.Defaults[name]
+				return exists
+			}
+		}
+	}
+	return false
 }

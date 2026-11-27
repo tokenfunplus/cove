@@ -1,6 +1,9 @@
 package chat
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -74,9 +77,21 @@ func TestVerifiedAppTaskExclusiveClaimReceiptAndNoPlaintextFallback(t *testing.T
 			if upstream.calls() != 0 {
 				t.Fatal("verified request used ordinary provider")
 			}
-			if err := s.SettleAppBrowser(ctx, in.Instance, in.ID, in.BrowserOwner, result); !errors.Is(err, ErrAppTaskConflict) {
-				t.Fatal(err)
+			if err := s.SettleAppBrowser(ctx, in.Instance, in.ID, in.BrowserOwner, result); err != nil {
+				t.Fatal("identical settlement retry failed", err)
 			}
+			reopened := NewService(store, nil, nil)
+			if err := reopened.SettleAppBrowser(ctx, in.Instance, in.ID, in.BrowserOwner, result); err != nil {
+				t.Fatal("durable settlement receipt was lost", err)
+			}
+			if err := s.SettleAppBrowser(ctx, in.Instance, in.ID, "other-session", result); !errors.Is(err, ErrAppTaskConflict) {
+				t.Fatal("accepted another session", err)
+			}
+			result.Body = "Different result"
+			if err := s.SettleAppBrowser(ctx, in.Instance, in.ID, in.BrowserOwner, result); !errors.Is(err, ErrAppTaskConflict) {
+				t.Fatal("accepted changed settlement", err)
+			}
+
 		})
 	}
 }
@@ -120,5 +135,32 @@ func TestVerifiedAppTaskTimeoutAndFailedVerificationKeepOutputPrivate(t *testing
 	s.StopAppTask(in.Instance, in.ID)
 	if _, err := s.ClaimAppBrowser(in.Instance, in.ID, in.BrowserOwner, claim); !errors.Is(err, ErrAppTaskConflict) {
 		t.Fatal(err)
+	}
+}
+
+func TestAcceptedBrowserSettlementRetryReleasesPendingAdmission(t *testing.T) {
+	service, store, _, input := appBrowserFixture(t, provider.PrivacyModePrivateTEE)
+	if _, err := service.StartAppTask(t.Context(), input, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	claim := uuid.NewString()
+	if _, err := service.ClaimAppBrowser(input.Instance, input.ID, input.BrowserOwner, claim); err != nil {
+		t.Fatal(err)
+	}
+	result := DebateBrowserResult{ClaimID: claim, Body: "Accepted result", Verification: verifiedSettlement("").Verification}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(append([]byte(input.Instance+"/"+input.ID+"/"+input.BrowserOwner+"/"), data...))
+	// Simulate a committed result whose handler lost its response before releasing admission.
+	if err := store.FinishBrowserAppTask(t.Context(), input.Instance, input.ID, "completed", result.Body, "", result.Verification, hex.EncodeToString(sum[:])); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SettleAppBrowser(t.Context(), input.Instance, input.ID, input.BrowserOwner, result); err != nil {
+		t.Fatal(err)
+	}
+	if service.appTaskBusy() {
+		t.Fatal("accepted delivery retry retained the global generation slot")
 	}
 }

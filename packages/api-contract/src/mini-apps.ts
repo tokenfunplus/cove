@@ -80,6 +80,7 @@ export interface MiniAppPackage {
 }
 
 export interface MiniAppRelease {
+  legacy_verified?: boolean;
   id: string;
   origin: string;
   digest: string;

@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -182,4 +183,27 @@ func (c Catalog) list(ctx context.Context, accept func(*SignedIndex) error) ([]E
 		return a.Version < b.Version
 	})
 	return entries, remoteErr
+}
+
+var bundledIdentities = sync.OnceValue(func() map[string]string {
+	entries, _ := (Catalog{}).List(context.Background())
+	result := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		result[entry.Digest] = entry.Publisher
+	}
+	return result
+})
+
+func IsBundledDigest(digest string) bool { _, exists := bundledIdentities()[digest]; return exists }
+
+func ReservedPublisher(publisher string) bool {
+	if publisher == "cove" {
+		return true
+	}
+	for _, name := range bundledIdentities() {
+		if name == publisher {
+			return true
+		}
+	}
+	return false
 }

@@ -1,7 +1,9 @@
 package persistence
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -66,5 +68,39 @@ func TestCompactAppPayloadsPreservesDeduplicationAndUserRecords(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTaskHistoryBudgetCountsUTF8Bytes(t *testing.T) {
+	store, err := OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	err = store.MiniAppTransaction(t.Context(), func(tx *MiniAppStore) error {
+		if err := tx.AddRelease(AppRelease{ID: "r", Manifest: []byte("{}")}); err != nil {
+			return err
+		}
+		return tx.SaveInstance(AppInstance{ID: "i", ReleaseID: "r", Grants: []byte("[]")})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Repeat("\u65e5", 52000)
+	for n := range 30 {
+		id := fmt.Sprint(n)
+		if err := store.BeginAppTask(t.Context(), "i", id, id, "{}"); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.FinishAppTask(t.Context(), "i", id, "completed", text, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var bytes int
+	if err := store.db.QueryRow("SELECT sum(length(CAST(result AS BLOB))) FROM mini_app_tasks WHERE instance_id='i'").Scan(&bytes); err != nil {
+		t.Fatal(err)
+	}
+	if bytes > 4194304 || bytes == 0 {
+		t.Fatalf("retained %d bytes", bytes)
 	}
 }

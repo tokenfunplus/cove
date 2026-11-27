@@ -108,12 +108,12 @@ func (s *SQLiteStore) BeginBrowserAppTask(ctx context.Context, instance, id, fin
 	_, err = s.db.ExecContext(ctx, "INSERT INTO mini_app_tasks(instance_id,id,fingerprint,request,state,snapshot,created_at) VALUES(?,?,?,?,'running',?,unixepoch())", instance, id, fingerprint, frozen, string(data))
 	return err
 }
-func (s *SQLiteStore) FinishBrowserAppTask(ctx context.Context, instance, id, state, body, detail string, v GenerationVerification) error {
+func (s *SQLiteStore) FinishBrowserAppTask(ctx context.Context, instance, id, state, body, detail string, v GenerationVerification, receipt string) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, "UPDATE mini_app_tasks SET state=?,result=?,detail=?,verification=? WHERE instance_id=? AND id=? AND state='running'", state, body, detail, string(data), instance, id)
+	res, err := s.db.ExecContext(ctx, "UPDATE mini_app_tasks SET state=?,result=?,detail=?,verification=?,request=json_set(request,'$.BrowserSettlement',?) WHERE instance_id=? AND id=? AND state='running'", state, body, detail, string(data), receipt, instance, id)
 	if err != nil {
 		return err
 	}
@@ -125,4 +125,11 @@ func (s *SQLiteStore) FinishBrowserAppTask(ctx context.Context, instance, id, st
 		_, err = s.db.ExecContext(ctx, compactTasks, instance)
 	}
 	return err
+}
+
+// A delivery retry succeeds only for the identical settlement from the same browser claim.
+func (s *SQLiteStore) AppBrowserSettlement(ctx context.Context, instance, id, receipt string) (bool, error) {
+	var accepted bool
+	err := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM mini_app_tasks WHERE instance_id=? AND id=? AND state IN ('completed','failed') AND json_extract(request,'$.BrowserSettlement')=?)", instance, id, receipt).Scan(&accepted)
+	return accepted, err
 }
