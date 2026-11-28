@@ -56,12 +56,20 @@ export async function runMiniAppDialogs({ packageFixtures, installPackageFixture
     assert(evidence.top > evidence.below, "Computed CSS places confirmation above its Mini App dialog");
     assert.equal(evidence.pointer, true, "The visible confirmation receives pointer events");
     assert.equal(evidence.focused, true, "The confirmation receives the intended initial keyboard focus");
+    await assertSearchDoesNotInterrupt();
     for (let index = 0; index < 5; index++) {
       await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
       await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9 });
       assert(await evaluate("document.querySelector('.confirmation-dialog__panel').contains(document.activeElement)"), "Tab stays in the top confirmation");
     }
     await snapshot(name);
+  }
+  async function assertSearchDoesNotInterrupt() {
+    const focused = await evaluate("document.activeElement?.outerHTML");
+    await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "k", code: "KeyK", modifiers: 4 });
+    await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "k", code: "KeyK", modifiers: 4 });
+    assert.equal(await evaluate("!!document.querySelector('[data-workspace-search]')"), false, "Workspace search does not open beneath another dialog");
+    assert.equal(await evaluate("document.activeElement?.outerHTML"), focused, "Workspace shortcut preserves the current dialog focus");
   }
   async function discardFrom(parentLayer, screenshotName) {
     await button("Discard unsaved result");
@@ -79,6 +87,7 @@ export async function runMiniAppDialogs({ packageFixtures, installPackageFixture
   try {
     await goto(`/apps/${book.id}/${page.id}`);
     await button(action.title);
+    await assertSearchDoesNotInterrupt();
     await discardFrom("study", "mini-app-study-discard-confirmation");
     await goto("/");
     await until("!!document.querySelector('#generation-input')");

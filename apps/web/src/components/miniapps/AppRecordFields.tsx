@@ -10,19 +10,31 @@ export function fieldLabel(value: string) {
 
 // Use the package's presentation declarations before choosing a text fallback.
 export function recordPrimaryField(pkg: MiniAppPackage, collection?: string) {
+  const definition = pkg.collections[collection ?? ""];
+  const concealed = new Set([
+    ...Object.values(pkg.actions)
+      .filter((action) => action.collection === collection)
+      .map((action) => action.reveal_field),
+    ...pkg.pages
+      .filter(
+        (page) =>
+          page.practice &&
+          pkg.actions[page.practice.query]?.collection === collection,
+      )
+      .map((page) => page.practice?.back),
+  ]);
+  if (definition?.title_field && !concealed.has(definition.title_field))
+    return definition.title_field;
   const front = pkg.pages.find(
     (page) =>
       page.practice &&
       pkg.actions[page.practice.query]?.collection === collection,
   )?.practice?.front;
   if (front) return front;
-  return Object.values(pkg.actions).find(
-    (action) =>
-      action.op === "query" &&
-      action.collection === collection &&
-      !!action.order_by &&
-      pkg.collections[collection ?? ""]?.fields[action.order_by] === "text",
-  )?.order_by;
+  return Object.entries(definition?.fields ?? {}).find(
+    ([field, type]) =>
+      type === "text" && !concealed.has(field) && !definition?.links?.[field],
+  )?.[0];
 }
 
 const isDate = (value: string | number | boolean) =>

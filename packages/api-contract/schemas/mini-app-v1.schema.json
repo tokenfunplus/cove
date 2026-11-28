@@ -197,6 +197,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "title_field": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_]{0,47}$"
+        },
         "fields": {
           "$ref": "#/$defs/fields",
           "minProperties": 1

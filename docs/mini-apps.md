@@ -33,8 +33,8 @@ Edit the generated package in a JSON editor. Configure the editor to use the
 The installer and CLI additionally validate types across references, inferred
 capabilities, byte quotas, migrations, and action-to-page bindings. Validation
 checks the artifact structure. Installation also checks identities, immutable
-versions and the selected origin. Reserve the publisher `cove` for official
-packages. Choose a different publisher when creating a personal copy.
+versions and the selected origin. Reserve the publishers `cove` and `bookshelf`
+for verified releases. Choose a different publisher when creating a personal copy.
 
 `preview` opens a new in-memory SQLite database, installs the app, and prints
 its pages, actions and the results of zero-input page queries. `test` uses
@@ -503,8 +503,21 @@ Installation reviews show the app name and individual read/write choices first.
 contains package-only installation. New access remains off by default. Fields
 with declared defaults can appear under **More options** in an action form; the
 same typed values and preview/confirmation contract apply. Record cards emphasize
-the authored practice front or text ordering, keep answers concealed, and leave
-every saved value inspectable in their details.
+the collection's `title_field`, then the authored practice front, then the first
+declared non-concealed text field. Query `order_by` controls record sorting only.
+Concealed answer fields cannot become card titles. Every saved value remains
+inspectable in record details.
+
+The host preserves the declaration order of action `inputs` and collection
+`fields` when serving both newly imported and previously installed packages.
+Form inputs retain that order within the main fields and **More options** groups.
+No data migration or package reinstallation is needed for this ordering fix.
+Authors can explicitly choose a card title with, for example,
+`"title_field": "company"` alongside a collection's `fields`. It must reference
+a declared text field and requires `min_host_version: "1.2.0"`. Existing packages
+without it remain supported. Presentation changes do not rewrite package bytes,
+release digests or saved records. Confirmed delete actions report deleted records;
+create and update actions continue to report saved records.
 
 The editor's **Validate draft** checks the same package contract as the author
 CLI and displays only the draft's example data. It does not attest a publisher,

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,6 +12,17 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const appSources = path.join(root, "apps/macos/Sources/CoveLauncherApp");
 const controllerSources = ["QuickPanelController.swift", "DesktopImport.swift"].map(file => path.join(appSources, file));
 const skipNative = process.platform !== "darwin" || process.arch !== "arm64" || process.env.COVE_TEST_QUICK_PANEL !== "1";
+
+async function launcherLinkArguments(directory) {
+  const source = path.join(root, "apps/macos/Sources/CoveLauncher");
+  const files = (await readdir(source)).filter(file => file.endsWith(".swift")).map(file => path.join(source, file));
+  const result = spawnSync("swiftc", ["-target", "arm64-apple-macosx13.0", "-emit-library", "-static", "-emit-module",
+    "-module-name", "CoveLauncher", "-emit-module-path", path.join(directory, "CoveLauncher.swiftmodule"),
+    "-o", path.join(directory, "libCoveLauncher.a"), ...files], { encoding: "utf8", timeout: 60_000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  return ["-I", directory, "-L", directory, "-lCoveLauncher"];
+}
 
 test("Quick Panel presents above other apps and recovers an offscreen window", {
   skip: skipNative,
@@ -98,7 +109,7 @@ MainActor.assumeIsolated {
 }
 `);
     const executable = path.join(directory, "check-panel");
-    run("swiftc", ["-target", "arm64-apple-macosx13.0", ...controllerSources, main, "-o", executable]);
+    run("swiftc", ["-target", "arm64-apple-macosx13.0", ...await launcherLinkArguments(directory), ...controllerSources, main, "-o", executable]);
     run(executable, []);
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -156,7 +167,7 @@ MainActor.assumeIsolated {
     withExtendedLifetime(controller) {}
 }
 `);
-    const build = spawnSync("swiftc", ["-target", "arm64-apple-macosx13.0", ...controllerSources, main, "-o", executable], {
+    const build = spawnSync("swiftc", ["-target", "arm64-apple-macosx13.0", ...await launcherLinkArguments(directory), ...controllerSources, main, "-o", executable], {
       encoding: "utf8", timeout: 60_000,
     });
     assert.ifError(build.error);

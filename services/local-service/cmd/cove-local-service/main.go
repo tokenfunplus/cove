@@ -180,7 +180,7 @@ func run() error {
 	chatService.SetDocumentParser(documents.ProcessParser(executable))
 	catalogDefaults, catalogConfigErr := appcatalog.BundledDefaults(filepath.Join(filepath.Dir(executable), "mini-app-catalog-defaults.json"), appcatalog.Catalog{URL: os.Getenv("COVE_APP_CATALOG_URL"), PublicKey: os.Getenv("COVE_APP_CATALOG_PUBLIC_KEY")})
 	if catalogConfigErr != nil {
-		fmt.Fprintln(os.Stderr, "Invalid Mini App distribution settings; using bundled releases.")
+		fmt.Fprintln(os.Stderr, "Invalid Mini App distribution settings; remote app downloads are unavailable.")
 	}
 	catalog, err := appcatalog.Open(filepath.Join(applicationDataDirectory, "mini-app-catalog.json"), catalogDefaults)
 	if err != nil {

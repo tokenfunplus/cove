@@ -506,7 +506,7 @@ export function AppView({
     setSelected({});
     closeForm();
   }
-  function saved(count: number, identity: string) {
+  function saved(count: number, identity: string, actionId: string) {
     void cache.invalidateQueries({
       queryKey: ["mini-app-records", instance.id],
     });
@@ -514,11 +514,11 @@ export function AppView({
     closeForm();
     setSelected({});
     setFeedback(
-      "Saved " +
+      (pkg.actions[actionId].op === "delete" ? "Deleted " : "Saved ") +
         count +
         " " +
         (count === 1 ? "record" : "records") +
-        " to " +
+        (pkg.actions[actionId].op === "delete" ? " from " : " to ") +
         instance.name +
         ".",
     );
@@ -788,7 +788,7 @@ export function AppView({
               localRequired={localRequired}
               close={closeForm}
               query={performQuery}
-              saved={(count) => saved(count, form.key)}
+              saved={(count) => saved(count, form.key, form.id)}
               candidate={openForm}
             />
           </StudyDialog>
@@ -807,7 +807,7 @@ export function AppView({
             localRequired={localRequired}
             close={closeForm}
             query={performQuery}
-            saved={(count) => saved(count, form.key)}
+            saved={(count) => saved(count, form.key, form.id)}
             candidate={openForm}
           />
         ))}

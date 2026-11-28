@@ -18,7 +18,7 @@ Troubleshooting contains Restart Local Service, Open Data Folder, and Copy Diagn
 
 ## Use a Mini App
 
-Open **Mini Apps** from the Launcher, browse the catalog, and choose **Japanese Review Book**. Review its permissions and name your book. A second instance gets its own questions, permissions and study history. Under **Daily practice**, reveal an answer, select the questions you studied, and confirm a review action to update their due dates.
+Browse apps on [CoveWeb](https://www.hicove.io/apps), then download an app package or choose **Open in Cove**. In Cove, open **Mini Apps** from the Launcher to import a downloaded package or manage your installed copies. Review its permissions and name your copy. A second instance gets its own records, permissions and history. In **Japanese Review Book**, open **Daily practice**, reveal an answer, select the questions you studied, and confirm a review action to update their due dates.
 
 In Chat or the Quick Panel, open Mini Apps from the composer tools and choose your book. Select due questions to add them to your draft. You can edit the draft before sending it. In the book's **Study material** view you can save a passage or ask a model to generate candidate questions. Review the selected model and destination, then choose the candidates to save. Open instance settings to change permissions or export a personal backup. See the [authoring guide](mini-apps.md) to develop a personal app.
 

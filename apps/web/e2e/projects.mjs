@@ -77,7 +77,7 @@ export async function runProjectsAcceptance({
   );
   await snapshot("project-created-home");
   await click('button[aria-label="Manage project context"]');
-  await until("document.body.textContent.includes('Fixed sources · 0 / 3')");
+  await until("document.querySelector('[aria-label=\"Fixed project sources\"]')?.textContent.includes('Project materials · 0 / 3')");
   await fill(
     'input[aria-label="Project description"]',
     "Shared research context",
@@ -96,7 +96,7 @@ export async function runProjectsAcceptance({
     selector: 'input[aria-label="Choose fixed project file"]',
   });
   await cdp("DOM.setFileInputFiles", { nodeId: node.nodeId, files: [file] });
-  await until("document.body.textContent.includes('Fixed sources · 1 / 3')");
+  await until("document.querySelector('[aria-label=\"Fixed project sources\"]')?.textContent.includes('Project materials · 1 / 3')");
   await fill(
     'textarea[aria-label="Project background"]',
     "Unsaved editor draft across resize.",

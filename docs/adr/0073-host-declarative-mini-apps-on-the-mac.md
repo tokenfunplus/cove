@@ -253,3 +253,18 @@ Author CLI previews use local provenance inside their disposable stores, without
 claiming publisher authority; the production HTTP installer remains the authority
 boundary. This supersedes package embedding and embedded-example attestation
 for author commands in the earlier sections.
+
+## Runtime 1.2 presentation declarations
+
+The host retains action-input and collection-field declaration order while
+decoding and serving package JSON. Stored manifests and their digests remain
+unchanged, including existing installed releases. Form controls follow this order
+within their main and optional groups.
+
+A collection may declare `title_field` referencing a text field, with
+`min_host_version` at least 1.2.0. Card titles use that declaration, the practice
+front, or the first declared non-concealed text field, independently of query
+sorting. This supersedes using a query's text `order_by` as presentation metadata.
+The same rule applies to record previews, details and selection controls.
+Confirmed deletion reports deleted records; other writes retain saved feedback.
+No database schema, record mutation or distribution authority changes.

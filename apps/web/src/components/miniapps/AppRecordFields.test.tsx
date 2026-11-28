@@ -110,8 +110,13 @@ test("derives primary content from package declarations without matching an app 
     },
   };
   expect(recordPrimaryField(pkg, "items")).toBe("prompt");
+  pkg.collections.items.title_field = "response";
+  expect(recordPrimaryField(pkg, "items")).toBe("prompt");
+  delete pkg.collections.items.title_field;
   pkg.pages = [];
   pkg.actions.due.order_by = "label";
+  expect(recordPrimaryField(pkg, "items")).toBe("prompt");
+  pkg.collections.items.title_field = "label";
   expect(recordPrimaryField(pkg, "items")).toBe("label");
   expect(fieldLabel("nextReviewDate")).toBe("Next Review Date");
 });

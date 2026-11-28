@@ -22,6 +22,10 @@ export function WorkspaceSearch({
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        const otherDialog = Array.from(
+          document.querySelectorAll('[role="dialog"]:not([data-workspace-search])'),
+        ).some((dialog) => !dialog.closest("[inert]"));
+        if (event.defaultPrevented || otherDialog) return;
         event.preventDefault();
         setTerm("");
         setOpen((value) => !value);
@@ -101,7 +105,7 @@ export function WorkspaceSearch({
           className="fixed inset-0 z-[100] grid place-items-center p-3"
         >
           <DialogOverlay />
-          <DialogContent className="max-h-[80dvh] w-full max-w-xl space-y-3 overflow-auto rounded-2xl p-4">
+          <DialogContent data-workspace-search className="max-h-[80dvh] w-full max-w-xl space-y-3 overflow-auto rounded-2xl p-4">
             <div className="flex items-center justify-between">
               <DialogTitle>Search workspace</DialogTitle>
               <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>

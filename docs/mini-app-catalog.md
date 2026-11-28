@@ -57,7 +57,7 @@ at `/apps/catalog.json` and downloads at
 `/apps/<publisher>/<app>/<version>.coveapp`. Its public pages expose **Open in
 Cove**, without inferring local installation or update state. Packaging the same
 official verification key and configuring the HTTPS index remain release
-operator tasks. Curated bundled downloads can also be hosted without inventing a
+operator tasks. Curated historical downloads can also be hosted without inventing a
 signing authority. Mini Apps require a Cove build that includes this runtime;
 the earlier Beta 14 download does not provide it.
 
@@ -79,7 +79,7 @@ A bookmark for a local instance uses `cove://open/<instance-uuid>/<page-id>`. It
 ## Signing authority changes
 
 A directory selected by the user can publish its own application identities.
-The publishers reserved by the bundled apps can only receive remote releases
+The publishers reserved by the historical verified apps can only receive remote releases
 signed by the public key embedded as the default distribution authority in
 Cove. A custom key claiming a reserved publisher causes the remote index to
 be rejected. Installed apps remain available. Before a production release,

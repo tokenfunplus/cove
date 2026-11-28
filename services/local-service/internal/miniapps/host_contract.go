@@ -6,7 +6,7 @@ import (
 )
 
 // RuntimeVersion is the version of the declarative Mini App host contract.
-const RuntimeVersion = "1.1.0"
+const RuntimeVersion = "1.2.0"
 
 type ActionOutput struct {
 	Kind   string            `json:"kind"`
@@ -27,6 +27,9 @@ func validateHostContract(p Package) error {
 	}
 	for _, collection := range p.Collections {
 		requires11 = requires11 || collection.Links != nil
+		if collection.TitleField != "" && (minHost == "" || newer("1.2.0", minHost)) {
+			return invalid("collection title_field requires min_host_version 1.2.0")
+		}
 	}
 	for id, action := range p.Actions {
 		requires11 = requires11 || action.OutputSchema != nil || action.Op == "delete" || action.Defaults != nil || action.LimitInput != "" || action.CountInput != "" || action.Selection != nil || action.CandidateBindings != nil

@@ -72,6 +72,19 @@ function mount(initial?: MiniAppFields, source = pkg) {
   );
 }
 
+test("form controls follow the declared input order instead of alphabetical field names", () => {
+  mount(undefined, {
+    ...pkg,
+    actions: { add: {
+      ...pkg.actions.add,
+      inputs: { company: "text", position: "text", appliedOn: "date" },
+      defaults: {},
+    } },
+  });
+  expect(Array.from(document.querySelectorAll("label")).map(label => label.textContent?.trim()))
+    .toEqual(["Company", "Position", "Applied On"]);
+});
+
 test("defaulted options stay out of the main form and are preserved without opening them", async () => {
   const invoke = vi
     .spyOn(miniApps, "invoke")

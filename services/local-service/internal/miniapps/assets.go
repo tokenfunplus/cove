@@ -15,7 +15,7 @@ type ImageAsset struct {
 }
 
 func validateAssets(p Package) error {
-	if len(p.Assets) > 8 || len(p.Assets) > 0 && p.MinHostVersion != RuntimeVersion {
+	if len(p.Assets) > 8 || len(p.Assets) > 0 && (p.MinHostVersion == "" || newer("1.1.0", p.MinHostVersion)) {
 		return invalid("image assets require host 1.1.0 and at most eight images")
 	}
 	for name, asset := range p.Assets {

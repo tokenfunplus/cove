@@ -61,8 +61,10 @@ type RecordLink struct {
 	Label string `json:"label"`
 }
 type Collection struct {
-	Links  map[string]RecordLink `json:"links,omitempty"`
-	Fields map[string]string     `json:"fields"`
+	TitleField string                `json:"title_field,omitempty"`
+	Links      map[string]RecordLink `json:"links,omitempty"`
+	Fields     map[string]string     `json:"fields"`
+	fieldOrder []string
 }
 type Practice struct {
 	Query    string   `json:"query"`
@@ -87,6 +89,7 @@ type SelectionInputs struct {
 	Fields     map[string]string `json:"fields"`
 }
 type Action struct {
+	inputOrder        []string
 	OutputSchema      *ActionOutput     `json:"output_schema,omitempty"`
 	Defaults          map[string]any    `json:"defaults,omitempty"`
 	LimitInput        string            `json:"limit_input,omitempty"`
@@ -246,6 +249,9 @@ func objectField(object reflect.Type, name string) (reflect.Type, bool) {
 	}
 	for f := range object.NumField() {
 		field := object.Field(f)
+		if !field.IsExported() {
+			continue
+		}
 		tag, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 		if tag == name {
 			return field.Type, true
@@ -324,6 +330,9 @@ func Validate(raw []byte) (Package, error) {
 	for k, c := range p.Collections {
 		if !key.MatchString(k) || len(c.Fields) == 0 || !validFields(c.Fields) {
 			return p, invalid("collection fields")
+		}
+		if c.TitleField != "" && c.Fields[c.TitleField] != "text" {
+			return p, invalid("collection title field must reference a text field")
 		}
 		for field, link := range c.Links {
 			q := p.Actions[link.Query]

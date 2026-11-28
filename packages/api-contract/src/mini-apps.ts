@@ -57,6 +57,7 @@ export interface MiniAppPackage {
   collections: Record<
     string,
     {
+      title_field?: string;
       fields: Record<string, MiniAppFieldType>;
       links?: Record<string, { query: string; label: string }>;
     }

@@ -2,6 +2,7 @@ import { runMiniAppWorkspace } from "./mini-app-workspace.mjs";
 import { checkMiniAppScroll } from "./mini-app-scroll.mjs";
 import { runReviewBookUpgrade } from "./review-book-upgrade.mjs";
 import assert from "node:assert/strict";
+import { runMiniAppPresentation } from "./mini-app-presentation.mjs";
 import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -460,6 +461,7 @@ export async function runMiniAppsAcceptance({ packageFixtures, installPackageFix
     cdp,
     snapshot,
   });
+  await runMiniAppPresentation({ api, installPackageFixture, loadPage, origin, evaluate, until, click, snapshot });
   // Force an expired proof on a mounted app to exercise real Local Service rejection.
   await goto("/apps/" + first + "/home");
   await readyRows(3);
