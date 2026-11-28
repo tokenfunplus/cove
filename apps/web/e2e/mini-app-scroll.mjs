@@ -36,6 +36,7 @@ export async function checkMiniAppScroll(
     if (start.scrollable && !start.visible) break;
   }
   assert(start.scrollable, "The intended region has content to scroll");
+  assert.equal(start.top, 0, "The intended region starts at the top");
   assert.equal(start.visible, false, "The same bottom control starts clipped before the wheel gesture");
   const point = await evaluate(`(() => {
     const el = document.querySelector(${JSON.stringify(region)});
@@ -49,7 +50,7 @@ export async function checkMiniAppScroll(
     deltaX: 0,
     deltaY: 100000,
   });
-  await until(`(() => { const current = ${measure}; return current.top > ${start.top} && current.visible; })()`);
+  await until(`(() => { const current = ${measure}; return current.top > 0 && current.visible; })()`);
   assert(
     (await evaluate(measure)).top > start.top,
     "The wheel gesture moves the intended scroll container",
