@@ -35,15 +35,27 @@ export async function runMiniAppScrollHistory({ packageFixtures, installPackageF
     await until("location.pathname === " + JSON.stringify("/apps/" + selectedBook.id));
     await until("!!document.querySelector('[aria-label=\"Instance attachments\"] input[type=file]') && document.querySelector('main.mini-app-shell').scrollHeight - document.querySelector('main.mini-app-shell').clientHeight >= 300");
     await waitTop(0);
-    await evaluate("document.querySelector('main.mini-app-shell').scrollTop = 300");
-    await waitTop(300);
+    // Actual user input cancels pending restoration. Wait for native scroll
+    // delivery instead of reading a setter's value before the host observes it.
+    const point = await evaluate(`(() => {
+      const main = document.querySelector('main.mini-app-shell');
+      const rect = main.getBoundingClientRect();
+      window.__miniAppScrollSettled = false;
+      main.addEventListener('scrollend', () => requestAnimationFrame(() => {
+        window.__miniAppScrollSettled = true;
+      }), { once: true });
+      return { x: rect.right - 100, y: rect.top + rect.height / 2 };
+    })()`);
+    await cdp("Input.dispatchMouseEvent", { type: "mouseWheel", ...point, deltaX: 0, deltaY: 300 });
+    await until("window.__miniAppScrollSettled && document.querySelector('main.mini-app-shell').scrollTop > 100");
+    const bookTop = await top();
     const length = await evaluate("history.length");
     await evaluate("history.back()");
     await until("location.pathname === '/apps'");
     await waitTop(listTop);
     await evaluate("history.forward()");
     await until("location.pathname === " + JSON.stringify("/apps/" + selectedBook.id));
-    await waitTop(300);
+    await waitTop(bookTop);
     await evaluate("history.back()");
     await until("location.pathname === '/apps'");
     await waitTop(listTop);
