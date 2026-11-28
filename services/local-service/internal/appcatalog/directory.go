@@ -50,6 +50,13 @@ type Directory struct {
 	cachedUntil   time.Time
 	cachedEntries []Entry
 	cachedErr     error
+	fileRefresh   *releaseRefresh
+}
+
+type releaseRefresh struct {
+	config      Catalog
+	cachedUntil time.Time
+	done        chan struct{}
 }
 
 func Open(path string, defaults Catalog) (*Directory, error) {
@@ -181,6 +188,54 @@ func (d *Directory) configure(config Catalog, previous *Catalog, followDefaults 
 	return nil
 }
 func (d *Directory) List(ctx context.Context) ([]Entry, error) {
+	return d.list(ctx, nil)
+}
+
+// ListForRelease rechecks a successful cached index when a downloaded file is
+// missing from it. Failed lookups retain the ordinary brief offline cache.
+func (d *Directory) ListForRelease(ctx context.Context, digest string) ([]Entry, error) {
+	if err := ctx.Err(); err != nil {
+		return bundledFallback(ctx, err)
+	}
+	d.mu.Lock()
+	config := d.config()
+	if pending := d.fileRefresh; pending != nil && pending.config == config {
+		d.mu.Unlock()
+		select {
+		case <-pending.done:
+		case <-ctx.Done():
+			return bundledFallback(ctx, ctx.Err())
+		}
+		if d.Config() != config {
+			return bundledFallback(ctx, ErrCatalogChanged)
+		}
+		return d.List(ctx)
+	}
+	var refresh *releaseRefresh
+	if config == d.cachedConfig && d.cachedErr == nil && time.Now().Before(d.cachedUntil) && !slices.ContainsFunc(d.cachedEntries, func(entry Entry) bool { return entry.Digest == digest }) {
+		refresh = &releaseRefresh{config: config, cachedUntil: d.cachedUntil, done: make(chan struct{})}
+		d.fileRefresh = refresh
+	}
+	d.mu.Unlock()
+	if refresh == nil {
+		return d.List(ctx)
+	}
+	defer func() {
+		d.mu.Lock()
+		if d.fileRefresh == refresh {
+			d.fileRefresh = nil
+		}
+		close(refresh.done)
+		d.mu.Unlock()
+	}()
+	entries, err := d.list(ctx, refresh)
+	if d.Config() != config {
+		return bundledFallback(ctx, ErrCatalogChanged)
+	}
+	return entries, err
+}
+
+func (d *Directory) list(ctx context.Context, refresh *releaseRefresh) ([]Entry, error) {
 	if d.loadErr != nil {
 		entries, _ := (Catalog{}).List(ctx)
 		return entries, d.loadErr
@@ -190,7 +245,8 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 	}
 	d.mu.Lock()
 	config := d.config()
-	if config == d.cachedConfig && time.Now().Before(d.cachedUntil) {
+	bypass := refresh != nil && refresh.config == config && refresh.cachedUntil.Equal(d.cachedUntil)
+	if config == d.cachedConfig && time.Now().Before(d.cachedUntil) && !bypass {
 		entries := cloneEntries(d.cachedEntries)
 		err := d.cachedErr
 		d.mu.Unlock()
@@ -205,7 +261,7 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 		d.mu.Lock()
 		defer d.mu.Unlock()
 		if config != d.config() {
-			return errors.New("catalog settings changed")
+			return ErrCatalogChanged
 		}
 		prior := d.prefs.Checkpoints[config.PublicKey]
 		if index.Sequence < prior.Sequence || index.Sequence == prior.Sequence && index.Digest != prior.Digest {
@@ -260,7 +316,8 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 		if ctx.Err() == nil {
 			d.mu.Lock()
 			freshSuccess := d.cachedConfig == config && d.cachedErr == nil && time.Now().Before(d.cachedUntil)
-			if config == d.config() && !freshSuccess {
+			bypassedSuccess := refresh != nil && refresh.config == config && refresh.cachedUntil.Equal(d.cachedUntil)
+			if config == d.config() && (!freshSuccess || bypassedSuccess) {
 				d.cachedConfig, d.cachedUntil = config, time.Now().Add(5*time.Second)
 				d.cachedEntries, d.cachedErr = cloneEntries(entries), fallbackErr
 			}

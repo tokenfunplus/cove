@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -56,7 +57,10 @@ func (s *Server) fileOrigin(r *http.Request, raw []byte) (string, error) {
 		return origin, nil
 	}
 	if s.catalog.Config().URL != "" {
-		entries, _ := s.catalog.List(ctx)
+		entries, err := s.catalog.ListForRelease(ctx, candidate.Digest)
+		if errors.Is(err, appcatalog.ErrCatalogChanged) {
+			return "", miniapps.ErrConflict
+		}
 		for _, e := range entries {
 			if e.Publisher == candidate.Package.Publisher {
 				reserved = true

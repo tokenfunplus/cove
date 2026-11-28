@@ -70,11 +70,13 @@ own immutable-version history. Ambiguous legacy histories are reverified without
 discarding existing rollback checkpoints or changing instance data.
 
 Successful verified indexes are cached in memory for up to thirty seconds,
-bounded by their signed expiration. Remote failures briefly cache only bundled
-fallback entries and the warning for five seconds, so an offline file import does
-not repeat the remote timeout during preview and installation. Cancelled requests
-do not populate that cache. Changing the URL or signing authority invalidates
-both success and failure caches.
+bounded by their signed expiration. Importing a file absent from a successful
+cache rechecks the signed index once, so a newly published release can be verified
+immediately. Concurrent file checks share that refresh. Remote failures briefly
+cache only bundled fallback entries and the warning for five seconds, so an
+offline file import does not repeat the remote timeout during preview and
+installation. Cancelled requests do not populate that cache. Changing the URL or
+signing authority invalidates both success and failure caches.
 
 New verification keys use canonical single-line base64. Earlier persisted aliases
 of the same Ed25519 key are normalized when preferences are opened. Their highest
