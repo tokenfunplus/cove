@@ -83,13 +83,22 @@ SQL
 # package path. Release workflows export COVE_RELEASE=1 for their notarized
 # artifact, so reset it here rather than accidentally applying release
 # credential requirements to this isolated development-package check.
-COVE_PACKAGE_DIR="$cove_package_dir" COVE_RELEASE=0 COVE_INSECURE_FILE_SECRET_STORE=1 COVE_SIGNING_IDENTITY='' COVE_NOTARIZE=0 "$cove_root/scripts/package-macos.sh" >/dev/null
+cove_catalog_defaults="$cove_package_dir/catalog-defaults.json"
+cp "$cove_root/config/mini-app-catalog-defaults.json" "$cove_catalog_defaults"
+COVE_PACKAGE_DIR="$cove_package_dir" COVE_RELEASE=0 COVE_INSECURE_FILE_SECRET_STORE=1 COVE_SIGNING_IDENTITY='' COVE_NOTARIZE=0 COVE_APP_CATALOG_DEFAULTS_FILE="$cove_catalog_defaults" "$cove_root/scripts/package-macos.sh" >/dev/null
 cove_app="$cove_package_dir/Cove.app"
 cove_version="$(plutil -extract CoveReleaseVersion raw -o - "$cove_root/apps/macos/Resources/Info.plist")"
 cove_dmg="$cove_package_dir/Cove-$cove_version-arm64.dmg"
 cove_mount="$cove_package_dir/mount"
 
 test -x "$cove_app/Contents/MacOS/Cove"
+node --input-type=module - "$cove_catalog_defaults" "$cove_app/Contents/Resources/mini-app-catalog-defaults.json" <<'JS'
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+const [source, resource] = process.argv.slice(2);
+assert.deepEqual(JSON.parse(readFileSync(resource, "utf8")), JSON.parse(readFileSync(source, "utf8")),
+  "The Mac package must embed the reviewed official catalog URL and public key.");
+JS
 cove_kit="$cove_app/Contents/Resources/mini-apps"
 "$cove_app/Contents/MacOS/coveapp" test "$cove_kit/examples/starter.coveapp" "$cove_kit/scenarios/starter-scenario.json" >/dev/null
 "$cove_app/Contents/MacOS/coveapp" upgrade-test "$cove_kit/examples/starter.coveapp" "$cove_kit/examples/starter-v1.1.coveapp" "$cove_kit/scenarios/starter-upgrade.json" >/dev/null

@@ -140,6 +140,7 @@ jobs:
       - name: Build macOS DMG
         env:
           COVE_INSECURE_FILE_SECRET_STORE: "0"
+          COVE_APP_CATALOG_DEFAULTS_FILE: ${{ github.workspace }}/config/mini-app-catalog-defaults.json
         run: make dmg
       - name: Verify packaged Secret Store mode
         shell: bash
