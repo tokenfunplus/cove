@@ -20,7 +20,7 @@ func TestStagedSelectionsRequireCurrentRevisionAndEligibleDestination(t *testing
 	defer store.Close()
 	server := NewServer(Config{Store: store, LaunchToken: "launch-token", ControlToken: "launcher-control"})
 	token, proof := launchBrowserSession(t, server)
-	raw, err := os.ReadFile("../appcatalog/packages/japanese-review-book-1.1.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book-1.1.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

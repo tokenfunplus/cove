@@ -33,7 +33,7 @@ export function CatalogSettings({ expanded = false }: { expanded?: boolean }) {
             <div className="space-y-3 text-sm">
               <p className="font-medium">
                 {!saved.data.public_key
-                  ? "Included apps only"
+                  ? "No signed source configured"
                   : saved.data.mode === "custom"
                     ? "Configured signed source"
                     : "Cove defaults"}
@@ -41,7 +41,7 @@ export function CatalogSettings({ expanded = false }: { expanded?: boolean }) {
               <p className="leading-6 text-muted-foreground">
                 {saved.data.public_key
                   ? "Cove verifies releases and checks updates against this signed source. Your app data stays on this Mac."
-                  : "Included apps are available offline. A public update source has not been configured for this installation."}
+                  : "Your installed apps remain available offline. This installation has no signed source for checking updates."}
               </p>
               {saved.data.url && <p className="break-all text-muted-foreground">{saved.data.url}</p>}
             </div>

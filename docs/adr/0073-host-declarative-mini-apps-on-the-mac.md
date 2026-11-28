@@ -79,7 +79,7 @@ tasks use Chat's shared active-work admission.
 
 The user can scope a normal conversation turn to named actions of one instance. The Generation configuration stores the authorized release and revision. The host checks them again before invoking the proposed action. Query results remain local until selected. Writes use a separate reviewed confirmation. An app-owned model task can start after the conversation releases its execution slot.
 
-Cove distinguishes runtime version, immutable package release, collection schema version and record revision. A downloaded file can reuse a trusted release when its exact digest matches the verified source. The signed catalog format adds expiry and a persistent per-key sequence checkpoint. Bundled releases remain available when remote verification fails. Finder-launched sessions can use packaged public trust settings or explicitly configured local preferences.
+Cove distinguishes runtime version, immutable package release, collection schema version and record revision. A downloaded file can reuse a trusted release when its exact digest matches the verified source. The signed catalog format adds expiry and a persistent per-key sequence checkpoint. Installed releases remain available when remote verification fails. Finder-launched sessions can use packaged public trust settings or explicitly configured local preferences.
 
 ## Review follow-up
 
@@ -169,7 +169,7 @@ Only the packaged official authority can succeed a bundled identity. This
 supersedes the earlier policy that a newly selected catalog authority could
 update every non-bundled publisher identity.
 
-Directory failures cache only bundled fallback metadata and the original warning
+Directory failures cache only empty fallback metadata and the original warning
 for five seconds when no valid verified index remains. A forced refresh for a
 downloaded file preserves a still-valid verified index for ordinary catalog reads;
 its failure has a separate five-second backoff for file checks and cannot attest
@@ -229,3 +229,27 @@ field, matching sequential upgrades. Later additive defaults do not overwrite
 that stored value. Record size and instance quota checks run before migrated
 record writes, within the existing atomic upgrade transaction. Date defaults
 use civil calendar arithmetic, so DST changes cannot shift a reviewed date.
+
+## Independent application sources and releases
+
+CoveWeb owns business-app source packages, fresh-instance scenarios, migrations
+and upgrade scenarios. Its publication command runs the public coveapp validator,
+scenarios, upgrade checks and packer before exposing immutable downloads or
+signing an index. An app can publish a new version without rebuilding Cove.
+The Mac runtime embeds no business app package. Its author kit ships a minimal
+generic notes example instead of Japanese Review Book or Reading Inbox.
+
+Five old release identities and exact SHA-256 digests remain as read-only
+compatibility metadata. They authenticate only those historical downloaded bytes,
+not new versions or modified packages. Installed releases already live in local
+storage and are neither removed nor rewritten. Official successors still require
+the configured official signing key; other signers cannot inherit those instances.
+The database schema and existing instance IDs, records, attachments and grants
+are unchanged. An unavailable remote source has no installable fallback packages.
+
+Historical package bytes remain frozen under testdata for host regressions only.
+New app business-rule changes and canonical source edits belong to CoveWeb.
+Author CLI previews use local provenance inside their disposable stores, without
+claiming publisher authority; the production HTTP installer remains the authority
+boundary. This supersedes package embedding and embedded-example attestation
+for author commands in the earlier sections.

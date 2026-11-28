@@ -80,7 +80,7 @@ test("Release source preserves the local page while hiding custom directory edit
   const save = vi.spyOn(miniApps, "saveCatalogSettings");
   show("/apps?section=settings");
   await screen.findByRole("heading", { name: "Release source" });
-  await screen.findByText("Included apps only");
+  await screen.findByText("No signed source configured");
   expect(screen.queryByRole("textbox", { name: "Ed25519 public key" })).toBeNull();
   expect(screen.queryByRole("textbox", { name: "HTTPS signed index URL" })).toBeNull();
   expect(save).not.toHaveBeenCalled();

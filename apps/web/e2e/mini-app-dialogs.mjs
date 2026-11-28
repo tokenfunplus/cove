@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 
-export async function runMiniAppDialogs({ api, cdp, evaluate, until, click, fill, loadPage, origin, profile, requests, snapshot }) {
-  const catalog = await api("/api/mini-apps/catalog");
+export async function runMiniAppDialogs({ packageFixtures, installPackageFixture, api, cdp, evaluate, until, click, fill, loadPage, origin, profile, requests, snapshot }) {
+  const catalog = { packages: packageFixtures };
   const entry = catalog.packages.find((item) => item.app === "japanese-review-book" && item.version === "1.2.0");
   assert(entry);
-  const release = await api(`/api/mini-apps/catalog/${entry.publisher}/${entry.app}/${entry.version}/install`, "POST", { digest: entry.digest });
+  const release = await installPackageFixture(entry);
   const book = await api("/api/mini-apps/instances", "POST", { release_id: release.id, name: "Dialog recovery book", grants: release.package.capabilities });
   const [actionID, action] = Object.entries(release.package.actions).find(([, value]) => value.op === "generate");
   const page = release.package.pages.find((value) => value.actions.includes(actionID));

@@ -1,4 +1,4 @@
-// Package appcatalog resolves bundled and signed catalog releases. Browser input
+// Package appcatalog resolves independently signed releases. Browser input
 // selects a release identity and never supplies the network destination.
 package appcatalog
 
@@ -6,22 +6,22 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
-	"embed"
+	_ "embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
-	"maps"
 	"net/http"
 	"net/url"
 	"sort"
-	"sync"
 	"time"
 )
 
-//go:embed packages/*.coveapp
-var bundled embed.FS
+// Only immutable legacy identities are retained. App rules and package bytes are not embedded.
+//
+//go:embed legacy-releases.json
+var legacyJSON []byte
 
 const MaxPackage = 1 << 20
 const maxIndex = 8 << 20
@@ -125,10 +125,6 @@ func verify(raw []byte, key ed25519.PublicKey) (*SignedIndex, error) {
 
 func (c Catalog) List(ctx context.Context) ([]Entry, error) { return c.list(ctx, nil) }
 func (c Catalog) list(ctx context.Context, accept func(*SignedIndex) error) ([]Entry, error) {
-	files, err := bundled.ReadDir("packages")
-	if err != nil {
-		return nil, err
-	}
 	all := map[[3]string]Entry{}
 	add := func(data []byte, origin string) error {
 		e, err := entry(data, origin)
@@ -143,23 +139,19 @@ func (c Catalog) list(ctx context.Context, accept func(*SignedIndex) error) ([]E
 			return nil
 		}
 		if origin == "catalog" {
+			for _, legacy := range legacyIdentities {
+				if legacy.Publisher == e.Publisher && legacy.App == e.App && legacy.Version == e.Version && legacy.Digest != e.Digest {
+					return errors.New("a legacy published release changed its contents")
+				}
+			}
 			e.CatalogAuthority = Authority(c.PublicKey)
 		}
 		all[key] = e
 		return nil
 	}
-	for _, item := range files {
-		data, err := bundled.ReadFile("packages/" + item.Name())
-		if err != nil {
-			return nil, err
-		}
-		if err := add(data, "builtin"); err != nil {
-			return nil, err
-		}
-	}
 	var remoteErr error
 	if c.URL != "" || c.PublicKey != "" {
-		builtin := maps.Clone(all)
+		verified := map[[3]string]Entry{}
 		index, err := c.remote(ctx)
 		if err == nil {
 			for _, p := range index.Packages {
@@ -172,7 +164,7 @@ func (c Catalog) list(ctx context.Context, accept func(*SignedIndex) error) ([]E
 			}
 		}
 		if err != nil {
-			all = builtin
+			all = verified
 			remoteErr = err
 		}
 	}
@@ -193,23 +185,46 @@ func (c Catalog) list(ctx context.Context, accept func(*SignedIndex) error) ([]E
 	return entries, remoteErr
 }
 
-var bundledIdentities = sync.OnceValue(func() map[string]string {
-	entries, _ := (Catalog{}).List(context.Background())
-	result := make(map[string]string, len(entries))
-	for _, entry := range entries {
-		result[entry.Digest] = entry.Publisher
-	}
-	return result
-})
+type legacyIdentity struct {
+	Publisher string `json:"publisher"`
+	App       string `json:"app"`
+	Version   string `json:"version"`
+	Digest    string `json:"digest"`
+}
 
-func IsBundledDigest(digest string) bool { _, exists := bundledIdentities()[digest]; return exists }
+// This compatibility list never supplies app bytes or admits a new release.
+var legacyIdentities = func() []legacyIdentity {
+	var identities []legacyIdentity
+	if err := json.Unmarshal(legacyJSON, &identities); err != nil {
+		panic("invalid legacy release identities")
+	}
+	return identities
+}()
+
+func IsBundledDigest(digest string) bool {
+	for _, identity := range legacyIdentities {
+		if identity.Digest == digest {
+			return true
+		}
+	}
+	return false
+}
+
+func IsLegacyRelease(publisher, app, version, digest string) bool {
+	for _, identity := range legacyIdentities {
+		if identity.Publisher == publisher && identity.App == app && identity.Version == version && identity.Digest == digest {
+			return true
+		}
+	}
+	return false
+}
 
 func ReservedPublisher(publisher string) bool {
 	if publisher == "cove" {
 		return true
 	}
-	for _, name := range bundledIdentities() {
-		if name == publisher {
+	for _, identity := range legacyIdentities {
+		if identity.Publisher == publisher {
 			return true
 		}
 	}

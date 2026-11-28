@@ -23,7 +23,7 @@ func TestMiniAppHeadCannotDispatchSharedMutationHandlers(t *testing.T) {
 	server := NewServer(Config{Store: store, LaunchToken: "launch-token"})
 	token, _ := launchBrowserSession(t, server)
 	ctx := context.Background()
-	raw, err := os.ReadFile("../appcatalog/packages/reading-inbox.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/reading-inbox.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export async function runMiniAppsAcceptance({
+export async function runMiniAppsAcceptance({ packageFixtures, installPackageFixture,
   api,
   cdp,
   evaluate,
@@ -96,7 +96,7 @@ export async function runMiniAppsAcceptance({
   await button("Preview release");
   await fill('input[aria-label="App name"]', "Kana practice");
   await grantBookAccess();
-  await button("Install app");
+  await button("Create copy");
   await readyRows(3);
   const disclosures =
     "Array.from(document.querySelectorAll('details')).filter(e=>e.querySelector('summary')?.textContent==='Show answer')";
@@ -189,7 +189,7 @@ export async function runMiniAppsAcceptance({
   });
   await cdp("DOM.setFileInputFiles", {
     nodeId: pickerInput.nodeId,
-    files: [path.resolve("services/local-service/internal/appcatalog/packages/japanese-review-book.coveapp")],
+    files: [path.resolve("services/local-service/internal/appcatalog/testdata/legacy-releases/japanese-review-book.coveapp")],
   });
   await until("document.querySelectorAll('[role=dialog]').length===2");
   await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true, "mini-app-chat-install-scroll-bottom");
@@ -240,9 +240,8 @@ export async function runMiniAppsAcceptance({
   await button("Settings");
   await button("Check for updates");
   await until(
-    "Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Update to 1.2.0')",
+    "document.body.textContent.includes('No compatible update in this catalog.')",
   );
-  await button("Cancel");
   await cdp("Browser.setDownloadBehavior", {
     behavior: "allow",
     downloadPath: temp,
@@ -282,7 +281,7 @@ export async function runMiniAppsAcceptance({
   );
 
   // A third-party author can import both versions from files and update user records in place.
-  const packageDir = "services/local-service/internal/appcatalog/packages";
+  const packageDir = "services/local-service/internal/appcatalog/testdata/legacy-releases";
   async function importInbox(filename) {
     const pkg = JSON.parse(
       await readFile(path.join(packageDir, filename), "utf8"),
@@ -435,6 +434,7 @@ export async function runMiniAppsAcceptance({
   await fill("#quick-panel-input", "");
   await until("document.querySelector('#quick-panel-input')?.value===''");
   await runReviewBookUpgrade({
+    packageFixtures, installPackageFixture,
     snapshot,
     cdp,
     api,
@@ -449,6 +449,7 @@ export async function runMiniAppsAcceptance({
     profile,
   });
   await runMiniAppWorkspace({
+    packageFixtures, installPackageFixture,
     api,
     goto,
     button,

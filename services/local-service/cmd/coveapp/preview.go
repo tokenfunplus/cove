@@ -9,7 +9,6 @@ import (
 	"io"
 	"slices"
 
-	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
 	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 )
@@ -50,28 +49,9 @@ func withWorkspace(store *persistence.SQLiteStore, source []byte, grants []strin
 	return run(workspace{service: service, id: instance.ID}, pkg)
 }
 
-// Only exact embedded releases have a trusted origin in this disposable workspace.
+// Author commands validate untrusted packages in a disposable store. Publication
+// authority is established only by the real installer and signed release source.
 func installAuthorPackage(ctx context.Context, service *miniapps.Service, source []byte) (miniapps.Release, error) {
-	candidate, err := miniapps.Preview(source, "builtin")
-	if err != nil {
-		return miniapps.Release{}, err
-	}
-	entries, err := (appcatalog.Catalog{}).List(ctx)
-	if err != nil {
-		return miniapps.Release{}, err
-	}
-	reserved := candidate.Package.Publisher == "cove"
-	for _, entry := range entries {
-		if entry.Digest == candidate.Digest {
-			return service.Install(ctx, source, entry.Origin)
-		}
-		if entry.Publisher == candidate.Package.Publisher {
-			reserved = true
-		}
-	}
-	if reserved {
-		return miniapps.Release{}, fmt.Errorf("%w: use your own publisher for a modified bundled example", miniapps.ErrInvalid)
-	}
 	return service.Install(ctx, source, "local")
 }
 

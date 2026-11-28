@@ -9,11 +9,11 @@ example records. A fresh instance starts with its own copy of the examples.
 
 ## Build a personal app
 
-The macOS package includes the author CLI at `/Applications/Cove.app/Contents/MacOS/coveapp`. The bundled `Contents/Resources/mini-apps` directory includes the schema, both reference packages and their test scenarios. To exercise an installed author kit:
+The macOS package includes the author CLI at `/Applications/Cove.app/Contents/MacOS/coveapp`. The bundled `Contents/Resources/mini-apps` directory includes the schema and a small generic notes example with fresh-instance and upgrade scenarios. To exercise an installed author kit:
 
 ```sh
 kit=/Applications/Cove.app/Contents/Resources/mini-apps
-/Applications/Cove.app/Contents/MacOS/coveapp test "$kit/examples/japanese-review-book.coveapp" "$kit/scenarios/japanese-review-book.json"
+/Applications/Cove.app/Contents/MacOS/coveapp test "$kit/examples/starter.coveapp" "$kit/scenarios/starter-scenario.json"
 ```
 
 For development from source, build the author CLI from a Cove checkout with the Go toolchain listed in
@@ -155,13 +155,12 @@ does not add new records by itself.
 
 ## Test an app
 
-Use the two complete packages and executable fixture scenarios as references.
+The installed author kit contains a minimal notes app. Business apps and their
+release tests are maintained independently in [CoveWeb's app sources](https://github.com/tokenfunplus/coveweb/tree/feat-mini-app-market/mini-apps).
 
 ```sh
-packages=services/local-service/internal/appcatalog/packages
-cases=packages/api-contract/fixtures/mini-apps
-"$work/coveapp" test "$packages/japanese-review-book.coveapp" "$cases/japanese-review-book.json"
-"$work/coveapp" test "$packages/reading-inbox.coveapp" "$cases/reading-inbox.json"
+kit=/Applications/Cove.app/Contents/Resources/mini-apps
+"$work/coveapp" test "$kit/examples/starter.coveapp" "$kit/scenarios/starter-scenario.json"
 ```
 
 A scenario is a JSON object with a `steps` array. Each step names an `action`.
@@ -171,25 +170,17 @@ into the previous result), `count` (expected number of returned records) and
 The runner previews then confirms each write and exits on the first failed
 check. Run each scenario against a fresh instance.
 
-- [Japanese Review Book](../services/local-service/internal/appcatalog/packages/japanese-review-book.coveapp) schedules learned items for next week, missed items for tomorrow, and uses selected model candidates as new cards. Its [scenario](../packages/api-contract/fixtures/mini-apps/japanese-review-book.json) checks that page, Chat and Quick Panel actions share the same book.
-- [Reading Inbox](../services/local-service/internal/appcatalog/packages/reading-inbox.coveapp) combines the queue status and revisit date to calculate a reading list. Its [scenario](../packages/api-contract/fixtures/mini-apps/reading-inbox.json) defers one item and archives another.
-  [Reading Inbox 1.1](../services/local-service/internal/appcatalog/packages/reading-inbox-1.1.coveapp)
+- [Japanese Review Book](https://github.com/tokenfunplus/coveweb/blob/feat-mini-app-market/mini-apps/cove/japanese-review-book/1.0.0/app.json) schedules learned items for next week, missed items for tomorrow, and uses selected model candidates as new cards. Its [scenario](https://github.com/tokenfunplus/coveweb/blob/feat-mini-app-market/mini-apps/scenarios/japanese-review-book.json) checks that page, Chat and Quick Panel actions share the same book.
+- [Reading Inbox](https://github.com/tokenfunplus/coveweb/blob/feat-mini-app-market/mini-apps/bookshelf/reading-inbox/1.0.0/app.json) combines the queue status and revisit date to calculate a reading list. Its [scenario](https://github.com/tokenfunplus/coveweb/blob/feat-mini-app-market/mini-apps/scenarios/reading-inbox.json) defers one item and archives another.
+  [Reading Inbox 1.1](https://github.com/tokenfunplus/coveweb/blob/feat-mini-app-market/mini-apps/bookshelf/reading-inbox/1.1.0/app.json)
   migrates existing entries with a deferral count of zero. Deferring a record
   reads its previous count, increments it, and sets a return date two days
   away on the first deferral or seven days away on subsequent deferrals.
   Restoring it resets the count. The package's `if`, `add`, and `$record`
   expressions implement these rules in the same host used for Review Book.
-  Run the [Reading Inbox upgrade fixture](../packages/api-contract/fixtures/mini-apps/reading-inbox-upgrade.json)
-  using the installed author kit:
-
-  ```sh
-  kit=/Applications/Cove.app/Contents/Resources/mini-apps
-  /Applications/Cove.app/Contents/MacOS/coveapp upgrade-test \
-    "$kit/examples/reading-inbox.coveapp" "$kit/examples/reading-inbox-1.1.coveapp" \
-    "$kit/scenarios/reading-inbox-upgrade.json"
-  ```
-
-
+  Run the [Reading Inbox upgrade fixture](https://github.com/tokenfunplus/coveweb/blob/feat-mini-app-market/mini-apps/scenarios/reading-inbox-upgrade.json)
+  from its CoveWeb source checkout with the installed `coveapp` CLI. The
+  website's `apps:build` command runs those app-owned checks before publication.
 
 ### Review Book 1.1 and compatible action options
 
@@ -300,17 +291,17 @@ For a create action, an invocation may supply `items` with one to fifty complete
 
 ## Rehearse an upgrade
 
-Use the exact old and new packages and a JSON fixture. For the bundled Review Book:
+Use the exact old and new packages and a JSON fixture. For the generic notes example:
 
 ```sh
 kit=/Applications/Cove.app/Contents/Resources/mini-apps
 cli=/Applications/Cove.app/Contents/MacOS/coveapp
-"$cli" upgrade-test "$kit/examples/japanese-review-book.coveapp" \
-  "$kit/examples/japanese-review-book-1.1.coveapp" \
-  "$kit/scenarios/japanese-review-upgrade.json"
+"$cli" upgrade-test "$kit/examples/starter.coveapp" \
+  "$kit/examples/starter-v1.1.coveapp" \
+  "$kit/scenarios/starter-upgrade.json"
 ```
 
-The [upgrade fixture](../packages/api-contract/fixtures/mini-apps/japanese-review-upgrade.json)
+The [upgrade fixture](../services/local-service/cmd/coveapp/starter-upgrade.json)
 shows the supported fields. `before` and `after` accept the same action steps
 and assertions as `test`. Selections refer to the preceding step within the
 same phase. Declare the previous user's `grants` explicitly to test a limited
@@ -331,7 +322,7 @@ A migration or assertion failure exits with a nonzero status.
 ## Preview in a browser
 
 ```sh
-"$cli" preview "$kit/examples/japanese-review-book.coveapp" --browser
+"$cli" preview "$kit/examples/starter.coveapp" --browser
 "$cli" preview my-reading.coveapp --browser --fixture reading-preview.json --allow blobs.import
 "$cli" preview study.coveapp --browser --model-endpoint http://127.0.0.1:8080/v1
 ```
@@ -339,8 +330,11 @@ A migration or assertion failure exits with a nonzero status.
 The CLI opens the production browser UI on an ephemeral loopback port. The
 workspace uses an in-memory database and an in-memory credential store.
 Closing the CLI with Ctrl-C discards the instance, fixtures, and its grants.
-Both browser preview and `upgrade-test` recognize bundled examples by their
-exact bytes. Use your own publisher when adapting an example. Preview your
+Author preview and `upgrade-test` use local provenance in a disposable store,
+including unpublished packages from a reserved publisher. They do not attest
+a signing authority or authorize installation in the real workspace. Use your
+own publisher for personal tools; the real installer still verifies reserved
+publisher identities against signed releases or exact legacy digests. Preview your
 personal package, then open **My apps** and import a newer file from that
 publisher to practice upgrading the same instance.
 For a CLI built from source, run `make build-web` before building `coveapp`.

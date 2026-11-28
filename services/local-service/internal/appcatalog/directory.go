@@ -290,7 +290,7 @@ func (d *Directory) list(ctx context.Context, refresh *releaseRefresh) ([]Entry,
 				return err
 			}
 			if ReservedPublisher(e.Publisher) && (d.defaults.PublicKey == "" || config.PublicKey != d.defaults.PublicKey) {
-				return errors.New("this signing authority cannot publish bundled app identities")
+				return errors.New("this signing authority cannot publish reserved app identities")
 			}
 			version := e.Publisher + "/" + e.App + "/" + e.Version
 			if digest, seen := history.Versions[version]; seen && digest != e.Digest {

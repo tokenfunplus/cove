@@ -1,7 +1,8 @@
+import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { checkMiniAppScroll } from "./mini-app-scroll.mjs";
 
-export async function runMiniAppWorkspace({
+export async function runMiniAppWorkspace({ packageFixtures, installPackageFixture,
   api,
   goto,
   button,
@@ -12,7 +13,7 @@ export async function runMiniAppWorkspace({
   cdp,
   snapshot,
 }) {
-  const catalog = await api("/api/mini-apps/catalog");
+  const catalog = { packages: packageFixtures };
   const before = (await api("/api/mini-apps/instances")).instances;
   const installedReleases = (await api("/api/mini-apps/packages")).packages;
   const selectedRelease = catalog.packages.find((entry) =>
@@ -69,7 +70,7 @@ export async function runMiniAppWorkspace({
     // empty instance. Canceling it preserves the full inventory and its data.
     const newer = catalog.packages.find(entry => entry.app === selectedRelease.app && entry.publisher === selectedRelease.publisher && entry.version === "1.2.0");
     assert(newer);
-    const cached = await api(`/api/mini-apps/catalog/${newer.publisher}/${newer.app}/${newer.version}/install`, "POST", { digest: newer.digest });
+    const cached = await installPackageFixture(newer);
     assert(!before.some(book => book.release_id === cached.id));
     await goto("/apps/install/cove/japanese-review-book?version=1.2.0");
     await button("Review update");
@@ -134,16 +135,8 @@ export async function runMiniAppWorkspace({
     "Array.from(document.querySelectorAll('[role=dialog] button')).find(button=>button.textContent.startsWith('Agent packages')).click()",
   );
   await until("document.querySelector('#mini-app-agent')?.tagName==='SECTION'");
-  const example =
-    "Array.from(document.querySelectorAll('#mini-app-agent button')).find(button=>button.textContent.startsWith('Load Japanese Review Book example'))";
-  await until("!!(" + example + ")");
-  await evaluate("(" + example + ").click()");
-  await until(
-    "document.querySelector('#mini-app-agent textarea').value.includes('japanese-review-book')",
-  );
-  const sample = JSON.parse(
-    await evaluate("document.querySelector('#mini-app-agent textarea').value"),
-  );
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('#mini-app-agent button')).some(button=>button.textContent.startsWith('Load Japanese Review Book example'))"), false, "Business apps are not embedded author templates");
+  const sample = JSON.parse(await readFile("services/local-service/cmd/coveapp/starter.coveapp", "utf8"));
   sample.publisher = "workspace-fixture";
   sample.app = "editor-notes";
   sample.name = "Editor notebook";

@@ -1,0 +1,24 @@
+{
+  "steps": [
+    {
+      "action": "notes.list",
+      "count": 0
+    },
+    {
+      "action": "notes.add",
+      "surface": "chat",
+      "inputs": {
+        "text": "A sample note"
+      },
+      "count": 1
+    },
+    {
+      "action": "notes.list",
+      "surface": "panel",
+      "count": 1,
+      "expect_fields": {
+        "text": "A sample note"
+      }
+    }
+  ]
+}

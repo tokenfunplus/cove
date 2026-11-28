@@ -14,7 +14,7 @@ function show(expanded = true) {
 }
 
 test.each([
-  { mode: "default", url: "", public_key: "", label: "Included apps only" },
+  { mode: "default", url: "", public_key: "", label: "No signed source configured" },
   { mode: "default", url: "https://official.example/catalog.json", public_key: "official-key", label: "Cove defaults" },
   { mode: "custom", url: "https://development.example/catalog.json", public_key: "development-key", label: "Configured signed source" },
 ] as const)("v1 displays $label without directory editing", async ({ label, ...config }) => {
@@ -36,7 +36,7 @@ test("collapsed source information loads only when opened", async () => {
   show(false);
   expect(read).not.toHaveBeenCalled();
   await userEvent.click(screen.getByText("Release source"));
-  await screen.findByText("Included apps only");
+  await screen.findByText("No signed source configured");
   expect(read).toHaveBeenCalledOnce();
 });
 

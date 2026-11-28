@@ -1,3 +1,4 @@
+import { miniAppFixtures, fixtureInstaller } from "./mini-app-fixtures.mjs";
 import { runMiniAppTurn } from "./mini-app-turn.mjs";
 import { runMiniAppDialogs } from "./mini-app-dialogs.mjs";
 import { runMiniAppScrollHistory } from "./mini-app-scroll-history.mjs";
@@ -393,6 +394,8 @@ try {
     );
     return response.status === 204 ? undefined : response.json();
   }
+  const packageFixtures = await miniAppFixtures();
+  const installPackageFixture = fixtureInstaller(origin, headers);
   const profile = await api("/api/models", "POST", {
     kind: "openai_compatible",
     name: "Browser fixture",
@@ -725,22 +728,23 @@ try {
     await cdp("Input.insertText", { text: value });
   }
   if (process.env.COVE_BROWSER_SCENARIO === "mini-app-scroll-history") {
-    await runMiniAppScrollHistory({api,cdp,evaluate,until,click,fill,loadPage,origin,snapshot});
+    await runMiniAppScrollHistory({packageFixtures,installPackageFixture,api,cdp,evaluate,until,click,fill,loadPage,origin,snapshot});
     assert.equal(exceptions.length, 0);
     socket.close();
     console.log("Mini App scroll history acceptance passed.");
   } else if (process.env.COVE_BROWSER_SCENARIO === "mini-app-dialogs") {
-    await runMiniAppDialogs({api,cdp,evaluate,until,click,fill,loadPage,origin,profile,requests,snapshot});
+    await runMiniAppDialogs({packageFixtures,installPackageFixture,api,cdp,evaluate,until,click,fill,loadPage,origin,profile,requests,snapshot});
     assert.equal(exceptions.length, 0);
     socket.close();
     console.log("Mini App nested dialog acceptance passed.");
   } else if (process.env.COVE_BROWSER_SCENARIO === "mini-app-turn") {
-    await runMiniAppTurn({api,evaluate,until,click,fill,loadPage,origin,profile,requests,snapshot});
+    await runMiniAppTurn({packageFixtures,installPackageFixture,api,evaluate,until,click,fill,loadPage,origin,profile,requests,snapshot});
     assert.equal(exceptions.length,0);
     socket.close();
     console.log("Mini App conversation turn acceptance passed.");
   } else if (process.env.COVE_BROWSER_SCENARIO === "mini-apps") {
-    await runMiniAppsAcceptance({api, cdp, evaluate, until, click, fill, snapshot, reloadPage, loadPage, origin, profile, requests, temp});
+    await installPackageFixture(packageFixtures.find((entry) => entry.app === "japanese-review-book" && entry.version === "1.0.0"));
+    await runMiniAppsAcceptance({packageFixtures,installPackageFixture,api, cdp, evaluate, until, click, fill, snapshot, reloadPage, loadPage, origin, profile, requests, temp});
     assert.equal(exceptions.length, 0);
     socket.close();
     console.log("Mini App browser acceptance passed.");

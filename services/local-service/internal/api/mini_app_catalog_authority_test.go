@@ -23,7 +23,7 @@ import (
 func TestCatalogUpgradeRemainsBoundToItsOriginalSigner(t *testing.T) {
 	pubA, keyA, _ := ed25519.GenerateKey(nil)
 	pubB, keyB, _ := ed25519.GenerateKey(nil)
-	source, err := os.ReadFile("../appcatalog/packages/reading-inbox.coveapp")
+	source, err := os.ReadFile("../appcatalog/testdata/legacy-releases/reading-inbox.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

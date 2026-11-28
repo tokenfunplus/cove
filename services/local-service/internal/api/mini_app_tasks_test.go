@@ -31,7 +31,7 @@ func TestGenerationTaskEndpointsExcludeProposals(t *testing.T) {
 	model := &appCancellationRecorder{Service: chat.NewService(store, nil, nil)}
 	s := NewServer(Config{Store: store, Chat: model, LaunchToken: "launch-token"})
 	token, proof := launchBrowserSession(t, s)
-	raw, err := os.ReadFile("../appcatalog/packages/japanese-review-book.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

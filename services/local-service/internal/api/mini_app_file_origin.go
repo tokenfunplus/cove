@@ -16,20 +16,11 @@ func (s *Server) fileOrigin(r *http.Request, raw []byte) (string, error) {
 		return "", err
 	}
 	ctx := r.Context()
-	reserved := candidate.Package.Publisher == "cove" || s.catalog.KnownPublisher(candidate.Package.Publisher)
-	bundled, err := (appcatalog.Catalog{}).List(ctx)
-	if err != nil {
-		return "", err
+	reserved := appcatalog.ReservedPublisher(candidate.Package.Publisher) || s.catalog.KnownPublisher(candidate.Package.Publisher)
+	if appcatalog.IsLegacyRelease(candidate.Package.Publisher, candidate.Package.App, candidate.Package.Version, candidate.Digest) {
+		return "builtin", nil
 	}
-	for _, e := range bundled {
-		if e.Publisher != candidate.Package.Publisher {
-			continue
-		}
-		reserved = true
-		if e.Digest == candidate.Digest {
-			return e.ReleaseOrigin(), nil
-		}
-	}
+
 	releases, err := s.apps.Releases(ctx)
 	if err != nil {
 		return "", err
@@ -70,7 +61,7 @@ func (s *Server) fileOrigin(r *http.Request, raw []byte) (string, error) {
 			}
 		}
 	}
-	if reserved && !personalLine {
+	if reserved && (!personalLine || candidate.Package.Publisher == "cove") {
 		return "", fmt.Errorf("%w: this publisher is reserved for verified releases", miniapps.ErrInvalid)
 	}
 	return "local", nil

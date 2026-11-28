@@ -24,7 +24,7 @@ func TestCatalogPreviewValidatesSignedPackagesAndPreservesExactBytes(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := os.ReadFile("../appcatalog/packages/reading-inbox.coveapp")
+	source, err := os.ReadFile("../appcatalog/testdata/legacy-releases/reading-inbox.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

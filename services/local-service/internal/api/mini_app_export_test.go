@@ -18,7 +18,7 @@ func TestMiniAppBackupRequiresSessionAndRestoreProof(t *testing.T) {
 	defer store.Close()
 	server := NewServer(Config{LaunchToken: "launch-token", Store: store, Chat: &fakeChat{}})
 	token, csrf := launchBrowserSession(t, server)
-	raw, err := os.ReadFile("../appcatalog/packages/reading-inbox.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/reading-inbox.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

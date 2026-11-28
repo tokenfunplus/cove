@@ -36,6 +36,26 @@ struct LocalClient {
         return data.isEmpty ? [:] : try JSONSerialization.jsonObject(with: data)
     }
 
+    func importFixture(_ raw: Data) async throws -> [String: Any] {
+        func post(_ operation: String, reviewed: [String: Any] = [:]) async throws -> [String: Any] {
+            guard let url = URL(string: "/api/mini-apps/packages/" + operation, relativeTo: origin) else { throw FixtureFailure.mismatch }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.httpBody = raw
+            request.setValue(token, forHTTPHeaderField: "X-Cove-Session-Token")
+            request.setValue(csrf, forHTTPHeaderField: "X-Cove-CSRF-Token")
+            request.setValue(origin.absoluteString, forHTTPHeaderField: "Origin")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(reviewed["id"] as? String, forHTTPHeaderField: "X-Cove-Release-ID")
+            request.setValue(reviewed["digest"] as? String, forHTTPHeaderField: "X-Cove-Package-Digest")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            try expect((response as? HTTPURLResponse)?.statusCode == 200)
+            return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+        }
+        let reviewed = try await post("preview")
+        return try await post("install", reviewed: reviewed)
+    }
+
     func call(_ path: String, body: [String: Any]? = nil, status: Int = 200) async throws -> [String: Any] {
         try await json(path, body: body, status: status) as? [String: Any] ?? [:]
     }
@@ -99,10 +119,9 @@ private enum MiniAppLauncherAcceptance {
 
         let client = try await handoff("cove://install/cove/japanese-review-book?version=1.1.0", "/apps/install/cove/japanese-review-book?version=1.1.0")
         let api = "/api/mini-apps"
-        let catalog = try await client.call(api + "/catalog")
-        guard let entries = catalog["packages"] as? [[String: Any]], let book = entries.first(where: { $0["app"] as? String == "japanese-review-book" && $0["version"] as? String == "1.1.0" }),
-              let digest = book["digest"] as? String,
-              let release = try await client.call(api + "/catalog/cove/japanese-review-book/1.1.0/install", body: ["digest": digest, "catalog_authority": book["catalog_authority"] as? String ?? ""])["id"] as? String,
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("services/local-service/internal/appcatalog/testdata/legacy-releases/japanese-review-book-1.1.coveapp")
+        guard let release = try await client.importFixture(Data(contentsOf: fixture))["id"] as? String,
               let id = try await client.call(api + "/instances", body: ["release_id": release, "name": "Picker fixture", "grants": ["mac.files.pick", "mac.selection.receive", "ai.generate", "records.query", "records.commit"]])["id"] as? String
         else { throw FixtureFailure.mismatch }
         let instance = api + "/instances/" + id

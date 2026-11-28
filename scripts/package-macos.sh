@@ -126,13 +126,14 @@ MACOSX_DEPLOYMENT_TARGET="$cove_minimum" \
   cove_author_kit="$cove_app/Contents/Resources/mini-apps"
   mkdir -p "$cove_author_kit/examples" "$cove_author_kit/scenarios"
   MACOSX_DEPLOYMENT_TARGET="$cove_minimum" "$cove_root/scripts/go" build -C "$cove_root/services/local-service" -o "$cove_app/Contents/MacOS/coveapp" ./cmd/coveapp
-  cp "$cove_root/services/local-service/internal/appcatalog/packages/"*.coveapp "$cove_author_kit/examples/"
-  cp "$cove_root/packages/api-contract/fixtures/mini-apps/"*.json "$cove_author_kit/scenarios/"
+  cp "$cove_root/services/local-service/cmd/coveapp/starter-v1.1.coveapp" "$cove_author_kit/examples/"
+  cp "$cove_root/services/local-service/cmd/coveapp/"starter-*.json "$cove_author_kit/scenarios/"
   cp "$cove_root/packages/api-contract/schemas/mini-app-v1.schema.json" "$cove_author_kit/"
   cp "$cove_root/services/local-service/cmd/coveapp/starter.coveapp" "$cove_author_kit/examples/"
-  sed -e 's#](../services/local-service/internal/appcatalog/packages/#](examples/#g' \
+  sed -e 's#](../services/local-service/internal/appcatalog/testdata/legacy-releases/#](https://github.com/tokenfunplus/cove/tree/main/services/local-service/internal/appcatalog/testdata/legacy-releases/#g' \
+      -e 's#](../services/local-service/cmd/coveapp/starter-upgrade.json)#](scenarios/starter-upgrade.json)#g' \
       -e 's#](../services/local-service/cmd/coveapp/#](examples/#g' \
-      -e 's#](../packages/api-contract/fixtures/mini-apps/#](scenarios/#g' \
+      -e 's#](../packages/api-contract/fixtures/mini-apps/#](https://github.com/tokenfunplus/cove/tree/main/packages/api-contract/fixtures/mini-apps/#g' \
       -e 's#](../packages/api-contract/schemas/#](#g' \
       -e 's#](development.md)#](https://github.com/tokenfunplus/cove/blob/main/docs/development.md)#g' \
       "$cove_root/docs/mini-apps.md" > "$cove_author_kit/authoring.md"

@@ -18,7 +18,7 @@ func TestCandidateChecksUseAuthenticatedInstanceRecords(t *testing.T) {
 	}
 	defer store.Close()
 	service := miniapps.New(store)
-	raw, err := os.ReadFile("../appcatalog/packages/japanese-review-book-1.1.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book-1.1.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

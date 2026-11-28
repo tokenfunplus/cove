@@ -33,7 +33,7 @@ type fileRefreshHost struct {
 
 func fileRefreshPackage(t *testing.T, publisher, version string) []byte {
 	t.Helper()
-	raw, err := os.ReadFile("../appcatalog/packages/reading-inbox.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/reading-inbox.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

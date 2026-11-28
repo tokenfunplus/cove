@@ -458,7 +458,7 @@ export function AppDirectory({
                 ++previewRequest.current;
                 setPreview({ pkg: release.package, source: { kind: "installed", release }, createNewCopy: true });
               }}>
-                <Plus /> New instance
+                <Plus /> {books.length || upgradableCopies(release.package, release).length ? "New instance" : "Preview release"}
               </Button>
             </div>
           ))}

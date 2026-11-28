@@ -81,11 +81,9 @@ func Preview(raw []byte, origin string) (Release, error) {
 	}
 	channel, authority, official := releaseOrigin(origin)
 	switch channel {
-	case "catalog", "builtin":
-	case "local":
-		if p.Publisher == "cove" {
-			return Release{}, invalid("reserved publisher")
-		}
+	case "catalog", "builtin", "local":
+		// Distribution authority belongs to the installer. Structural validation
+		// also runs in author-owned, disposable workspaces for unpublished apps.
 	default:
 		return Release{}, invalid("package origin")
 	}
