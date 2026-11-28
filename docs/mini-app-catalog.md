@@ -72,6 +72,15 @@ source control.
 
 A release build can preconfigure the public directory. Pass `COVE_APP_CATALOG_DEFAULTS_FILE` to `scripts/package-macos.sh` with a JSON file containing only the public `url` and `public_key`. The build embeds these values in the signed app resources. Developers can supply defaults using `COVE_APP_CATALOG_URL` and `COVE_APP_CATALOG_PUBLIC_KEY`. Saved local settings take precedence. The repository supplies the static publisher and packaging integration. The production domain, hosting and signing authority belong to the release operator.
 
+The release workflow now supplies the checked-in public configuration at
+[`config/mini-app-catalog-defaults.json`](../config/mini-app-catalog-defaults.json).
+It pins the official HTTPS index and Ed25519 verification key used by CoveWeb.
+This file contains no private key. Local development services can use the same
+public URL and key through the environment variables above without building a Mac
+package. Keep the signing key outside both repositories and re-sign the website's
+index before its 30-day expiry. A signing-key replacement is a separate authority
+change; it must not silently replace the identity of installed apps.
+
 Each detail page has a version-specific Open in Cove link. The Launcher starts the local service, obtains a single-use browser launch token and opens the install preview. Confirmation checks the reviewed release digest. The signed payload includes the exact package bytes. The service rejects invalid signatures, redirected index requests and conflicting bytes for the same catalog version. An installed instance is loaded from the local database.
 
 A bookmark for a local instance uses `cove://open/<instance-uuid>/<page-id>`. Its browser URL uses the current loopback port. Session credentials, grants, local record IDs and personal content do not belong in public catalog URLs.
