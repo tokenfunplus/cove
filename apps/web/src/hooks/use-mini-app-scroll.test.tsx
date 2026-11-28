@@ -132,3 +132,18 @@ test.each([false, true])("same-URL navigation preserves position (replace=%s), w
   view.frame();
   expect(view.node.scrollTop).toBe(0);
 });
+
+test("a shorter destination rendered before popstate cannot erase the previous URL's offset", () => {
+  const view = mount();
+  view.scrollTo(600);
+  act(() => {
+    window.history.replaceState(null, "", "/apps/shorter");
+    view.node.scrollTop = 0;
+    view.node.dispatchEvent(new Event("scroll"));
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  view.frame();
+  view.traverse("/apps");
+  view.frame();
+  expect(view.node.scrollTop).toBe(600);
+});

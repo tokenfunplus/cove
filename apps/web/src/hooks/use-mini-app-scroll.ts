@@ -26,7 +26,9 @@ export function useMiniAppScroll() {
     let frame: number | undefined;
     let observer: ResizeObserver | undefined;
     const save = () => {
-      if (key) remember(key, target ?? node.scrollTop);
+      // A destination can render before its popstate listener runs. Never save
+      // the shortened destination's clamped offset under the previous URL.
+      if (key && currentKey() === key) remember(key, target ?? node.scrollTop);
     };
     const cancel = () => {
       target = undefined;
@@ -46,6 +48,7 @@ export function useMiniAppScroll() {
     };
     const restore = (top: number) => {
       cancel();
+      if (key) remember(key, top);
       target = top;
       if (typeof ResizeObserver !== "undefined") {
         observer = new ResizeObserver(schedule);
@@ -56,8 +59,6 @@ export function useMiniAppScroll() {
     const navigate = (event: Event) => {
       const nextKey = currentKey();
       if (nextKey === key) return;
-      // Capture the old surface before React replaces or shortens its content.
-      save();
       cancel();
       key = nextKey;
       if (key) restore(isWorkspaceNavigation(event) ? 0 : positions.get(key) ?? 0);
