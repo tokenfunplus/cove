@@ -161,22 +161,40 @@ export async function runMiniAppsAcceptance({
   assert.equal(requests.length, requestsBefore);
   assert.equal((await api("/api/conversations")).length, chatsBefore + 1);
 
+  await evaluate(`(() => {
+    const original = window.fetch;
+    window.__miniPickerCatalogReads = [];
+    window.__restoreMiniPickerFetch = () => { window.fetch = original; };
+    window.fetch = (input, init) => {
+      const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname;
+      if (path.startsWith('/api/mini-apps/catalog')) window.__miniPickerCatalogReads.push(path);
+      return original(input, init);
+    };
+  })()`);
   await click('button[aria-label="Tools"]');
   await button("Mini Apps");
   await until("!!document.querySelector('[role=dialog]')");
-  await button("Discover");
-  await click('[data-app="cove/japanese-review-book"] .mini-app-card-cover');
-  await until("!!document.querySelector('select[aria-label=\"App version\"]')");
-  await evaluate("{const select=document.querySelector('select[aria-label=\"App version\"]');select.value='1.0.0';select.dispatchEvent(new Event('change',{bubbles:true}));}");
-  await button("Choose a copy");
-  await button("Create another copy");
+  await until("Array.from(document.querySelectorAll('[role=dialog] button strong')).some(element=>element.textContent==='Second book')");
+  assert.equal(await evaluate("!!document.querySelector('[role=dialog] #mini-app-catalog')"), false);
+  const publicMarketLink = await evaluate("Array.from(document.querySelectorAll('[role=dialog] a')).find(element=>element.textContent.includes('Browse apps on CoveWeb'))?.href");
+  assert.equal(publicMarketLink, "https://www.hicove.io/apps", "Chat's app picker offers public browsing on CoveWeb");
+  assert.deepEqual(await evaluate("window.__miniPickerCatalogReads"), [], "Opening the Chat app picker does not request the public catalog");
+  await evaluate("window.__restoreMiniPickerFetch(); delete window.__restoreMiniPickerFetch");
+  // Importing an exact downloaded package still opens the nested local review;
+  // public market browsing is not part of Chat's app picker.
+  const pickerDocument = await cdp("DOM.getDocument");
+  const pickerInput = await cdp("DOM.querySelector", {
+    nodeId: pickerDocument.root.nodeId,
+    selector: '[role=dialog] input[accept*=coveapp]',
+  });
+  await cdp("DOM.setFileInputFiles", {
+    nodeId: pickerInput.nodeId,
+    files: [path.resolve("services/local-service/internal/appcatalog/packages/japanese-review-book.coveapp")],
+  });
   await until("document.querySelectorAll('[role=dialog]').length===2");
   await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true, "mini-app-chat-install-scroll-bottom");
   await button("Cancel", ".study-dialog");
-  await button("Back to Discover");
-  await click(
-    '[role=dialog] nav[aria-label="Mini Apps navigation"] button:first-child',
-  );
+  await until("document.querySelectorAll('[role=dialog]').length===1");
   await evaluate(
     "Array.from(document.querySelectorAll('[role=dialog] button')).find(b=>b.querySelector('strong')?.textContent==='Second book').click()",
   );

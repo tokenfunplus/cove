@@ -36,6 +36,23 @@ also apply when requests originate in a Mini App.
 The public [authoring contract](../mini-apps.md) describes the release format,
 author tools and executable example scenarios.
 
+## Public discovery and local installation
+
+CoveWeb owns the public app list, package details, public examples, version
+browsing and downloads. The combined design demo does not define an embedded
+marketplace in Cove. Local Cove manages installed instances, file import,
+installation review, permissions, execution, backups and data-preserving updates.
+An external website link replaces its earlier local Discover surface; legacy
+catalog bookmarks open My apps. This supersedes the earlier workspace layout.
+
+Public **Open in Cove** links carry a package identity and exact version. The
+Launcher and authenticated local installer decide whether to open a copy, offer
+a chooser or review installation. Public pages do not query local inventory or
+guess which release is installed. The signed catalog client remains part of
+local installation verification and update checks, independently of website
+presentation. This correction changes no data schema, release authority or
+instance ownership.
+
 Visual Studio Code registers commands and views through JSON declarations in
 its extension manifest. This provided a reference for referencing one named
 operation from several host surfaces. Cove's interpreter implements the
@@ -117,7 +134,7 @@ reverified while their rollback checkpoints remain intact. This refines the
 initial directory authority policy without changing installed instance data.
 
 Conversation interception requires an available app and explicit `@Name` for a
-named app. Discovery shortcuts stay local and preserve an existing draft.
+named app. Installed-app discovery shortcuts stay local and preserve an existing draft.
 Candidate validation reports individual invalid rows so valid selections remain
 usable; committed batches retain their all-or-nothing validation. Debate retries
 transient delivery of a frozen verified result without claiming or charging a

@@ -24,10 +24,10 @@ export function CatalogSettings({ expanded = false }: { expanded?: boolean }) {
       }}
     >
       {expanded ? (
-        <h3 className="font-semibold">App catalog source</h3>
+        <h3 className="font-semibold">Signed release source</h3>
       ) : (
         <summary className="cursor-pointer font-semibold">
-          Catalog settings
+          Release source
         </summary>
       )}
       {(open || expanded) && saved.data && (
@@ -43,7 +43,7 @@ export function CatalogSettings({ expanded = false }: { expanded?: boolean }) {
       )}
       {didSave && (
         <p role="status" className="text-sm text-primary">
-          Catalog settings saved.
+          Release source saved.
         </p>
       )}
       <ErrorMessage error={saved.error} />
@@ -103,8 +103,8 @@ function CatalogForm({
   const authority = confirmation?.public_key
     ? "The new signing key is " +
       confirmation.public_key +
-      ". This authority can supply releases and updates for catalog apps on this Mac. Official bundled app identities require Cove's release key."
-    : "Cove will use bundled releases only. You can choose another signed directory later.";
+      ". This authority can supply releases and updates for apps installed from this source. Official bundled app identities require Cove's release key."
+    : "Cove will use bundled releases only. You can choose another signed source later.";
   return (
     <form
       className="space-y-2"
@@ -129,7 +129,7 @@ function CatalogForm({
             ? "Cove defaults"
             : mode === "bundled"
               ? "Bundled apps only"
-              : "Custom directory"}
+              : "Custom signed source"}
           .
         </p>
       )}
@@ -138,7 +138,7 @@ function CatalogForm({
         disabled={save.isPending || !!confirmation}
       >
         <label className={labelStyle}>
-          HTTPS catalog URL
+          HTTPS signed index URL
           <Input
             type="url"
             value={index}
@@ -162,7 +162,7 @@ function CatalogForm({
           type="submit"
           disabled={unchanged || !!index.trim() !== !!key.trim()}
         >
-          Save catalog settings
+          Save release source
         </Button>
         {defaults && (
           <Button
@@ -192,13 +192,13 @@ function CatalogForm({
         open={!!confirmation}
         title={
           confirmation?.public_key
-            ? "Trust this catalog signing authority?"
+            ? "Trust this release signing authority?"
             : "Use bundled releases only?"
         }
         description={
           (save.error instanceof Error ? save.error.message + " " : "") +
           (confirmation?.useDefaults
-            ? "Follow the catalog configured by your installed Cove version. "
+            ? "Follow the release source configured by your installed Cove version. "
             : "") +
           authority
         }

@@ -71,7 +71,6 @@ export default function MiniAppsPage({
     "section",
   );
   const section: DirectorySection = [
-    "catalog",
     "activity",
     "agent",
     "packages",
@@ -115,7 +114,7 @@ export default function MiniAppsPage({
     >
       {session.isSuccess && !expired && (
         <AppSidebar
-          current={target ? "catalog" : section}
+          current={section}
           instance={id}
           navigate={navigate}
         />

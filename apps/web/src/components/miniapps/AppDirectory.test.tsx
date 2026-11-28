@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { MiniAppPackage } from "@cove/api-contract";
 import { miniApps, type CatalogEntry } from "@/api/mini-apps";
-import { AppDirectory, type DirectorySection } from "./AppDirectory";
+import { AppDirectory, type DirectorySection, type InstallTarget } from "./AppDirectory";
 
 const review: MiniAppPackage = {
   format: 1,
@@ -54,6 +54,7 @@ afterEach(() => {
 function show(
   section?: DirectorySection,
   navigate?: (path: string, replace?: boolean) => void,
+  target?: InstallTarget,
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -61,66 +62,124 @@ function show(
   const open = vi.fn();
   const view = (nextSection = section) => (
     <QueryClientProvider client={client}>
-      <AppDirectory open={open} section={nextSection} navigate={navigate} />
+      <AppDirectory open={open} section={nextSection} navigate={navigate} target={target} />
     </QueryClientProvider>
   );
   const rendered = render(view());
   return { ...rendered, view, open };
 }
 
-test("the embedded app picker keeps administration hidden and loads Discover only on request", async () => {
+test("the embedded picker lists local copies and links to CoveWeb without loading a market", async () => {
   show();
   await screen.findByRole("heading", { name: "Start with something useful." });
   expect(miniApps.catalog).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "More app options" })).toBeNull();
   expect(screen.queryByText("Agent packages")).toBeNull();
   expect(screen.queryByText("Restore a backup")).toBeNull();
-  expect(screen.queryByText("Catalog settings")).toBeNull();
-  await userEvent
-    .setup()
-    .click(screen.getByRole("button", { name: "Discover" }));
-  await screen.findByRole("heading", { name: "App catalog" });
-  await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(2));
-  expect(screen.queryByRole("button", { name: "More app options" })).toBeNull();
+  expect(screen.queryByText("Release source")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Discover" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "App catalog" })).toBeNull();
+  for (const link of screen.getAllByRole("link", { name: "Browse apps on CoveWeb" })) {
+    expect(link.getAttribute("href")).toBe("https://www.hicove.io/apps");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noreferrer");
+  }
 });
 
-test("version changes replace the detail entry instead of adding browser history", async () => {
-  window.history.replaceState(
-    null,
-    "",
-    "/apps?section=catalog&app=studio%2Freview&version=1.10.0",
-  );
-  const navigate = vi.fn();
-  show("catalog", navigate);
-  const version = await screen.findByRole("combobox", { name: "App version" });
-  await userEvent.setup().selectOptions(version, "1.0.0");
-  expect(navigate).toHaveBeenCalledWith(
-    "/apps?section=catalog&app=studio%2Freview&version=1.0.0",
-    true,
-  );
-});
-
-test("an unavailable requested version is explicit and never silently replaced", async () => {
-  window.history.replaceState(
-    null,
-    "",
-    "/apps?section=catalog&app=studio%2Freview&version=0.9.0",
-  );
-  const navigate = vi.fn();
-  show("catalog", navigate);
-  const alert = await screen.findByRole("alert");
-  expect(alert.textContent).toContain(
-    "Version 0.9.0 of studio/review is not available in the current catalog.",
-  );
-  expect(screen.queryByRole("combobox", { name: "App version" })).toBeNull();
+test("a legacy catalog bookmark stays in My apps and never browses remote releases", async () => {
+  window.history.replaceState(null, "", "/apps?section=catalog&app=studio%2Freview&version=1.0.0");
+  show("catalog", vi.fn());
+  await screen.findByRole("heading", { name: "Your apps, your space." });
+  expect(screen.getByRole("button", { name: "My apps" }).getAttribute("aria-current")).toBe("page");
+  expect(miniApps.catalog).not.toHaveBeenCalled();
   expect(miniApps.catalogPreview).not.toHaveBeenCalled();
-  await userEvent
-    .setup()
-    .click(screen.getByRole("button", { name: "View available versions" }));
-  expect(navigate).toHaveBeenCalledWith(
-    "/apps?section=catalog&app=studio%2Freview&version=1.10.0",
-    true,
-  );
+  expect(screen.queryByRole("combobox", { name: "App version" })).toBeNull();
+});
+
+test("a CoveWeb install intent reviews only the requested exact release", async () => {
+  const install = vi.spyOn(miniApps, "catalogInstall");
+  const create = vi.spyOn(miniApps, "create");
+  show("mine", vi.fn(), { publisher: "studio", app: "review", version: "1.0.0" });
+  const preview = await screen.findByRole("button", { name: "Preview release" });
+  expect(screen.getByRole("link", { name: "View app on CoveWeb" }).getAttribute("href")).toBe("https://www.hicove.io/apps/studio/review?version=1.0.0");
+  await userEvent.setup().click(preview);
+  const dialog = await screen.findByRole("dialog", { name: "Review installation" });
+  expect(within(dialog).getByText(/Version 1\.0\.0/)).toBeTruthy();
+  expect(miniApps.catalogPreview).toHaveBeenCalledExactlyOnceWith(entries[0]);
+  expect(screen.queryByText("Reading Inbox")).toBeNull();
+  expect(install).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
+});
+
+test("an unavailable exact install release is never replaced by the newest version", async () => {
+  show("mine", vi.fn(), { publisher: "studio", app: "review", version: "0.9.0" });
+  await screen.findByText("No matching release in the catalog.");
+  expect(screen.queryByRole("button", { name: "Preview release" })).toBeNull();
+  expect(miniApps.catalogPreview).not.toHaveBeenCalled();
+});
+
+test("an unversioned install intent resolves only the newest release of that app", async () => {
+  show("mine", vi.fn(), { publisher: "studio", app: "review" });
+  await userEvent.setup().click(await screen.findByRole("button", { name: "Preview release" }));
+  await screen.findByRole("dialog", { name: "Review installation" });
+  expect(miniApps.catalogPreview).toHaveBeenCalledExactlyOnceWith(entries[2]);
+  expect(screen.queryByText("Reading Inbox")).toBeNull();
+});
+
+test.each(["builtin", "catalog"])("one exact installed %s copy opens without a catalog request", async (origin) => {
+  const release = { id: "saved-release", digest: "saved", origin, package: { ...review, version: "1.0.0" } };
+  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [release] });
+  vi.mocked(miniApps.instances).mockResolvedValue({ instances: [{ id: "saved-copy", name: "Saved notebook", release_id: release.id, revision: 1, enabled: true, grants: [] }] });
+  vi.mocked(miniApps.catalog).mockRejectedValue(new Error("Offline"));
+  const { open } = show("mine", vi.fn(), { publisher: "studio", app: "review", version: "1.0.0" });
+  await waitFor(() => expect(open).toHaveBeenCalledExactlyOnceWith("saved-copy", undefined, true));
+  expect(miniApps.catalog).not.toHaveBeenCalled();
+  expect(miniApps.catalogPreview).not.toHaveBeenCalled();
+});
+
+test("multiple exact copies can be chosen offline without touching data or installing", async () => {
+  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [{ id: "saved", digest: "saved", origin: "builtin", package: review }] });
+  vi.mocked(miniApps.instances).mockResolvedValue({ instances: ["First", "Second"].map(name => ({ id: name.toLowerCase(), name, release_id: "saved", revision: 1, enabled: true, grants: [] })) });
+  const create = vi.spyOn(miniApps, "create");
+  const install = vi.spyOn(miniApps, "catalogInstall");
+  const { open } = show("mine", vi.fn(), { publisher: "studio", app: "review", version: review.version });
+  await userEvent.setup().click(await screen.findByRole("button", { name: /Second/ }));
+  expect(open).toHaveBeenCalledExactlyOnceWith("second");
+  expect(miniApps.catalog).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
+  expect(install).not.toHaveBeenCalled();
+});
+
+test("a personal copy with a matching name is not mistaken for a trusted install", async () => {
+  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [{ id: "personal", digest: "personal", origin: "local", package: review }] });
+  vi.mocked(miniApps.instances).mockResolvedValue({ instances: [{ id: "personal-copy", name: "Personal copy", release_id: "personal", revision: 1, enabled: true, grants: [] }] });
+  const { open } = show("mine", vi.fn(), { publisher: "studio", app: "review", version: review.version });
+  await screen.findByRole("button", { name: "Preview release" });
+  expect(open).not.toHaveBeenCalled();
+  expect(screen.queryByText("Personal copy")).toBeNull();
+});
+
+test("creating another copy from installed files never upgrades an older copy", async () => {
+  const current = { id: "current", digest: "current", origin: "builtin", package: review };
+  const older = { id: "old", digest: "old", origin: "builtin", package: { ...review, version: "1.0.0" } };
+  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [current, older] });
+  vi.mocked(miniApps.instances).mockResolvedValue({ instances: [
+    { id: "current-copy", name: "Current copy", release_id: current.id, revision: 1, enabled: true, grants: ["records.query"], cloud_enabled: true },
+    { id: "older-copy", name: "Older copy", release_id: older.id, revision: 1, enabled: true, grants: ["records.query"], cloud_enabled: true },
+  ] });
+  const create = vi.spyOn(miniApps, "create").mockResolvedValue({ id: "new-copy", name: review.name, release_id: current.id, revision: 1, enabled: true, grants: [] });
+  const upgrade = vi.spyOn(miniApps, "upgrade");
+  const { open } = show("packages", vi.fn());
+  const user = userEvent.setup();
+  await screen.findAllByRole("button", { name: "New instance" });
+  await user.click(within(document.querySelector('[data-release="current"]') as HTMLElement).getByRole("button", { name: "New instance" }));
+  const dialog = await screen.findByRole("dialog", { name: "Review installation" });
+  expect((within(dialog).getByRole("combobox", { name: "Update an existing copy" }) as HTMLSelectElement).value).toBe("");
+  expect(within(dialog).getAllByRole("checkbox").every(box => !(box as HTMLInputElement).checked)).toBe(true);
+  await user.click(within(dialog).getByRole("button", { name: "Create copy" }));
+  await waitFor(() => expect(create).toHaveBeenCalledExactlyOnceWith(current.id, review.name, [], false));
+  expect(upgrade).not.toHaveBeenCalled();
+  expect(open).toHaveBeenCalledWith("new-copy");
 });
 
 test.each(["key-a", "key-b"])(
@@ -182,38 +241,6 @@ test.each(["key-a", "key-b"])(
     }
   },
 );
-
-test("Discover defaults to the newest release and keeps older versions in app details", async () => {
-  const install = vi.spyOn(miniApps, "catalogInstall");
-  const create = vi.spyOn(miniApps, "create");
-  show("catalog");
-  const user = userEvent.setup();
-  await screen.findByRole("heading", { name: "Review book", level: 3 });
-  expect(screen.getAllByRole("article")).toHaveLength(2);
-  await user.click(screen.getByRole("button", { name: "View Review book" }));
-  const select = (await screen.findByRole("combobox", {
-    name: "App version",
-  })) as HTMLSelectElement;
-  expect(select.value).toBe("1.10.0");
-  expect(select.options).toHaveLength(3);
-  expect(select.options[0].textContent).toBe("1.10.0 · Latest");
-  await user.selectOptions(select, "1.0.0");
-  const getApp = await screen.findByRole("button", { name: "Get app" });
-  await waitFor(() => expect((getApp as HTMLButtonElement).disabled).toBe(false));
-  await user.click(getApp);
-  await screen.findByRole("button", { name: "Install app" });
-  expect(screen.getByText(/Version 1\.0\.0/)).toBeTruthy();
-  expect(install).not.toHaveBeenCalled();
-  expect(create).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(
-    (
-      (await screen.findByRole("combobox", {
-        name: "App version",
-      })) as HTMLSelectElement
-    ).value,
-  ).toBe("1.0.0");
-});
 
 test("canceling an installation preview keeps the agent's source and section", async () => {
   const raw = JSON.stringify({ ...review, publisher: "my-studio" });
@@ -288,26 +315,6 @@ test("navigation from an installation preview follows the new section without lo
 });
 
 
-test("a catalog install retains the selected signer when another signer has identical installed bytes", async () => {
-  const selected: CatalogEntry = { ...review, digest: "same-bytes", origin: "catalog", catalog_authority: "key-b", official_catalog: false };
-  vi.mocked(miniApps.catalog).mockResolvedValue({ packages: [selected] });
-  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [{ id: "release-a", digest: selected.digest, origin: "catalog", catalog_authority: "key-a", official_catalog: false, package: review }] });
-  vi.mocked(miniApps.instances).mockResolvedValue({ instances: [{ id: "copy-a", name: "Signer A copy", release_id: "release-a", enabled: true, revision: 1, grants: [] }] });
-  const install = vi.spyOn(miniApps, "catalogInstall").mockResolvedValue({ id: "release-b", digest: selected.digest, origin: "catalog", catalog_authority: "key-b", official_catalog: false, package: review });
-  const create = vi.spyOn(miniApps, "create").mockResolvedValue({ id: "copy-b", name: review.name, release_id: "release-b", enabled: true, revision: 1, grants: [] });
-  show("catalog");
-  const user = userEvent.setup();
-  const card = (await screen.findByRole("heading", { name: "Review book", level: 3 })).closest("article")!;
-  expect(within(card).queryByText("Installed")).toBeNull();
-  expect(within(card).getByRole("button", { name: "Install" })).toBeTruthy();
-  await user.click(await screen.findByRole("button", { name: "View Review book" }));
-  expect(screen.queryByRole("button", { name: "Open app" })).toBeNull();
-  await user.click(await screen.findByRole("button", { name: "Get app" }));
-  await user.click(await screen.findByRole("button", { name: "Install app" }));
-  await waitFor(() => expect(install).toHaveBeenCalledExactlyOnceWith(selected));
-  await waitFor(() => expect(create).toHaveBeenCalledWith("release-b", review.name, [], false));
-});
-
 test.each(["import", "developer"])("a late %s preview does not reopen review after leaving its entry", async (source) => {
   let complete!: (release: Awaited<ReturnType<typeof miniApps.localPackage>>) => void;
   vi.spyOn(miniApps, "localPackage").mockReturnValue(new Promise((resolve) => { complete = resolve; }));
@@ -329,66 +336,6 @@ test.each(["import", "developer"])("a late %s preview does not reopen review aft
   expect(screen.getByRole("heading", { name: "Start with something useful." })).toBeTruthy();
 });
 
-test("catalog Install buttons are disabled while a selected release preview is pending", async () => {
-  show("catalog");
-  await waitFor(() => expect(miniApps.catalogPreview).toHaveBeenCalledTimes(2));
-  let complete!: (pkg: MiniAppPackage) => void;
-  vi.mocked(miniApps.catalogPreview).mockReturnValue(new Promise((resolve) => { complete = resolve; }));
-  const user = userEvent.setup();
-  const reviewCard = screen.getByRole("heading", { name: "Review book", level: 3 }).closest("article")!;
-  await user.click(within(reviewCard).getByRole("button", { name: "Install" }));
-  expect(screen.getAllByRole("button", { name: "Install" }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
-  await act(async () => { complete(review); });
-  await screen.findByRole("dialog", { name: "Review installation" });
-  expect(screen.getByText(/Version 1\.10\.0/)).toBeTruthy();
-});
-
-test("Discover and app details open only copies of the selected release", async () => {
-  const copies = ["first", "second"].map((id) => ({ id, name: `${id} review copy`, release_id: "old", revision: 1, enabled: true, grants: [] }));
-  vi.mocked(miniApps.instances).mockResolvedValue({ instances: copies });
-  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [{ id: "old", digest: "review-1", origin: "builtin", package: { ...review, version: "1.0.0" } }] });
-  const { open } = show("catalog");
-  const user = userEvent.setup();
-  const card = (await screen.findByRole("heading", { name: "Review book", level: 3 })).closest("article")!;
-  expect(within(card).queryByText("Installed")).toBeNull();
-  expect(within(card).getByRole("button", { name: "Update" })).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "View Review book" }));
-  expect(await screen.findByRole("button", { name: "Update app" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Choose a copy" })).toBeNull();
-  await user.selectOptions(screen.getByRole("combobox", { name: "App version" }), "1.0.0");
-  await user.click(await screen.findByRole("button", { name: "Choose a copy" }));
-  await user.click(screen.getByRole("button", { name: "second review copy" }));
-  expect(open).toHaveBeenCalledWith("second");
-  expect(screen.queryByRole("button", { name: "Get app" })).toBeNull();
-});
-
-test("Create another copy starts fresh when a current and an older copy both exist", async () => {
-  const current = { id: "current", digest: "review-110", origin: "builtin", package: review };
-  const older = { id: "old", digest: "review-1", origin: "builtin", package: { ...review, version: "1.0.0" } };
-  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [current, older] });
-  vi.mocked(miniApps.instances).mockResolvedValue({ instances: [
-    { id: "copy-a", name: "Current copy", release_id: current.id, revision: 1, enabled: true, grants: ["records.query"], cloud_enabled: true },
-    { id: "copy-b", name: "Older copy", release_id: older.id, revision: 1, enabled: true, grants: ["records.query"], cloud_enabled: true },
-  ] });
-  vi.spyOn(miniApps, "catalogInstall").mockResolvedValue(current);
-  const create = vi.spyOn(miniApps, "create").mockResolvedValue({ id: "new-copy", name: review.name, release_id: current.id, revision: 1, enabled: true, grants: [] });
-  const upgrade = vi.spyOn(miniApps, "upgrade");
-  const { open } = show("catalog");
-  const user = userEvent.setup();
-  const card = (await screen.findByRole("heading", { name: "Review book", level: 3 })).closest("article")!;
-  expect(within(card).getByRole("button", { name: "Open app" })).toBeTruthy();
-  await user.click(await screen.findByRole("button", { name: "View Review book" }));
-  await user.click(await screen.findByRole("button", { name: "Create another copy" }));
-  const dialog = await screen.findByRole("dialog", { name: "Review installation" });
-  expect((within(dialog).getByRole("combobox", { name: "Update an existing copy" }) as HTMLSelectElement).value).toBe("");
-  expect((within(dialog).getByRole("textbox", { name: "App name" }) as HTMLInputElement).value).toBe(review.name);
-  expect(within(dialog).getAllByRole("checkbox").every((box) => !(box as HTMLInputElement).checked)).toBe(true);
-  await user.click(within(dialog).getByRole("button", { name: "Install app" }));
-  await waitFor(() => expect(create).toHaveBeenCalledExactlyOnceWith(current.id, review.name, [], false));
-  expect(upgrade).not.toHaveBeenCalled();
-  expect(open).toHaveBeenCalledWith("new-copy");
-});
-
 test.each([
   { scenario: "bundled lineage", previous: { origin: "builtin" }, selected: { origin: "builtin" }, update: true },
   { scenario: "same custom signer", previous: { origin: "catalog", catalog_authority: "key-a" }, selected: { origin: "catalog", catalog_authority: "key-a" }, update: true },
@@ -399,7 +346,7 @@ test.each([
   { scenario: "personal package with matching publisher", previous: { origin: "local" }, selected: { origin: "builtin" }, update: false },
   { scenario: "verified legacy package", previous: { origin: "local", legacy_verified: true }, selected: { origin: "builtin" }, update: true },
   { scenario: "incompatible collection schema", previous: { origin: "builtin", schema_version: 2 }, selected: { origin: "builtin" }, update: false },
-])("Discover offers a reviewed update only for $scenario", async ({ previous, selected: changes, update }) => {
+])("a CoveWeb handoff offers a reviewed update only for $scenario", async ({ previous, selected: changes, update }) => {
   const { schema_version, ...provenance } = previous;
   const old = {
     id: "older-release",
@@ -414,49 +361,14 @@ test.each([
     { id: "older-copy", name: "My existing book", release_id: old.id, revision: 1, enabled: true, grants: [] },
   ] });
   const upgrade = vi.spyOn(miniApps, "upgrade");
-  show("catalog");
+  show("mine", vi.fn(), { publisher: review.publisher, app: review.app, version: review.version });
   const user = userEvent.setup();
-  const card = (await screen.findByRole("heading", { name: "Review book", level: 3 })).closest("article")!;
-  expect(within(card).getByRole("button", { name: update ? "Update" : "Install" })).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "View Review book" }));
-  const action = await screen.findByRole("button", { name: update ? "Update app" : "Get app" });
-  await waitFor(() => expect((action as HTMLButtonElement).disabled).toBe(false));
-  await user.click(action);
+  await user.click(await screen.findByRole("button", { name: "Preview release" }));
   const dialog = await screen.findByRole("dialog", { name: "Review installation" });
   const copies = within(dialog).queryByRole("combobox", { name: "Update an existing copy" }) as HTMLSelectElement | null;
   if (update) expect(copies?.value).toBe("older-copy");
   else expect(copies).toBeNull();
   expect(upgrade).not.toHaveBeenCalled();
-});
-
-test.each([
-  { scenario: "same catalog signer", selected: {}, saved: {}, canOpen: true },
-  { scenario: "different package bytes", selected: { digest: "different-bytes" }, saved: {}, canOpen: false },
-  { scenario: "bundled instead of catalog provenance", selected: {}, saved: { origin: "builtin", catalog_authority: undefined }, canOpen: false },
-  { scenario: "different official authority status", selected: { official_catalog: true }, saved: {}, canOpen: false },
-  { scenario: "legacy unbound catalog provenance", selected: {}, saved: { catalog_authority: undefined }, canOpen: false },
-])("Discover preserves saved data while matching $scenario", async ({ selected: selectedChanges, saved, canOpen }) => {
-  const selected: CatalogEntry = { ...review, digest: "same-bytes", origin: "catalog", catalog_authority: "key-a", official_catalog: false, ...selectedChanges };
-  const release = { id: "saved-release", digest: "same-bytes", origin: "catalog", catalog_authority: "key-a", official_catalog: false, package: review, ...saved };
-  vi.mocked(miniApps.catalog).mockResolvedValue({ packages: [selected] });
-  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [release] });
-  vi.mocked(miniApps.instances).mockResolvedValue({ instances: [{ id: "saved-copy", name: "Saved notebook", release_id: release.id, revision: 1, enabled: true, grants: [] }] });
-  const { open } = show();
-  const user = userEvent.setup();
-  await screen.findByText("Saved notebook");
-  await user.click(screen.getByRole("button", { name: "Discover" }));
-  const card = (await screen.findByRole("heading", { name: "Review book", level: 3 })).closest("article")!;
-  expect(Boolean(within(card).queryByText("Installed"))).toBe(canOpen);
-  expect(within(card).getByRole("button", { name: canOpen ? "Open app" : "Install" })).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "View Review book" }));
-  const action = await screen.findByRole("button", { name: canOpen ? "Open app" : "Get app" });
-  if (canOpen) {
-    await user.click(action);
-    expect(open).toHaveBeenCalledWith("saved-copy");
-  } else {
-    expect(screen.queryByRole("button", { name: "Open app" })).toBeNull();
-    expect(open).not.toHaveBeenCalled();
-  }
 });
 
 test("a superseded developer preview cannot replace the most recently imported package", async () => {

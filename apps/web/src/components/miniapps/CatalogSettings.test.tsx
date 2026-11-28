@@ -34,7 +34,7 @@ test("Use Cove defaults restores unsaved edits when defaults are already active"
     </QueryClientProvider>,
   );
   const input = await screen.findByRole("textbox", {
-    name: "HTTPS catalog URL",
+    name: "HTTPS signed index URL",
   });
   await userEvent.clear(input);
   await userEvent.type(input, "https://edited.example/catalog.json");
@@ -44,7 +44,7 @@ test("Use Cove defaults restores unsaved edits when defaults are already active"
   expect((input as HTMLInputElement).value).toBe(defaults.url);
   expect(save).not.toHaveBeenCalled();
   expect(screen.getByRole("status").textContent).toBe(
-    "Catalog settings saved.",
+    "Release source saved.",
   );
 });
 
@@ -69,16 +69,16 @@ test("a signing authority change previews its key and requires a separate confir
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
-  await user.click(screen.getByText("Catalog settings"));
+  await user.click(screen.getByText("Release source"));
   const key = await screen.findByRole("textbox", {
     name: "Ed25519 public key",
   });
   await user.clear(key);
   await user.type(key, "next-key");
   await user.click(
-    screen.getByRole("button", { name: "Save catalog settings" }),
+    screen.getByRole("button", { name: "Save release source" }),
   );
-  await screen.findByText("Trust this catalog signing authority?");
+  await screen.findByText("Trust this release signing authority?");
   expect(save).not.toHaveBeenCalled();
   expect(screen.getByText(/The new signing key is next-key/)).toBeDefined();
   await user.click(
@@ -86,7 +86,7 @@ test("a signing authority change previews its key and requires a separate confir
   );
   expect(save).not.toHaveBeenCalled();
   await user.click(
-    screen.getByRole("button", { name: "Save catalog settings" }),
+    screen.getByRole("button", { name: "Save release source" }),
   );
   await user.click(
     await screen.findByRole("button", { name: "Confirm signing authority" }),
@@ -168,18 +168,18 @@ test("saved feedback survives the authority form refreshing and clears when edit
   await user.clear(key);
   await user.type(key, "new-key");
   await user.click(
-    screen.getByRole("button", { name: "Save catalog settings" }),
+    screen.getByRole("button", { name: "Save release source" }),
   );
   await user.click(
     await screen.findByRole("button", { name: "Confirm signing authority" }),
   );
-  await screen.findByText("Current source: Custom directory.");
-  expect(await screen.findByText("Catalog settings saved.")).toBeTruthy();
+  await screen.findByText("Current source: Custom signed source.");
+  expect(await screen.findByText("Release source saved.")).toBeTruthy();
   await user.type(
     screen.getByRole("textbox", { name: "Ed25519 public key" }),
     "x",
   );
-  expect(screen.queryByText("Catalog settings saved.")).toBeNull();
+  expect(screen.queryByText("Release source saved.")).toBeNull();
 });
 
 test("saving unchanged empty defaults cannot pin a bundled-only override", async () => {
@@ -197,7 +197,7 @@ test("saving unchanged empty defaults cannot pin a bundled-only override", async
     </QueryClientProvider>,
   );
   const button = (await screen.findByRole("button", {
-    name: "Save catalog settings",
+    name: "Save release source",
   })) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
   expect(

@@ -440,10 +440,14 @@ existing revision checks and creation-order tiebreaker.
 
 ## Workspace and model permissions
 
-The standalone Mini Apps workspace separates **My apps** from **Discover**.
-Discover groups releases into one card per publisher and app, starts with the
-latest compatible version, and keeps older versions in its detail page. Card
-previews use the public package example data, never installed instance records.
+The standalone Mini Apps workspace manages **My apps** on this Mac. Public
+discovery, package details, version browsing and downloads belong to **CoveWeb**.
+**Browse apps on CoveWeb** opens the public website. Its previews use packaged
+example data, never installed instance records. The local Chat app picker lists
+installed copies and provides file import and the same external website link.
+Legacy local `section=catalog` bookmarks open My apps. Version-specific
+`/apps/install/<publisher>/<app>` targets remain local installer routes and can
+reuse an exact installed release without fetching the public catalog.
 **Search workspace** (Command-K) opens apps and views. **More app options** contains
 activity, developer tools, installed versions, backup restore and catalog settings.
 The package editor loads exact example

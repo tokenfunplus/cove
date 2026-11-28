@@ -52,34 +52,6 @@
   height: 40px;
   font-size: 16px;
 }
-.mini-app-market-card {
-  min-width: 0;
-  overflow: hidden;
-  border-radius: 22px;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  background: var(--card);
-  transition:
-    border-color 180ms,
-    transform 180ms,
-    box-shadow 180ms;
-}
-.mini-app-market-card:hover {
-  transform: translateY(-3px);
-  border-color: var(--border-strong);
-  box-shadow: 0 16px 32px -24px
-    color-mix(in srgb, var(--foreground) 35%, transparent);
-}
-.mini-app-card-cover {
-  display: block;
-  width: 100%;
-  text-align: left;
-  overflow: hidden;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-}
-.mini-app-card-cover:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -3px;
-}
 .mini-app-preview {
   position: relative;
   display: flex;
@@ -211,40 +183,6 @@
   font-size: 10px;
   color: var(--muted-foreground);
 }
-.mini-app-installed {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border-radius: 30px;
-  padding: 3px 8px;
-  font-size: 10px;
-  background: var(--accent);
-  color: var(--primary);
-}
-.mini-app-detail-cover {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 22px;
-}
-.mini-app-detail-cover .mini-app-preview {
-  height: 420px;
-  align-items: center;
-  padding: 35px;
-}
-.mini-app-detail-cover .mini-app-preview-window {
-  max-width: 390px;
-  transform: rotate(0deg);
-}
-.mini-app-detail-cover .mini-app-preview-body {
-  min-height: 285px;
-  padding: 24px;
-}
-.mini-app-detail-cover .mini-app-sample-card {
-  padding: 25px 18px;
-}
-.mini-app-detail-cover .mini-app-sample-question {
-  font-size: 24px;
-}
 .mini-app-empty-art {
   position: relative;
   display: grid;
@@ -275,128 +213,16 @@
   font-size: 28px;
   box-shadow: 0 10px 20px -15px var(--foreground);
 }
-@media (prefers-reduced-motion: reduce) {
-  .mini-app-market-card {
-    transition: none;
-  }
-  .mini-app-market-card:hover {
-    transform: none;
-  }
-}
 @media (max-width: 480px) {
   .mini-app-preview {
     height: 235px;
     padding: 24px 22px 0;
-  }
-  .mini-app-detail-cover .mini-app-preview {
-    height: 330px;
-    padding: 22px;
   }
   .mini-app-nav {
     gap: 1.5rem;
   }
 }
 
-.catalog-art {
-  position: relative;
-  display: grid;
-  place-items: center;
-  height: 220px;
-  overflow: hidden;
-  background:
-    radial-gradient(#5363a322 0.65px, transparent 0.8px) 0 0/6px 6px,
-    #d3dcfc;
-}
-.catalog-art img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.catalog-art--folder {
-  background-color: #e5ddf6;
-}
-.catalog-object {
-  position: relative;
-  display: block;
-  width: 86px;
-  height: 112px;
-  border-radius: 5px 10px 10px 5px;
-  background: #3449a3;
-  transform: rotate(-13deg);
-  box-shadow:
-    inset 7px 0 #263780,
-    2px 4px #faf0cf,
-    2px 7px #30428f,
-    10px 14px 20px #20265025;
-}
-.catalog-object i {
-  position: absolute;
-  top: 23px;
-  left: 25px;
-  width: 43px;
-  height: 32px;
-  border: 2px solid #e3e8ff;
-  border-radius: 2px;
-}
-.catalog-object i::after {
-  content: "";
-  position: absolute;
-  top: 8px;
-  left: 6px;
-  width: 24px;
-  height: 3px;
-  background: #ffdf9a;
-  box-shadow: 0 8px #ffdf9a;
-}
-.catalog-object b {
-  position: absolute;
-  bottom: -9px;
-  right: 16px;
-  width: 8px;
-  height: 22px;
-  background: #f0b452;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 75%, 0 100%);
-}
-.catalog-art--folder .catalog-object {
-  height: 75px;
-  width: 105px;
-  background: #74519c;
-  border-radius: 8px;
-  box-shadow: 9px 13px 20px #35244525;
-  transform: rotate(-8deg);
-}
-.catalog-art--folder .catalog-object::before {
-  content: "";
-  position: absolute;
-  left: 14px;
-  top: -25px;
-  width: 77px;
-  height: 67px;
-  border: 8px solid #fff9e6;
-  background: repeating-linear-gradient(#fff9e6 0 10px, #a595c2 11px 12px);
-  border-radius: 4px;
-}
-.catalog-art--folder .catalog-object::after {
-  content: "";
-  position: absolute;
-  inset: 10px -3px -4px;
-  background: linear-gradient(140deg, #8b68b3, #65418c);
-  clip-path: polygon(
-    0 0,
-    25% 0,
-    35% 20%,
-    65% 20%,
-    80% 0,
-    100% 0,
-    100% 100%,
-    0 100%
-  );
-  border-radius: 7px;
-}
-.catalog-art--folder .catalog-object i,
-.catalog-art--folder .catalog-object b {
-  display: none;
-}
 .mini-app-sidebar {
   display: none;
 }
@@ -487,8 +313,4 @@
 }
 .mini-app-with-sidebar {
   background: var(--card);
-}
-.mini-app-installed {
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 12%, var(--card));
 }

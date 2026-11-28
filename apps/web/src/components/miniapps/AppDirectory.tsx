@@ -8,7 +8,7 @@ import type {
 } from "@cove/api-contract";
 import {
   ArrowRight,
-  Code2,
+  ArrowUpRight,
   FolderOpen,
   HardDrive,
   MoreHorizontal,
@@ -16,19 +16,14 @@ import {
   Search,
   Upload,
 } from "lucide-react";
-import { appKeys, miniApps, type CatalogEntry } from "@/api/mini-apps";
+import { appKeys, miniApps } from "@/api/mini-apps";
+import { COVEWEB_APPS_URL, coveWebAppURL } from "@/lib/coveweb-apps";
 import { Button } from "@/components/ui/button";
 import { FileInput } from "@/components/ui/file-input";
 import { Input } from "@/components/ui/input";
 import { ErrorMessage, canUpgrade, sectionStyle } from "./presentation";
 import { PackagePreview, type PackageSource } from "./AppInstallPreview";
-import {
-  AppMark,
-  CatalogCard,
-  CatalogDetail,
-  groupCatalog,
-  matchesCatalogRelease,
-} from "./AppCatalog";
+import { AppMark } from "./AppPackagePreview";
 import { HostActivity } from "./HostActivity";
 import { PackageEditor } from "./PackageEditor";
 import { CatalogSettings } from "./CatalogSettings";
@@ -74,7 +69,8 @@ export function AppDirectory({
 }: Props) {
   const standalone = Boolean(navigate) && !target;
   const [localSection, setLocalSection] = useState<DirectorySection>("mine");
-  const section = requestedSection ?? localSection;
+  const section =
+    requestedSection === "catalog" ? "mine" : (requestedSection ?? localSection);
   const file = useRef<HTMLInputElement>(null);
   const backupFile = useRef<HTMLInputElement>(null);
   const previewRequest = useRef(0);
@@ -82,7 +78,6 @@ export function AppDirectory({
   const [backup, setBackup] = useState<File>();
   const [search, setSearch] = useState("");
   const [packageDraft, setPackageDraft] = useState("");
-  const [localDetail, setLocalDetail] = useState<CatalogEntry>();
   const [removeId, setRemoveId] = useState("");
   const [preview, setPreview] = useState<{
     pkg: MiniAppPackage;
@@ -96,27 +91,8 @@ export function AppDirectory({
     previewRequest.current++;
     setPreview(undefined);
     setSearch("");
-    setLocalDetail(undefined);
     if (navigate) navigate(next === "mine" ? "/apps" : "/apps?section=" + next);
     else setLocalSection(next);
-  }
-  function showDetail(entry: CatalogEntry, replace = false) {
-    previewRequest.current++;
-    setPreview(undefined);
-    if (navigate)
-      navigate(
-        "/apps?" +
-          new URLSearchParams({
-            section: "catalog",
-            app: entry.publisher + "/" + entry.app,
-            version: entry.version,
-          }),
-        replace,
-      );
-    else {
-      setLocalSection("catalog");
-      setLocalDetail(entry);
-    }
   }
   const instances = useQuery({
     queryKey: appKeys.instances,
@@ -130,26 +106,6 @@ export function AppDirectory({
   });
   const installed = releases.data?.packages ?? [];
   const allBooks = instances.data?.instances ?? [];
-  const catalogCopies = (entry: CatalogEntry) => allBooks.filter((book) =>
-    installed.some((release) =>
-      release.id === book.release_id &&
-      matchesCatalogRelease(release, entry),
-    ),
-  );
-  const hasCatalogUpdate = (entry: CatalogEntry) => allBooks.some((book) =>
-    installed.some((release) =>
-      release.id === book.release_id &&
-      canUpgrade(
-        release.package,
-        entry,
-        release.origin,
-        entry.origin,
-        release.legacy_verified,
-        release,
-        entry,
-      ),
-    ),
-  );
   const books = allBooks.filter(
     (book) =>
       !target ||
@@ -161,26 +117,29 @@ export function AppDirectory({
       ),
   );
   const ready = instances.isSuccess && releases.isSuccess;
-  const showCatalog = target
-    ? ready && books.length !== 1
-    : section === "catalog" || section === "agent";
+  const matchingInstalled = target
+    ? installed.filter(
+        (release) =>
+          release.origin !== "local" && matches(release.package, target),
+      )
+    : [];
+  const showInstallRelease = !!target && ready && matchingInstalled.length === 0;
   const catalog = useQuery({
     queryKey: appKeys.catalog,
     queryFn: miniApps.catalog,
     retry: false,
-    enabled: showCatalog,
+    enabled: showInstallRelease,
   });
   const entries = (catalog.data?.packages ?? []).filter((entry) =>
     matches(entry, target),
   );
-  const groups = groupCatalog(entries);
-  const params = new URLSearchParams(window.location.search);
-  const detailName = params.get("app");
-  const detailVersion = params.get("version");
+  const targetRelease = [...entries].sort((a, b) =>
+    b.version.localeCompare(a.version, "en", { numeric: true }),
+  )[0];
   useEffect(() => {
     previewRequest.current++;
     setPreview(undefined);
-  }, [requestedSection, detailName, detailVersion]);
+  }, [requestedSection, target?.publisher, target?.app, target?.version]);
   useEffect(() => {
     if (!navigate) return;
     const leaveReview = () => {
@@ -190,16 +149,6 @@ export function AppDirectory({
     window.addEventListener("popstate", leaveReview);
     return () => window.removeEventListener("popstate", leaveReview);
   }, [navigate]);
-  const requestedGroup = groups.find(
-    (group) => group[0].publisher + "/" + group[0].app === detailName,
-  );
-  const detail = standalone
-    ? requestedGroup?.find(
-        (entry) => !detailVersion || entry.version === detailVersion,
-      )
-    : localDetail;
-  const missingRequestedRelease =
-    standalone && !!detailName && catalog.isSuccess && !detail;
   // A catalog handoff opens an existing copy without requesting the directory.
   const onlyBook =
     ready && target && books.length === 1 ? books[0].id : undefined;
@@ -276,12 +225,17 @@ export function AppDirectory({
             <span className="ml-2 text-[10px] opacity-50">{books.length}</span>
           )}
         </button>
-        <button
-          aria-current={section === "catalog" ? "page" : undefined}
-          onClick={() => changeSection("catalog")}
+        <a
+          href={COVEWEB_APPS_URL}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Browse apps on CoveWeb"
+          className="inline-flex items-center gap-1 py-2 text-xs text-muted-foreground hover:text-foreground"
         >
-          Discover
-        </button>
+          <span className="sm:hidden">CoveWeb apps</span>
+          <span className="hidden sm:inline">Browse apps on CoveWeb</span>
+          <ArrowUpRight size={13} />
+        </a>
       </nav>
       <div className="flex items-center gap-1">
         <Button
@@ -314,7 +268,7 @@ export function AppDirectory({
                   ["agent", "Developer tools"],
                   ["packages", "Manage installed versions"],
                   ["restore", "Restore a backup"],
-                  ["settings", "Catalog settings"],
+                  ["settings", "Release source"],
                 ] as const
               ).map(([value, label]) => (
                 <MenuItem key={value}>
@@ -445,11 +399,10 @@ export function AppDirectory({
                   A place to practise, keep a reading list, or collect ideas.
                   Pick an app to start your own copy.
                 </p>
-                <Button
-                  className="mt-6 rounded-full px-5"
-                  onClick={() => changeSection("catalog")}
-                >
-                  Explore apps <ArrowRight />
+                <Button asChild className="mt-6 rounded-full px-5">
+                  <a href={COVEWEB_APPS_URL} target="_blank" rel="noreferrer">
+                    Browse apps on CoveWeb <ArrowRight />
+                  </a>
                 </Button>
                 <p className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground sm:justify-start">
                   <HardDrive size={13} />
@@ -490,210 +443,82 @@ export function AppDirectory({
               <p className="text-muted-foreground">
                 Room for another little helper?
               </p>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => changeSection("catalog")}
-              >
-                Discover apps <ArrowRight />
+              <Button asChild size="sm" variant="ghost">
+                <a href={COVEWEB_APPS_URL} target="_blank" rel="noreferrer">
+                  Browse apps on CoveWeb <ArrowRight />
+                </a>
               </Button>
             </div>
           )}
           {target &&
-            installed
-              .filter((release) => matches(release.package, target))
-              .map((release) => (
-                <Button
-                  key={release.id}
-                  variant="outline"
-                  onClick={() => inspectPackage({ kind: "installed", release })}
-                >
-                  <Plus />
-                  New instance
-                </Button>
-              ))}
+            matchingInstalled.map((release) => (
+              <Button
+                key={release.id}
+                variant="outline"
+                onClick={() => {
+                  ++previewRequest.current;
+                  setPreview({
+                    pkg: release.package,
+                    source: { kind: "installed", release },
+                    createNewCopy: true,
+                  });
+                }}
+              >
+                <Plus />
+                New instance
+              </Button>
+            ))}
         </section>
       )}
-      {showCatalog &&
-        (section === "catalog" || target) &&
-        (detail && !target ? (
-          <CatalogDetail
-            versions={
-              groups.find((group) =>
-                group.some((entry) => entry === detail),
-              ) ?? [detail]
-            }
-            selected={detail}
-            select={(entry) => showDetail(entry, true)}
-            back={() => changeSection("catalog")}
-            copies={catalogCopies(detail)}
-            updateAvailable={hasCatalogUpdate(detail)}
-            openCopy={(id) => open(id)}
-            install={(pkg, entry, createNewCopy = false) => {
-              previewRequest.current++;
-              setPreview({
-                pkg,
-                source: { kind: "catalog", entry },
-                createNewCopy,
-              });
-            }}
-          />
-        ) : missingRequestedRelease ? (
-          <section className={sectionStyle}>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => changeSection("catalog")}
-            >
-              Back to Discover
-            </Button>
-            <p role="alert">
-              {detailVersion
-                ? "Version " + detailVersion + " of " + detailName
-                : "App " + detailName}{" "}
-              is not available in the current catalog.
+      {showInstallRelease && (
+        <section className={sectionStyle} aria-label="Install from CoveWeb">
+          <p className="mini-app-eyebrow">Installation</p>
+          <h2 className="text-xl font-semibold">Install an app on this Mac</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Cove checks this release before you choose access and create or
+            update a copy.
+          </p>
+          <ErrorMessage error={catalog.error} />
+          {catalog.data?.warning && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {catalog.data.warning}
             </p>
-            {catalog.data?.warning && (
+          )}
+          {catalog.isPending && (
+            <p role="status">Finding the requested release…</p>
+          )}
+          {catalog.isSuccess && !targetRelease && (
+            <p role="alert">No matching release in the catalog.</p>
+          )}
+          {targetRelease && (
+            <div className="space-y-3">
+              <h3 className="font-semibold">{targetRelease.name}</h3>
               <p className="text-sm text-muted-foreground">
-                {catalog.data.warning}
+                {targetRelease.description}
               </p>
-            )}
-            {requestedGroup && (
-              <Button onClick={() => showDetail(requestedGroup[0], true)}>
-                View available versions
-              </Button>
-            )}
-          </section>
-        ) : (
-          <section id="mini-app-catalog" className="space-y-7">
-            <div className="flex flex-wrap items-end justify-between gap-5">
-              <div>
-                <p className="mini-app-eyebrow">The app collection</p>
-                <h2 className="mt-2 text-3xl font-semibold tracking-tight sm:text-[40px]">
-                  App catalog
-                </h2>
-                <p className="mt-4 max-w-xl text-sm leading-7 text-muted-foreground">
-                  Find an app for your everyday and install a personal copy.
-                  Everything you save stays on your Mac.
-                </p>
-              </div>
-              {!target && (
-                <SearchField
-                  value={search}
-                  change={setSearch}
-                  placeholder="Find an app"
-                />
-              )}
-            </div>
-            <ErrorMessage error={catalog.error} />
-            {catalog.data?.warning && (
-              <p
-                role="status"
-                className="rounded-xl bg-muted px-4 py-3 text-xs text-muted-foreground"
+              <p className="text-xs text-muted-foreground">
+                Version {targetRelease.version} · {targetRelease.publisher}
+              </p>
+              <Button
+                disabled={inspect.isPending}
+                onClick={() =>
+                  inspectPackage({ kind: "catalog", entry: targetRelease })
+                }
               >
-                {catalog.data.warning}
-              </p>
-            )}
-            {catalog.isPending && (
-              <p role="status" className="text-sm text-muted-foreground">
-                Finding apps…
-              </p>
-            )}
-            {catalog.isSuccess && entries.length === 0 && (
-              <p>No matching release in the catalog.</p>
-            )}
-            <div className="grid gap-6 sm:grid-cols-2">
-              {groups
-                .filter((group) =>
-                  contains(
-                    group[0].name,
-                    group[0].description,
-                    group[0].publisher,
-                  ),
-                )
-                .map((versions) =>
-                  target ? (
-                    <div
-                      key={versions[0].publisher + versions[0].app}
-                      className={sectionStyle}
-                    >
-                      <h3 className="font-semibold">{versions[0].name}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {versions[0].description}
-                      </p>
-                      <Button
-                        disabled={inspect.isPending}
-                        onClick={() =>
-                          inspectPackage({
-                            kind: "catalog",
-                            entry: versions[0],
-                          })
-                        }
-                      >
-                        Preview release
-                      </Button>
-                    </div>
-                  ) : (
-                    <CatalogCard
-                      key={versions[0].publisher + "/" + versions[0].app}
-                      versions={versions}
-                      view={showDetail}
-                      installPending={inspect.isPending}
-                      install={(entry) =>
-                        inspectPackage({ kind: "catalog", entry })
-                      }
-                      openInstalled={() => {
-                        const copies = catalogCopies(versions[0]);
-                        if (copies.length === 1) open(copies[0].id);
-                        else showDetail(versions[0]);
-                      }}
-                      installed={catalogCopies(versions[0]).length > 0}
-                      updateAvailable={hasCatalogUpdate(versions[0])}
-                    />
-                  ),
-                )}
+                Preview release
+              </Button>
             </div>
-            {!target &&
-              catalog.isSuccess &&
-              groups.length > 0 &&
-              !groups.some((group) =>
-                contains(
-                  group[0].name,
-                  group[0].description,
-                  group[0].publisher,
-                ),
-              ) && (
-                <p className="text-sm text-muted-foreground">
-                  No apps match that search.
-                </p>
-              )}
-            {!target && (
-              <div className="flex flex-wrap items-center justify-between gap-5 rounded-2xl border border-dashed border-border px-6 py-5">
-                <div className="flex items-center gap-4">
-                  <Code2 size={22} className="text-muted-foreground" />
-                  <div>
-                    <h3 className="text-sm font-medium">
-                      Have an app of your own?
-                    </h3>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      Bring a file from your agent, or start with an example.
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    standalone ? changeSection("agent") : file.current?.click()
-                  }
-                >
-                  {standalone ? "Create with your agent" : "Import app"}
-                  <ArrowRight />
-                </Button>
-              </div>
-            )}
-          </section>
-        ))}
+          )}
+          <a
+            className="inline-flex items-center gap-1 text-sm text-primary underline"
+            href={coveWebAppURL(target!.publisher, target!.app, target!.version)}
+            target="_blank"
+            rel="noreferrer"
+          >
+            View app on CoveWeb <ArrowRight size={14} />
+          </a>
+        </section>
+      )}
       {standalone && section === "activity" && (
         <div className="space-y-6">
           <SectionHeading
@@ -712,7 +537,7 @@ export function AppDirectory({
           <PackageEditor
             source={packageDraft}
             onChange={setPackageDraft}
-            examples={entries.filter((entry) => entry.origin === "builtin")}
+            examples={[]}
             preview={async (raw) => {
               const token = ++previewRequest.current;
               const release = await miniApps.localPackage(raw, "preview");
@@ -737,8 +562,8 @@ export function AppDirectory({
       {standalone && section === "settings" && (
         <div className="space-y-6">
           <SectionHeading
-            title="Catalog settings"
-            description="Choose where Cove finds additional apps and updates."
+            title="Release source"
+            description="Choose the signed source Cove uses to verify installs and updates."
           />
           <CatalogSettings expanded />
         </div>
@@ -829,6 +654,7 @@ export function AppDirectory({
                           setPreview({
                             pkg: release.package,
                             source: { kind: "installed", release },
+                            createNewCopy: true,
                           });
                         }}
                       >

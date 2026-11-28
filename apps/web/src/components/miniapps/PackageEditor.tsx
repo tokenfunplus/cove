@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FileInput } from "@/components/ui/file-input";
 import { ErrorMessage, labelStyle, sectionStyle } from "./presentation";
-import { PublicAppPreview } from "./AppCatalog";
+import { PublicAppPreview } from "./AppPackagePreview";
 
 export function PackageEditor({
   examples,
