@@ -42,6 +42,8 @@ jobs:
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=history COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/history node apps/web/e2e/acceptance.mjs
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=mini-apps COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/mini-apps node apps/web/e2e/acceptance.mjs
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=mini-app-turn COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/mini-app-turn node apps/web/e2e/acceptance.mjs
+          dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=mini-app-dialogs COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/mini-app-dialogs node apps/web/e2e/acceptance.mjs
+          dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=mini-app-scroll-history COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/mini-app-scroll-history node apps/web/e2e/acceptance.mjs
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=debate-controls COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/debate-controls node apps/web/e2e/acceptance.mjs
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=web-sources COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/web-sources node apps/web/e2e/acceptance.mjs
           dbus-run-session -- env COVE_BROWSER_BIN="$browser_binary" COVE_BROWSER_SCENARIO=web-search COVE_BROWSER_ARTIFACT_DIR=.artifacts/frontend-acceptance/web-search node apps/web/e2e/acceptance.mjs
