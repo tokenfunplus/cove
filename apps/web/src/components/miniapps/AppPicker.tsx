@@ -29,8 +29,9 @@ export default function AppPicker({
   return (
     <Dialog
       open
+      layer="app"
       onClose={close}
-      className="fixed inset-0 z-[100] flex min-h-0 items-center justify-center p-2 sm:p-5"
+      className="fixed inset-0 flex min-h-0 items-center justify-center p-2 sm:p-5"
     >
       <DialogOverlay />
       <DialogContent className="flex max-h-full min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-2xl">

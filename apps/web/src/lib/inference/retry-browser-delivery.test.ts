@@ -84,3 +84,32 @@ test("cancellation stops a pending retry and leaves the original result unchange
   await rejected;
   expect(send).toHaveBeenCalledOnce();
 });
+
+
+test("an explicit policy caps each delay and returns the final delivery error", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  const times: number[] = [];
+  const errors = [new Error("First"), new Error("Second"), new Error("Third"), new Error("Final")];
+  const send = vi.fn(async () => {
+    times.push(Date.now());
+    throw errors[times.length - 1];
+  });
+  const rejected = expect(retryBrowserDelivery(send, new AbortController().signal, { maxAttempts: 4, maxDelayMs: 150 })).rejects.toBe(errors[3]);
+  await vi.runAllTimersAsync();
+  await rejected;
+  expect(times).toEqual([0, 100, 250, 400]);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test("the default Debate policy keeps its five-send, 1.5-second backoff bound", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  const times: number[] = [];
+  const error = new Error("Unavailable");
+  const send = vi.fn(async () => { times.push(Date.now()); throw error; });
+  const rejected = expect(retryBrowserDelivery(send, new AbortController().signal)).rejects.toBe(error);
+  await vi.runAllTimersAsync();
+  await rejected;
+  expect(times).toEqual([0, 100, 300, 700, 1500]);
+});

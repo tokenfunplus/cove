@@ -19,12 +19,20 @@ export async function runMiniAppWorkspace({
   ).size;
   const before = (await api("/api/mini-apps/instances")).instances;
   const installedReleases = (await api("/api/mini-apps/packages")).packages;
-  const eligibleCopies = before.filter((book) =>
+  const copiesForRelease = (entry) => before.filter((book) =>
     installedReleases.some((release) =>
       release.id === book.release_id &&
-      release.origin !== "local" &&
-      release.package.publisher === "cove" &&
-      release.package.app === "japanese-review-book",
+      release.package.publisher === entry.publisher &&
+      release.package.app === entry.app &&
+      release.package.version === entry.version &&
+      release.digest === entry.digest &&
+      release.origin === entry.origin &&
+      (entry.origin === "builtin" || (
+        entry.origin === "catalog" &&
+        Boolean(entry.catalog_authority) &&
+        release.catalog_authority === entry.catalog_authority &&
+        (release.official_catalog === true) === (entry.official_catalog === true)
+      )),
     ),
   );
   await goto("/apps?section=catalog");
@@ -50,7 +58,7 @@ export async function runMiniAppWorkspace({
     deviceScaleFactor: 1,
     mobile: false,
   });
-  await evaluate("window.scrollTo(0,0)");
+  await evaluate("document.querySelector('main.mini-app-shell').scrollTop = 0");
   await snapshot("mini-app-market-desktop");
   await cdp("Emulation.setDeviceMetricsOverride", {
     width: 390,
@@ -59,7 +67,7 @@ export async function runMiniAppWorkspace({
     mobile: true,
   });
   await until("document.documentElement.scrollWidth<=innerWidth+1");
-  await evaluate("window.scrollTo(0,0)");
+  await evaluate("document.querySelector('main.mini-app-shell').scrollTop = 0");
   await snapshot("mini-app-market-mobile");
   await cdp("Emulation.setDeviceMetricsOverride", {
     width: 1440,
@@ -109,14 +117,16 @@ export async function runMiniAppWorkspace({
   const detailAction = await evaluate(
     "Array.from(document.querySelectorAll('button')).find(element=>['Get app','Open app','Choose a copy'].includes(element.textContent.trim()))?.textContent.trim()",
   );
-  const exactCopies = eligibleCopies.filter((book) =>
-    installedReleases.find((release) => release.id === book.release_id)?.package.version === "1.1.0",
+  const selectedRelease = catalog.packages.find((entry) =>
+    entry.publisher === "cove" && entry.app === "japanese-review-book" && entry.version === "1.1.0",
   );
+  assert(selectedRelease, "The reviewed catalog still supplies version 1.1.0");
+  const exactCopies = copiesForRelease(selectedRelease);
   assert(exactCopies.length, "The preceding upgrade created a saved 1.1.0 copy");
   assert.equal(
     detailAction,
-    eligibleCopies.length === 1 ? "Open app" : "Choose a copy",
-    "The saved inventory determines how existing copies are opened",
+    exactCopies.length === 1 ? "Open app" : "Choose a copy",
+    "Only copies of the selected release determine the Open action",
   );
   const copy = exactCopies[0];
   await button(detailAction);
@@ -134,6 +144,16 @@ export async function runMiniAppWorkspace({
     "!!document.querySelector('section[aria-label=" +
       JSON.stringify("Choose app access") +
       "]')",
+  );
+  assert.equal(
+    await evaluate("document.querySelector('select[aria-label=\"Update an existing copy\"]')?.value"),
+    "",
+    "Create another copy starts fresh even when an older copy can be updated",
+  );
+  assert.equal(
+    await evaluate("document.querySelector('input[aria-label=\"App name\"]')?.value"),
+    selectedRelease.name,
+    "A separate copy starts with the package name",
   );
   await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true, "mini-app-workspace-install-scroll-bottom");
   await button("Cancel");

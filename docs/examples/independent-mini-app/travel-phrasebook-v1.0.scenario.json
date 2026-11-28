@@ -1,0 +1,218 @@
+{
+  "steps": [
+    {
+      "action": "phrase.due",
+      "surface": "chat",
+      "count": 2
+    },
+    {
+      "action": "phrase.bySituation",
+      "inputs": {
+        "language": "Spanish",
+        "situation": "cafe"
+      },
+      "count": 1,
+      "expect_fields": {
+        "phrase": "La cuenta, por favor.",
+        "errors": 0
+      }
+    },
+    {
+      "action": "phrase.stumble",
+      "surface": "panel",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 1
+      }
+    },
+    {
+      "action": "phrase.tomorrow",
+      "count": 1,
+      "expect_fields": {
+        "errors": 1,
+        "phrase": "La cuenta, por favor."
+      }
+    },
+    {
+      "action": "phrase.stumble",
+      "surface": "chat",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 2
+      }
+    },
+    {
+      "action": "phrase.remembered",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 2
+      }
+    },
+    {
+      "action": "phrase.tomorrow",
+      "count": 0
+    },
+    {
+      "action": "phrase.soon",
+      "count": 2,
+      "expect_fields": {
+        "errors": 2,
+        "phrase": "La cuenta, por favor."
+      }
+    },
+    {
+      "action": "phrase.bySituation",
+      "inputs": {
+        "language": "Spanish",
+        "situation": "transport"
+      },
+      "count": 1,
+      "expect_fields": {
+        "errors": 0
+      }
+    },
+    {
+      "action": "phrase.remembered",
+      "surface": "panel",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 0
+      }
+    },
+    {
+      "action": "phrase.nextWeek",
+      "count": 1,
+      "expect_fields": {
+        "phrase": "\u00bfD\u00f3nde est\u00e1 la estaci\u00f3n?",
+        "errors": 0
+      }
+    },
+    {
+      "action": "phrase.soon",
+      "count": 1,
+      "expect_fields": {
+        "errors": 2
+      }
+    },
+    {
+      "action": "phrase.due",
+      "count": 0
+    },
+    {
+      "action": "phrase.add",
+      "surface": "chat",
+      "inputs": {
+        "phrase": "Agua sin gas, por favor.",
+        "translation": "Still water, please.",
+        "language": "Spanish",
+        "situation": "restaurant"
+      },
+      "count": 1,
+      "expect_fields": {
+        "errors": 0,
+        "note": ""
+      }
+    },
+    {
+      "action": "phrase.due",
+      "surface": "panel",
+      "count": 1,
+      "expect_fields": {
+        "phrase": "Agua sin gas, por favor.",
+        "errors": 0
+      }
+    },
+    {
+      "action": "phrase.edit",
+      "inputs": {
+        "phrase": "Agua sin gas, por favor.",
+        "translation": "Still water, please. No ice.",
+        "language": "Spanish",
+        "situation": "restaurant",
+        "note": "Keep the bottle on the table."
+      },
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "translation": "Still water, please. No ice.",
+        "errors": 0
+      }
+    },
+    {
+      "action": "phrase.bySituation",
+      "inputs": {
+        "language": "Spanish",
+        "situation": "restaurant"
+      },
+      "count": 1,
+      "expect_fields": {
+        "note": "Keep the bottle on the table.",
+        "translation": "Still water, please. No ice."
+      }
+    },
+    {
+      "action": "phrase.stumble",
+      "surface": "page",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 1
+      }
+    },
+    {
+      "action": "phrase.remembered",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 1
+      }
+    },
+    {
+      "action": "phrase.nextWeek",
+      "count": 2,
+      "expect_fields": {
+        "phrase": "Agua sin gas, por favor.",
+        "errors": 1
+      }
+    },
+    {
+      "action": "phrase.all",
+      "surface": "chat",
+      "count": 3,
+      "expect_fields": {
+        "phrase": "La cuenta, por favor.",
+        "errors": 2
+      }
+    },
+    {
+      "action": "phrase.bySituation",
+      "inputs": {
+        "language": "French",
+        "situation": "cafe"
+      },
+      "count": 0
+    },
+    {
+      "action": "phrase.due",
+      "count": 0
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 import { StudyMaterialPicker } from "./StudyMaterialPicker";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type {
   MiniAppAction,
@@ -27,6 +27,7 @@ import {
 } from "./AppRecordFields";
 
 interface Props {
+  onPendingChange?: (pending: boolean) => void;
   proposalKey?: string;
   instance: MiniAppInstance;
   pkg: MiniAppPackage;
@@ -74,6 +75,7 @@ function defaults(
   );
 }
 export function AppActionForm({
+  onPendingChange,
   proposalKey,
   instance,
   pkg,
@@ -126,6 +128,10 @@ export function AppActionForm({
       else throw new Error("The service did not return a change preview.");
     },
   });
+  useEffect(() => {
+    onPendingChange?.(call.isPending);
+    return () => onPendingChange?.(false);
+  }, [call.isPending, onPendingChange]);
   const selection = useMutation({
     retry: false,
     mutationFn: async ({ key, text }: { key: string; text: string }) => {

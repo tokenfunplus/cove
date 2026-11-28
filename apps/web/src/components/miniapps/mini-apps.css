@@ -489,6 +489,6 @@
   background: var(--card);
 }
 .mini-app-installed {
-  color: #287259;
-  background: color-mix(in srgb, #52a482 12%, var(--card));
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
 }

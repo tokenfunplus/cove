@@ -339,6 +339,7 @@ export function AppView({
       : undefined,
   );
   const formIdentity = useRef(form?.key);
+  const [formPending, setFormPending] = useState(false);
   function closeForm() {
     formIdentity.current = undefined;
     setForm(undefined);
@@ -630,7 +631,11 @@ export function AppView({
                     ? "Allow saving changes in Settings to practice"
                     : undefined
                 }
-                onClick={() => setPracticeRecords(practiceQueue)}
+                onClick={() => {
+                  setPracticeRecords(practiceQueue);
+                  setSelected({});
+                  setFeedback("");
+                }}
                 className="mt-5 h-11 gap-2 rounded-xl px-5"
               >
                 <Play className="size-4" aria-hidden="true" /> Start practice (
@@ -753,8 +758,9 @@ export function AppView({
       )}
       {form &&
         (studySurface ? (
-          <StudyDialog title={pkg.actions[form.id].title} close={closeForm}>
+          <StudyDialog title={pkg.actions[form.id].title} close={closeForm} busy={formPending}>
             <AppActionForm
+              onPendingChange={setFormPending}
               key={form.key}
               instance={instance}
               pkg={pkg}

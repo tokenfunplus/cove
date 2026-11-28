@@ -222,3 +222,7 @@ fragment pushes receive their history identity at commit, including rapid pushes
 whose ordinary hash events arrive together. Older browsers retain ordinary
 fragment tracking and the conservative fallback for entries without metadata;
 untracked or coalesced legacy entries have no guaranteed numeric traversal.
+
+A superseding browser traversal releases the obsolete restoration waiter and
+invalidates its pending approval. The actual entry is then handled as a fresh
+navigation using its own tracked position, without replacing history entries.

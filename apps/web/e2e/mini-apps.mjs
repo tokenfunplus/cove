@@ -166,6 +166,8 @@ export async function runMiniAppsAcceptance({
   await until("!!document.querySelector('[role=dialog]')");
   await button("Discover");
   await click('[data-app="cove/japanese-review-book"] .mini-app-card-cover');
+  await until("!!document.querySelector('select[aria-label=\"App version\"]')");
+  await evaluate("{const select=document.querySelector('select[aria-label=\"App version\"]');select.value='1.0.0';select.dispatchEvent(new Event('change',{bubbles:true}));}");
   await button("Choose a copy");
   await button("Create another copy");
   await until("document.querySelectorAll('[role=dialog]').length===2");

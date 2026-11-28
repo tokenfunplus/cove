@@ -75,13 +75,19 @@ export function App() {
       const next = window.location.pathname + window.location.search;
       const target = currentLocation();
       if (restoring.current) {
-        if (target.entry?.key === restoring.current.key) {
-          const { done } = restoring.current;
-          restoring.current = undefined;
+        const { key, done } = restoring.current;
+        restoring.current = undefined;
+        if (target.entry?.key === key) {
           current.current = target;
           done();
+          return;
         }
-        return;
+        // Another traversal can supersede the corrective move. Release its
+        // waiter and invalidate the old approval, then reconcile this entry.
+        attempt.current++;
+        allowed.current = undefined;
+        fragmentOrigin.current = undefined;
+        done();
       }
       const commit = () => {
         attempt.current++;

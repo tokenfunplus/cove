@@ -1,0 +1,403 @@
+{
+  "format": 1,
+  "publisher": "waypoint-lab",
+  "app": "travel-phrasebook",
+  "name": "Travel Phrasebook",
+  "description": "Keep useful travel phrases by language and situation. Each stumble counts an error and schedules tomorrow. Recall schedules two days after repeated errors or seven days otherwise. Star a phrase when it proves useful on a trip; each use is counted in your pocket list.",
+  "version": "1.1.0",
+  "schema_version": 2,
+  "min_host_version": "1.1.0",
+  "capabilities": [
+    "records.query",
+    "records.commit",
+    "chat.attach"
+  ],
+  "collections": {
+    "phrases": {
+      "fields": {
+        "phrase": "text",
+        "translation": "text",
+        "language": "text",
+        "situation": "text",
+        "note": "text",
+        "errors": "number",
+        "due": "date",
+        "starred": "bool",
+        "uses": "number"
+      }
+    }
+  },
+  "pages": [
+    {
+      "id": "practice",
+      "title": "Travel practice",
+      "actions": [
+        "phrase.due",
+        "phrase.stumble",
+        "phrase.remembered"
+      ],
+      "practice": {
+        "query": "phrase.due",
+        "front": "phrase",
+        "back": "translation",
+        "outcomes": [
+          "phrase.remembered",
+          "phrase.stumble"
+        ]
+      }
+    },
+    {
+      "id": "pocket",
+      "title": "Pocket phrases",
+      "actions": [
+        "phrase.pocket",
+        "phrase.bySituation",
+        "phrase.useful",
+        "phrase.unstar"
+      ]
+    },
+    {
+      "id": "library",
+      "title": "Phrase library",
+      "actions": [
+        "phrase.all",
+        "phrase.bySituation",
+        "phrase.add",
+        "phrase.edit",
+        "phrase.useful",
+        "phrase.unstar"
+      ]
+    },
+    {
+      "id": "schedule",
+      "title": "Practice plan",
+      "actions": [
+        "phrase.tomorrow",
+        "phrase.soon",
+        "phrase.nextWeek"
+      ]
+    }
+  ],
+  "actions": {
+    "phrase.due": {
+      "title": "Due for travel practice",
+      "op": "query",
+      "collection": "phrases",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "due",
+          "op": "lte",
+          "value": "$today"
+        }
+      ],
+      "order_by": "due",
+      "reveal_field": "translation"
+    },
+    "phrase.tomorrow": {
+      "title": "Due tomorrow",
+      "op": "query",
+      "collection": "phrases",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "due",
+          "op": "eq",
+          "value": "$today+1"
+        }
+      ],
+      "order_by": "due",
+      "reveal_field": "translation"
+    },
+    "phrase.soon": {
+      "title": "Due within two days",
+      "op": "query",
+      "collection": "phrases",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "due",
+          "op": "lte",
+          "value": "$today+2"
+        }
+      ],
+      "order_by": "due",
+      "reveal_field": "translation"
+    },
+    "phrase.nextWeek": {
+      "title": "Due in seven days",
+      "op": "query",
+      "collection": "phrases",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "due",
+          "op": "eq",
+          "value": "$today+7"
+        }
+      ],
+      "order_by": "due",
+      "reveal_field": "translation"
+    },
+    "phrase.all": {
+      "title": "All travel phrases",
+      "op": "query",
+      "collection": "phrases",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "order_by": "phrase"
+    },
+    "phrase.bySituation": {
+      "title": "Phrases for a situation",
+      "op": "query",
+      "collection": "phrases",
+      "inputs": {
+        "language": "text",
+        "situation": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "language",
+          "op": "eq",
+          "value": "$input.language"
+        },
+        {
+          "field": "situation",
+          "op": "eq",
+          "value": "$input.situation"
+        }
+      ],
+      "order_by": "phrase"
+    },
+    "phrase.add": {
+      "title": "Save a travel phrase",
+      "op": "create",
+      "collection": "phrases",
+      "inputs": {
+        "phrase": "text",
+        "translation": "text",
+        "language": "text",
+        "situation": "text",
+        "note": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "defaults": {
+        "note": ""
+      },
+      "values": {
+        "phrase": "$input.phrase",
+        "translation": "$input.translation",
+        "language": "$input.language",
+        "situation": "$input.situation",
+        "note": "$input.note",
+        "errors": 0,
+        "due": "$today",
+        "starred": false,
+        "uses": 0
+      }
+    },
+    "phrase.edit": {
+      "title": "Edit phrase details",
+      "op": "update",
+      "collection": "phrases",
+      "inputs": {
+        "phrase": "text",
+        "translation": "text",
+        "language": "text",
+        "situation": "text",
+        "note": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "phrase": "$input.phrase",
+        "translation": "$input.translation",
+        "language": "$input.language",
+        "situation": "$input.situation",
+        "note": "$input.note"
+      },
+      "selection_inputs": {
+        "collection": "phrases",
+        "fields": {
+          "phrase": "phrase",
+          "translation": "translation",
+          "language": "language",
+          "situation": "situation",
+          "note": "note"
+        }
+      }
+    },
+    "phrase.stumble": {
+      "title": "Stumbled: add an error and practice tomorrow",
+      "op": "update",
+      "collection": "phrases",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "errors": {
+          "add": [
+            "$record.errors",
+            1
+          ]
+        },
+        "due": "$today+1"
+      }
+    },
+    "phrase.remembered": {
+      "title": "Recalled: schedule by error history",
+      "op": "update",
+      "collection": "phrases",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "due": {
+          "if": [
+            {
+              "gte": [
+                "$record.errors",
+                2
+              ]
+            },
+            "$today+2",
+            "$today+7"
+          ]
+        }
+      }
+    },
+    "phrase.pocket": {
+      "title": "Starred pocket phrases",
+      "op": "query",
+      "collection": "phrases",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "starred",
+          "op": "eq",
+          "value": true
+        }
+      ],
+      "order_by": "situation"
+    },
+    "phrase.useful": {
+      "title": "Useful on this trip: star and count a use",
+      "op": "update",
+      "collection": "phrases",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "starred": true,
+        "uses": {
+          "add": [
+            "$record.uses",
+            1
+          ]
+        }
+      }
+    },
+    "phrase.unstar": {
+      "title": "Remove star and keep use history",
+      "op": "update",
+      "collection": "phrases",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "starred": false
+      }
+    }
+  },
+  "seed": {
+    "phrases": [
+      {
+        "phrase": "La cuenta, por favor.",
+        "translation": "The bill, please.",
+        "language": "Spanish",
+        "situation": "cafe",
+        "note": "A fictional public example for a meal.",
+        "errors": 0,
+        "due": "$today",
+        "starred": false,
+        "uses": 0
+      },
+      {
+        "phrase": "\u00bfD\u00f3nde est\u00e1 la estaci\u00f3n?",
+        "translation": "Where is the station?",
+        "language": "Spanish",
+        "situation": "transport",
+        "note": "A fictional public example for a station.",
+        "errors": 0,
+        "due": "$today",
+        "starred": false,
+        "uses": 0
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "from": 1,
+      "to": 2,
+      "defaults": {
+        "phrases": {
+          "starred": false,
+          "uses": 0
+        }
+      }
+    }
+  ]
+}

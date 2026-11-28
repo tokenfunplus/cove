@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { MiniAppPackage } from "@cove/api-contract";
+import type { MiniAppPackage, MiniAppRelease } from "@cove/api-contract";
 import {
   ArrowLeft,
   ArrowRight,
@@ -40,11 +40,34 @@ export function catalogPreviewOptions(entry: CatalogEntry) {
       entry.app,
       entry.version,
       entry.digest,
+      entry.origin,
+      entry.catalog_authority ?? "",
+      entry.official_catalog === true,
     ],
     queryFn: () => miniApps.catalogPreview(entry),
     retry: false,
     staleTime: 5 * 60_000,
   };
+}
+
+export function matchesCatalogRelease(
+  release: MiniAppRelease,
+  entry: CatalogEntry,
+) {
+  if (
+    release.package.publisher !== entry.publisher ||
+    release.package.app !== entry.app ||
+    release.package.version !== entry.version ||
+    release.digest !== entry.digest ||
+    release.origin !== entry.origin
+  ) return false;
+  if (entry.origin === "builtin") return true;
+  return (
+    entry.origin === "catalog" &&
+    Boolean(entry.catalog_authority) &&
+    release.catalog_authority === entry.catalog_authority &&
+    (release.official_catalog === true) === (entry.official_catalog === true)
+  );
 }
 
 export function AppMark({

@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { TriangleAlert } from "lucide-react";
+import { useRef } from "react";
 
 export function ConfirmationDialog({
   open,
@@ -33,8 +34,11 @@ export function ConfirmationDialog({
   onConfirm: () => void;
   copy?: ApplicationCopy;
 }) {
+  const cancel = useRef<HTMLButtonElement>(null);
+  const confirm = useRef<HTMLButtonElement>(null);
   return (
     <Dialog
+      layer="confirmation"
       className={cn(settingsStyles.conversationDialog, "confirmation-dialog")}
       onClose={() => { if (!busy) onCancel(); }}
       open={open}
@@ -42,6 +46,10 @@ export function ConfirmationDialog({
       <DialogOverlay className={settingsStyles.conversationDialog_backdrop} />
       <div className={settingsStyles.conversationDialog_viewport}>
         <DialogContent
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            (destructive ? cancel : confirm).current?.focus();
+          }}
           className={cn(
             settingsStyles.conversationDialog_panel,
             "confirmation-dialog__panel",
@@ -58,7 +66,7 @@ export function ConfirmationDialog({
           <div className={settingsStyles.conversationDialog_actions}>
             <Button
               variant="outline"
-              autoFocus={destructive}
+              ref={cancel}
               disabled={busy}
               onClick={onCancel}
               type="button"
@@ -67,7 +75,7 @@ export function ConfirmationDialog({
             </Button>
             <Button
               variant="outline"
-              autoFocus={!destructive}
+              ref={confirm}
               disabled={busy}
               aria-busy={busy}
               className={cn(

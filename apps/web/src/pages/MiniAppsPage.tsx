@@ -15,6 +15,7 @@ import { appBookmark, ErrorMessage } from "@/components/miniapps/presentation";
 import { isConversationId } from "@/lib/launcher-intent";
 import { navigateWorkspace as navigate } from "@/lib/workspace-navigation";
 import "@/components/miniapps/mini-apps.css";
+import { useMiniAppScroll } from "@/hooks/use-mini-app-scroll";
 
 const slug = /^[a-z][a-z0-9-]{0,47}$/;
 const validView = slug;
@@ -58,6 +59,7 @@ export default function MiniAppsPage({
 }: {
   attach: (body: string) => Promise<void>;
 }) {
+  const scroll = useMiniAppScroll();
   const address = useSyncExternalStore(
     subscribe,
     () => window.location.pathname + window.location.search,
@@ -105,6 +107,7 @@ export default function MiniAppsPage({
         : "cove://apps";
   return (
     <main
+      ref={scroll.main}
       className={
         "mini-app-shell h-dvh min-h-0 overflow-y-auto overscroll-contain bg-background px-5 pb-12 pt-5 text-foreground sm:px-10 sm:pt-7 " +
         (session.isSuccess && !expired ? "mini-app-with-sidebar" : "")
@@ -117,7 +120,7 @@ export default function MiniAppsPage({
           navigate={navigate}
         />
       )}
-      <div className="mx-auto max-w-5xl space-y-7 sm:space-y-9">
+      <div ref={scroll.content} className="mx-auto max-w-5xl space-y-7 sm:space-y-9">
         <header className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">

@@ -478,3 +478,37 @@ test("synchronous native entry notifications preserve coalesced fragment history
     vi.unstubAllGlobals();
   }
 });
+
+test("a second Back that supersedes restoration does not wedge later approved navigation", async () => {
+  window.history.replaceState(null, "", "/apps");
+  render(<App />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Open Chat" }));
+  const firstChat = workspaceEntry()!;
+  act(() => navigateWorkspace("/apps?section=catalog"));
+  await screen.findByRole("heading", { name: "App workspace" });
+  await user.click(screen.getByRole("button", { name: "Open Chat" }));
+  await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
+  // Hold the app's corrective Forward while a second user Back is already
+  // queued. Its +1 then lands on Apps B, rather than the original Chat C2.
+  const traverse = window.history.go.bind(window.history);
+  const queued: number[] = [];
+  vi.spyOn(window.history, "go").mockImplementation(delta => { queued.push(delta ?? 0); });
+  act(() => traverse(-1));
+  await screen.findByRole("dialog");
+  await waitFor(() => expect(queued).toEqual([1]));
+  act(() => traverse(-1));
+  await waitFor(() => expect(workspaceEntry()?.key).toBe(firstChat.key));
+  act(() => traverse(queued.shift()!));
+  await waitFor(() => expect(window.location.search).toBe("?section=catalog"));
+  await waitFor(() => expect(queued).toEqual([-1]));
+  act(() => traverse(queued.shift()!));
+  await waitFor(() => expect(workspaceEntry()?.key).toBe(firstChat.key));
+  // Staying keeps the draft. A later explicitly approved navigation must still
+  // update the surface, even though the old restoration never reached C2.
+  await user.click(screen.getByRole("button", { name: "Stay" }));
+  await user.click(screen.getByRole("button", { name: "Open Apps" }));
+  await user.click(await screen.findByRole("button", { name: "Leave" }));
+  await screen.findByRole("heading", { name: "App workspace" });
+  expect(window.location.pathname).toBe("/apps");
+});

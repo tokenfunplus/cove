@@ -188,12 +188,17 @@ test("an already verified result is never replaced with an empty failed receipt"
   });
 });
 
-test("app settlement uses the shared five-send bound and preserves every verified byte", async () => {
+test("app settlement retains eight sends and 7.1 seconds of backoff without repeating inference", async () => {
   vi.useFakeTimers();
+  vi.setSystemTime(0);
+  const settlementTimes: number[] = [];
   const error = { envelope: { error: { code: "internal_error" } } };
   vi.mocked(request).mockImplementation(async (path) => {
     if (path.endsWith("/claim")) return claim();
-    if (path.endsWith("/settle")) throw error;
+    if (path.endsWith("/settle")) {
+      settlementTimes.push(Date.now());
+      throw error;
+    }
     return undefined;
   });
   const transport = verifiedTransport();
@@ -204,12 +209,15 @@ test("app settlement uses the shared five-send bound and preserves every verifie
     async () => transport,
   );
   const rejected = expect(result).rejects.toBe(error);
-  await vi.waitFor(() =>
-    expect(
-      vi.mocked(request).mock.calls.some(([path]) => path.endsWith("/settle")),
-    ).toBe(true),
-  );
-  await vi.runAllTimersAsync();
+  await vi.waitFor(() => expect(settlementTimes).toHaveLength(1));
+  const startedAt = settlementTimes[0];
+  for (const offset of [100, 300, 700, 1500, 3100, 5100, 7100]) {
+    const before = settlementTimes.length;
+    await vi.advanceTimersByTimeAsync(startedAt + offset - Date.now() - 1);
+    expect(settlementTimes).toHaveLength(before);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settlementTimes).toHaveLength(before + 1);
+  }
   await rejected;
   const claims = vi
     .mocked(request)
@@ -219,10 +227,62 @@ test("app settlement uses the shared five-send bound and preserves every verifie
     .mock.calls.filter(([path]) => path.endsWith("/settle"));
   expect(claims).toHaveLength(1);
   expect(transport.generate).toHaveBeenCalledOnce();
-  expect(settlements).toHaveLength(5);
+  expect(settlements).toHaveLength(8);
+  expect(settlementTimes.map(time => time - startedAt)).toEqual([0, 100, 300, 700, 1500, 3100, 5100, 7100]);
+  expect(vi.getTimerCount()).toBe(0);
   expect(new Set(settlements.map(([, init]) => init?.body)).size).toBe(1);
   expect(JSON.parse(settlements[0]![1]!.body as string)).toMatchObject({
     body: "Retained answer",
     verification: { status: "verified_model" },
   });
+});
+
+
+test("App receipt delivery recovers after an outage beyond the Debate retry window", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  const receipts: unknown[] = [];
+  let startedAt = 0;
+  vi.mocked(request).mockImplementation(async (path, init) => {
+    if (path.endsWith("/claim")) return claim();
+    if (path.endsWith("/settle")) {
+      if (!receipts.length) startedAt = Date.now();
+      receipts.push(init?.body);
+      if (Date.now() - startedAt < 3000) throw new Error("Local Service temporarily unavailable");
+    }
+    return undefined;
+  });
+  const transport = verifiedTransport();
+  const result = runVerifiedAppTask("book", "task", new AbortController().signal, async () => transport);
+  await vi.waitFor(() => expect(receipts).toHaveLength(1));
+  await vi.runAllTimersAsync();
+  await result;
+  expect(Date.now() - startedAt).toBe(3100);
+  expect(receipts).toHaveLength(6);
+  expect(new Set(receipts).size).toBe(1);
+  expect(vi.mocked(request).mock.calls.filter(([path]) => path.endsWith("/claim"))).toHaveLength(1);
+  expect(transport.generate).toHaveBeenCalledOnce();
+});
+
+test("aborting App receipt backoff stops retries without replacing the paid result", async () => {
+  vi.useFakeTimers();
+  const error = new Error("Receipt delivery unavailable");
+  const controller = new AbortController();
+  vi.mocked(request).mockImplementation(async path => {
+    if (path.endsWith("/claim")) return claim();
+    if (path.endsWith("/settle")) throw error;
+    return undefined;
+  });
+  const transport = verifiedTransport();
+  const result = runVerifiedAppTask("book", "task", controller.signal, async () => transport);
+  const rejected = expect(result).rejects.toBe(error);
+  await vi.waitFor(() => expect(vi.mocked(request).mock.calls.some(([path]) => path.endsWith("/settle"))).toBe(true));
+  controller.abort();
+  await rejected;
+  await vi.runAllTimersAsync();
+  const receipts = vi.mocked(request).mock.calls.filter(([path]) => path.endsWith("/settle"));
+  expect(receipts).toHaveLength(1);
+  expect(JSON.parse(receipts[0][1]!.body as string)).toMatchObject({ body: "Retained answer", verification: { status: "verified_model" } });
+  expect(transport.generate).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
 });

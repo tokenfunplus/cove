@@ -14,18 +14,24 @@ const DialogContext = createContext<{
   label?: string;
 } | null>(null);
 
+// Portaled confirmations must cover both App pickers and their study dialogs.
+// Other dialogs retain the layer defined by their existing presentation recipe.
+const dialogLayers = { app: 100, study: 110, confirmation: 130 } as const;
+
 /** shadcn/Radix primitives with Cove's controlled dialog composition. */
 export function Dialog({
   open,
   onClose,
   className,
   label,
+  layer,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   className?: string;
   label?: string;
+  layer?: keyof typeof dialogLayers;
   children: ReactNode;
 }) {
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -38,7 +44,12 @@ export function Dialog({
     >
       <DialogContext.Provider value={{ returnFocus, label }}>
         <DialogPrimitive.Portal>
-          <div data-slot="dialog-portal" className={className}>
+          <div
+            data-slot="dialog-portal"
+            data-dialog-layer={layer}
+            className={className}
+            style={layer ? { zIndex: dialogLayers[layer] } : undefined}
+          >
             {children}
           </div>
         </DialogPrimitive.Portal>

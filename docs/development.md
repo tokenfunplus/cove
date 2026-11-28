@@ -241,6 +241,13 @@ They accept explicitly supplied test assets and destinations.
 
 ### Mini App acceptance evidence
 
+After building the Local Service, run
+`COVE_BROWSER_SCENARIO=mini-app-dialogs node apps/web/e2e/acceptance.mjs` to check
+unsaved-result confirmations above the App picker and study dialogs. The scenario
+uses browser-only save-failure fixtures with temporary service data. It checks
+computed dialog layers, pointer access, keyboard focus, cancellation, and Chat's
+draft confirmation before opening Activity, and captures separate screenshots.
+
 Run `scripts/native/test-mini-apps.sh PATH_TO_PACKAGED_SERVICE --os-handoff`
 for an isolated cold-start URL event that preserves the system URL handler.
 Run `scripts/native/test-mini-app-compatible.sh PATH_TO_PACKAGED_SERVICE`

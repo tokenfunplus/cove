@@ -5,6 +5,10 @@ import { retryBrowserDelivery } from "./retry-browser-delivery";
 import type { SecureInferenceTransport } from "./secure-inference";
 import { failedVerificationForContract } from "./verification-record";
 
+// Keep paid App output retryable across a brief Local Service outage. Eight
+// sends wait 7.1 seconds in total; claim and inference remain single attempts.
+const appDeliveryPolicy = { maxAttempts: 8, maxDelayMs: 2000 };
+
 /** Only an explicit start triggers a chargeable request. Polling old jobs never claims work. */
 export function runVerifiedAppTask(
   instance: string,
@@ -29,7 +33,9 @@ export function runVerifiedAppTask(
         ...(step === "settle" ? {} : { signal }),
       });
     // Claim failures are final. Only delivery of these frozen bytes can retry.
-    return step === "claim" ? deliver() : retryBrowserDelivery(deliver, signal);
+    return step === "claim"
+      ? deliver()
+      : retryBrowserDelivery(deliver, signal, appDeliveryPolicy);
   }
   return runVerifiedBrowserTurn(
     {

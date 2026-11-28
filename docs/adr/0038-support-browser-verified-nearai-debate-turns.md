@@ -26,7 +26,12 @@ The first successful browser claim is the admission boundary for an active reque
 
 ## Browser delivery failures
 
-Debate and Mini App browser workers share one bounded delivery policy: at most five sends, with abort-aware exponential backoff for connection and Local Service storage errors. Every retry carries the same claim and frozen result; neither a claim nor chargeable inference repeats.
+Debate browser workers use at most five sends with abort-aware exponential
+backoff for connection and Local Service storage errors. Mini App progress and
+result delivery retain eight sends, with waits of 100, 200, 400, 800, 1,600,
+2,000 and 2,000 milliseconds. This preserves their 7.1-second backoff budget
+while sharing the retry helper. Every retry carries the same claim and frozen
+payload; neither a claim nor chargeable inference repeats.
 
 The service freezes the first accepted receipt and binds its exact result and
 claim to a digest stored with the terminal turn. Repeating that receipt returns

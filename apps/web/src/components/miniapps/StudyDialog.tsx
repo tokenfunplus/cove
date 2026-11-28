@@ -22,10 +22,11 @@ export function StudyDialog({
   return (
     <Dialog
       open
+      layer="study"
       onClose={() => {
         if (!busy) close();
       }}
-      className="fixed inset-0 z-[110] flex min-h-0 items-center justify-center p-3 sm:p-4"
+      className="fixed inset-0 flex min-h-0 items-center justify-center p-3 sm:p-4"
     >
       <DialogOverlay />
       <DialogContent

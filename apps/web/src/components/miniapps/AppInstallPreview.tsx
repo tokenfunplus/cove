@@ -125,6 +125,7 @@ export function PackagePreview({
   targetInstance,
   versions = {},
   dialog = false,
+  createNewCopy = false,
 }: {
   pkg: MiniAppPackage;
   previous: MiniAppInstance[];
@@ -134,6 +135,7 @@ export function PackagePreview({
   targetInstance?: MiniAppInstance;
   versions?: Record<string, string>;
   dialog?: boolean;
+  createNewCopy?: boolean;
 }) {
   const cache = useQueryClient();
   const formId = useId();
@@ -145,12 +147,14 @@ export function PackagePreview({
   const [name, setName] = useState(pkg.name);
   const firstTarget =
     targetInstance ??
-    (source.kind !== "installed" && previous.length === 1
+    (!createNewCopy && source.kind !== "installed" && previous.length === 1
       ? previous[0]
       : undefined);
   const [selectedId, setUpgrade] = useState(
     firstTarget?.id ??
-      (source.kind !== "installed" && previous.length > 1 ? "choose" : ""),
+      (!createNewCopy && source.kind !== "installed" && previous.length > 1
+        ? "choose"
+        : ""),
   );
   const [upgrade, setReviewedTarget] = useState(() => snapshotTarget(firstTarget));
   const upgradeId = targetInstance?.id ?? selectedId;

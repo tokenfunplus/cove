@@ -1,4 +1,6 @@
 import { runMiniAppTurn } from "./mini-app-turn.mjs";
+import { runMiniAppDialogs } from "./mini-app-dialogs.mjs";
+import { runMiniAppScrollHistory } from "./mini-app-scroll-history.mjs";
 import { runMiniAppsAcceptance } from "./mini-apps.mjs";
 import { runInteractiveAcceptance } from "./interactive.mjs";
 import { runLocalCapabilitiesAcceptance } from "./local-capabilities.mjs";
@@ -722,7 +724,17 @@ try {
     );
     await cdp("Input.insertText", { text: value });
   }
-  if (process.env.COVE_BROWSER_SCENARIO === "mini-app-turn") {
+  if (process.env.COVE_BROWSER_SCENARIO === "mini-app-scroll-history") {
+    await runMiniAppScrollHistory({api,cdp,evaluate,until,click,loadPage,origin,snapshot});
+    assert.equal(exceptions.length, 0);
+    socket.close();
+    console.log("Mini App scroll history acceptance passed.");
+  } else if (process.env.COVE_BROWSER_SCENARIO === "mini-app-dialogs") {
+    await runMiniAppDialogs({api,cdp,evaluate,until,click,fill,loadPage,origin,profile,requests,snapshot});
+    assert.equal(exceptions.length, 0);
+    socket.close();
+    console.log("Mini App nested dialog acceptance passed.");
+  } else if (process.env.COVE_BROWSER_SCENARIO === "mini-app-turn") {
     await runMiniAppTurn({api,evaluate,until,click,fill,loadPage,origin,profile,requests,snapshot});
     assert.equal(exceptions.length,0);
     socket.close();

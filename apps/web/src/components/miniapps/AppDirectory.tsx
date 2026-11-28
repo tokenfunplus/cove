@@ -27,6 +27,7 @@ import {
   CatalogCard,
   CatalogDetail,
   groupCatalog,
+  matchesCatalogRelease,
 } from "./AppCatalog";
 import { HostActivity } from "./HostActivity";
 import { PackageEditor } from "./PackageEditor";
@@ -86,6 +87,7 @@ export function AppDirectory({
   const [preview, setPreview] = useState<{
     pkg: MiniAppPackage;
     source: PackageSource;
+    createNewCopy?: boolean;
   }>();
   const term = search.trim().toLocaleLowerCase();
   const contains = (...values: (string | undefined)[]) =>
@@ -131,9 +133,7 @@ export function AppDirectory({
   const catalogCopies = (entry: CatalogEntry) => allBooks.filter((book) =>
     installed.some((release) =>
       release.id === book.release_id &&
-      release.origin !== "local" &&
-      release.package.publisher === entry.publisher &&
-      release.package.app === entry.app,
+      matchesCatalogRelease(release, entry),
     ),
   );
   const books = allBooks.filter(
@@ -514,11 +514,12 @@ export function AppDirectory({
             back={() => changeSection("catalog")}
             copies={catalogCopies(detail)}
             openCopy={(id) => open(id)}
-            install={(pkg, entry) => {
+            install={(pkg, entry, createNewCopy = false) => {
               previewRequest.current++;
               setPreview({
                 pkg,
                 source: { kind: "catalog", entry },
+                createNewCopy,
               });
             }}
           />

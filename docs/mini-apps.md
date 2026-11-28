@@ -417,8 +417,9 @@ packages retain their local origin. The author CLI reserves bundled publisher
 names during scaffolding. Validation and packing check the package contract;
 installation also checks the selected distribution authority.
 
-NearAI progress and result delivery retry temporary Local Service failures with
-the same claim and payload. Accepted settlements are idempotent for that exact
+NearAI progress and result delivery retry temporary Local Service failures up
+to eight sends, with 7.1 seconds of bounded backoff, using the same claim and
+payload. Accepted settlements are idempotent for that exact
 browser session and receipt, even after generation permission is revoked. This
 returns only an acknowledgement and does not authorize new work. Service restart
 invalidates that browser session; reopen Cove and inspect the saved result
