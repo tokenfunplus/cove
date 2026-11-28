@@ -1,0 +1,25 @@
+{
+  "grants": [
+    "records.query",
+    "records.commit"
+  ],
+  "before": [
+    {
+      "action": "notes.add",
+      "inputs": {
+        "text": "Keep this note"
+      },
+      "count": 1
+    }
+  ],
+  "after": [
+    {
+      "action": "notes.list",
+      "count": 1,
+      "expect_fields": {
+        "text": "Keep this note",
+        "archived": false
+      }
+    }
+  ]
+}

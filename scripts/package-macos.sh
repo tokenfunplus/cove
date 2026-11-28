@@ -123,6 +123,20 @@ cove_dmg_checksum="$cove_dmg.sha256"
 MACOSX_DEPLOYMENT_TARGET="$cove_minimum" \
   "$cove_root/scripts/go" build -C "$cove_root/services/local-service" -o "$cove_app/Contents/Resources/cove-local-service" ./cmd/cove-local-service
 (
+  cove_author_kit="$cove_app/Contents/Resources/mini-apps"
+  mkdir -p "$cove_author_kit/examples" "$cove_author_kit/scenarios"
+  MACOSX_DEPLOYMENT_TARGET="$cove_minimum" "$cove_root/scripts/go" build -C "$cove_root/services/local-service" -o "$cove_app/Contents/MacOS/coveapp" ./cmd/coveapp
+  cp "$cove_root/services/local-service/cmd/coveapp/starter-v1.1.coveapp" "$cove_author_kit/examples/"
+  cp "$cove_root/services/local-service/cmd/coveapp/"starter-*.json "$cove_author_kit/scenarios/"
+  cp "$cove_root/packages/api-contract/schemas/mini-app-v1.schema.json" "$cove_author_kit/"
+  cp "$cove_root/services/local-service/cmd/coveapp/starter.coveapp" "$cove_author_kit/examples/"
+  sed -e 's#](../services/local-service/internal/appcatalog/testdata/legacy-releases/#](https://github.com/tokenfunplus/cove/tree/main/services/local-service/internal/appcatalog/testdata/legacy-releases/#g' \
+      -e 's#](../services/local-service/cmd/coveapp/starter-upgrade.json)#](scenarios/starter-upgrade.json)#g' \
+      -e 's#](../services/local-service/cmd/coveapp/#](examples/#g' \
+      -e 's#](../packages/api-contract/fixtures/mini-apps/#](https://github.com/tokenfunplus/cove/tree/main/packages/api-contract/fixtures/mini-apps/#g' \
+      -e 's#](../packages/api-contract/schemas/#](#g' \
+      -e 's#](development.md)#](https://github.com/tokenfunplus/cove/blob/main/docs/development.md)#g' \
+      "$cove_root/docs/mini-apps.md" > "$cove_author_kit/authoring.md"
   cd "$cove_root/apps/macos"
   swift build -c release --product CoveLauncherApp
 )
@@ -153,9 +167,24 @@ fi
 create_app_icon
 
 test -x "$cove_app/Contents/MacOS/Cove" || fail "Cove app executable is missing"
+if [ -n "${COVE_APP_CATALOG_DEFAULTS_FILE:-}" ]; then
+  node --input-type=module - "$COVE_APP_CATALOG_DEFAULTS_FILE" "$cove_app/Contents/Resources/mini-app-catalog-defaults.json" <<'JS'
+import { readFileSync, writeFileSync } from "node:fs";
+const [input, output] = process.argv.slice(2);
+const { url, public_key } = JSON.parse(readFileSync(input, "utf8"));
+if (typeof url !== "string") throw new Error("Invalid Mini App catalog URL.");
+const endpoint = new URL(url);
+if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || typeof public_key !== "string" || !/^[A-Za-z0-9+/]{43}=$/.test(public_key) || Buffer.from(public_key,"base64").length !== 32) {
+  throw new Error("Invalid Mini App catalog URL or Ed25519 public key.");
+}
+writeFileSync(output, JSON.stringify({ url: endpoint.href, public_key }) + "\n");
+JS
+fi
 test -x "$cove_app/Contents/Resources/cove-local-service" || fail "Local Service executable is missing"
 test -d "$cove_app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle" || fail "Cove app resource bundle is missing"
 test -f "$cove_app/Contents/Info.plist" || fail "Cove app Info.plist is missing"
+assert_arm64 "$cove_app/Contents/MacOS/coveapp"
+assert_deployment_target "$cove_app/Contents/MacOS/coveapp"
 assert_arm64 "$cove_app/Contents/MacOS/Cove"
 assert_arm64 "$cove_app/Contents/Resources/cove-local-service"
 assert_deployment_target "$cove_app/Contents/MacOS/Cove"
@@ -182,6 +211,7 @@ if [ -n "$cove_signing_identity" ]; then
   find "$cove_app/Contents/Resources/inference" -type f ! -name LICENSE -exec codesign --force --options runtime --timestamp --sign "$cove_signing_identity" {} \;
   find "$cove_app/Contents/Resources/speech" -type f \( -name "*.dylib" -o -name cove-speech-worker -o -name pocket-tts \) -exec codesign --force --options runtime --timestamp --sign "$cove_signing_identity" {} \;
   codesign --force --options runtime --timestamp --sign "$cove_signing_identity" "$cove_app/Contents/Resources/cove-local-service"
+  codesign --force --options runtime --timestamp --sign "$cove_signing_identity" "$cove_app/Contents/MacOS/coveapp"
   codesign --force --options runtime --timestamp --sign "$cove_signing_identity" "$cove_app"
   codesign --verify --deep --strict "$cove_app"
 else
@@ -191,6 +221,7 @@ else
   codesign --force --sign - --timestamp=none \
     --identifier io.github.tokenfunplus.cove.local-service \
     "$cove_app/Contents/Resources/cove-local-service"
+  codesign --force --sign - --timestamp=none "$cove_app/Contents/MacOS/coveapp"
   codesign --force --sign - --timestamp=none "$cove_app"
   codesign --verify --deep --strict "$cove_app"
   printf '%s\n' 'package-macos: no COVE_SIGNING_IDENTITY configured; built an ad-hoc signed package'

@@ -56,7 +56,18 @@ type ToolCallDelta struct {
 	ToolCall
 }
 
+// StructuredOutput is supplied by the host for a declared candidate action.
+type StructuredOutput struct {
+	Type       string            `json:"type"`
+	JSONSchema NamedOutputSchema `json:"json_schema"`
+}
+type NamedOutputSchema struct {
+	Name   string          `json:"name"`
+	Schema json.RawMessage `json:"schema"`
+}
+
 type CompletionInput struct {
+	StructuredOutput     *StructuredOutput
 	Activity             func(string)
 	Profile              Profile
 	Secret               credentials.Secret

@@ -68,7 +68,13 @@ Local search uses `GET /api/conversations/search?q=...&archived=...` behind the 
 
 ## Chat storage and rendering compatibility
 
-Current source builds migrate the schema 16 database through schema 29. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Schema 23 adds Projects, independent project context snapshots, fixed-source blobs and owning references. Schema 24 indexes project provenance and blob ownership lookups. Schema 25 adds the explicit local document library and embedding indexes. Schema 26 adds Project material use, scoped vector indexes, and saved local-only execution policy. Schema 27 adds independent local speech preferences and per-model voice profiles. Schema 28 stores refreshed PDF page text with its Project search index. Schema 29 stores interactive card definitions, values, revisions, and their submitted batch IDs. Selected answers retain cited web source text in later context. See [Debate mode](debate.md), [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md), and [ADR-0062](adr/0062-improve-pdf-extraction-and-local-search-review.md).
+Current source builds migrate the schema 16 database through schema 32. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Schema 23 adds Projects, independent project context snapshots, fixed-source blobs and owning references. Schema 24 indexes project provenance and blob ownership lookups. Schema 25 adds the explicit local document library and embedding indexes. Schema 26 adds Project material use, scoped vector indexes, and saved local-only execution policy. Schema 27 adds independent local speech preferences and per-model voice profiles. Schema 28 stores refreshed PDF page text with its Project search index. Schema 29 stores interactive card definitions, values, revisions, and their submitted batch IDs. Selected answers retain cited web source text in later context. See [Debate mode](debate.md), [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md), and [ADR-0062](adr/0062-improve-pdf-extraction-and-local-search-review.md).
+
+Mini Apps upgrades schema 29 directly to schema 32 in one additive migration.
+Schema-32 development databases remain readable without conversion. Unreleased
+schema 30/31 databases are rejected: export with the earlier development build
+before resetting those development databases. The service never clears them
+automatically.
 
 | Schema | Added data | Historical behavior |
 | --- | --- | --- |
@@ -85,6 +91,7 @@ Current source builds migrate the schema 16 database through schema 29. Schema 2
 | 27 | Local speech preferences and per-model voice profiles | Existing databases start with default speech settings. |
 | 28 | Refreshed PDF source snapshots for Project search indexes | Existing indexes use the saved Project source snapshot until refreshed. Saved conversations and original files are retained. |
 | 29 | Interactive card definitions, saved values, and submission state | Existing chat history stays readable. Earlier Cove builds reject the upgraded database. |
+| 32 | Mini App packages, instances, scoped records, attachments, task/receipt history, conversation scopes, activity and per-instance cloud permission | One additive migration from schema 29 preserves existing Chat data. Cloud access starts off. Compact fingerprints retain write idempotency after detailed results expire; browser-task receipts use request metadata. Earlier services reject this schema. |
 
 Migrations run transactionally under persistence. An older service rejects a database with a newer schema. Quit Cove and retain a compatible backup before testing an upgrade if you need to return to the older build. See ADRs [0032](adr/0032-add-answer-tools-and-generation-measurements.md), [0033](adr/0033-separate-provider-reasoning-from-answer-text.md), and [0035](adr/0035-improve-model-selection-reading-and-edited-prompt-branches.md).
 
@@ -190,3 +197,70 @@ Local speech adds a `build-speech-runtime` step to `build-service`. The pinned b
 ### Local capability recovery
 
 After building web assets and an isolated Local Service executable, run `COVE_BROWSER_SCENARIO=local-capabilities node apps/web/e2e/acceptance.mjs`. `COVE_BROWSER_SERVICE_BIN` can select the isolated executable. The scenario uses disposable data and verifies speech draft retention, empty preview editing, similarity controls, and desktop/mobile layouts. Native model inference and audio quality remain separate opt-in gates.
+
+## Mini App authors
+
+Use the [Mini App authoring guide](mini-apps.md) to scaffold a package, run
+an isolated preview, and test its rules against the production interpreter.
+
+### Mini App native acceptance on a Mac
+
+Build a package and point the [native acceptance harness](../scripts/native/test-mini-apps.sh)
+at the bundled Local Service. Its default run uses a temporary data directory,
+two authenticated sessions, a synthetic file reply, and the native selection
+target and one-time delivery APIs. A restart checks the stable instance link
+and invalidates the previous browser session.
+
+```sh
+service=/Applications/Cove.app/Contents/Resources/cove-local-service
+scripts/native/test-mini-apps.sh "$service" --os-handoff
+scripts/native/test-mini-apps.sh "$service" --interactive
+```
+
+`--os-handoff` sends a macOS Launch Services URL event to a cold, hidden copy
+of the packaged Launcher and opens the saved instance with the issued session.
+The scratch copy has a unique bundle ID and omits URL and Services registrations.
+The Launcher captures the temporary browser URL inside the fixture directory.
+This exercises the packaged executable's handling of a URL delivered by macOS.
+To verify the installed default handler, use a disposable macOS login, install
+the original bundle, quit Cove, and open a saved `cove://open/…` bookmark.
+
+`--interactive` opens the production `NSOpenPanel` and the Mini App selection
+chooser. Choose the generated lesson file printed by the runner, then choose a
+field on the **Picker fixture** instance. It checks the delivered text using
+a private pasteboard. To verify system-wide Services registration, use the
+disposable login, select a paragraph in TextEdit, and choose **Services → Send
+to Cove Mini App**. Select the destination book and confirm the text in its
+form before saving.
+
+The model modes process a synthetic lesson, require exactly two candidates,
+confirm their batch write, and query the saved records through the Chat action.
+They accept explicitly supplied test assets and destinations.
+
+| Mode | Inputs and coverage |
+| --- | --- |
+| `--managed` | Set `COVE_ACCEPTANCE_GGUF` and `COVE_ACCEPTANCE_MANAGED_MODEL` to an existing model file and its Cove catalog ID. The runner verifies the pinned size and SHA-256, copies the file into the disposable host, and requests **Only on this Mac** inference. The package must include the inference runtime. |
+| `--compatible` | Set `COVE_ACCEPTANCE_LOOPBACK_ENDPOINT` and `COVE_ACCEPTANCE_LOOPBACK_MODEL` for a running OpenAI-compatible service on `127.0.0.1`. The harness checks local-only denial before selecting the compatible target. |
+| `--cloud` | Set `COVE_ACCEPTANCE_CLOUD_ENDPOINT`, `COVE_ACCEPTANCE_CLOUD_MODEL`, and `COVE_ACCEPTANCE_CLOUD_KEY` for an authorized HTTPS test provider. This mode makes a real model request. The test-only key uses the temporary fixture secret store. The harness checks the input and destination, denies the local-only request, and verifies that revocation blocks the next call. |
+
+### Mini App acceptance evidence
+
+After building the Local Service, run
+`COVE_BROWSER_SCENARIO=mini-app-dialogs node apps/web/e2e/acceptance.mjs` to check
+unsaved-result confirmations above the App picker and study dialogs. The scenario
+uses browser-only save-failure fixtures with temporary service data. It checks
+computed dialog layers, pointer access, keyboard focus, cancellation, and Chat's
+draft confirmation before opening Activity, and captures separate screenshots.
+
+Run `scripts/native/test-mini-apps.sh PATH_TO_PACKAGED_SERVICE --os-handoff`
+for an isolated cold-start URL event that preserves the system URL handler.
+Run `scripts/native/test-mini-app-compatible.sh PATH_TO_PACKAGED_SERVICE`
+for the native transport, loopback fixture, generation and confirmed save path.
+The macOS CI job runs both commands. The loopback fixture verifies transport and
+ownership behavior with synthetic answers. It does not measure model quality.
+
+The `--interactive`, `--managed` and `--cloud` modes remain explicit real-machine
+acceptance commands. Supply the pinned model artifact or dedicated test Provider
+credentials described by their diagnostics. Preserve the command, assessed commit,
+exit status and sanitized outcome in local acceptance logs. Keep the public
+catalog deployment and production signing authority with the release operator.

@@ -173,6 +173,9 @@ func isLoopbackHost(host string) bool {
 	return false
 }
 
+// IsLoopbackHost uses the same host classification as Provider validation.
+func IsLoopbackHost(host string) bool { return isLoopbackHost(host) }
+
 func transportSecurity(endpoint *url.URL) string {
 	if endpoint.Scheme == "https" {
 		return "tls"

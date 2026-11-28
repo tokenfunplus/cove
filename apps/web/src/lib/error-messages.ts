@@ -7,7 +7,13 @@ export function generationErrorMessage(
   copy: ApplicationCopy,
 ): string {
   if (error instanceof LocalServiceError) {
+    if (error.envelope.error.code === "task_save_pending")
+      return "An app result is waiting to be saved. Open Activity to retry saving or discard its unsaved output before starting another app task.";
     if (
+      error.envelope.error.code === "author_preview_only" ||
+      error.envelope.error.code === "app_scope_changed" ||
+      error.envelope.error.code === "app_proposal_invalid" ||
+      error.envelope.error.code === "mini_app_task_in_progress" ||
       error.envelope.error.code === "invalid_attachment" ||
       error.envelope.error.code === "project_context_changed" ||
       error.envelope.error.code === "context_limit" ||

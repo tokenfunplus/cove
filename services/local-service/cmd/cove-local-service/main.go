@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/api"
+	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/documents"
@@ -91,6 +92,12 @@ func run() error {
 		return err
 	}
 	defer store.Close()
+	if err := store.PruneAppHistory(context.Background()); err != nil {
+		return err
+	}
+	if err := store.RecoverAppTasks(context.Background()); err != nil {
+		return err
+	}
 	if err := store.RecoverInterruptedGenerations(context.Background()); err != nil {
 		return err
 	}
@@ -117,6 +124,7 @@ func run() error {
 	localModels.SetDownloadNetwork(network)
 	providerSetup.SetLocalProvider(localModels)
 	chatService := chat.NewServiceWithSettings(store, providerSetup, localmodels.RoutedProvider{Local: localModels, Remote: provider.NewHTTPAdapter(nil)}, store)
+	defer chatService.StopAppTask("", "")
 	chatService.SetLocalModels(localModels, store)
 	speechDirectory := os.Getenv("COVE_SPEECH_RUNTIME")
 	if speechDirectory == "" {
@@ -140,6 +148,18 @@ func run() error {
 		})
 	}
 	requestContext, cancelRequests := context.WithCancel(context.Background())
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-requestContext.Done():
+				return
+			case <-ticker.C:
+				_ = store.PruneAppHistory(requestContext)
+			}
+		}
+	}()
 	httpServer.BaseContext = func(net.Listener) context.Context { return requestContext }
 	var handlers sync.WaitGroup
 	var admission sync.Mutex
@@ -158,7 +178,15 @@ func run() error {
 		handlers.Wait()
 	}()
 	chatService.SetDocumentParser(documents.ProcessParser(executable))
-	localAPI := api.NewServer(api.Config{SearchService: searchService, DownloadNetwork: network,
+	catalogDefaults, catalogConfigErr := appcatalog.BundledDefaults(filepath.Join(filepath.Dir(executable), "mini-app-catalog-defaults.json"), appcatalog.Catalog{URL: os.Getenv("COVE_APP_CATALOG_URL"), PublicKey: os.Getenv("COVE_APP_CATALOG_PUBLIC_KEY")})
+	if catalogConfigErr != nil {
+		fmt.Fprintln(os.Stderr, "Invalid Mini App distribution settings; remote app downloads are unavailable.")
+	}
+	catalog, err := appcatalog.Open(filepath.Join(applicationDataDirectory, "mini-app-catalog.json"), catalogDefaults)
+	if err != nil {
+		return err
+	}
+	localAPI := api.NewServer(api.Config{AppCatalog: catalog, SearchService: searchService, DownloadNetwork: network,
 		Security:      security,
 		ControlToken:  controlToken,
 		Store:         store,

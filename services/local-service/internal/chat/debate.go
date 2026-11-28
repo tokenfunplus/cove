@@ -110,6 +110,14 @@ func (service *Service) StartDebate(ctx context.Context, input StartDebateInput)
 	if err := service.requireGenerationIdle(ctx); err != nil {
 		return persistence.DebateSession{}, err
 	}
+	// An old worker can establish a pending receipt while its active-work
+	// reservation is being released. Check after observing the service idle.
+	service.debateMu.Lock()
+	pendingBrowserResult := len(service.debatePending) != 0
+	service.debateMu.Unlock()
+	if pendingBrowserResult {
+		return persistence.DebateSession{}, ErrDebateState
+	}
 	for _, target := range resolved {
 		if target.profile.Kind == provider.KindNearAIPreset && !target.isSecure() {
 			return persistence.DebateSession{}, provider.ErrModelUnavailable
@@ -211,6 +219,12 @@ func (service *Service) ControlDebate(ctx context.Context, id, action string) (p
 		}
 	}
 	service.debateMu.Lock()
+	if action == "resume" || action == "step" || action == "stop" {
+		if err := service.recoverDebateBrowserResultsLocked(id, action != "stop"); err != nil {
+			service.debateMu.Unlock()
+			return persistence.DebateSession{}, err
+		}
+	}
 	session, err := store.GetDebate(ctx, id)
 	if err != nil {
 		if (action == "stop" || action == "pause") && service.debate != nil && service.debate.id == id {
@@ -790,24 +804,47 @@ func (service *Service) runDebateRequest(run *debateRun, session persistence.Deb
 }
 
 func (service *Service) finishDebateTurn(run *debateRun, turn persistence.DebateTurn, status, code, message string, blind bool) {
-	store, _ := service.debateStore()
 	service.debateMu.Lock()
 	defer service.debateMu.Unlock()
+	if _, err := service.finishDebateTurnLocked(run, turn, status, code, message, blind); err != nil {
+		service.pauseDebateOnStorageErrorLocked(run)
+	}
+}
+
+// Caller holds debateMu. Browser receipts are frozen before entering this path;
+// cancellation caused by a sibling storage failure must not discard them.
+func (service *Service) finishDebateTurnLocked(run *debateRun, turn persistence.DebateTurn, status, code, message string, blind bool) (persistence.DebateTurn, error) {
+	store, _ := service.debateStore()
+	if turn.BrowserReceipt != "" {
+		saved, err := store.ReadDebateTurn(context.Background(), run.id, turn.ID)
+		if err != nil {
+			return persistence.DebateTurn{}, err
+		}
+		if saved.BrowserReceipt != "" {
+			if saved.BrowserReceipt != turn.BrowserReceipt {
+				return persistence.DebateTurn{}, ErrDebateState
+			}
+			delete(run.turns, turn.ID)
+			return saved, nil
+		}
+	}
 	session, err := store.GetDebate(context.Background(), run.id)
 	if err != nil {
-		service.pauseDebateOnStorageErrorLocked(run)
-		return
+		return persistence.DebateTurn{}, err
 	}
-	if session.Status == "stopped" {
+	if session.Status == "stopped" && turn.BrowserReceipt == "" {
 		turn.Verification = nil
 		status = "stopped"
 		code = "stopped"
 		message = "Turn stopped."
-	} else if run.ctx.Err() != nil {
+	} else if run.ctx.Err() != nil && turn.BrowserReceipt == "" {
 		turn.Verification = nil
 		status = "failed"
 		code = "interrupted"
 		message = "The turn was interrupted before completion."
+		session.Status = "paused"
+	}
+	if turn.BrowserReceipt != "" && run.ctx.Err() != nil && session.Status != "stopped" {
 		session.Status = "paused"
 	}
 	if live, ok := run.turns[turn.ID]; ok {
@@ -816,8 +853,7 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 	if turn.Kind == "summary" && status == "completed" {
 		sources, readErr := store.LoadDebateSummaryContext(context.Background(), run.id, turn.SummaryFromRound, turn.Round)
 		if readErr != nil {
-			service.pauseDebateOnStorageErrorLocked(run)
-			return
+			return persistence.DebateTurn{}, readErr
 		}
 		parsed, parseErr := decodeDebateSummary(turn, sources)
 		if parseErr != nil {
@@ -855,7 +891,7 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 		}
 		if !blind {
 			session.Position++
-			if run.step {
+			if run.step && session.Status == "running" {
 				session.Status = "pausing"
 			}
 		}
@@ -863,12 +899,12 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 	if status == "completed" {
 		next := time.Now().UTC().Add(service.debateTurnDelay(session))
 		session.NextTurnAt = &next
-		if turn.Kind == "summary" && run.step {
+		if turn.Kind == "summary" && run.step && session.Status == "running" {
 			session.Status = "pausing"
 		}
 	}
 	if err = store.FinishDebateTurn(context.Background(), turn, session); err != nil {
-		service.pauseDebateOnStorageErrorLocked(run)
+		return persistence.DebateTurn{}, err
 	} else if session.Status == "running" {
 		service.checkDebateBudgetLocked(run, &session)
 	}
@@ -877,6 +913,7 @@ func (service *Service) finishDebateTurn(run *debateRun, turn persistence.Debate
 	}
 	delete(run.turns, turn.ID)
 	service.notifyDebateLocked(run.id)
+	return turn, nil
 }
 
 func (service *Service) pauseDebateForProvider(run *debateRun, reason error) {

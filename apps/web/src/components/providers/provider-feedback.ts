@@ -55,6 +55,7 @@ export function providerErrorMessage(
       return copy.providerUnconfigured;
     case "authentication_failed":
       return copy.authenticationFailed;
+    case "author_preview_only":
     case "provider_destination_changed":
     case "provider_profile_changed":
       return error.envelope.error.message;

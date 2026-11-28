@@ -2,6 +2,9 @@ package chat
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -15,11 +18,21 @@ import (
 type debateBrowserTurn struct {
 	claimID   string
 	submitted bool
+	receipt   string
+	err       error
 	expired   bool
 	deadline  time.Time
 	paused    chan struct{}
 	result    chan DebateBrowserResult
 	done      chan struct{}
+}
+
+// Pending receipts outlive worker cancellation and never authorize another
+// Provider call. Admission limits this map to one debate's active turns.
+type pendingDebateBrowserResult struct {
+	run   *debateRun
+	turn  persistence.DebateTurn
+	blind bool
 }
 
 type DebateBrowserContext struct {
@@ -158,35 +171,127 @@ func (service *Service) ProgressDebateBrowserTurn(ctx context.Context, id, turnI
 }
 
 func (service *Service) SettleDebateBrowserTurn(ctx context.Context, id, turnID string, input DebateBrowserResult) (persistence.DebateTurn, error) {
-	if len(input.Body)+len(input.Reasoning) > 256<<10 || persistence.ValidateBrowserSettlement(persistence.SecureGenerationSettlementInput{Body: input.Body, Metrics: input.Metrics, Verification: input.Verification}) != nil {
+	if input.ClaimID == "" || len(input.ClaimID) > 128 || len(input.Body)+len(input.Reasoning) > 256<<10 || persistence.ValidateBrowserSettlement(persistence.SecureGenerationSettlementInput{Body: input.Body, Metrics: input.Metrics, Verification: input.Verification}) != nil {
+		return persistence.DebateTurn{}, ErrInvalidDebate
+	}
+	// Freeze all nested evidence and measurements as well as the answer. The
+	// digest binds a delivery replay to both its original claimant and result.
+	payload, err := json.Marshal(input)
+	if err != nil {
+		return persistence.DebateTurn{}, ErrInvalidDebate
+	}
+	digest := sha256.Sum256(payload)
+	receipt := hex.EncodeToString(digest[:])
+	input = DebateBrowserResult{}
+	if err := json.Unmarshal(payload, &input); err != nil {
 		return persistence.DebateTurn{}, ErrInvalidDebate
 	}
 	service.debateMu.Lock()
+	if err := ctx.Err(); err != nil {
+		service.debateMu.Unlock()
+		return persistence.DebateTurn{}, err
+	}
+	if pending := service.debatePending[turnID]; pending != nil && pending.run.id == id {
+		if pending.turn.BrowserReceipt != receipt {
+			service.debateMu.Unlock()
+			return persistence.DebateTurn{}, ErrDebateState
+		}
+		turn, err := service.persistPendingDebateBrowserResultLocked(turnID)
+		service.debateMu.Unlock()
+		return turn, err
+	}
 	run, task, err := service.activeDebateBrowserTurn(id, turnID)
 	if err != nil || input.ClaimID == "" || task.claimID != input.ClaimID {
+		store, _ := service.debateStore()
+		turn, readErr := store.ReadDebateTurn(ctx, id, turnID)
+		service.debateMu.Unlock()
+		if readErr != nil {
+			return persistence.DebateTurn{}, readErr
+		}
+		if turn.BrowserReceipt == receipt {
+			return turn, nil
+		}
+		return persistence.DebateTurn{}, ErrDebateState
+	}
+	if task.submitted && task.receipt != receipt {
 		service.debateMu.Unlock()
 		return persistence.DebateTurn{}, ErrDebateState
 	}
-	turn := run.turns[turnID]
-	success := input.Verification.Status == persistence.VerificationModel || input.Verification.Status == persistence.VerificationGateway
-	if success && (turn.Phase != "verifying_response" || turn.Snapshot.PrivacyMode == provider.PrivacyModePrivateTEE && input.Verification.Status != persistence.VerificationModel) {
-		service.debateMu.Unlock()
-		return persistence.DebateTurn{}, ErrInvalidDebate
-	}
 	if !task.submitted {
+		turn := run.turns[turnID]
+		success := input.Verification.Status == persistence.VerificationModel || input.Verification.Status == persistence.VerificationGateway
+		if success && (turn.Phase != "verifying_response" || turn.Snapshot.PrivacyMode == provider.PrivacyModePrivateTEE && input.Verification.Status != persistence.VerificationModel) {
+			service.debateMu.Unlock()
+			return persistence.DebateTurn{}, ErrInvalidDebate
+		}
 		if task.expired || !time.Now().Before(task.deadline) {
 			service.debateMu.Unlock()
 			return persistence.DebateTurn{}, ErrDebateState
 		}
 		task.submitted = true
+		task.receipt = receipt
 		task.result <- input
 	}
 	service.debateMu.Unlock()
 	select {
 	case <-task.done:
-		return service.ReadDebateTurn(ctx, id, turnID)
+		service.debateMu.Lock()
+		err := task.err
+		service.debateMu.Unlock()
+		if err != nil {
+			return persistence.DebateTurn{}, err
+		}
+		store, _ := service.debateStore()
+		return store.ReadDebateTurn(ctx, id, turnID)
 	case <-ctx.Done():
 		return persistence.DebateTurn{}, ctx.Err()
+	}
+}
+
+// Caller holds debateMu. A failed transaction retains exactly the original
+// receipt; replay never replaces it with cleanup or advances a cursor twice.
+func (service *Service) persistPendingDebateBrowserResultLocked(turnID string) (persistence.DebateTurn, error) {
+	pending := service.debatePending[turnID]
+	status, code, message := "completed", "", ""
+	if verification := pending.turn.Verification; verification.Status != persistence.VerificationModel && verification.Status != persistence.VerificationGateway {
+		status, code, message = "failed", "verification_failed", "Browser verification did not complete. Check the connection and resume to retry."
+	}
+	turn, err := service.finishDebateTurnLocked(pending.run, pending.turn, status, code, message, pending.blind)
+	if err != nil {
+		service.pauseDebateOnStorageErrorLocked(pending.run)
+		return persistence.DebateTurn{}, err
+	}
+	delete(service.debatePending, turnID)
+	return turn, nil
+}
+
+// Resume and Stop recover an accepted result before changing its session.
+// Only work admission is blocked by another debate's unsaved result.
+// Caller holds debateMu.
+func (service *Service) recoverDebateBrowserResultsLocked(id string, admittingWork bool) error {
+	for turnID, pending := range service.debatePending {
+		if pending.run.id != id {
+			if admittingWork {
+				return ErrDebateState
+			}
+			continue
+		}
+		if _, err := service.persistPendingDebateBrowserResultLocked(turnID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Explicit history deletion abandons only matching unsaved output, after the
+// durable deletion succeeds. A failed deletion retains its recovery owner.
+func (service *Service) forgetPendingDebateBrowserResults(id string) {
+	service.debateMu.Lock()
+	defer service.debateMu.Unlock()
+	for turnID, pending := range service.debatePending {
+		if id == "" || pending.run.id == id {
+			delete(service.debatePending, turnID)
+		}
 	}
 }
 
@@ -230,15 +335,20 @@ func (service *Service) runDebateBrowserTurn(run *debateRun, turn persistence.De
 		turn.Body, turn.Reasoning, turn.Metrics = input.Body, input.Reasoning, input.Metrics
 		verification := input.Verification
 		turn.Verification = &verification
+		turn.BrowserReceipt = task.receipt
 		if verification.Status == persistence.VerificationModel || verification.Status == persistence.VerificationGateway {
 			if verification.VerifiedAt == nil {
 				now := time.Now().UTC()
 				verification.VerifiedAt = &now
 			}
-			service.finishDebateTurn(run, turn, "completed", "", "", blind)
-		} else {
-			service.finishDebateTurn(run, turn, "failed", "verification_failed", "Browser verification did not complete. Check the connection and resume to retry.", blind)
 		}
+		service.debateMu.Lock()
+		if service.debatePending == nil {
+			service.debatePending = map[string]*pendingDebateBrowserResult{}
+		}
+		service.debatePending[turn.ID] = &pendingDebateBrowserResult{run: run, turn: turn, blind: blind}
+		_, task.err = service.persistPendingDebateBrowserResultLocked(turn.ID)
+		service.debateMu.Unlock()
 	} else if paused {
 		service.finishDebateTurn(run, turn, "failed", "paused", "Paused before browser inference started. Resume to retry.", blind)
 	} else {

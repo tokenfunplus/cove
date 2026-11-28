@@ -1,3 +1,4 @@
+import { useWorkspaceActive } from "@/lib/workspace-active";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import {
   createContext,
@@ -14,31 +15,43 @@ const DialogContext = createContext<{
   label?: string;
 } | null>(null);
 
+// Portaled confirmations must cover both App pickers and their study dialogs.
+// Other dialogs retain the layer defined by their existing presentation recipe.
+const dialogLayers = { app: 100, study: 110, confirmation: 130 } as const;
+
 /** shadcn/Radix primitives with Cove's controlled dialog composition. */
 export function Dialog({
   open,
   onClose,
   className,
   label,
+  layer,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   className?: string;
   label?: string;
+  layer?: keyof typeof dialogLayers;
   children: ReactNode;
 }) {
+  const active = useWorkspaceActive();
   const returnFocus = useRef<HTMLElement | null>(null);
   return (
     <DialogPrimitive.Root
-      open={open}
+      open={active && open}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
     >
       <DialogContext.Provider value={{ returnFocus, label }}>
         <DialogPrimitive.Portal>
-          <div data-slot="dialog-portal" className={className}>
+          <div
+            data-slot="dialog-portal"
+            data-dialog-layer={layer}
+            className={className}
+            style={layer ? { zIndex: dialogLayers[layer] } : undefined}
+          >
             {children}
           </div>
         </DialogPrimitive.Portal>
@@ -72,6 +85,7 @@ export function DialogContent({
   onInteractOutside,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & { as?: ElementType }) {
+  const active = useWorkspaceActive();
   const context = useContext(DialogContext);
   const content = (
     <>
@@ -107,6 +121,7 @@ export function DialogContent({
         onOpenAutoFocus?.(event);
       }}
       onCloseAutoFocus={(event) => {
+        if (!active) { event.preventDefault(); return; }
         onCloseAutoFocus?.(event);
         if (
           !event.defaultPrevented &&

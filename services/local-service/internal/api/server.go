@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
+	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
 	"io"
 	"mime"
 	"net/http"
@@ -33,6 +35,7 @@ import (
 const maxNvidiaEvidenceBytes = 2 << 20
 
 type Config struct {
+	AppCatalog      *appcatalog.Directory
 	SearchService   *websearch.Service
 	DownloadNetwork *downloadnetwork.Service
 	Security        *localsecurity.Manager
@@ -49,6 +52,10 @@ type Config struct {
 }
 
 type Server struct {
+	apps            *miniapps.Service
+	appStore        *persistence.SQLiteStore
+	files           appFileBroker
+	catalog         *appcatalog.Directory
 	searchService   *websearch.Service
 	downloadNetwork *downloadnetwork.Service
 	security        *localsecurity.Manager
@@ -96,12 +103,24 @@ func NewServer(config Config) *Server {
 	if nvidiaNRASProxy == nil {
 		nvidiaNRASProxy = provider.NewNvidiaNRASProxy(nil)
 	}
-	return &Server{searchService: config.SearchService, downloadNetwork: config.DownloadNetwork, security: security, controlToken: config.ControlToken, shutdown: shutdown, settings: settings, chat: chatService, providerSetup: config.ProviderSetup, nearAIProxy: config.NearAIProxy, nvidiaNRASProxy: nvidiaNRASProxy}
+	appStore, _ := config.Store.(*persistence.SQLiteStore)
+	var apps *miniapps.Service
+	if appStore != nil {
+		apps = miniapps.New(appStore)
+		if chatHost, ok := chatService.(*chat.Service); ok {
+			chatHost.SetAppActions(apps)
+		}
+	}
+	if config.AppCatalog == nil {
+		config.AppCatalog, _ = appcatalog.Open("", appcatalog.Catalog{})
+	}
+	return &Server{apps: apps, appStore: appStore, catalog: config.AppCatalog, searchService: config.SearchService, downloadNetwork: config.DownloadNetwork, security: security, controlToken: config.ControlToken, shutdown: shutdown, settings: settings, chat: chatService, providerSetup: config.ProviderSetup, nearAIProxy: config.NearAIProxy, nvidiaNRASProxy: nvidiaNRASProxy}
 }
 
 func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	browserSession := server.security.RequireBrowserSession(server.writeSecurityError)
+	server.miniAppRoutes(mux, browserSession)
 	mux.HandleFunc("GET /launch", server.launch)
 	mux.Handle("GET /api/session", browserSession(http.HandlerFunc(server.session)))
 	mux.HandleFunc("GET /api/health", server.health)
@@ -175,6 +194,7 @@ func (server *Server) Handler() http.Handler {
 	mux.Handle("GET /api/generation-batches/{id}/events", browserSession(http.HandlerFunc(server.generationBatchEvents)))
 	mux.Handle("POST /api/generation-batches/{id}/cancel", browserSession(http.HandlerFunc(server.cancelGenerationBatch)))
 	mux.Handle("POST /api/generation-batches/{id}/skip-context", browserSession(http.HandlerFunc(server.skipGenerationBatchContext)))
+	mux.Handle("GET /api/generations/{id}/app-turn", browserSession(http.HandlerFunc(server.browserAppTurn)))
 	mux.Handle("GET /api/generations/{id}", browserSession(http.HandlerFunc(server.getGeneration)))
 	mux.Handle("GET /api/generations/{id}/events", browserSession(http.HandlerFunc(server.generationEvents)))
 	mux.Handle("POST /api/generations/{id}/cancel", browserSession(http.HandlerFunc(server.cancelGeneration)))
@@ -287,6 +307,8 @@ func (server *Server) launch(writer http.ResponseWriter, request *http.Request) 
 	switch intent := query.Get("intent"); intent {
 	case "settings", "new-chat", "provider-setup":
 		fragment.Set("intent", intent)
+	case "apps":
+		destination = appDestination(request)
 	case "quick-panel":
 		destination = "/?surface=quick-panel"
 	case "conversation":
@@ -301,7 +323,16 @@ func (server *Server) launch(writer http.ResponseWriter, request *http.Request) 
 
 func (server *Server) session(writer http.ResponseWriter, request *http.Request) {
 	session, _ := localsecurity.SessionFromRequest(request)
-	writeJSON(writer, http.StatusOK, map[string]string{"csrf_token": session.CSRFToken})
+	response := map[string]any{"csrf_token": session.CSRFToken}
+	if server.apps != nil {
+		instances, err := server.apps.Instances(request.Context())
+		if err == nil {
+			response["has_mini_apps"] = len(instances) > 0
+		}
+	} else {
+		response["has_mini_apps"] = false
+	}
+	writeJSON(writer, http.StatusOK, response)
 }
 
 func (server *Server) getSettings(writer http.ResponseWriter, request *http.Request) {
@@ -587,6 +618,7 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		return
 	}
 	var input struct {
+		MiniApp          *persistence.MiniAppScope       `json:"mini_app"`
 		Interactive      bool                            `json:"interactive"`
 		Card             *interactive.Submission         `json:"interaction"`
 		ExpectedProject  *persistence.ProjectExpectation `json:"expected_project"`
@@ -606,7 +638,7 @@ func (server *Server) createGeneration(writer http.ResponseWriter, request *http
 		return
 	}
 	session, _ := localsecurity.SessionFromRequest(request)
-	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{Interactive: input.Interactive, Card: input.Card, LocalOnly: input.LocalOnly, ExpectedProject: input.ExpectedProject, EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, WebSearchEnabled: input.WebSearchEnabled, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID, ExpectedTargets: input.ExpectedTargets})
+	started, err := server.chat.StartGenerationBatch(request.Context(), chat.SendInput{MiniApp: input.MiniApp, Interactive: input.Interactive, Card: input.Card, LocalOnly: input.LocalOnly, ExpectedProject: input.ExpectedProject, EditOfBatchID: input.EditOfBatchID, ConversationID: request.PathValue("id"), ClientRequestID: input.ClientRequestID, Body: input.Body, Attachments: input.Attachments, WebSearchEnabled: input.WebSearchEnabled, WebSourceTokens: input.WebSourceTokens, WebSourceOwner: session.ID, ExpectedTargets: input.ExpectedTargets})
 	if err != nil {
 		if errors.Is(err, persistence.ErrProjectChanged) {
 			current, readErr := server.chat.ReadConversation(request.Context(), request.PathValue("id"))
@@ -874,11 +906,12 @@ type providerSnapshotEnvelope struct {
 }
 
 type generationConfigurationSnapshotEnvelope struct {
-	WebSearch    *websearch.Policy `json:"web_search,omitempty"`
-	SystemPrompt string            `json:"system_prompt"`
-	Temperature  *float64          `json:"temperature"`
-	TopP         *float64          `json:"top_p"`
-	MaxTokens    *int              `json:"max_tokens"`
+	MiniApp      *persistence.MiniAppScope `json:"mini_app,omitempty"`
+	WebSearch    *websearch.Policy         `json:"web_search,omitempty"`
+	SystemPrompt string                    `json:"system_prompt"`
+	Temperature  *float64                  `json:"temperature"`
+	TopP         *float64                  `json:"top_p"`
+	MaxTokens    *int                      `json:"max_tokens"`
 }
 
 type generationVerificationEnvelope struct {
@@ -1079,7 +1112,7 @@ func providerSnapshotEnvelopeFor(snapshot persistence.ProviderSnapshot) provider
 
 func generationConfigurationSnapshotEnvelopeFor(snapshot persistence.GenerationConfigurationSnapshot) generationConfigurationSnapshotEnvelope {
 	return generationConfigurationSnapshotEnvelope{
-		WebSearch: snapshot.WebSearch, SystemPrompt: snapshot.SystemPrompt, Temperature: snapshot.Temperature, TopP: snapshot.TopP, MaxTokens: snapshot.MaxTokens,
+		MiniApp: snapshot.MiniApp, WebSearch: snapshot.WebSearch, SystemPrompt: snapshot.SystemPrompt, Temperature: snapshot.Temperature, TopP: snapshot.TopP, MaxTokens: snapshot.MaxTokens,
 	}
 }
 
@@ -1244,6 +1277,11 @@ func writeGenerationError(writer http.ResponseWriter, err error) {
 	case errors.Is(err, chat.ErrGenerationInProgress):
 		writeError(writer, http.StatusConflict, "generation_in_progress", "Another Generation is already in progress.")
 	case errors.Is(err, chat.ErrGenerationBatchInProgress):
+		var busy *chat.AppTaskBusyError
+		if errors.As(err, &busy) {
+			writeError(writer, http.StatusConflict, "mini_app_task_in_progress", busy.Error())
+			return
+		}
 		writeError(writer, http.StatusConflict, "generation_batch_in_progress", "Another Generation Batch is already in progress.")
 	case errors.Is(err, persistence.ErrInvalidBranch):
 		writeError(writer, http.StatusConflict, "invalid_branch", "The source turn is unavailable for editing. Refresh the conversation and try again.")
@@ -1251,6 +1289,8 @@ func writeGenerationError(writer http.ResponseWriter, err error) {
 		writeError(writer, http.StatusConflict, "context_disposition_required", "Select an answer or continue without an answer before starting the next Generation Batch.")
 	case errors.Is(err, persistence.ErrContextDispositionFrozen):
 		writeError(writer, http.StatusConflict, "context_disposition_frozen", "A later Generation Batch already captured this answer choice.")
+	case errors.Is(err, chat.ErrAppTurnUnavailable):
+		writeError(writer, http.StatusConflict, "app_scope_changed", "Choose an enabled Mini App, permitted actions and one compatible model, then retry.")
 	case errors.Is(err, chat.ErrGenerationSelectionChanged), errors.Is(err, persistence.ErrProviderProfileChanged):
 		writeError(writer, http.StatusConflict, "generation_selection_changed", "The selected connection changed. Reload it and send again.")
 	case errors.Is(err, chat.ErrPrivateTEEUnavailable):
@@ -1332,4 +1372,20 @@ func writeError(writer http.ResponseWriter, status int, code, message string) {
 		Message:   message,
 		RequestID: "local",
 	}})
+}
+
+func (s *Server) browserAppTurn(w http.ResponseWriter, r *http.Request) {
+	host, ok := s.chat.(interface {
+		BrowserAppTurn(context.Context, string) (chat.BrowserAppTurn, error)
+	})
+	if !ok {
+		writeError(w, http.StatusServiceUnavailable, "unavailable", "App actions are unavailable.")
+		return
+	}
+	result, err := host.BrowserAppTurn(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeGenerationError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

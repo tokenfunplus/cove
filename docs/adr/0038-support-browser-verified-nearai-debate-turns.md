@@ -23,3 +23,34 @@ Pause finishes active requests. Stop cancels browser work, records a terminal se
 ## Pause and settlement ordering
 
 The first successful browser claim is the admission boundary for an active request. Manual and automatic pauses reject new claims and wake unclaimed tasks immediately; already claimed requests may settle. The browser also invalidates deferred starts when Stop is requested. Result acceptance and deadline expiry are serialized: a receipt accepted before the fixed deadline wins even if the worker observes both signals together, and receipts arriving after the deadline are rejected. Claim admission rechecks that deadline after reading session state so a slow local read cannot authorize an already expired request.
+
+## Browser delivery failures
+
+Debate browser workers use at most five sends with abort-aware exponential
+backoff for connection and Local Service storage errors. Mini App progress and
+result delivery retain eight sends, with waits of 100, 200, 400, 800, 1,600,
+2,000 and 2,000 milliseconds. This preserves their 7.1-second backoff budget
+while sharing the retry helper. Every retry carries the same claim and frozen
+payload; neither a claim nor chargeable inference repeats.
+
+The service freezes the first accepted receipt and binds its exact result and
+claim to a digest stored with the terminal turn. Repeating that receipt returns
+the saved turn after a lost acknowledgement, including after worker shutdown.
+An altered result or an empty failure receipt cannot replace accepted output.
+An acceptance before expiry or Stop retains its result while later results are
+rejected. This uses existing turn JSON without a database migration.
+
+If local storage fails, accepted receipts remain in bounded service memory after
+their workers stop. Another Debate cannot start until those receipts are saved.
+Delivery retries and Resume save those same results before admitting another
+turn, so a storage failure cannot charge again for a completed seat. Stop also
+saves accepted results before proceeding; another storage failure retains the
+original receipts. Explicit history deletion releases matching unsaved results
+only after its durable deletion succeeds. Ordinary Chat may continue once the
+failed Debate releases its active-work reservation. Restart cannot recover an
+unsaved in-memory receipt and never automatically repeats the paid request.
+
+If the service rejects a result before acceptance, a failed terminal receipt can
+end that claim before its inference deadline. An unreachable or unauthorized
+service still relies on expiry. Mini App results follow their separate retained
+recovery contract in ADR-0073.

@@ -24,7 +24,7 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 	if len(input.Targets) == 0 || len(input.Targets) > 4 {
 		return GenerationBatch{}, errors.New("a generation batch requires between one and four targets")
 	}
-	configuration := GenerationConfigurationSnapshot{SystemPrompt: input.SystemPrompt, GenerationParameters: input.GenerationParameters, WebSearch: input.WebSearch}
+	configuration := GenerationConfigurationSnapshot{MiniApp: input.MiniApp, SystemPrompt: input.SystemPrompt, GenerationParameters: input.GenerationParameters, WebSearch: input.WebSearch}
 	if err := validateGenerationConfigurationSnapshot(configuration); err != nil {
 		return GenerationBatch{}, err
 	}
@@ -181,7 +181,7 @@ func (store *SQLiteStore) BeginGenerationBatch(ctx context.Context, input BeginG
 		if _, err := tx.ExecContext(ctx, `INSERT INTO generations (id, conversation_id, client_request_id, user_message_id, state, provider_snapshot, system_prompt, temperature, top_p, max_tokens, created_at, updated_at, generation_batch_id, generation_target_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, generationID, input.ConversationID, requestID, userMessageID, GenerationPending, snapshot, targetConfiguration.SystemPrompt, targetConfiguration.Temperature, targetConfiguration.TopP, targetConfiguration.MaxTokens, now.UnixNano(), now.UnixNano(), batchID, targetID); err != nil {
 			return GenerationBatch{}, fmt.Errorf("save target generation: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE generations SET web_search_policy=? WHERE id=?`, webPolicyJSON(configuration.WebSearch), generationID); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE generations SET web_search_policy=?, mini_app_scope=? WHERE id=?`, webPolicyJSON(configuration.WebSearch), appScopeJSON(configuration.MiniApp), generationID); err != nil {
 			return GenerationBatch{}, err
 		}
 	}
@@ -369,7 +369,7 @@ func (store *SQLiteStore) BeginGenerationAttempt(ctx context.Context, input Begi
 	if _, err := tx.ExecContext(ctx, `UPDATE generation_targets SET latest_generation_id = ? WHERE id = ?`, generation.ID, targetID); err != nil {
 		return Generation{}, fmt.Errorf("update retry generation target: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE generations SET web_search_policy=? WHERE id=?`, webPolicyJSON(generation.ConfigurationSnapshot.WebSearch), generation.ID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE generations SET web_search_policy=?, mini_app_scope=? WHERE id=?`, webPolicyJSON(generation.ConfigurationSnapshot.WebSearch), appScopeJSON(generation.ConfigurationSnapshot.MiniApp), generation.ID); err != nil {
 		return Generation{}, err
 	}
 	if err := refreshGenerationBatchTx(ctx, tx, batchID); err != nil {
@@ -644,4 +644,12 @@ func boolToInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+func appScopeJSON(scope *MiniAppScope) string {
+	if scope == nil {
+		return ""
+	}
+	data, _ := json.Marshal(scope)
+	return string(data)
 }

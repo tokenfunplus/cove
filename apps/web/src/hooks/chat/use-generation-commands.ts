@@ -123,6 +123,7 @@ export function useGenerationCommands({
   const { loadBatch: getGenerationBatch } = useGenerationCache();
 
   async function handleSend(override?: {
+    miniApp?: import("@cove/api-contract").MiniAppTurnScope;
     interactive?: boolean;
     interaction?: import("@cove/api-contract").CardSubmission;
     body: string;
@@ -231,6 +232,7 @@ export function useGenerationCommands({
           ? (cardReference as import("@cove/api-contract").CardSubmission)
           : undefined);
       const selection = {
+        ...(override?.miniApp ? { miniApp:override.miniApp } : {}),
         ...(interactive ? { interactive: true } : {}),
         ...(interaction ? { interaction } : {}),
         ...(localOnly ? { localOnly: true } : {}),

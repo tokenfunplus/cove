@@ -90,6 +90,11 @@ cove_dmg="$cove_package_dir/Cove-$cove_version-arm64.dmg"
 cove_mount="$cove_package_dir/mount"
 
 test -x "$cove_app/Contents/MacOS/Cove"
+cove_kit="$cove_app/Contents/Resources/mini-apps"
+"$cove_app/Contents/MacOS/coveapp" test "$cove_kit/examples/starter.coveapp" "$cove_kit/scenarios/starter-scenario.json" >/dev/null
+"$cove_app/Contents/MacOS/coveapp" upgrade-test "$cove_kit/examples/starter.coveapp" "$cove_kit/examples/starter-v1.1.coveapp" "$cove_kit/scenarios/starter-upgrade.json" >/dev/null
+test ! -f "$cove_kit/examples/japanese-review-book.coveapp"
+test ! -f "$cove_kit/examples/reading-inbox.coveapp"
 test -x "$cove_app/Contents/Resources/cove-local-service"
 test -d "$cove_app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle"
 test -f "$cove_app/Contents/Resources/CoveLauncher_CoveLauncherApp.bundle/CoveMenuBarTemplate.png"

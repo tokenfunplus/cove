@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -84,6 +85,15 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		}
 	}
 	resolved, resolveErr := service.resolveTargets(ctx, activeModelSet)
+	if input.MiniApp != nil {
+		if service.appActions == nil || input.WebSearchEnabled || input.Card != nil || len(activeModelSet) != 1 || resolveErr == nil && !resolved[0].allowsAppTurn() {
+			return GenerationBatchStart{}, ErrAppTurnUnavailable
+		}
+		if _, err := service.appActions.ChatActions(ctx, *input.MiniApp); err != nil {
+			return GenerationBatchStart{}, ErrAppTurnUnavailable
+		}
+		input.Interactive = false
+	}
 	if input.Interactive && !interactiveResolvedTargets(resolved) {
 		input.Interactive = false
 	}
@@ -162,7 +172,7 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		return GenerationBatchStart{}, err
 	}
 	batch, err := service.store.BeginGenerationBatch(ctx, persistence.BeginGenerationBatchInput{
-		Interactive: input.Interactive, Card: input.Card, CardFingerprint: cardFingerprint,
+		MiniApp: input.MiniApp, Interactive: input.Interactive, Card: input.Card, CardFingerprint: cardFingerprint,
 		LocalOnly:       input.LocalOnly,
 		ExpectedProject: input.ExpectedProject,
 		WebSearch:       searchPolicy,
@@ -192,6 +202,7 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		secret        credentials.Secret
 		messages      []provider.ProviderMessage
 		configuration persistence.GenerationConfigurationSnapshot
+		toolCapable   bool
 	}
 	runs := make([]batchRun, 0, len(batch.Targets))
 	service.activeMu.Lock()
@@ -202,17 +213,23 @@ func (service *Service) StartGenerationBatch(ctx context.Context, input SendInpu
 		}
 		runContext, cancel := context.WithTimeout(context.Background(), service.timeout)
 		service.active[target.Generation.ID] = &activeGeneration{cancel: cancel, done: make(chan struct{})}
-		runs = append(runs, batchRun{context: runContext, batchID: batch.ID, targetID: target.ID, generation: target.Generation, profile: resolvedTarget.profile, secret: resolvedTarget.secret, messages: messages, configuration: target.Generation.ConfigurationSnapshot})
+		runs = append(runs, batchRun{toolCapable: slices.Contains(resolvedTarget.metadata.Capabilities, "tools"), context: runContext, batchID: batch.ID, targetID: target.ID, generation: target.Generation, profile: resolvedTarget.profile, secret: resolvedTarget.secret, messages: messages, configuration: target.Generation.ConfigurationSnapshot})
 	}
 	service.activeMu.Unlock()
 	for _, run := range runs {
-		go service.runBatchGeneration(run.context, run.batchID, run.targetID, run.generation, run.profile, run.secret, run.messages, run.configuration)
+		go service.runBatchGeneration(run.context, run.batchID, run.targetID, run.generation, run.profile, run.secret, run.messages, run.configuration, run.toolCapable)
 	}
 	return GenerationBatchStart{Batch: batch}, nil
 }
 
 func (service *Service) checkCardBatchStart(ctx context.Context, input SendInput, fingerprint string) (persistence.GenerationBatch, error) {
 	batch, err := service.checkBatchStart(ctx, input.ClientRequestID)
+	if err == nil && batch.ID != "" && len(batch.Targets) > 0 {
+		saved := batch.Targets[0].Generation.ConfigurationSnapshot.MiniApp
+		if (saved != nil || input.MiniApp != nil) && (batch.ConversationID != input.ConversationID || !reflect.DeepEqual(saved, input.MiniApp)) {
+			return persistence.GenerationBatch{}, ErrAppTurnUnavailable
+		}
+	}
 	if err != nil || batch.ID == "" || input.Card == nil {
 		return batch, err
 	}
@@ -240,6 +257,9 @@ func (service *Service) requireGenerationIdle(ctx context.Context) error {
 		return err
 	}
 	if active {
+		if s := service.activeAppName(ctx); s != "" {
+			return &AppTaskBusyError{Name: s}
+		}
 		return ErrGenerationBatchInProgress
 	}
 	return nil
@@ -415,6 +435,15 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 		configuration.SystemPrompt += interactive.Prompt()
 	}
 	userBody, err := service.batchUserBody(ctx, batch)
+	configuration.MiniApp = target.Generation.ConfigurationSnapshot.MiniApp
+	if configuration.MiniApp != nil {
+		if service.appActions == nil || resolveErr == nil && !resolved[0].allowsAppTurn() {
+			return GenerationStart{}, ErrAppTurnUnavailable
+		}
+		if _, err := service.appActions.ChatActions(ctx, *configuration.MiniApp); err != nil {
+			return GenerationStart{}, ErrAppTurnUnavailable
+		}
+	}
 	configuration.WebSearch = batch.WebSearch
 	if err != nil {
 		return GenerationStart{}, err
@@ -488,7 +517,7 @@ func (service *Service) RetryGenerationTarget(ctx context.Context, targetID, cli
 	service.activeMu.Lock()
 	service.active[generation.ID] = &activeGeneration{cancel: cancel, done: make(chan struct{})}
 	service.activeMu.Unlock()
-	go service.runBatchGeneration(runContext, batch.ID, target.ID, generation, connection.profile, connection.secret, messages, generation.ConfigurationSnapshot)
+	go service.runBatchGeneration(runContext, batch.ID, target.ID, generation, connection.profile, connection.secret, messages, generation.ConfigurationSnapshot, slices.Contains(connection.metadata.Capabilities, "tools"))
 	return GenerationStart{Generation: generation}, nil
 }
 
@@ -577,7 +606,7 @@ func historyMessages(item persistence.ContextItem) []provider.ProviderMessage {
 	if item.Interactive {
 		user, assistant = interactive.CompactReference(user), interactive.HistoryText(assistant)
 	}
-	return []provider.ProviderMessage{{Role: "user", Content: user}, {Role: "assistant", Content: assistant}}
+	return []provider.ProviderMessage{{Role: "user", Content: modelAppReferences(user)}, {Role: "assistant", Content: assistant}}
 }
 
 func messagesFromBatchContext(batch persistence.GenerationBatch, currentBody string, configuration persistence.GenerationConfigurationSnapshot, contextItems []persistence.ContextItem) []provider.ProviderMessage {
@@ -591,7 +620,7 @@ func messagesFromBatchContext(batch persistence.GenerationBatch, currentBody str
 	for _, item := range contextItems {
 		messages = append(messages, historyMessages(item)...)
 	}
-	messages = append(messages, provider.ProviderMessage{Role: "user", Content: projectUserContent(currentBody, batch.ProjectContext)})
+	messages = append(messages, provider.ProviderMessage{Role: "user", Content: projectUserContent(modelAppReferences(currentBody), batch.ProjectContext)})
 	return messages
 }
 
@@ -641,7 +670,7 @@ func isTerminalBatch(state persistence.GenerationBatchState) bool {
 	return state == persistence.GenerationBatchCompleted || state == persistence.GenerationBatchCompletedWithErrors || state == persistence.GenerationBatchStopped || state == persistence.GenerationBatchFailed
 }
 
-func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetID string, generation persistence.Generation, profile provider.Profile, secret credentials.Secret, messages []provider.ProviderMessage, configuration persistence.GenerationConfigurationSnapshot) {
+func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetID string, generation persistence.Generation, profile provider.Profile, secret credentials.Secret, messages []provider.ProviderMessage, configuration persistence.GenerationConfigurationSnapshot, toolCapable bool) {
 	defer service.finishGeneration(generation.ID)
 	measurement := generationMeasurement{started: time.Now()}
 	if ctx.Err() != nil {
@@ -655,7 +684,13 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 	completion.Activity = func(activity string) {
 		service.publishBatch(GenerationEvent{BatchID: batchID, TargetID: targetID, GenerationID: generation.ID, Type: EventActivity, Activity: activity})
 	}
-	stream, err := service.provider.Stream(ctx, completion)
+	var stream provider.CompletionStream
+	var err error
+	if configuration.MiniApp != nil {
+		stream, err = service.openAppTurn(ctx, completion, *configuration.MiniApp, toolCapable)
+	} else {
+		stream, err = service.provider.Stream(ctx, completion)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			service.terminateBatchGeneration(batchID, targetID, generation.ID, persistence.GenerationStopped, "stopped", "Generation stopped.")
@@ -690,6 +725,10 @@ func (service *Service) runBatchGeneration(ctx context.Context, batchID, targetI
 					message = "The Provider could not finish web research. Check tool calling support or turn Web search off."
 				}
 				code := "protocol_error"
+				if errors.Is(err, ErrAppProposalInvalid) {
+					code = "app_proposal_invalid"
+					message = "The model proposed an app action that could not be used. Choose an available action or continue with a normal reply."
+				}
 				if configuration.WebSearch != nil {
 					code = "web_research_failed"
 				}

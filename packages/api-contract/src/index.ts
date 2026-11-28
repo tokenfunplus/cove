@@ -14,6 +14,7 @@ export interface HealthResponse {
 
 export interface SessionResponse {
   csrf_token: string;
+  has_mini_apps?: boolean;
 }
 
 export type ThemePreference = "system" | "light" | "dark";
@@ -350,7 +351,15 @@ export interface ProviderSnapshot {
 }
 
 /** The immutable workspace configuration actually used for one Generation attempt. */
+export interface MiniAppTurnScope {
+  instance: string;
+  release: string;
+  revision: number;
+  actions: string[];
+}
+
 export interface GenerationConfigurationSnapshot {
+  mini_app?: MiniAppTurnScope;
   web_search?: WebSearchPolicy;
   system_prompt: string;
   /** Null keeps the Provider default; zero is an explicitly configured value. */
@@ -394,6 +403,7 @@ export interface ExpectedGenerationTarget {
 }
 
 export interface GenerationInput {
+  mini_app?: MiniAppTurnScope;
   interactive?: boolean;
   interaction?: import("./interactive").CardSubmission;
   local_only?: boolean;
@@ -671,3 +681,5 @@ export interface DownloadNetworkTest {
 
 export * from "./interactive";
 export * from "./interactive-source";
+
+export type * from "./mini-apps";

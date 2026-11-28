@@ -1,3 +1,4 @@
+import { useWorkspaceActive } from "@/lib/workspace-active";
 import { useEffect } from "react";
 import { isConversationId } from "@/lib/launcher-intent";
 import type { ConnectionState } from "@/lib/workspace-types";
@@ -15,9 +16,11 @@ export function useLauncherNavigation({
   onOpenSettings,
   onOpenConversation,
 }: Dependencies) {
+  const active = useWorkspaceActive();
   useEffect(() => {
-    if (connection !== "ready") return;
+    if (!active || connection !== "ready") return;
     const navigate = () => {
+      if (window.location.pathname !== "/") return;
       const destination = window.location.hash;
       const conversationId = destination.startsWith("#conversation=")
         ? destination.slice("#conversation=".length) : null;
@@ -35,6 +38,10 @@ export function useLauncherNavigation({
     };
     navigate();
     window.addEventListener("hashchange", navigate);
-    return () => window.removeEventListener("hashchange", navigate);
-  }, [connection, onNewChat, onOpenSettings, onOpenConversation]);
+    window.addEventListener("popstate", navigate);
+    return () => {
+      window.removeEventListener("hashchange", navigate);
+      window.removeEventListener("popstate", navigate);
+    };
+  }, [active, connection, onNewChat, onOpenSettings, onOpenConversation]);
 }

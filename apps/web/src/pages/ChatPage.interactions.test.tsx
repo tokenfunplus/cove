@@ -52,6 +52,7 @@ vi.mock("@/api", async (importOriginal) => {
   return {
     ...original,
     getSession: vi.fn(),
+    getBrowserAppTurn: vi.fn(),
     getConversations: vi.fn(),
     searchConversations: vi.fn(),
     createConversation: vi.fn(),
@@ -150,6 +151,7 @@ function configureWorkspace(targetCount = 1) {
   feed = createBatchEventFeed(fixture.pendingBatch);
   vi.mocked(transport.getSession).mockResolvedValue({
     csrf_token: "synthetic-session",
+    has_mini_apps: false,
   });
   vi.mocked(transport.getConversations).mockResolvedValue([
     fixture.conversation,
@@ -1388,6 +1390,20 @@ test("private inference uses only the service's frozen selected context", async 
   expect(transport.getGenerationBatchContext).toHaveBeenCalledWith(
     fixture.pendingBatch.id,
   );
+});
+
+test("a scoped verified turn passes reviewed app instructions through the signed transport", async () => {
+  const generation = configureNearAITarget(0, "private_tee");
+  generation.configuration_snapshot.mini_app = {instance:"local-only-id",release:"release",revision:1,actions:["reading.list"]};
+  vi.mocked(transport.getBrowserAppTurn).mockResolvedValue({instructions:"Return one JSON object for choice_1.",message:"List reading."});
+  const {user,composer}=await openWorkspace();
+  await user.type(composer, "List reading.");
+  await user.click(screen.getByRole("button",{name:"Send message"}));
+  await waitFor(()=>expect(privateInference.generate).toHaveBeenCalled());
+  const input=privateInference.generate.mock.calls[0][0];
+  expect(input.configuration.systemPrompt).toContain("Return one JSON object for choice_1.");
+  expect(input.message).toBe("List reading.");
+  expect(JSON.stringify(input)).not.toContain("local-only-id");
 });
 
 test("an earlier private target retry reuses its frozen context instead of later history", async () => {
@@ -2946,4 +2962,38 @@ test("Quick Panel new chat and replacement imports protect a card question", asy
   } finally {
     act(() => setInteractiveDraftDirty("quick-question", false));
   }
+});
+
+test("workspace navigation preserves a mounted Chat draft without confirmation", async () => {
+  render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+  const input = await screen.findByRole("textbox", { name: "Send message" });
+  await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(false));
+  await userEvent.type(input, "Keep this unsent draft");
+  act(() => { window.history.pushState(null, "", "/apps"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  expect(window.location.pathname).toBe("/apps");
+  expect((input as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+  expect(screen.queryByRole("dialog", { name: "Discard unsent draft?" })).toBeNull();
+  act(() => { window.history.pushState(null, "", "/"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  expect(screen.getByRole("textbox", { name: "Send message" })).toBe(input);
+  expect((input as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+});
+
+test("workspace switching retains an unsent Debate intervention", async () => {
+  configureWorkspace(2);
+  fixture.conversation.debate_id = fixture.conversation.id;
+  const view: DebateView = {
+    session: { id: fixture.conversation.id, client_request_id: "debate-request", topic: "Should a team stay small?", seats: fixture.settings.active_model_set.map((seat, index) => ({ ...seat, role: index ? "Challenger" : "Advocate" })), rules: defaultDebateRules, status: "paused", round: 1, position: 0, opening_done: [true, true], total_turns: 0, created_at: fixture.conversation.created_at, updated_at: fixture.conversation.updated_at },
+    turns: [], interventions: [], has_more: false,
+  };
+  vi.mocked(debateApi.getDebate).mockResolvedValue(view);
+  vi.mocked(debateApi.watchDebate).mockResolvedValue(undefined);
+  render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+  const input = await screen.findByRole("textbox", { name: "Your intervention" });
+  const user = userEvent.setup();
+  await user.type(input, "Keep this intervention.");
+  act(() => { window.history.pushState(null, "", "/apps"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  expect(screen.queryByRole("dialog", { name: "Discard unsent draft?" })).toBeNull();
+  act(() => { window.history.pushState(null, "", "/"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  expect(screen.getByRole("textbox", { name: "Your intervention" })).toBe(input);
+  expect((input as HTMLTextAreaElement).value).toBe("Keep this intervention.");
 });

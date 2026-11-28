@@ -1,0 +1,68 @@
+{
+  "steps": [
+    {
+      "action": "review.listDue",
+      "surface": "chat",
+      "count": 3
+    },
+    {
+      "action": "review.markLearned",
+      "select": [
+        0,
+        1
+      ],
+      "surface": "chat",
+      "count": 2,
+      "expect_fields": {
+        "mastered": true
+      }
+    },
+    {
+      "action": "review.listDue",
+      "surface": "page",
+      "count": 1
+    },
+    {
+      "action": "review.practiceAgain",
+      "select": [
+        0
+      ],
+      "surface": "panel",
+      "count": 1
+    },
+    {
+      "action": "review.listDue",
+      "count": 0
+    },
+    {
+      "action": "material.save",
+      "inputs": {
+        "title": "Exercise",
+        "passage": "A short test passage."
+      },
+      "count": 1
+    },
+    {
+      "action": "review.suggestQuestions",
+      "inputs": {
+        "passage": "A short test passage."
+      }
+    },
+    {
+      "action": "review.addQuestions",
+      "inputs": {
+        "question": "Question from a fixture?",
+        "answer": "Answer."
+      },
+      "count": 1
+    },
+    {
+      "action": "review.listDue",
+      "surface": "chat",
+      "count": 1,
+      "expect_fields": {
+        "answer": "Answer."
+      }
+    }
+  ]
+}

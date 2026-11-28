@@ -169,6 +169,7 @@ type DebateTurn struct {
 	Execution        string                          `json:"execution,omitempty"`
 	Phase            string                          `json:"phase,omitempty"`
 	Verification     *GenerationVerification         `json:"verification,omitempty"`
+	BrowserReceipt   string                          `json:"-"`
 	Body             string                          `json:"body"`
 	Reasoning        string                          `json:"reasoning,omitempty"`
 	Snapshot         ProviderSnapshot                `json:"snapshot"`
@@ -185,7 +186,8 @@ type DebateTurn struct {
 // Keep immutable request context on disk, but do not repeat it in every read response.
 type storedDebateTurn struct {
 	DebateTurn
-	Messages []DebateContextMessage `json:"messages"`
+	Messages       []DebateContextMessage `json:"messages"`
+	BrowserReceipt string                 `json:"browser_receipt,omitempty"`
 }
 
 type DebateIntervention struct {
@@ -301,6 +303,7 @@ func decodeDebateTurn(data string) (DebateTurn, error) {
 	var stored storedDebateTurn
 	err := json.Unmarshal([]byte(data), &stored)
 	stored.Context = stored.Messages
+	stored.DebateTurn.BrowserReceipt = stored.BrowserReceipt
 	return stored.DebateTurn, err
 }
 
@@ -375,7 +378,7 @@ func (store *SQLiteStore) BeginDebateTurn(ctx context.Context, turn DebateTurn) 
 		return turn, err
 	}
 	turn.CreatedAt, turn.UpdatedAt = time.Now().UTC(), time.Now().UTC()
-	data, err := json.Marshal(storedDebateTurn{DebateTurn: turn, Messages: turn.Context})
+	data, err := json.Marshal(storedDebateTurn{DebateTurn: turn, Messages: turn.Context, BrowserReceipt: turn.BrowserReceipt})
 	if err != nil {
 		return turn, err
 	}
@@ -388,7 +391,7 @@ func (store *SQLiteStore) BeginDebateTurn(ctx context.Context, turn DebateTurn) 
 
 func (store *SQLiteStore) SaveDebateTurn(ctx context.Context, turn DebateTurn) error {
 	turn.UpdatedAt = time.Now().UTC()
-	data, err := json.Marshal(storedDebateTurn{DebateTurn: turn, Messages: turn.Context})
+	data, err := json.Marshal(storedDebateTurn{DebateTurn: turn, Messages: turn.Context, BrowserReceipt: turn.BrowserReceipt})
 	if err != nil {
 		return err
 	}
@@ -413,7 +416,7 @@ func (store *SQLiteStore) FinishDebateTurn(ctx context.Context, turn DebateTurn,
 	}
 	defer tx.Rollback()
 	turn.UpdatedAt = time.Now().UTC()
-	data, err := json.Marshal(storedDebateTurn{DebateTurn: turn, Messages: turn.Context})
+	data, err := json.Marshal(storedDebateTurn{DebateTurn: turn, Messages: turn.Context, BrowserReceipt: turn.BrowserReceipt})
 	if err != nil {
 		return err
 	}

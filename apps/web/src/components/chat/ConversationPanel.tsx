@@ -2,7 +2,7 @@ import {
   InteractiveAnswer,
   type CardContinue,
 } from "@/components/interactive/InteractiveAnswer";
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
 import { EditPromptDialog } from "./EditPromptDialog";
 import {
   ChatExperienceContext,
@@ -30,7 +30,9 @@ import { CoveMark } from "@/components/ui/CoveMark";
 import { ConversationWelcome } from "@/components/chat/ConversationWelcome";
 import { generationFailureMessage } from "@/components/chat/generation-status";
 import { StopGenerationButton } from "@/components/chat/GenerationProgress";
+import { SelectedTextToApp } from "./SelectedTextToApp";
 import { AssistantMessage } from "@/components/chat/AssistantMessage";
+import { MiniAppSourceLinks } from "./MiniAppSourceLinks";
 import { MessageMeta } from "@/components/chat/MessageMeta";
 import {
   LiveModelComparisonGrid,
@@ -57,6 +59,9 @@ import {
 import { ArrowRight } from "lucide-react";
 import { useConversationScroll } from "@/hooks/chat/use-conversation-scroll";
 import type { ConversationNavigation } from "@/lib/workspace-types";
+
+const AppWelcomeDiscovery = lazy(() => import("./AppDiscovery"));
+const AppTurnAnswer = lazy(() => import("./AppTurnAnswer"));
 
 export function ConversationPanel({
   interactive,
@@ -109,10 +114,10 @@ export function ConversationPanel({
   copy?: ApplicationCopy;
   composerId?: string;
   isLoading?: boolean;
-  onSend?: () => void;
+  onSend?: (scope?: import("@cove/api-contract").MiniAppTurnScope, accepted?:()=>void) => void;
   onCancel?: () => void;
   onRetry?: (batchID: string, targetID: string) => void;
-  onCreateConversation?: () => void;
+  onCreateConversation?: (body?: string) => void;
   onOpenSettings?: () => void;
   onChooseModel?: () => void;
   onEditPrompt?: (
@@ -144,6 +149,15 @@ export function ConversationPanel({
   activeModelSet?: ActiveModelSet;
   profiles?: ProviderProfile[];
 }) {
+  const promptsWithAppSources = useMemo(() => {
+    const prompts = new Map<string, string>();
+    for (const message of view?.messages ?? []) {
+      if (message.role === "user" && message.body.includes("cove://open/")) {
+        prompts.set(message.id, message.body);
+      }
+    }
+    return prompts;
+  }, [view?.messages]);
   const retryLocalOnly = Boolean(
     execution?.localOnly || attachmentDraft?.localOnly,
   );
@@ -201,11 +215,12 @@ export function ConversationPanel({
           <p className={baseStyles.eyebrow}>{copy.chatSurface}</p>
           <h2>{copy.noConversationSelected}</h2>
           <p>{copy.emptyConversationHint}</p>
+          {onCreateConversation && !quickPanel && <Suspense fallback={null}><AppWelcomeDiscovery startDraft={onCreateConversation} /></Suspense>}
           {onCreateConversation ? (
             <Button
               variant="default"
               className={primitivesStyles.emptyState_action}
-              onClick={onCreateConversation}
+              onClick={() => onCreateConversation()}
             >
               {copy.startConversation}
             </Button>
@@ -239,7 +254,10 @@ export function ConversationPanel({
     { batch: GenerationBatch; target: GenerationBatch["targets"][number] }
   >();
   const assistantMessageIDByTargetOrGenerationID = new Map<string, string>();
+  const appSourceByBatch = new Map<string, string>();
   for (const batch of allGenerationBatches) {
+    const prompt = promptsWithAppSources.get(batch.user_message_id ?? "");
+    if (prompt) appSourceByBatch.set(batch.id, prompt);
     for (const target of batch.targets) {
       if (target.generation.assistant_message_id) {
         batchTargetByAssistantMessageID.set(
@@ -310,6 +328,7 @@ export function ConversationPanel({
   const liveBatch = liveTurn?.batchId
     ? allGenerationBatches.find((batch) => batch.id === liveTurn.batchId)
     : generationBatch;
+  const liveAppSource = liveTurn?.userBody ?? appSourceByBatch.get(liveBatch?.id ?? "");
   const generationActive =
     generationBatch?.state === "pending" ||
     generationBatch?.state === "streaming" ||
@@ -560,6 +579,7 @@ export function ConversationPanel({
                                   ? onCancelTarget
                                   : undefined
                               }
+                              appSourcePrompt={appSourceByBatch.get(generationTarget.batch.id)}
                               messages={view.messages}
                               onRetry={onRetry}
                               onSelectAnswer={onSelectAnswer}
@@ -575,6 +595,7 @@ export function ConversationPanel({
                               messagesStyles.message,
                               `message message--${message.role}`,
                             )}
+                            data-app-selection-source={view.id}
                             data-generation-target={generationTarget?.target.id}
                             data-timeline-anchor={
                               message.role === "user" ? message.id : undefined
@@ -628,7 +649,23 @@ export function ConversationPanel({
                                   snapshot,
                                 }}
                               >
-                                {cardGenerationId ? (
+                                {generationTarget?.target.generation.configuration_snapshot.mini_app ? (
+                                  <Suspense fallback={<p role="status">Opening app response…</p>}>
+                                    <AppTurnAnswer
+                                      key={message.id}
+                                      generationId={generationTarget.target.generation.id}
+                                      reasoning={message.reasoning}
+                                      verifiedGeneration={generationTarget.target.generation.snapshot.provider_kind==="nearai" ? generationTarget.target.generation.id : undefined}
+                                      verification={generationTarget.target.generation.verification?.status}
+                                      scope={generationTarget.target.generation.configuration_snapshot.mini_app}
+                                      body={message.body}
+                                      draft={draft}
+                                      change={onDraftChange}
+                                      localRequired={retryLocalOnly || Boolean(generationTarget.batch.local_only)}
+                                      disabled={!!view.archived || !!isSending || !!navigationBusy}
+                                    />
+                                  </Suspense>
+                                ) : cardGenerationId ? (
                                   <InteractiveAnswer
                                     generationId={cardGenerationId}
                                     content={message.body}
@@ -670,6 +707,11 @@ export function ConversationPanel({
                                 {message.body}
                               </p>
                             )}
+                            <MiniAppSourceLinks
+                              userBody={message.role === "user"
+                                ? promptsWithAppSources.get(message.id)
+                                : appSourceByBatch.get(message.generation_batch_id ?? generationTarget?.batch.id ?? "")}
+                            />
                             {message.role === "user" &&
                               onEditPrompt &&
                               (() => {
@@ -773,12 +815,14 @@ export function ConversationPanel({
                     >
                       {liveTurn.userBody}
                     </p>
+                    <MiniAppSourceLinks userBody={liveTurn.userBody} />
                   </article>
                 ) : null}
                 {liveTargets.length > 0 &&
                 liveComparison &&
                 !liveComparisonAlreadyInHistory ? (
                   <LiveModelComparisonGrid
+                    appSourcePrompt={liveAppSource}
                     localOnly={retryLocalOnly}
                     busy={isSending}
                     batch={liveBatch}
@@ -847,7 +891,9 @@ export function ConversationPanel({
                             }
                           />
                         )}
-                        {target.assistantBody || target.reasoningBody ? (
+                        {liveGeneration?.configuration_snapshot.mini_app ? (
+                          <p role="status">Reviewing the selected app actions…</p>
+                        ) : target.assistantBody || target.reasoningBody ? (
                           <AssistantMessage
                             content={target.assistantBody}
                             reasoning={target.reasoningBody}
@@ -857,6 +903,7 @@ export function ConversationPanel({
                             )}
                           />
                         ) : null}
+                        <MiniAppSourceLinks userBody={liveAppSource} />
                         {target.phase === "stopped" ? (
                           <p className={messagesStyles.message_state}>
                             {copy.generationStopped}
@@ -1062,6 +1109,7 @@ export function ConversationPanel({
             className="flex shrink-0 flex-col"
             data-workspace-region="composer"
           >
+            {showComposer && !isSending && !navigationBusy && onDraftChange && <SelectedTextToApp key={view.id} conversation={view.id} draft={draft ?? ""} change={onDraftChange} localRequired={retryLocalOnly} surface={quickPanel ? "panel" : "chat"}/>}
             {quickPanel && latestButton}
             {contextDispositionBatch && onSkipContext ? (
               <div

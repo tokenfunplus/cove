@@ -1,0 +1,475 @@
+package miniapps
+
+import (
+	"cmp"
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/google/uuid"
+	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
+)
+
+type RecordRef struct {
+	ID       string `json:"id"`
+	Revision int64  `json:"revision"`
+}
+type Record struct {
+	ID       string         `json:"id"`
+	Revision int64          `json:"revision"`
+	Fields   map[string]any `json:"fields"`
+}
+type Invocation struct {
+	Search           string           `json:"search,omitempty"`
+	ExpectedRevision int64            `json:"expected_instance_revision,omitempty"`
+	Cursor           string           `json:"cursor,omitempty"`
+	Items            []map[string]any `json:"items,omitempty"`
+	Action           string           `json:"action"`
+	Surface          string           `json:"surface"`
+	OperationID      string           `json:"operation_id"`
+	Inputs           map[string]any   `json:"inputs"`
+	Records          []RecordRef      `json:"records,omitempty"`
+	Confirm          string           `json:"confirm,omitempty"`
+}
+type Result struct {
+	Inputs       map[string]any `json:"-"`
+	NextCursor   string         `json:"next_cursor,omitempty"`
+	Records      []Record       `json:"records"`
+	Confirmation string         `json:"confirmation,omitempty"`
+	Prompt       string         `json:"prompt,omitempty"`
+}
+
+var operationID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,96}$`)
+
+func loadRecords(tx *persistence.MiniAppStore, id, col string) ([]Record, error) {
+	return loadSelectedRecords(tx, id, col, persistence.AppRecordQuery{})
+}
+func loadSelectedRecords(tx *persistence.MiniAppStore, id, col string, filter persistence.AppRecordQuery) ([]Record, error) {
+	rows, err := tx.QueryAppRecords(id, col, filter)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Record, 0, len(rows))
+	for _, row := range rows {
+		record := Record{ID: row.ID, Revision: row.Revision}
+		if err := json.Unmarshal(row.Fields, &record.Fields); err != nil {
+			return nil, err
+		}
+		result = append(result, record)
+	}
+	return result, nil
+}
+func actionRecords(tx *persistence.MiniAppStore, id string, action Action, inputs map[string]any, now time.Time) ([]Record, error) {
+	filter := persistence.AppRecordQuery{OrderBy: action.OrderBy, Limit: action.Limit}
+	if action.LimitInput != "" {
+		filter.Limit = int(inputs[action.LimitInput].(float64))
+	}
+	for _, predicate := range action.Where {
+		filter.Where = append(filter.Where, persistence.AppRecordPredicate{Field: predicate.Field, Op: predicate.Op, Value: resolve(predicate.Value, inputs, now)})
+	}
+	return loadSelectedRecords(tx, id, action.Collection, filter)
+}
+func saveRecord(tx *persistence.MiniAppStore, id, col string, r Record) error {
+	data, err := json.Marshal(r.Fields)
+	if err != nil {
+		return err
+	}
+	if len(data) > maxRecordBytes {
+		return invalid("record size limit")
+	}
+	return tx.SaveRecord(id, col, persistence.AppRecord{ID: r.ID, Revision: r.Revision, Fields: data})
+}
+func compare(x, y any) int {
+	switch a := x.(type) {
+	case string:
+		return strings.Compare(a, y.(string))
+	case float64:
+		return cmp.Compare(a, y.(float64))
+	case bool:
+		b := y.(bool)
+		if a == b {
+			return 0
+		}
+		if a {
+			return 1
+		}
+		return -1
+	}
+	return 0
+}
+func include(row Record, a Action, inputs map[string]any, now time.Time) bool {
+	for _, w := range a.Where {
+		value := row.Fields[w.Field]
+		if w.Field == "$id" {
+			value = row.ID
+		}
+		n := compare(value, resolve(w.Value, inputs, now))
+		if !comparison(n, w.Op) {
+			return false
+		}
+	}
+	return true
+}
+func queryRecords(rows []Record, a Action, inputs map[string]any, now time.Time) []Record {
+	selected := []Record{}
+	for _, r := range rows {
+		if include(r, a, inputs, now) {
+			selected = append(selected, r)
+		}
+	}
+	if k := a.OrderBy; k != "" {
+		slices.SortStableFunc(selected, func(x, y Record) int { return compare(x.Fields[k], y.Fields[k]) })
+	}
+	// Rows arrive in creation order, the stable tiebreaker for equal sort values.
+	limit := a.Limit
+	if a.LimitInput != "" {
+		limit = int(inputs[a.LimitInput].(float64))
+	}
+	if limit > 0 {
+		selected = selected[:min(len(selected), limit)]
+	}
+	return selected
+}
+
+// Cursors identify a prefix of the current ordered result. A change to a
+// previously loaded page requires a refresh before appending more records.
+func queryPage(records []Record, limit int, cursor string) (Result, error) {
+	pageSize := max(50, limit) // Preserve the full result of existing explicitly capped actions.
+	fingerprint := sha256.New()
+	current := ""
+	for start := 0; ; start += pageSize {
+		end := min(start+pageSize, len(records))
+		page := records[start:end]
+		next := ""
+		if end < len(records) {
+			for _, row := range page {
+				fmt.Fprintf(fingerprint, "%s:%d\n", row.ID, row.Revision)
+			}
+			next = hex.EncodeToString(fingerprint.Sum(nil))
+		}
+		if current == cursor {
+			return Result{Records: page, NextCursor: next}, nil
+		}
+		if next == "" {
+			return Result{}, ErrConflict
+		}
+		current = next
+	}
+}
+func inputOK(inputs map[string]any, fields map[string]string) bool {
+	if len(inputs) != len(fields) {
+		return false
+	}
+	for k, v := range inputs {
+		if !matches(v, fields[k]) {
+			return false
+		}
+	}
+	return true
+}
+func generate(p Package, a Action, inputs map[string]any) Result {
+	instruction := a.Prompt
+	if a.CandidateAction != "" {
+		schema, _ := json.Marshal(candidateDefinition(p, a).Inputs)
+		instruction += fmt.Sprintf("\nReturn only a JSON array of candidate objects, each matching these named fields and types: %s.", schema)
+	}
+	if len(inputs) > 1 {
+		parameters := maps.Clone(inputs)
+		delete(parameters, a.TextInput)
+		for _, source := range a.CandidateBindings {
+			if source != a.CountInput {
+				delete(parameters, source)
+			}
+		}
+		// Invoke has already validated the values as finite JSON scalars.
+		encoded, _ := json.Marshal(parameters)
+		instruction += "\n\nUser-selected parameters (JSON):\n" + string(encoded)
+	}
+	return Result{Inputs: maps.Clone(inputs), Records: []Record{}, Prompt: instruction + "\n\nSource material:\n" + inputs[a.TextInput].(string)}
+}
+func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result, error) {
+	var out Result
+	if !operationID.MatchString(req.OperationID) {
+		return out, invalid("operation ID")
+	}
+	err := s.store.MiniAppTransaction(ctx, func(tx *persistence.MiniAppStore) error {
+		i, err := loadInstance(tx, id)
+		if err != nil {
+			return err
+		}
+		if req.ExpectedRevision != 0 && req.ExpectedRevision != i.Revision {
+			return ErrConflict
+		}
+		if !i.Enabled {
+			return ErrDenied
+		}
+		r, err := loadRelease(tx, i.ReleaseID)
+		if err != nil {
+			return err
+		}
+		a, ok := r.Package.Actions[req.Action]
+		if !ok {
+			return ErrNotFound
+		}
+		if !slices.Contains(a.Surfaces, req.Surface) || !slices.Contains(i.Grants, capability(a.Op)) {
+			return ErrDenied
+		}
+		if utf8.RuneCountInString(req.Search) > 256 || req.Search != "" && a.Op != "query" {
+			return invalid("record search")
+		}
+		if req.Cursor != "" && (a.Op != "query" || len(req.Cursor) != sha256.Size*2) {
+			return invalid("query cursor")
+		}
+		original := req
+		now := s.now()
+		if date, _, ok := strings.Cut(req.Confirm, "."); ok {
+			reviewed, err := time.Parse(time.DateOnly, date)
+			if err != nil {
+				return ErrConflict
+			}
+			now = reviewed
+		}
+		if req.Items != nil {
+			if a.Op != "create" || len(req.Inputs) != 0 || len(req.Items) == 0 || len(req.Items) > 50 {
+				return invalid("batch creation requires one to fifty input objects")
+			}
+			req.Items = slices.Clone(req.Items)
+			for n, item := range req.Items {
+				req.Items[n], err = actionInputs(a, item, now)
+				if err != nil {
+					return invalid("invalid item in create batch")
+				}
+			}
+		} else {
+			req.Inputs, err = actionInputs(a, req.Inputs, now)
+			if err != nil {
+				return err
+			}
+		}
+		if a.Op != "update" && a.Op != "delete" && len(req.Records) > 0 {
+			return invalid("unexpected record selection")
+		}
+		if (a.Op == "query" || a.Op == "generate") && req.Confirm != "" {
+			return invalid("unexpected confirmation")
+		}
+		if a.Op == "generate" {
+			out = generate(r.Package, a, req.Inputs)
+			return tx.RecordActivity(i.ID, req.OperationID, r.ID, req.Action, req.Surface, "prepared")
+		}
+		if a.Op == "query" {
+			rows, err := actionRecords(tx, id, a, req.Inputs, now)
+			if err != nil {
+				return err
+			}
+			out, err = queryPage(searchRecords(queryRecords(rows, a, req.Inputs, now), req.Search), a.Limit, req.Cursor)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+		var rows []Record
+		if a.Op == "update" || a.Op == "delete" {
+			ids := make([]string, 0, len(req.Records))
+			for _, ref := range req.Records {
+				ids = append(ids, ref.ID)
+			}
+			rows, err = loadSelectedRecords(tx, id, a.Collection, persistence.AppRecordQuery{IDs: ids})
+			if err != nil {
+				return err
+			}
+		}
+		out, err = s.write(tx, i, a, rows, req, original, now)
+		if err != nil {
+			return err
+		}
+		status := "completed"
+		if out.Confirmation != "" {
+			status = "previewed"
+		}
+		return tx.RecordActivity(i.ID, req.OperationID, r.ID, req.Action, req.Surface, status)
+	})
+	return out, err
+}
+func (s *Service) write(tx *persistence.MiniAppStore, i Instance, a Action, rows []Record, req, original Invocation, now time.Time) (Result, error) {
+	var out Result
+	// Bind approval and replay to the instance, immutable release, caller and original input.
+	confirm := req.Confirm
+	req.Confirm = ""
+	original.Confirm = ""
+	requestData, err := json.Marshal(original)
+	if err != nil {
+		return out, err
+	}
+	fingerprint := digest([]byte(i.ID + "/" + i.ReleaseID + "/" + string(requestData)))
+	receipt := digest([]byte(fingerprint + "/" + confirm))
+	prior, result, err := tx.Invocation(i.ID, req.OperationID)
+	if err == nil {
+		if prior != receipt || len(result) == 0 {
+			return out, ErrConflict
+		}
+		err = json.Unmarshal(result, &out)
+		return out, err
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return out, err
+	}
+	issued := strconv.FormatInt(s.now().Unix(), 10)
+	if confirm != "" {
+		parts := strings.Split(confirm, ".")
+		if len(parts) != 3 {
+			return out, ErrConflict
+		}
+		timestamp, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			return out, ErrConflict
+		}
+		age := s.now().Sub(time.Unix(timestamp, 0))
+		if age > 15*time.Minute || age < -5*time.Second {
+			return out, ErrPreviewExpired
+		}
+		issued = parts[1]
+	}
+	proposed, err := propose(i.ID, rows, a, req, now)
+	if err != nil {
+		return out, err
+	}
+	out.Records = proposed
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		return out, err
+	}
+	if len(encoded) > 1<<20 {
+		return Result{}, invalid("operation output limit")
+	}
+	mac := hmac.New(sha256.New, s.secret[:])
+	date := now.Format(time.DateOnly)
+	fmt.Fprintf(mac, "%s/%d/%s/%s/", fingerprint, i.Revision, date, issued)
+	mac.Write(encoded)
+	preview := date + "." + issued + "." + hex.EncodeToString(mac.Sum(nil))
+	if confirm == "" {
+		out.Confirmation = preview
+		return out, nil
+	}
+	if !hmac.Equal([]byte(preview), []byte(confirm)) {
+		return Result{}, ErrConflict
+	}
+	if a.Op == "create" {
+		count, err := tx.RecordCount(i.ID)
+		if err != nil {
+			return out, err
+		}
+		if count+len(proposed) > maxRecords {
+			return out, invalid("instance record limit")
+		}
+	}
+	if a.Op == "delete" {
+		ids := make([]string, len(proposed))
+		for n, r := range proposed {
+			ids[n] = r.ID
+			out.Records[n].Fields = map[string]any{}
+		}
+		if err := tx.DeleteRecords(i.ID, a.Collection, ids); err != nil {
+			return Result{}, err
+		}
+		encoded, err = json.Marshal(out)
+		if err != nil {
+			return Result{}, err
+		}
+	} else {
+		for _, r := range proposed {
+			if err := saveRecord(tx, i.ID, a.Collection, r); err != nil {
+				return Result{}, err
+			}
+		}
+	}
+	size, err := tx.InstanceRecordBytes(i.ID)
+	if err != nil {
+		return Result{}, err
+	}
+	if size > 16<<20 {
+		return Result{}, invalid("instance storage limit")
+	}
+	return out, tx.SaveInvocation(i.ID, req.OperationID, receipt, encoded)
+}
+func propose(id string, rows []Record, a Action, req Invocation, now time.Time) ([]Record, error) {
+	var proposed []Record
+	switch a.Op {
+	case "create":
+		inputs := req.Items
+		if inputs == nil {
+			inputs = []map[string]any{req.Inputs}
+		}
+		for n, values := range inputs {
+			identity := id + "/" + req.OperationID
+			if n > 0 {
+				identity += "/" + strconv.Itoa(n)
+			}
+			record := Record{ID: uuid.NewSHA1(uuid.NameSpaceOID, []byte(identity)).String(), Revision: 1, Fields: map[string]any{}}
+			for key, expression := range a.Values {
+				record.Fields[key] = resolve(expression, values, now)
+			}
+			proposed = append(proposed, record)
+		}
+		return proposed, nil
+	case "update", "delete":
+		if len(req.Records) == 0 || len(req.Records) > 50 {
+			return nil, invalid("select between one and fifty records")
+		}
+		byID := map[string]Record{}
+		for _, r := range rows {
+			byID[r.ID] = r
+		}
+		for _, ref := range req.Records {
+			r, ok := byID[ref.ID]
+			if !ok || r.Revision != ref.Revision || !include(r, a, req.Inputs, now) {
+				return nil, ErrConflict
+			}
+			delete(byID, ref.ID)
+			r.Revision++
+			proposed = append(proposed, r)
+		}
+	}
+	for index, r := range proposed {
+		// All assignments evaluate against the same pre-operation record.
+		updated := maps.Clone(r.Fields)
+		for k, v := range a.Values {
+			value, err := evalRule(v, r.Fields, req.Inputs, now)
+			if err != nil {
+				return nil, err
+			}
+			updated[k] = value
+		}
+		proposed[index].Fields = updated
+	}
+	return proposed, nil
+}
+
+func searchRecords(rows []Record, query string) []Record {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return rows
+	}
+	filtered := []Record{}
+	for _, row := range rows {
+		for _, value := range row.Fields {
+			text, ok := value.(string)
+			if ok && strings.Contains(strings.ToLower(text), query) {
+				filtered = append(filtered, row)
+				break
+			}
+		}
+	}
+	return filtered
+}

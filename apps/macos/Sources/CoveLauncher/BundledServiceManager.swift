@@ -143,6 +143,43 @@ public final class BundledServiceManager: ServiceManaging, ServiceStatusReading,
         return payload.launchToken
     }
 
+    private func runningBaseURL() -> URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        return running?.readiness()?.baseURL
+    }
+
+    public func miniAppFileRequest(_ id: UUID, reply: Data? = nil) async throws -> Data {
+        let path = "/internal/control/mini-app-files/" + id.uuidString.lowercased() + (reply == nil ? "/claim" : "/finish")
+        return try await miniAppControl(path, body: reply)
+    }
+
+    public func renewMiniAppPicker(_ id: UUID) async throws {
+        _ = try await miniAppControl("/internal/control/mini-app-files/" + id.uuidString.lowercased() + "/renew", body: nil)
+    }
+
+    public func miniAppSelectionTargets() async throws -> Data {
+        return try await miniAppControl("/internal/control/mini-app-selection/targets", body: nil)
+    }
+
+    public func stageMiniAppSelection(_ body: Data) async throws -> Data {
+        return try await miniAppControl("/internal/control/mini-app-selection/stage", body: body)
+    }
+
+    private func miniAppControl(_ path: String, body: Data?) async throws -> Data {
+        guard let base = runningBaseURL() else { throw LauncherError.serviceDidNotBecomeReady }
+        var request = URLRequest(url: base.appendingPathComponent(path), timeoutInterval: 5)
+        request.httpMethod = "POST"
+        request.setValue(controlToken, forHTTPHeaderField: "X-Cove-Control-Token")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
+        let (data, response) = try await session.data(for: request, delegate: LaunchRedirectObserver())
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw LauncherError.invalidReadiness }
+        return data
+    }
+
     public func fetchStatus(completion: @escaping @Sendable (Result<LauncherServiceStatus, Error>) -> Void) {
         lock.lock()
         let running = self.running

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { setupControlTests } from "@/test/control-helpers";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import * as api from "@/api/debates";
+import { setInteractiveDraftDirty, useInteractiveDraftWarning } from "@/lib/chat/interactive-drafts";
 import { DebateWorkspace } from "./DebateWorkspace";
 import { DebateSetupDialog, defaultDebateRules } from "./DebateSetupDialog";
 import { createWorkspaceFixture } from "@/test/workspace-fixture";
@@ -247,4 +248,36 @@ test("unconfigured Providers remain unavailable for debate inference", () => {
   expect(screen.queryByRole("combobox", { name: "Model for seat 1" })).toBeNull();
   fireEvent.submit(screen.getByRole("button", { name: "Start debate" }).closest("form")!);
   expect(api.createDebate).not.toHaveBeenCalled();
+});
+
+
+test("intervention drafts participate in the shared workspace guard until successfully queued", async () => {
+  const warning = renderHook(useInteractiveDraftWarning);
+  mount(<DebateWorkspace id="debate-one" onNewDebate={() => {}} />);
+  const input = await screen.findByRole("textbox", { name: "Your intervention" });
+  expect(warning.result.current).toBe(false);
+  fireEvent.change(input, { target: { value: "Consider a smaller team." } });
+  expect(warning.result.current).toBe(true);
+  vi.mocked(api.addDebateIntervention).mockRejectedValueOnce(new Error("Save unavailable"));
+  fireEvent.click(screen.getByRole("button", { name: "Add to debate" }));
+  await screen.findByText("Save unavailable");
+  expect(warning.result.current).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Add to debate" }));
+  await waitFor(() => expect(warning.result.current).toBe(false));
+  expect((input as HTMLTextAreaElement).value).toBe("");
+});
+
+test("unmounting a Debate clears only its own intervention draft registration", async () => {
+  const warning = renderHook(useInteractiveDraftWarning);
+  const workspace = mount(<DebateWorkspace id="debate-one" onNewDebate={() => {}} />);
+  fireEvent.change(await screen.findByRole("textbox", { name: "Your intervention" }), { target: { value: "Unsaved intervention" } });
+  expect(warning.result.current).toBe(true);
+  act(() => setInteractiveDraftDirty("another-mounted-draft", true));
+  try {
+    workspace.unmount();
+    expect(warning.result.current).toBe(true);
+  } finally {
+    act(() => setInteractiveDraftDirty("another-mounted-draft", false));
+  }
+  expect(warning.result.current).toBe(false);
 });

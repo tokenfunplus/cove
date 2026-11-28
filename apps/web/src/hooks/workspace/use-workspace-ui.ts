@@ -1,3 +1,4 @@
+import { useWorkspaceActive } from "@/lib/workspace-active";
 import { type PrivateConnectionProgressState } from "@/components/verification/PrivateConnectionProgress";
 import { type ConfirmationRequest } from "@/lib/workspace-types";
 import { type ConversationNavigation } from "@/lib/workspace-types";
@@ -17,6 +18,7 @@ export type WorkspaceFeedback = {
 };
 
 export function useWorkspaceUi() {
+  const active = useWorkspaceActive();
   const history = useHistoryFilters();
   const [conversationSearchQuery, setConversationSearchQuery] = useState("");
   const [conversationNavigation, setConversationNavigation] = useState<ConversationNavigation>();
@@ -65,7 +67,7 @@ export function useWorkspaceUi() {
   const exitFocusMode = useCallback(() => setFocusMode(false), []);
 
   useEffect(() => {
-    if (!focusMode) return;
+    if (!active || !focusMode) return;
     const onEscape = (event: KeyboardEvent) => {
       if (
         event.key !== "Escape" ||
@@ -94,7 +96,7 @@ export function useWorkspaceUi() {
     };
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [focusMode, exitFocusMode]);
+  }, [active, focusMode, exitFocusMode]);
 
   const [confirmation, setConfirmation] = useState<ConfirmationRequest>();
   const [isNavigating, setIsNavigating] = useState(false);

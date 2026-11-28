@@ -16,6 +16,16 @@ The Launcher menu offers Open Quick Panel, Open Chat, New Chat, and Settings. Wh
 
 Troubleshooting contains Restart Local Service, Open Data Folder, and Copy Diagnostics. The diagnostic summary excludes credentials, launch URLs, errors, and conversations. Check for Updates groups stable and explicit beta checks. After a newer release is found, the menu displays Update Available and keeps its download link available after dismissing the alert. About Cove contains the installed version/build and a Release Notes link for that exact version, including beta releases. Help & Feedback opens the user guide or issue tracker without submitting a report.
 
+## Use a Mini App
+
+Browse apps on [CoveWeb](https://www.hicove.io/apps), then download an app package or choose **Open in Cove**. In Cove, open **Mini Apps** from the Launcher to import a downloaded package or manage your installed copies. Review its permissions and name your copy. A second instance gets its own records, permissions and history. In **Japanese Review Book**, open **Daily practice**, reveal an answer, select the questions you studied, and confirm a review action to update their due dates.
+
+In Chat or the Quick Panel, open Mini Apps from the composer tools and choose your book. Select due questions to add them to your draft. You can edit the draft before sending it. In the book's **Study material** view you can save a passage or ask a model to generate candidate questions. Review the selected model and destination, then choose the candidates to save. Open instance settings to change permissions or export a personal backup. See the [authoring guide](mini-apps.md) to develop a personal app.
+
+Your records, attachments, permissions and saved model results live in Cove’s local database on this Mac. Checking for app updates downloads the catalog and compares versions on your Mac. Choosing a cloud model sends the reviewed request to that provider. Select **Only on this Mac** to use a Cove-managed local model.
+
+For a bundled or catalog app, open the instance’s **Settings → Check for updates**. Review the version and permissions, then choose **Update to &lt;version&gt;** to update that instance in place. Added permissions start unchecked. If a data migration fails, Cove keeps the previous release and records. For a personal app, choose **My apps → Import app**, open the newer file and select the existing instance under **Update an existing copy**. Other instances can stay on their current versions.
+
 ## Use the Quick Panel
 
 Choose **Open Quick Panel** from the Cove menu bar. To open it from any app, enable **Launcher Settings > Quick Panel Shortcut: ⌃⌥C**, then press **Control-Option-C**. When Cove is ready, the panel opens with the composer focused so you can type immediately.

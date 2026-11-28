@@ -1,0 +1,52 @@
+{
+  "steps": [
+    {
+      "action": "inbox.queue",
+      "count": 1
+    },
+    {
+      "action": "inbox.defer",
+      "select": [
+        0
+      ],
+      "count": 1
+    },
+    {
+      "action": "inbox.queue",
+      "count": 0
+    },
+    {
+      "action": "inbox.add",
+      "inputs": {
+        "title": "Fixture",
+        "note": "Read the first section."
+      },
+      "count": 1
+    },
+    {
+      "action": "inbox.queue",
+      "count": 1,
+      "expect_fields": {
+        "title": "Fixture"
+      }
+    },
+    {
+      "action": "inbox.archive",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "status": "archived"
+      }
+    },
+    {
+      "action": "inbox.queue",
+      "count": 0
+    },
+    {
+      "action": "inbox.all",
+      "count": 2
+    }
+  ]
+}

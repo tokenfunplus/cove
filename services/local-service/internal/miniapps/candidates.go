@@ -1,0 +1,124 @@
+package miniapps
+
+import (
+	"context"
+	"encoding/json"
+	"slices"
+	"sort"
+	"strings"
+
+	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
+)
+
+type CandidateCheckRequest struct {
+	ExpectedRevision int64            `json:"expected_instance_revision"`
+	Action           string           `json:"action"`
+	Surface          string           `json:"surface"`
+	Items            []map[string]any `json:"items"`
+}
+
+type CandidateIssue struct {
+	Index   int    `json:"index"`
+	Message string `json:"message"`
+}
+
+type CandidateCheckResult struct {
+	Duplicates []int            `json:"duplicates"`
+	Invalid    []CandidateIssue `json:"invalid"`
+}
+
+func (s *Service) CandidateDuplicates(ctx context.Context, id string, req CandidateCheckRequest) ([]int, error) {
+	result, err := s.CheckCandidates(ctx, id, req)
+	if err == nil && len(result.Invalid) > 0 {
+		err = ErrInvalid
+	}
+	return result.Duplicates, err
+}
+
+// CheckCandidates compares user-authored fields against the destination collection,
+// including archived records, and isolates invalid rows without returning record data.
+func (s *Service) CheckCandidates(ctx context.Context, id string, req CandidateCheckRequest) (CandidateCheckResult, error) {
+	result := CandidateCheckResult{Duplicates: []int{}, Invalid: []CandidateIssue{}}
+	if len(req.Items) > 100 {
+		return result, ErrInvalid
+	}
+	err := s.store.MiniAppTransaction(ctx, func(tx *persistence.MiniAppStore) error {
+		instance, err := loadInstance(tx, id)
+		if err != nil {
+			return err
+		}
+		if !instance.Enabled || !slices.Contains(instance.Grants, "records.query") {
+			return ErrDenied
+		}
+		if instance.Revision != req.ExpectedRevision {
+			return ErrConflict
+		}
+		release, err := loadRelease(tx, instance.ReleaseID)
+		if err != nil {
+			return err
+		}
+		generator, ok := release.Package.Actions[req.Action]
+		if !ok || generator.Op != "generate" || !slices.Contains(generator.Surfaces, req.Surface) || generator.CandidateAction == "" {
+			return ErrInvalid
+		}
+		target := release.Package.Actions[generator.CandidateAction]
+		fields := map[string]string{}
+		for field, expression := range target.Values {
+			value, ok := expression.(string)
+			if !ok {
+				continue
+			}
+			input, ok := strings.CutPrefix(value, "$input.")
+			if !ok {
+				continue
+			}
+			if _, bound := generator.CandidateBindings[input]; !bound {
+				fields[field] = input
+			}
+		}
+		rows, err := loadRecords(tx, id, target.Collection)
+		if err != nil {
+			return err
+		}
+		names := make([]string, 0, len(fields))
+		for field := range fields {
+			names = append(names, field)
+		}
+		sort.Strings(names)
+		signature := func(values map[string]any, inputs bool) string {
+			content := make([]any, 0, len(names))
+			for _, field := range names {
+				key := field
+				if inputs {
+					key = fields[field]
+				}
+				value := values[key]
+				if text, ok := value.(string); ok {
+					value = strings.Join(strings.Fields(text), " ")
+				}
+				content = append(content, value)
+			}
+			raw, _ := json.Marshal(content)
+			return string(raw)
+		}
+		seen := map[string]bool{}
+		for _, row := range rows {
+			seen[signature(row.Fields, false)] = true
+		}
+		now := s.now()
+		for index, raw := range req.Items {
+			item, err := actionInputs(target, raw, now)
+			if err != nil {
+				result.Invalid = append(result.Invalid, CandidateIssue{Index: index, Message: "These values do not meet the app's requirements. Review this candidate before saving it."})
+				continue
+			}
+			key := signature(item, true)
+			if len(fields) > 0 && seen[key] {
+				result.Duplicates = append(result.Duplicates, index)
+			}
+			seen[key] = true
+		}
+		return nil
+	})
+	return result, err
+}

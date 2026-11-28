@@ -1,0 +1,32 @@
+[
+  {
+    "publisher": "cove",
+    "app": "japanese-review-book",
+    "version": "1.1.0",
+    "digest": "8f5c7f4108bd496cc616a973109272fdba49c47786d43f4b25e15223c5772e55"
+  },
+  {
+    "publisher": "cove",
+    "app": "japanese-review-book",
+    "version": "1.2.0",
+    "digest": "891051ef9ae485c20161a7fcedd4255fcee22825025d0b53a55a014c812aa217"
+  },
+  {
+    "publisher": "cove",
+    "app": "japanese-review-book",
+    "version": "1.0.0",
+    "digest": "142537217b38c44b5e5b14428f86f44fd43783c6fa1444efd1d5b4f5a9f3eb59"
+  },
+  {
+    "publisher": "bookshelf",
+    "app": "reading-inbox",
+    "version": "1.1.0",
+    "digest": "f9c40c6ca9bc9c0aeb3999183f8dacff44253129aa2075a70d4758576c9903bd"
+  },
+  {
+    "publisher": "bookshelf",
+    "app": "reading-inbox",
+    "version": "1.0.0",
+    "digest": "b45bd33b82b299257d0850e18a3323178fea4d3151f6e223b5cc87962ce29707"
+  }
+]

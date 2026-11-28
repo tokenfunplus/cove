@@ -1,0 +1,95 @@
+package persistence
+
+import (
+	"context"
+)
+
+// Compact payloads while keeping small idempotency fingerprints that prevent a repeated write or model charge.
+const compactReceipts = `WITH recent AS (
+ SELECT rowid AS rid,created_at,row_number() OVER (ORDER BY rowid DESC) AS position,
+ sum(length(result)) OVER (ORDER BY rowid DESC) AS bytes
+ FROM mini_app_invocations WHERE instance_id=? AND length(result)>0)
+ UPDATE mini_app_invocations SET result=X'' WHERE rowid IN
+ (SELECT rid FROM recent WHERE position>64 OR bytes>4194304 OR created_at<unixepoch()-604800)`
+const compactTasks = `WITH recent AS (
+ SELECT rowid AS rid,created_at,row_number() OVER (ORDER BY rowid DESC) AS position,
+ sum(length(CAST(request AS BLOB))+length(CAST(result AS BLOB))+length(CAST(verification AS BLOB))+length(CAST(snapshot AS BLOB))) OVER (ORDER BY rowid DESC) AS bytes
+ FROM mini_app_tasks WHERE instance_id=? AND state NOT IN ('running','expired'))
+ UPDATE mini_app_tasks SET state='expired',request='{}',result='',snapshot='',verification='',detail=''
+ WHERE rowid IN (SELECT rid FROM recent WHERE position>30 OR bytes>4194304 OR created_at<unixepoch()-604800)`
+
+func (s *SQLiteStore) PruneAppHistory(ctx context.Context) error {
+	return s.MiniAppTransaction(ctx, func(tx *MiniAppStore) error {
+		ids, err := tx.InstanceIDs()
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			if _, err := tx.tx.ExecContext(ctx, compactReceipts, id); err != nil {
+				return err
+			}
+			if _, err := tx.tx.ExecContext(ctx, compactTasks, id); err != nil {
+				return err
+			}
+		}
+		_, err = tx.tx.ExecContext(ctx, "DELETE FROM mini_app_activity WHERE created_at<unixepoch()-604800")
+		return err
+	})
+}
+
+type AppActivity struct {
+	Operation string `json:"operation_id"`
+	Release   string `json:"release_id"`
+	Action    string `json:"action"`
+	Surface   string `json:"surface"`
+	Status    string `json:"status"`
+	Time      int64  `json:"time"`
+}
+
+func (tx *MiniAppStore) RecordActivity(instance, operation, release, action, surface, status string) error {
+	_, err := tx.tx.ExecContext(tx.ctx, `INSERT INTO mini_app_activity VALUES(?,?,?,?,?,?,unixepoch()) ON CONFLICT(instance_id,operation_id) DO UPDATE SET status=excluded.status,created_at=excluded.created_at WHERE excluded.status!='prepared' OR mini_app_activity.status='prepared'`, instance, operation, release, action, surface, status)
+	if err != nil {
+		return err
+	}
+	_, err = tx.tx.ExecContext(tx.ctx, `DELETE FROM mini_app_activity WHERE rowid IN (SELECT rowid FROM mini_app_activity WHERE instance_id=? ORDER BY rowid DESC LIMIT -1 OFFSET 100)`, instance)
+	return err
+}
+func (s *SQLiteStore) AppActivity(ctx context.Context, id string) ([]AppActivity, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT operation_id,release_id,action,surface,status,created_at FROM mini_app_activity WHERE instance_id=? AND created_at>=unixepoch()-604800 ORDER BY created_at DESC,rowid DESC LIMIT 100`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	all := []AppActivity{}
+	for rows.Next() {
+		var e AppActivity
+		if err = rows.Scan(&e.Operation, &e.Release, &e.Action, &e.Surface, &e.Status, &e.Time); err != nil {
+			return nil, err
+		}
+		all = append(all, e)
+	}
+	return all, rows.Err()
+}
+
+type GlobalAppActivity struct {
+	AppActivity
+	InstanceID   string `json:"instance_id"`
+	InstanceName string `json:"instance_name"`
+}
+
+func (s *SQLiteStore) GlobalAppActivity(ctx context.Context, instance string) ([]GlobalAppActivity, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT a.operation_id,a.release_id,a.action,a.surface,a.status,a.created_at,i.id,i.name FROM mini_app_activity a JOIN mini_app_instances i ON i.id=a.instance_id WHERE (?='' OR a.instance_id=?) AND a.action NOT IN (SELECT key FROM mini_app_releases r,json_each(CAST(r.manifest AS TEXT),'$.actions') WHERE r.id=a.release_id AND json_extract(value,'$.op')='query') ORDER BY a.created_at DESC,a.rowid DESC LIMIT 100`, instance, instance)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []GlobalAppActivity{}
+	for rows.Next() {
+		var item GlobalAppActivity
+		if err := rows.Scan(&item.Operation, &item.Release, &item.Action, &item.Surface, &item.Status, &item.Time, &item.InstanceID, &item.InstanceName); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}

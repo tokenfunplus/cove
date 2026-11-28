@@ -1,3 +1,4 @@
+import { useWorkspaceActive } from "@/lib/workspace-active";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
 import { useRef, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ export function Tooltip({
   className?: string;
   suppressRestoredFocus?: boolean;
 }) {
+  const active = useWorkspaceActive();
   const activated = useRef(false);
   return (
     <TooltipPrimitive.Provider delayDuration={350} skipDelayDuration={100}>
@@ -27,7 +29,7 @@ export function Tooltip({
             if (activated.current) { activated.current = false; event.preventDefault(); }
           }}
         >{children}</TooltipPrimitive.Trigger>
-        <TooltipPrimitive.Portal>
+        {active && <TooltipPrimitive.Portal>
           <TooltipPrimitive.Content
             side={side}
             sideOffset={8}
@@ -39,7 +41,7 @@ export function Tooltip({
           >
             {content}
           </TooltipPrimitive.Content>
-        </TooltipPrimitive.Portal>
+        </TooltipPrimitive.Portal>}
       </TooltipPrimitive.Root>
     </TooltipPrimitive.Provider>
   );

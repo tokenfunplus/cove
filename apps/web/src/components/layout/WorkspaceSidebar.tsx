@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { FolderClosed } from "lucide-react";
+import { navigateWorkspace } from "@/lib/workspace-navigation";
+import { FolderClosed, LayoutGrid } from "lucide-react";
 import { workspaceStyles } from "@/styles/workspace";
 import { baseStyles } from "@/styles/base";
 import { cn } from "@/lib/utils";
@@ -64,7 +65,8 @@ export function WorkspaceSidebar({ workspace }: Props) {
         />
       </div>
       <ConversationList
-        navigation={<Button variant="ghost" type="button" aria-label="Projects" aria-current={projectsActive ? "page" : undefined} className={workspaceStyles.projectNavigation} onClick={() => { exitFocusMode();workspace.handleOpenProject();setMobileSidebarOpen(false); }}><FolderClosed className={cn(historyStyles.rowIcon, projectsActive && "text-primary")} aria-hidden="true"/><span className="truncate text-[13px]">Projects</span></Button>}
+        navigation={<><Button variant="ghost" type="button" aria-label="Projects" aria-current={projectsActive ? "page" : undefined} className={workspaceStyles.projectNavigation} onClick={() => { exitFocusMode();workspace.handleOpenProject();setMobileSidebarOpen(false); }}><FolderClosed className={cn(historyStyles.rowIcon, projectsActive && "text-primary")} aria-hidden="true"/><span className="truncate text-[13px]">Projects</span></Button>
+          <Button asChild variant="ghost" className={workspaceStyles.projectNavigation}><a href="/apps" aria-label="Mini Apps" onClick={(event) => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateWorkspace("/apps"); }}><LayoutGrid className={historyStyles.rowIcon} aria-hidden="true"/><span className="truncate text-[13px]">Mini Apps</span></a></Button></>}
         onMoveToProject={conversation => {workspace.setProjectMoveTarget(conversation);setMobileSidebarOpen(false);}}
         revealSearch={
           focusMode

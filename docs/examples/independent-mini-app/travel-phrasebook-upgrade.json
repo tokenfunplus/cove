@@ -1,0 +1,252 @@
+{
+  "grants": [
+    "records.query",
+    "records.commit"
+  ],
+  "before": [
+    {
+      "action": "phrase.bySituation",
+      "inputs": {
+        "language": "Spanish",
+        "situation": "cafe"
+      },
+      "count": 1
+    },
+    {
+      "action": "phrase.stumble",
+      "surface": "panel",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 1
+      }
+    },
+    {
+      "action": "phrase.stumble",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 2
+      }
+    },
+    {
+      "action": "phrase.remembered",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 2
+      }
+    },
+    {
+      "action": "phrase.add",
+      "surface": "chat",
+      "inputs": {
+        "phrase": "Agua sin gas, por favor.",
+        "translation": "Still water, please.",
+        "language": "Spanish",
+        "situation": "restaurant",
+        "note": "A personal fictional record with \u00e9 retained."
+      },
+      "count": 1
+    },
+    {
+      "action": "phrase.stumble",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 1
+      }
+    },
+    {
+      "action": "phrase.edit",
+      "inputs": {
+        "phrase": "Agua sin gas, por favor.",
+        "translation": "Still water, please. No ice.",
+        "language": "Spanish",
+        "situation": "restaurant",
+        "note": "A personal fictional record with \u00e9 retained."
+      },
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "translation": "Still water, please. No ice.",
+        "errors": 1
+      }
+    },
+    {
+      "action": "phrase.all",
+      "count": 3
+    }
+  ],
+  "after": [
+    {
+      "action": "phrase.all",
+      "count": 3,
+      "expect_fields": {
+        "phrase": "Agua sin gas, por favor.",
+        "translation": "Still water, please. No ice.",
+        "note": "A personal fictional record with \u00e9 retained.",
+        "errors": 1,
+        "starred": false,
+        "uses": 0
+      }
+    },
+    {
+      "action": "phrase.bySituation",
+      "inputs": {
+        "language": "Spanish",
+        "situation": "cafe"
+      },
+      "count": 1,
+      "expect_fields": {
+        "phrase": "La cuenta, por favor.",
+        "errors": 2,
+        "starred": false,
+        "uses": 0
+      }
+    },
+    {
+      "action": "phrase.bySituation",
+      "inputs": {
+        "language": "Spanish",
+        "situation": "transport"
+      },
+      "count": 1,
+      "expect_fields": {
+        "phrase": "\u00bfD\u00f3nde est\u00e1 la estaci\u00f3n?",
+        "translation": "Where is the station?",
+        "errors": 0,
+        "starred": false,
+        "uses": 0
+      }
+    },
+    {
+      "action": "phrase.tomorrow",
+      "count": 1,
+      "expect_fields": {
+        "phrase": "Agua sin gas, por favor.",
+        "errors": 1
+      }
+    },
+    {
+      "action": "phrase.useful",
+      "surface": "panel",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "starred": true,
+        "uses": 1,
+        "errors": 1
+      }
+    },
+    {
+      "action": "phrase.useful",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "starred": true,
+        "uses": 2
+      }
+    },
+    {
+      "action": "phrase.pocket",
+      "surface": "chat",
+      "count": 1,
+      "expect_fields": {
+        "starred": true,
+        "uses": 2,
+        "translation": "Still water, please. No ice."
+      }
+    },
+    {
+      "action": "phrase.stumble",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 2,
+        "starred": true,
+        "uses": 2
+      }
+    },
+    {
+      "action": "phrase.remembered",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "errors": 2,
+        "starred": true,
+        "uses": 2
+      }
+    },
+    {
+      "action": "phrase.tomorrow",
+      "count": 0
+    },
+    {
+      "action": "phrase.soon",
+      "count": 3
+    },
+    {
+      "action": "phrase.pocket",
+      "count": 1
+    },
+    {
+      "action": "phrase.unstar",
+      "select": [
+        0
+      ],
+      "count": 1,
+      "expect_fields": {
+        "starred": false,
+        "uses": 2
+      }
+    },
+    {
+      "action": "phrase.pocket",
+      "count": 0
+    },
+    {
+      "action": "phrase.add",
+      "inputs": {
+        "phrase": "Una mesa para dos.",
+        "translation": "A table for two.",
+        "language": "Spanish",
+        "situation": "dinner"
+      },
+      "count": 1,
+      "expect_fields": {
+        "errors": 0,
+        "starred": false,
+        "uses": 0
+      }
+    },
+    {
+      "action": "phrase.all",
+      "count": 4,
+      "expect_fields": {
+        "phrase": "Agua sin gas, por favor.",
+        "errors": 2,
+        "uses": 2,
+        "starred": false
+      }
+    }
+  ]
+}

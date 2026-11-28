@@ -1,0 +1,19 @@
+{
+  "grants": ["records.query", "records.commit", "chat.attach"],
+  "before": [
+    {"action": "inbox.queue", "count": 1},
+    {"action": "inbox.archive", "select": [0], "count": 1},
+    {"action": "inbox.add", "surface": "chat", "inputs": {"title": "The library essay", "note": "Read section two."}, "count": 1}
+  ],
+  "after": [
+    {"action": "inbox.queue", "surface": "chat", "count": 1, "expect_fields": {"title": "The library essay", "note": "Read section two.", "deferrals": 0}},
+    {"action": "inbox.defer", "surface": "chat", "select": [0], "count": 1, "expect_fields": {"deferrals": 1}},
+    {"action": "inbox.queue", "count": 0},
+    {"action": "inbox.upcoming", "count": 1},
+    {"action": "inbox.defer", "surface": "panel", "select": [0], "count": 1, "expect_fields": {"deferrals": 2}},
+    {"action": "inbox.upcoming", "count": 0},
+    {"action": "inbox.all", "count": 2, "expect_fields": {"title": "The library essay", "deferrals": 2}},
+    {"action": "inbox.restore", "select": [1], "count": 1, "expect_fields": {"title": "The library essay", "deferrals": 0}},
+    {"action": "inbox.queue", "count": 1}
+  ]
+}

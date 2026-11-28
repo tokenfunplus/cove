@@ -1,3 +1,4 @@
+import { useWorkspaceActive } from "@/lib/workspace-active";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   ConversationView,
@@ -32,6 +33,7 @@ export function useConversationScroll({
   navigation?: ConversationNavigation;
   quickPanel?: boolean;
 }) {
+  const active = useWorkspaceActive();
   const hasContent = Boolean(view?.messages.length || liveTurn);
   const messageListRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -185,7 +187,7 @@ export function useConversationScroll({
     clearUpdatedReplies();
     if (quickPanel) preserveReadingPosition();
     else if (node) node.scrollTop = node.scrollHeight;
-    composerRef.current?.focus({ preventScroll: quickPanel });
+    if (active) composerRef.current?.focus({ preventScroll: quickPanel });
   }, [liveTurn?.clientRequestId, liveTurn?.restored]);
 
   const savedSizes = useMemo(() => {

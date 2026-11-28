@@ -1,0 +1,156 @@
+{
+  "format": 1,
+  "publisher": "bookshelf",
+  "app": "reading-inbox",
+  "name": "Reading Inbox",
+  "description": "Collect reading ideas, defer an item for three days, or archive it when finished.",
+  "version": "1.0.0",
+  "schema_version": 1,
+  "capabilities": [
+    "records.query",
+    "records.commit",
+    "chat.attach"
+  ],
+  "collections": {
+    "items": {
+      "fields": {
+        "title": "text",
+        "note": "text",
+        "status": "text",
+        "revisit": "date"
+      }
+    }
+  },
+  "pages": [
+    {
+      "id": "home",
+      "title": "Reading queue",
+      "actions": [
+        "inbox.queue",
+        "inbox.add",
+        "inbox.defer",
+        "inbox.archive"
+      ]
+    },
+    {
+      "id": "library",
+      "title": "All reading",
+      "actions": [
+        "inbox.all",
+        "inbox.restore"
+      ]
+    }
+  ],
+  "actions": {
+    "inbox.queue": {
+      "title": "Ready to read",
+      "op": "query",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "where": [
+        {
+          "field": "status",
+          "op": "eq",
+          "value": "queued"
+        },
+        {
+          "field": "revisit",
+          "op": "lte",
+          "value": "$today"
+        }
+      ],
+      "order_by": "revisit"
+    },
+    "inbox.add": {
+      "title": "Add reading",
+      "op": "create",
+      "collection": "items",
+      "inputs": {
+        "title": "text",
+        "note": "text"
+      },
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "title": "$input.title",
+        "note": "$input.note",
+        "status": "queued",
+        "revisit": "$today"
+      }
+    },
+    "inbox.defer": {
+      "title": "Defer for three days",
+      "op": "update",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "status": "queued",
+        "revisit": "$today+3"
+      }
+    },
+    "inbox.archive": {
+      "title": "Archive selection",
+      "op": "update",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "status": "archived"
+      }
+    },
+    "inbox.all": {
+      "title": "All items",
+      "op": "query",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "order_by": "title"
+    },
+    "inbox.restore": {
+      "title": "Restore to queue",
+      "op": "update",
+      "collection": "items",
+      "inputs": {},
+      "surfaces": [
+        "page",
+        "chat",
+        "panel"
+      ],
+      "values": {
+        "status": "queued",
+        "revisit": "$today"
+      }
+    }
+  },
+  "seed": {
+    "items": [
+      {
+        "title": "An essay to revisit",
+        "note": "Capture the main claim after reading.",
+        "status": "queued",
+        "revisit": "$today"
+      }
+    ]
+  }
+}

@@ -307,7 +307,7 @@ func TestUnreleasedPreviewSchema28RetainsCardsWhenMainMigrationIsAdded(t *testin
 		t.Fatal(err)
 	}
 	_, _, run := seedCard(t, s)
-	if _, err = s.db.Exec(`ALTER TABLE project_source_indexes DROP COLUMN source_snapshot; PRAGMA user_version=28`); err != nil {
+	if _, err = s.db.Exec(removeMiniAppsSchema + `ALTER TABLE project_source_indexes DROP COLUMN source_snapshot; PRAGMA user_version=28`); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
@@ -316,7 +316,7 @@ func TestUnreleasedPreviewSchema28RetainsCardsWhenMainMigrationIsAdded(t *testin
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if pragmaInt(t, s.db, "user_version") != 29 {
+	if pragmaInt(t, s.db, "user_version") != schemaVersion {
 		t.Fatal("preview not upgraded")
 	}
 	rows, err := s.db.Query(`SELECT source_snapshot FROM project_source_indexes LIMIT 0`)

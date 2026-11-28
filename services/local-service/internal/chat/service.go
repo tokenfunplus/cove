@@ -46,6 +46,7 @@ type ExpectedGenerationTarget struct {
 }
 
 type SendInput struct {
+	MiniApp              *persistence.MiniAppScope
 	Interactive          bool
 	Card                 *interactive.Submission
 	LocalOnly            bool
@@ -127,7 +128,7 @@ type Chat interface {
 }
 
 func (service *Service) HasActiveGenerationBatch() bool {
-	if service.debateBusy() {
+	if service.debateBusy() || service.appTaskBusy() {
 		return true
 	}
 	service.activeMu.Lock()
@@ -164,6 +165,8 @@ type GenerationEvent struct {
 }
 
 type Service struct {
+	appActions     AppActionSource
+	appTask        appTaskWorker
 	speech         localSpeech
 	localModels    *localmodels.Manager
 	localDocuments retrieval.Store
@@ -172,6 +175,7 @@ type Service struct {
 	webToolCancels sync.Map
 	debateMu       sync.Mutex
 	debate         *debateRun
+	debatePending  map[string]*pendingDebateBrowserResult // guarded by debateMu; at most one debate's active turns
 	debateWatchers map[string]map[chan struct{}]bool
 	debateDelay    time.Duration
 	documentParser documents.Parser
@@ -303,7 +307,7 @@ func (service *Service) StartGeneration(ctx context.Context, input SendInput) (G
 // next send as busy after the previous answer is already complete.
 // Callers hold startMu, so another send cannot start while this check waits.
 func (service *Service) generationInProgress(ctx context.Context) (bool, error) {
-	if service.debateBusy() {
+	if service.debateBusy() || service.appTaskBusy() {
 		return true, nil
 	}
 	service.activeMu.Lock()
@@ -399,7 +403,11 @@ func (service *Service) DeleteConversation(ctx context.Context, conversationID s
 	if err := service.stopConversationWork(ctx, conversationID); err != nil {
 		return err
 	}
-	return service.store.DeleteConversation(ctx, conversationID)
+	if err := service.store.DeleteConversation(ctx, conversationID); err != nil {
+		return err
+	}
+	service.forgetPendingDebateBrowserResults(conversationID)
+	return nil
 }
 
 // The caller holds startMu while affected work settles.
@@ -480,6 +488,7 @@ func (service *Service) ClearChatData(ctx context.Context) error {
 	if err := clearErr; err != nil {
 		return err
 	}
+	service.forgetPendingDebateBrowserResults("")
 	service.clearPreparedWebSources()
 	service.hub.forgetCompleted("")
 	service.batchHub.forgetCompleted("")

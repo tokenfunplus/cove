@@ -209,7 +209,7 @@ func TestProjectMigrationPreservesSchema22History(t *testing.T) {
 		t.Fatal(err)
 	}
 	dropProjectSchema(t, store)
-	if _, err = store.db.Exec(`PRAGMA user_version=22`); err != nil {
+	if _, err = store.db.Exec(removeMiniAppsSchema + `PRAGMA user_version=22`); err != nil {
 		t.Fatal(err)
 	}
 	if err = store.Close(); err != nil {
@@ -256,7 +256,7 @@ func TestProjectIndexMigrationPreservesSchema23Snapshots(t *testing.T) {
 	if e = s.db.QueryRow(`SELECT payload FROM generation_project_contexts WHERE batch_id=?`, b.ID).Scan(&original); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = s.db.Exec(`DROP TABLE project_source_indexes; ALTER TABLE project_sources DROP COLUMN usage; ALTER TABLE generation_batches DROP COLUMN local_only; DROP INDEX project_context_project_idx; DROP INDEX project_sources_blob_idx; DROP INDEX batch_project_sources_blob_idx; PRAGMA user_version=23;`); e != nil {
+	if _, e = s.db.Exec(removeMiniAppsSchema + `DROP TABLE project_source_indexes; ALTER TABLE project_sources DROP COLUMN usage; ALTER TABLE generation_batches DROP COLUMN local_only; DROP INDEX project_context_project_idx; DROP INDEX project_sources_blob_idx; DROP INDEX batch_project_sources_blob_idx; PRAGMA user_version=23;`); e != nil {
 		t.Fatal(e)
 	}
 	if e = s.Close(); e != nil {

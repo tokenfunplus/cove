@@ -1,4 +1,5 @@
 import AppKit
+import CoveLauncher
 import WebKit
 
 @MainActor
@@ -516,6 +517,15 @@ final class QuickPanelController: NSObject, NSWindowDelegate, WKNavigationDelega
     }
 
     private func openExternalLink(_ action: WKNavigationAction) {
+        if action.navigationType == .linkActivated, isQuickPanelFrame(action.sourceFrame),
+           let url = action.request.url, MiniAppLink(url) != nil {
+            if !NSWorkspace.shared.open(url) {
+                let notice = NSAlert()
+                notice.messageText = "Cove could not open this app link. Reopen Cove from Applications and try again."
+                notice.runModal()
+            }
+            return
+        }
         guard action.navigationType == .linkActivated, isQuickPanelFrame(action.sourceFrame),
               let url = action.request.url, let scheme = url.scheme, ["http", "https"].contains(scheme),
               url.host != nil, url.user == nil, url.password == nil, Self.loopbackOrigin(url) != origin else { return }

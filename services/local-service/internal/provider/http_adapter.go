@@ -190,6 +190,7 @@ func (adapter *HTTPAdapter) stream(ctx context.Context, input CompletionInput, i
 		return nil, err
 	}
 	payload := struct {
+		ResponseFormat      *StructuredOutput `json:"response_format,omitempty"`
 		Model               string            `json:"model"`
 		Messages            []ProviderMessage `json:"messages"`
 		Temperature         *float64          `json:"temperature,omitempty"`
@@ -206,6 +207,7 @@ func (adapter *HTTPAdapter) stream(ctx context.Context, input CompletionInput, i
 		payload.MaxCompletionTokens, payload.MaxTokens = payload.MaxTokens, nil
 	}
 	payload.Tools = input.Tools
+	payload.ResponseFormat = input.StructuredOutput
 	if includeUsage {
 		payload.StreamOptions = &struct {
 			IncludeUsage bool `json:"include_usage"`

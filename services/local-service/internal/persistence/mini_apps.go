@@ -1,0 +1,250 @@
+package persistence
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+)
+
+const miniAppsMigration = `
+CREATE TABLE IF NOT EXISTS mini_app_releases (
+ id TEXT PRIMARY KEY, digest TEXT NOT NULL, origin TEXT NOT NULL, manifest BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mini_app_instances (
+ id TEXT PRIMARY KEY, release_id TEXT NOT NULL REFERENCES mini_app_releases(id), name TEXT NOT NULL,
+ revision INTEGER NOT NULL, enabled INTEGER NOT NULL, grants BLOB NOT NULL, cloud_enabled INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS mini_app_blobs (
+ instance_id TEXT NOT NULL REFERENCES mini_app_instances(id) ON DELETE CASCADE,
+ id TEXT NOT NULL, name TEXT NOT NULL, content BLOB NOT NULL, PRIMARY KEY(instance_id,id)
+);
+CREATE TABLE IF NOT EXISTS mini_app_records (
+ instance_id TEXT NOT NULL REFERENCES mini_app_instances(id) ON DELETE CASCADE,
+ collection TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL, fields BLOB NOT NULL,
+ PRIMARY KEY(instance_id, collection, id)
+);
+CREATE TABLE IF NOT EXISTS mini_app_invocations (
+ instance_id TEXT NOT NULL REFERENCES mini_app_instances(id) ON DELETE CASCADE,
+ id TEXT NOT NULL, fingerprint TEXT NOT NULL, result BLOB NOT NULL, created_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(instance_id,id)
+);
+CREATE TABLE IF NOT EXISTS mini_app_tasks (
+ instance_id TEXT NOT NULL REFERENCES mini_app_instances(id) ON DELETE CASCADE,
+ id TEXT NOT NULL, fingerprint TEXT NOT NULL, state TEXT NOT NULL, request TEXT NOT NULL DEFAULT '',
+ result TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', snapshot TEXT NOT NULL DEFAULT '', verification TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(instance_id,id)
+);
+CREATE TABLE IF NOT EXISTS mini_app_activity (
+ instance_id TEXT NOT NULL REFERENCES mini_app_instances(id) ON DELETE CASCADE,
+ operation_id TEXT NOT NULL,release_id TEXT NOT NULL,action TEXT NOT NULL,surface TEXT NOT NULL,
+ status TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(instance_id,operation_id));
+CREATE INDEX IF NOT EXISTS mini_app_activity_time ON mini_app_activity(instance_id,created_at);
+ALTER TABLE generations ADD COLUMN mini_app_scope TEXT NOT NULL DEFAULT '';
+PRAGMA user_version=32;
+`
+
+// MiniAppTransaction scopes reads, validations and changes to a single consistent snapshot.
+func (s *SQLiteStore) MiniAppTransaction(ctx context.Context, run func(*MiniAppStore) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = run(&MiniAppStore{ctx, tx}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+type MiniAppStore struct {
+	ctx context.Context
+	tx  *sql.Tx
+}
+type AppRelease struct {
+	ID, Digest, Origin string
+	Manifest           []byte
+}
+type AppInstance struct {
+	CloudEnabled        bool
+	ID, ReleaseID, Name string
+	Revision            int64
+	Enabled             bool
+	Grants              []byte
+}
+type AppRecord struct {
+	ID       string
+	Revision int64
+	Fields   []byte
+}
+
+func (s *MiniAppStore) Release(id string) (r AppRelease, err error) {
+	err = s.tx.QueryRowContext(s.ctx, "SELECT id,digest,origin,manifest FROM mini_app_releases WHERE id=?", id).Scan(&r.ID, &r.Digest, &r.Origin, &r.Manifest)
+	return
+}
+func (s *MiniAppStore) ReleaseIDs() ([]string, error) {
+	return s.ids("SELECT id FROM mini_app_releases ORDER BY rowid")
+}
+func (s *MiniAppStore) InstanceIDs() ([]string, error) {
+	return s.ids("SELECT id FROM mini_app_instances ORDER BY rowid")
+}
+func (s *MiniAppStore) ids(query string) ([]string, error) {
+	rows, err := s.tx.QueryContext(s.ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+func (s *MiniAppStore) AddRelease(r AppRelease) error {
+	_, err := s.tx.ExecContext(s.ctx, "INSERT INTO mini_app_releases(id,digest,origin,manifest) VALUES(?,?,?,?)", r.ID, r.Digest, r.Origin, r.Manifest)
+	return err
+}
+func (s *MiniAppStore) Instance(id string) (i AppInstance, err error) {
+	err = s.tx.QueryRowContext(s.ctx, "SELECT id,release_id,name,revision,enabled,grants,cloud_enabled FROM mini_app_instances WHERE id=?", id).Scan(&i.ID, &i.ReleaseID, &i.Name, &i.Revision, &i.Enabled, &i.Grants, &i.CloudEnabled)
+	return
+}
+func (s *MiniAppStore) SaveInstance(i AppInstance) error {
+	_, err := s.tx.ExecContext(s.ctx, `INSERT INTO mini_app_instances(id,release_id,name,revision,enabled,grants,cloud_enabled) VALUES(?,?,?,?,?,?,?)
+	ON CONFLICT(id) DO UPDATE SET release_id=excluded.release_id,revision=excluded.revision,enabled=excluded.enabled,grants=excluded.grants,cloud_enabled=excluded.cloud_enabled`, i.ID, i.ReleaseID, i.Name, i.Revision, i.Enabled, i.Grants, i.CloudEnabled)
+	return err
+}
+func (s *MiniAppStore) DeleteInstance(id string) error {
+	_, err := s.tx.ExecContext(s.ctx, "DELETE FROM mini_app_instances WHERE id=?", id)
+	return err
+}
+func (s *MiniAppStore) Records(instance, collection string) ([]AppRecord, error) {
+	return s.QueryAppRecords(instance, collection, AppRecordQuery{})
+}
+
+type AppRecordPredicate struct {
+	Field, Op string
+	Value     any
+}
+type AppRecordQuery struct {
+	Where   []AppRecordPredicate
+	OrderBy string
+	Limit   int
+	IDs     []string
+}
+
+// Select typed JSON fields inside SQLite before decoding record payloads in Go.
+func (s *MiniAppStore) QueryAppRecords(instance, collection string, filter AppRecordQuery) ([]AppRecord, error) {
+	query := "SELECT id,revision,fields FROM mini_app_records WHERE instance_id=? AND collection=?"
+	args := []any{instance, collection}
+	operators := map[string]string{"eq": "=", "ne": "!=", "lt": "<", "lte": "<=", "gt": ">", "gte": ">="}
+	for _, predicate := range filter.Where {
+		op := operators[predicate.Op]
+		if op == "" {
+			return nil, errors.New("invalid record comparison")
+		}
+		if predicate.Field == "$id" {
+			query += " AND id " + op + " ?"
+		} else {
+			field := "json_extract(CAST(fields AS TEXT),?)"
+			if _, numeric := predicate.Value.(float64); numeric {
+				// JSON may encode a rounded float as integer digits. Compare it
+				// using the same float64 representation as the Go interpreter.
+				field = "CAST(" + field + " AS REAL)"
+			}
+			query += " AND " + field + " " + op + " ?"
+			args = append(args, "$."+predicate.Field)
+		}
+		args = append(args, predicate.Value)
+	}
+	if filter.IDs != nil {
+		ids, err := json.Marshal(filter.IDs)
+		if err != nil {
+			return nil, err
+		}
+		query += " AND id IN (SELECT value FROM json_each(?))"
+		args = append(args, string(ids))
+	}
+	if filter.OrderBy != "" {
+		query += " ORDER BY json_extract(CAST(fields AS TEXT),?) COLLATE BINARY, rowid"
+		args = append(args, "$."+filter.OrderBy)
+	} else {
+		query += " ORDER BY rowid"
+	}
+	if filter.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
+	}
+	rows, err := s.tx.QueryContext(s.ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	records := []AppRecord{}
+	for rows.Next() {
+		var record AppRecord
+		if err := rows.Scan(&record.ID, &record.Revision, &record.Fields); err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
+}
+func (s *MiniAppStore) SaveRecord(instance, collection string, r AppRecord) error {
+	_, err := s.tx.ExecContext(s.ctx, `INSERT INTO mini_app_records(instance_id,collection,id,revision,fields) VALUES(?,?,?,?,?)
+	ON CONFLICT(instance_id,collection,id) DO UPDATE SET revision=excluded.revision,fields=excluded.fields`, instance, collection, r.ID, r.Revision, r.Fields)
+	return err
+}
+func (s *MiniAppStore) RecordCount(instance string) (count int, err error) {
+	err = s.tx.QueryRowContext(s.ctx, "SELECT COUNT(*) FROM mini_app_records WHERE instance_id=?", instance).Scan(&count)
+	return
+}
+func (s *MiniAppStore) Invocation(instance, id string) (fingerprint string, result []byte, err error) {
+	err = s.tx.QueryRowContext(s.ctx, "SELECT fingerprint,result FROM mini_app_invocations WHERE instance_id=? AND id=?", instance, id).Scan(&fingerprint, &result)
+	return
+}
+func (s *MiniAppStore) SaveInvocation(instance, id, fingerprint string, result []byte) error {
+	_, err := s.tx.ExecContext(s.ctx, "INSERT INTO mini_app_invocations(instance_id,id,fingerprint,result,created_at) VALUES(?,?,?,?,unixepoch())", instance, id, fingerprint, result)
+	if err == nil {
+		_, err = s.tx.ExecContext(s.ctx, compactReceipts, instance)
+	}
+	return err
+}
+
+func (s *MiniAppStore) InstanceRecordBytes(instance string) (size int, err error) {
+	err = s.tx.QueryRowContext(s.ctx, "SELECT COALESCE(SUM(length(fields)),0) FROM mini_app_records WHERE instance_id=?", instance).Scan(&size)
+	return
+}
+
+func (s *MiniAppStore) DeleteRecords(instance, collection string, ids []string) error {
+	raw, err := json.Marshal(ids)
+	if err != nil {
+		return err
+	}
+	_, err = s.tx.ExecContext(s.ctx, `DELETE FROM mini_app_records WHERE instance_id=? AND collection=? AND id IN (SELECT value FROM json_each(?))`, instance, collection, string(raw))
+	if err != nil {
+		return err
+	}
+	// Earlier committed previews may contain previous versions of a deleted record.
+	// Retain the operation fingerprint so a retry cannot recreate the erased content.
+	_, err = s.tx.ExecContext(s.ctx, `UPDATE mini_app_invocations SET result=X''
+      WHERE instance_id=? AND length(result)>0 AND EXISTS (
+       SELECT 1 FROM json_each(CASE WHEN length(result)>0 THEN CAST(result AS TEXT) ELSE '{}' END,'$.records') r
+       WHERE json_extract(r.value,'$.id') IN (SELECT value FROM json_each(?)))`, instance, string(raw))
+	return err
+}
+
+func (s *MiniAppStore) DeleteUnusedAppRelease(id string) error {
+	result, err := s.tx.ExecContext(s.ctx, "DELETE FROM mini_app_releases WHERE id=? AND NOT EXISTS(SELECT 1 FROM mini_app_instances WHERE release_id=?)", id, id)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err == nil && count == 0 {
+		return ErrAppReleaseInUse
+	}
+	return err
+}
+
+var ErrAppReleaseInUse = errors.New("the release is used by an existing instance")
