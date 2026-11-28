@@ -291,11 +291,14 @@ test("a stalled settlement times out and retries the same paid receipt", async (
   vi.useFakeTimers();
   const transport = verifiedTransport();
   const receipts: RequestInit[] = [];
+  let started!: () => void;
+  const firstSettlement = new Promise<void>(resolve => { started = resolve; });
   vi.mocked(request).mockImplementation(async (path, init) => {
     if (path.endsWith("/claim")) return claim();
     if (!path.endsWith("/settle")) return undefined;
     receipts.push(init!);
     if (receipts.length === 1) {
+      started();
       return new Promise((_, reject) => {
         init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
       });
@@ -303,7 +306,7 @@ test("a stalled settlement times out and retries the same paid receipt", async (
     return undefined;
   });
   const result = runVerifiedAppTask("book", "task", new AbortController().signal, async () => transport);
-  await vi.advanceTimersByTimeAsync(0);
+  await firstSettlement;
   expect(receipts).toHaveLength(1);
   await vi.advanceTimersByTimeAsync(1999);
   expect(receipts[0].signal!.aborted).toBe(false);
@@ -324,15 +327,17 @@ test("task cancellation does not abort an accepted in-flight settlement", async 
   const controller = new AbortController();
   let accepted: RequestInit | undefined;
   let acknowledge: (() => void) | undefined;
+  let started!: () => void;
+  const settlement = new Promise<void>(resolve => { started = resolve; });
   vi.mocked(request).mockImplementation(async (path, init) => {
     if (path.endsWith("/claim")) return claim();
     if (!path.endsWith("/settle")) return undefined;
     accepted = init;
-    return new Promise<void>(resolve => { acknowledge = resolve; });
+    return new Promise<void>(resolve => { acknowledge = resolve; started(); });
   });
   const transport = verifiedTransport();
   const result = runVerifiedAppTask("book", "task", controller.signal, async () => transport);
-  await vi.waitFor(() => expect(acknowledge).toBeDefined());
+  await settlement;
   controller.abort();
   expect(accepted!.signal!.aborted).toBe(false);
   acknowledge!();
