@@ -37,10 +37,11 @@ reading and writing, with cloud access off.
 | --- | --- |
 | `make check` | Passed: repository conventions, formatting, Go vet and TypeScript |
 | Full Go `-race` suite | Passed |
-| Web unit and interaction tests | 832 passed across 126 files; no unhandled errors |
+| Web unit and interaction tests | 867 passed across 127 files; no unhandled errors |
 | API contract tests | 138 passed |
 | Script tests | 54 passed, 3 skipped |
 | Apple Silicon package and Swift release build | Passed; local ad-hoc signing |
+| Swift XCTest on macOS CI | Passed; local execution still requires full Xcode |
 | Mini App browser acceptance | Passed: market, permissions, instances, upgrades, study, authoring and scrolling |
 | App conversation and history acceptance | Passed: discovery, proposals, confirmed writes and Back/Stay/Leave/Forward |
 | Existing Chat browser acceptance | Passed: comparison, context, retry/stop, PDF, history, export, Provider lifecycle, responsive layout and accessibility |
@@ -90,13 +91,14 @@ provenance, grants, task release binding, native target identity, deterministic
 migrations and dates, proposal parsing, practice selection, draft protection,
 history traversal, and accepted Debate receipts. Confirmations now render above
 App and study dialogs and restore focus to their opener. App receipt delivery
-retains eight sends with 7.1 seconds of backoff; Debate keeps its existing policy.
+retains eight sends with 7.1 seconds of backoff and an independent two-second
+deadline for each settlement; Debate keeps its existing policy.
 Study writes keep their dialog open while pending. Explicit new-copy intent and
 catalog Installed/Open actions retain the selected version and authority.
 
-The final follow-up runtime is commit `cc206e8`, with browser test helper commit
-`782e879`. Its immutable production Local Service SHA-256 is
-`a859363a771edee5c370f4ae8c7549e6524627f44abf6eba9a2e37df2560fe8d`.
+The final follow-up runtime and browser tests are commit `9d5951b`. Its immutable
+production Local Service SHA-256 is
+`553ac80e48d63945b48de4d2ca7e7b072909eb722e9940ce3e2c7d9780391fdb`.
 The follow-up adds no database migration beyond schema 32.
 
 A fresh independent Codex sub-agent received only the packaged public authoring
@@ -123,6 +125,17 @@ new digest without a waiting workaround. The confirmed 1.1 to 1.3 update retaine
 all record bytes and revisions, name, instance, permissions and signer. The
 separate older copy remained unchanged. The cache fix has API regressions for
 the immediate install, failed refresh backoff and personal-package provenance.
+Canceled refresh owners also release live waiters to re-evaluate the current
+cache, including a newer verified index fetched by another request.
+
+A final browser-authored 1.4 release was published as sequence 5 after warming
+the prior catalog. Its downloaded bytes matched the authored package exactly;
+signed update review was reached in 3.677 seconds. The 1.3 to 1.4 confirmation
+retained all record bytes, IDs and revisions. The app's own **Stumbled** outcome
+then previewed and saved one error and a next-day due date for exactly one phrase.
+The updated copy, that authored rule result, the older copy and all seven Japanese
+questions survived the final service restart. The earlier 1.0 to 1.1 check remains
+the additive-schema migration evidence.
 
 Japanese Review Book retained all three original questions after marking one
 learned. A clearly labeled compatible loopback fixture then returned two
@@ -145,7 +158,11 @@ seven questions and the updated phrasebook.
 New real-browser checks cover nested discard confirmations, guarded Activity
 navigation with a draft, pointer hit testing, focus containment/restoration,
 rapid fragment pushes, superseded history restoration, and per-entry Mini Apps
-scroll restoration with user-scroll cancellation. The same production
+scroll restoration with user-scroll cancellation. With the Navigation API
+disabled, the browser also passed coalesced and interleaved event ordering,
+forward-tail truncation, intermediate fragment traversal, and page reload with a
+new unsent draft. These checks preserve exact Apps entries and history length.
+The same production
 build also passed the original Chat browser suite with no runtime exceptions.
 The isolated test publisher trusts its own CA through an ignored overlay; the
 normal application build does not include that overlay or signing keys.
@@ -164,10 +181,11 @@ self-contained package-and-data transfer bundle is not implemented.
 
 Production CoveWeb hosting and official signing configuration were outside this
 local-market acceptance. Real HTTPS `--cloud` acceptance still requires dedicated
-test credentials. Physical Services
-and `NSOpenPanel` interaction were not run in this pass. Full XCTest requires
-Xcode rather than this machine's Command Line Tools; the Swift release build
-and native acceptance harness did pass. Commands and prerequisites are in
+test credentials. Physical Services and `NSOpenPanel` interaction were not run
+in this pass. Full XCTest passed on macOS CI, including the Launcher test and
+package acceptance steps in [run 46125040972](https://github.com/tokenfunplus/cove/actions/runs/46125040972).
+Local XCTest still requires Xcode rather than this machine's Command Line Tools;
+the local Swift release build and native acceptance harness passed. Commands and prerequisites are in
 [development.md](development.md#mini-app-native-acceptance-on-a-mac).
 
 The report's additional product proposals, including personal author signatures,
@@ -227,6 +245,8 @@ is retained in the local acceptance report.
 ![Explicit new-copy review](images/mini-apps/round5-new-copy.png)
 
 ![Immediate signed update beyond the cached catalog](images/mini-apps/round5-immediate-update.png)
+
+![Independent author rule preview](images/mini-apps/round5-authored-rule.png)
 
 ### Japanese study and recovery controls
 
