@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -145,7 +146,7 @@ func TestFilePreviewRefreshesCachedCatalogForNewlyPublishedVersion(t *testing.T)
 	}
 }
 
-func TestFilePreviewFailureCachesFallbackAfterBypassingSuccessfulCatalog(t *testing.T) {
+func TestFilePreviewFailurePreservesDiscoverWhileFileChecksBackOff(t *testing.T) {
 	old := fileRefreshPackage(t, "catalog-author", "1.0.0")
 	personal := fileRefreshPackage(t, "personal-author", "1.0.0")
 	host := newFileRefreshHost(t, old)
@@ -158,6 +159,18 @@ func TestFilePreviewFailureCachesFallbackAfterBypassingSuccessfulCatalog(t *test
 	installed := host.file(t, "install", personal, preview)
 	if installed.ID != preview.ID || installed.Origin != "local" || host.calls.Load() != 2 {
 		t.Fatal("install retried the failed catalog instead of using its brief fallback cache", installed, host.calls.Load())
+	}
+	var catalog struct {
+		Packages []appcatalog.Entry `json:"packages"`
+		Warning  string             `json:"warning"`
+	}
+	if err := json.Unmarshal(host.request(t, http.MethodGet, "/catalog", nil, miniapps.Release{}), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if catalog.Warning != "" || host.calls.Load() != 2 || !slices.ContainsFunc(catalog.Packages, func(item appcatalog.Entry) bool {
+		return item.Publisher == "catalog-author" && item.Origin == "catalog" && item.CatalogAuthority == appcatalog.Authority(host.publicKey)
+	}) {
+		t.Fatal("personal package import replaced the verified Discover catalog", catalog.Warning, host.calls.Load())
 	}
 }
 

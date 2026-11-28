@@ -136,6 +136,20 @@ export function AppDirectory({
       matchesCatalogRelease(release, entry),
     ),
   );
+  const hasCatalogUpdate = (entry: CatalogEntry) => allBooks.some((book) =>
+    installed.some((release) =>
+      release.id === book.release_id &&
+      canUpgrade(
+        release.package,
+        entry,
+        release.origin,
+        entry.origin,
+        release.legacy_verified,
+        release,
+        entry,
+      ),
+    ),
+  );
   const books = allBooks.filter(
     (book) =>
       !target ||
@@ -513,6 +527,7 @@ export function AppDirectory({
             select={(entry) => showDetail(entry, true)}
             back={() => changeSection("catalog")}
             copies={catalogCopies(detail)}
+            updateAvailable={hasCatalogUpdate(detail)}
             openCopy={(id) => open(id)}
             install={(pkg, entry, createNewCopy = false) => {
               previewRequest.current++;
@@ -633,6 +648,7 @@ export function AppDirectory({
                         else showDetail(versions[0]);
                       }}
                       installed={catalogCopies(versions[0]).length > 0}
+                      updateAvailable={hasCatalogUpdate(versions[0])}
                     />
                   ),
                 )}

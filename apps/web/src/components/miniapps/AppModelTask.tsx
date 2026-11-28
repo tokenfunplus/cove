@@ -110,6 +110,7 @@ export function AppModelTask({
   const [started, setStarted] = useState<{
     instance: string;
     task: AppTask;
+    recovered?: boolean;
   }>();
   const [submitted, setSubmitted] = useState<{
     id: string;
@@ -216,7 +217,7 @@ export function AppModelTask({
           retryKey.current = undefined;
           setSubmitted({ ...previous.data, id: admitted.id });
           runBrowserTask(admitted, previous.instance);
-          return { instance: previous.instance, task: admitted };
+          return { instance: previous.instance, task: admitted, recovered: true };
         }
       }
       if (retryKey.current?.key !== fingerprint)
@@ -423,6 +424,12 @@ export function AppModelTask({
               : "Task " + task.state}
             {submitted ? " · " + submitted.model : ""}
           </p>
+          {started?.recovered && started.task.id === task.id && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Recovered your previous task. No additional task was started; it
+              uses the original submitted input shown below.
+            </p>
+          )}
           {(task.inputs ?? submitted?.inputs) && (
             <div className="text-sm">
               <strong>Submitted input</strong>

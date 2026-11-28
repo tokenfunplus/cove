@@ -169,10 +169,14 @@ transfer contract. This change uses the existing provenance column, without a
 host database schema migration.
 
 Directory failures cache only bundled fallback metadata and the original warning
-for five seconds. Cancelled requests do not populate that cache, and any trust or
-URL change invalidates it. Legacy immutable-version history is attributed to its
-sole historical signer even when a different, unverified key is currently selected;
-ambiguous multi-signer history still requires independent reverification.
+for five seconds when no valid verified index remains. A forced refresh for a
+downloaded file preserves a still-valid verified index for ordinary catalog reads;
+its failure has a separate five-second backoff for file checks and cannot attest
+to an unknown release. Cancelled requests do not populate either failure cache,
+and any trust or URL change invalidates them. Legacy immutable-version history is
+attributed to its sole historical signer even when a different, unverified key is
+currently selected; ambiguous multi-signer history still requires independent
+reverification.
 
 Legacy public-key encodings are canonicalized before trust-history lookup. When
 aliases identify the same Ed25519 key, their highest sequence is retained. Equal

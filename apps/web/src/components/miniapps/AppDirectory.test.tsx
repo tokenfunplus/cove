@@ -351,9 +351,9 @@ test("Discover and app details open only copies of the selected release", async 
   const user = userEvent.setup();
   const card = (await screen.findByRole("heading", { name: "Review book", level: 3 })).closest("article")!;
   expect(within(card).queryByText("Installed")).toBeNull();
-  expect(within(card).getByRole("button", { name: "Install" })).toBeTruthy();
+  expect(within(card).getByRole("button", { name: "Update" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "View Review book" }));
-  expect(await screen.findByRole("button", { name: "Get app" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Update app" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Choose a copy" })).toBeNull();
   await user.selectOptions(screen.getByRole("combobox", { name: "App version" }), "1.0.0");
   await user.click(await screen.findByRole("button", { name: "Choose a copy" }));
@@ -375,6 +375,8 @@ test("Create another copy starts fresh when a current and an older copy both exi
   const upgrade = vi.spyOn(miniApps, "upgrade");
   const { open } = show("catalog");
   const user = userEvent.setup();
+  const card = (await screen.findByRole("heading", { name: "Review book", level: 3 })).closest("article")!;
+  expect(within(card).getByRole("button", { name: "Open app" })).toBeTruthy();
   await user.click(await screen.findByRole("button", { name: "View Review book" }));
   await user.click(await screen.findByRole("button", { name: "Create another copy" }));
   const dialog = await screen.findByRole("dialog", { name: "Review installation" });
@@ -385,6 +387,46 @@ test("Create another copy starts fresh when a current and an older copy both exi
   await waitFor(() => expect(create).toHaveBeenCalledExactlyOnceWith(current.id, review.name, [], false));
   expect(upgrade).not.toHaveBeenCalled();
   expect(open).toHaveBeenCalledWith("new-copy");
+});
+
+test.each([
+  { scenario: "bundled lineage", previous: { origin: "builtin" }, selected: { origin: "builtin" }, update: true },
+  { scenario: "same custom signer", previous: { origin: "catalog", catalog_authority: "key-a" }, selected: { origin: "catalog", catalog_authority: "key-a" }, update: true },
+  { scenario: "different custom signer", previous: { origin: "catalog", catalog_authority: "key-a" }, selected: { origin: "catalog", catalog_authority: "key-b" }, update: false },
+  { scenario: "unbound catalog lineage", previous: { origin: "catalog" }, selected: { origin: "catalog", catalog_authority: "key-a" }, update: false },
+  { scenario: "official successor to bundled", previous: { origin: "builtin" }, selected: { origin: "catalog", catalog_authority: "official", official_catalog: true }, update: true },
+  { scenario: "custom successor to bundled", previous: { origin: "builtin" }, selected: { origin: "catalog", catalog_authority: "custom" }, update: false },
+  { scenario: "personal package with matching publisher", previous: { origin: "local" }, selected: { origin: "builtin" }, update: false },
+  { scenario: "verified legacy package", previous: { origin: "local", legacy_verified: true }, selected: { origin: "builtin" }, update: true },
+  { scenario: "incompatible collection schema", previous: { origin: "builtin", schema_version: 2 }, selected: { origin: "builtin" }, update: false },
+])("Discover offers a reviewed update only for $scenario", async ({ previous, selected: changes, update }) => {
+  const { schema_version, ...provenance } = previous;
+  const old = {
+    id: "older-release",
+    digest: "older-bytes",
+    ...provenance,
+    package: { ...review, version: "1.0.0", schema_version: schema_version ?? 1 },
+  };
+  const selected: CatalogEntry = { ...review, digest: "latest-bytes", ...changes };
+  vi.mocked(miniApps.catalog).mockResolvedValue({ packages: [selected] });
+  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [old] });
+  vi.mocked(miniApps.instances).mockResolvedValue({ instances: [
+    { id: "older-copy", name: "My existing book", release_id: old.id, revision: 1, enabled: true, grants: [] },
+  ] });
+  const upgrade = vi.spyOn(miniApps, "upgrade");
+  show("catalog");
+  const user = userEvent.setup();
+  const card = (await screen.findByRole("heading", { name: "Review book", level: 3 })).closest("article")!;
+  expect(within(card).getByRole("button", { name: update ? "Update" : "Install" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "View Review book" }));
+  const action = await screen.findByRole("button", { name: update ? "Update app" : "Get app" });
+  await waitFor(() => expect((action as HTMLButtonElement).disabled).toBe(false));
+  await user.click(action);
+  const dialog = await screen.findByRole("dialog", { name: "Review installation" });
+  const copies = within(dialog).queryByRole("combobox", { name: "Update an existing copy" }) as HTMLSelectElement | null;
+  if (update) expect(copies?.value).toBe("older-copy");
+  else expect(copies).toBeNull();
+  expect(upgrade).not.toHaveBeenCalled();
 });
 
 test.each([

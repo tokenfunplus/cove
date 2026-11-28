@@ -51,6 +51,8 @@ type Directory struct {
 	cachedEntries []Entry
 	cachedErr     error
 	fileRefresh   *releaseRefresh
+	fileFailure   *releaseRefresh
+	fileRetryAt   time.Time
 }
 
 type releaseRefresh struct {
@@ -187,6 +189,8 @@ func (d *Directory) configure(config Catalog, previous *Catalog, followDefaults 
 	}
 	d.cachedEntries = nil
 	d.cachedUntil = time.Time{}
+	d.fileFailure = nil
+	d.fileRetryAt = time.Time{}
 	return nil
 }
 func (d *Directory) List(ctx context.Context) ([]Entry, error) {
@@ -194,7 +198,7 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 }
 
 // ListForRelease rechecks a successful cached index when a downloaded file is
-// missing from it. Failed lookups retain the ordinary brief offline cache.
+// missing from it. Failed lookups briefly back off without replacing that index.
 func (d *Directory) ListForRelease(ctx context.Context, digest string) (entries []Entry, err error) {
 	for {
 		if err := ctx.Err(); err != nil {
@@ -224,6 +228,11 @@ func (d *Directory) ListForRelease(ctx context.Context, digest string) (entries 
 		}
 		var refresh *releaseRefresh
 		if config == d.cachedConfig && d.cachedErr == nil && time.Now().Before(d.cachedUntil) && !slices.ContainsFunc(d.cachedEntries, func(entry Entry) bool { return entry.Digest == digest }) {
+			if failure := d.fileFailure; failure != nil && failure.config == config && failure.cachedUntil.Equal(d.cachedUntil) && time.Now().Before(d.fileRetryAt) {
+				entries, err = cloneEntries(failure.entries), failure.err
+				d.mu.Unlock()
+				return entries, err
+			}
 			refresh = &releaseRefresh{config: config, cachedUntil: d.cachedUntil, done: make(chan struct{})}
 			d.fileRefresh = refresh
 		}
@@ -234,6 +243,10 @@ func (d *Directory) ListForRelease(ctx context.Context, digest string) (entries 
 		defer func() {
 			d.mu.Lock()
 			refresh.entries, refresh.err = cloneEntries(entries), err
+			if err != nil && ctx.Err() == nil && config == d.config() && d.cachedErr == nil && refresh.cachedUntil.Equal(d.cachedUntil) && time.Now().Before(d.cachedUntil) {
+				d.fileFailure = refresh
+				d.fileRetryAt = time.Now().Add(5 * time.Second)
+			}
 			if d.fileRefresh == refresh {
 				d.fileRefresh = nil
 			}
@@ -329,8 +342,7 @@ func (d *Directory) list(ctx context.Context, refresh *releaseRefresh) ([]Entry,
 		if ctx.Err() == nil {
 			d.mu.Lock()
 			freshSuccess := d.cachedConfig == config && d.cachedErr == nil && time.Now().Before(d.cachedUntil)
-			bypassedSuccess := refresh != nil && refresh.config == config && refresh.cachedUntil.Equal(d.cachedUntil)
-			if config == d.config() && (!freshSuccess || bypassedSuccess) {
+			if config == d.config() && !freshSuccess {
 				d.cachedConfig, d.cachedUntil = config, time.Now().Add(5*time.Second)
 				d.cachedEntries, d.cachedErr = cloneEntries(entries), fallbackErr
 			}
@@ -353,6 +365,8 @@ func (d *Directory) list(ctx context.Context, refresh *releaseRefresh) ([]Entry,
 			}
 			d.cachedEntries = cloneEntries(entries)
 			d.cachedErr = nil
+			d.fileFailure = nil
+			d.fileRetryAt = time.Time{}
 		}
 		d.mu.Unlock()
 	}

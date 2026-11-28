@@ -7,6 +7,7 @@ import {
   waitFor,
   act,
   fireEvent,
+  within,
 } from "@testing-library/react";
 import { afterEach, test, expect, vi } from "vitest";
 import { miniApps, type AppTask } from "@/api/mini-apps";
@@ -519,6 +520,55 @@ test("an ambiguous admission recovers the admitted task before any new paid requ
   await screen.findByText("Original paid input");
   expect(start).toHaveBeenCalledOnce();
   expect(startVerifiedAppTask).toHaveBeenCalledWith("book", start.mock.calls[0][1].operationId);
+});
+
+test("recovering an admitted task explains why edited input was not submitted", async () => {
+  const original: AppTask = {
+    ...running,
+    browser: false,
+    state: "completed",
+    inputs: { passage: "Original input" },
+    result: "Original result",
+  };
+  const fresh: AppTask = {
+    ...original,
+    id: "fresh",
+    inputs: { passage: "Edited input" },
+    result: "Fresh result",
+  };
+  vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [] });
+  const start = vi.spyOn(miniApps, "startTask")
+    .mockRejectedValueOnce(new Error("Lost admission response"))
+    .mockResolvedValue(fresh);
+  vi.spyOn(miniApps, "task").mockImplementation(async (_instance, id) =>
+    id === fresh.id ? fresh : { ...original, id },
+  );
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const view = (passage: string) => <QueryClientProvider client={client}>
+    <AppModelTask
+      instance={{ id: "book", name: "Book", release_id: "r", enabled: true, revision: 1, grants: ["ai.generate"] }}
+      actionId="study"
+      action={{ title: "Generate", op: "generate", inputs: { passage: "text" }, surfaces: ["page"] }}
+      inputs={{ passage }} surface="page" localRequired={false}
+      previewCandidates={vi.fn()} choose={vi.fn()}
+    />
+  </QueryClientProvider>;
+  const page = render(view("Original input"));
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  await screen.findByText("Lost admission response");
+  page.rerender(view("Edited input"));
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  const notice = await screen.findByText(/Recovered your previous task. No additional task was started/);
+  const result = within(screen.getByRole("region", { name: "Model result" }));
+  expect(result.getByText("Original input")).toBeTruthy();
+  expect(result.queryByText("Edited input")).toBeNull();
+  expect(start).toHaveBeenCalledOnce();
+
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  await result.findByText("Fresh result");
+  expect(start).toHaveBeenCalledTimes(2);
+  expect(start.mock.calls[1][1].input).toEqual({ passage: "Edited input" });
+  expect(notice.isConnected).toBe(false);
 });
 
 test.each(["action", "instance"])("a recovered admission retains its original %s before exposing candidates", async (change) => {

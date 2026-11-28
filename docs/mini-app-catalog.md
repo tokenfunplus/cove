@@ -72,11 +72,13 @@ discarding existing rollback checkpoints or changing instance data.
 Successful verified indexes are cached in memory for up to thirty seconds,
 bounded by their signed expiration. Importing a file absent from a successful
 cache rechecks the signed index once, so a newly published release can be verified
-immediately. Concurrent file checks share that refresh. Remote failures briefly
-cache only bundled fallback entries and the warning for five seconds, so an
-offline file import does not repeat the remote timeout during preview and
-installation. Cancelled requests do not populate that cache. Changing the URL or
-signing authority invalidates both success and failure caches.
+immediately. Concurrent file checks share that refresh. A failed file refresh
+preserves any still-valid verified index for Discover and known-release checks.
+Missing-file checks retain bundled fallback entries and the warning separately
+for five seconds, so an offline import does not repeat the remote timeout during
+preview and installation. Ordinary directory failures use the same brief
+fallback when no valid verified index remains. Cancelled requests do not populate
+failure caches. Changing the URL or signing authority invalidates all caches.
 
 New verification keys use canonical single-line base64. Earlier persisted aliases
 of the same Ed25519 key are normalized when preferences are opened. Their highest

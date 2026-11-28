@@ -7,12 +7,82 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestFileRefreshFailurePreservesVerifiedCatalogAndBrieflyBacksOff(t *testing.T) {
+	public, key, _ := ed25519.GenerateKey(nil)
+	config := Catalog{URL: "https://catalog.example/index.json", PublicKey: base64.StdEncoding.EncodeToString(public)}
+	source := []byte(`{"publisher":"author","app":"notes","name":"Notes","version":"1.0.0","schema_version":1}`)
+	next := []byte(strings.Replace(string(source), `"1.0.0"`, `"1.1.0"`, 1))
+	oldEntry, _ := entry(source, "catalog")
+	candidate, _ := entry(next, "catalog")
+	oldBody, newBody := signedTestIndex(t, key, 1, source), signedTestIndex(t, key, 2, source, next)
+	calls := 0
+	status := http.StatusOK
+	body := oldBody
+	previous := http.DefaultTransport
+	defer func() { http.DefaultTransport = previous }()
+	http.DefaultTransport = catalogTransport(func(r *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: r}, nil
+	})
+	directory, _ := Open("", config)
+	if _, err := directory.List(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	status = http.StatusServiceUnavailable
+	fallback, failure := directory.ListForRelease(t.Context(), candidate.Digest)
+	if failure == nil || calls != 2 || slices.ContainsFunc(fallback, func(item Entry) bool { return item.Origin == "catalog" }) {
+		t.Fatal("failed file check did not return only bundled fallback metadata", failure, calls)
+	}
+	if entries, err := directory.List(t.Context()); err != nil || calls != 2 || !slices.ContainsFunc(entries, func(item Entry) bool { return item.Digest == oldEntry.Digest }) {
+		t.Fatal("failed file check replaced the verified Discover cache", err, calls)
+	}
+	if _, err := directory.ListForRelease(t.Context(), candidate.Digest); err != failure || calls != 2 {
+		t.Fatal("a repeated file check did not reuse the brief failure backoff", err, calls)
+	}
+	if _, err := directory.ListForRelease(t.Context(), "another-missing-file"); err != failure || calls != 2 {
+		t.Fatal("a different missing file repeated the same failed directory request", err, calls)
+	}
+	if _, err := directory.ListForRelease(t.Context(), oldEntry.Digest); err != nil || calls != 2 {
+		t.Fatal("file-check backoff hid a release already in the verified cache", err, calls)
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := directory.ListForRelease(cancelled, candidate.Digest); !errors.Is(err, context.Canceled) || calls != 2 {
+		t.Fatal("file-check backoff hid cancellation", err, calls)
+	}
+	if directory.fileRetryAt.After(time.Now().Add(5 * time.Second)) {
+		t.Fatal("file-check failure backoff is not brief")
+	}
+	directory.fileRetryAt = time.Time{}
+	status, body = http.StatusOK, newBody
+	if entries, err := directory.ListForRelease(t.Context(), candidate.Digest); err != nil || calls != 3 || !slices.ContainsFunc(entries, func(item Entry) bool { return item.Digest == candidate.Digest }) {
+		t.Fatal("file check did not recover after its failure backoff", err, calls)
+	}
+	if _, err := directory.ListForRelease(t.Context(), "another-missing-file"); err != nil || calls != 4 {
+		t.Fatal("successful refresh retained a prior file-check failure", err, calls)
+	}
+	status = http.StatusServiceUnavailable
+	if _, err := directory.ListForRelease(t.Context(), "another-missing-file"); err == nil || calls != 5 {
+		t.Fatal("second failed file check did not reach the catalog", err, calls)
+	}
+	changed := config
+	changed.URL = "https://moved.example/index.json"
+	if err := directory.Configure(changed); err != nil {
+		t.Fatal(err)
+	}
+	status = http.StatusOK
+	if _, err := directory.ListForRelease(t.Context(), "another-missing-file"); err != nil || calls != 6 {
+		t.Fatal("changed catalog settings reused a prior file-check failure", err, calls)
+	}
+}
 
 func TestFileRefreshWaitersCancelWithoutRepeatingFetchAndTrustChangesStayClosed(t *testing.T) {
 	public, key, _ := ed25519.GenerateKey(nil)
@@ -111,7 +181,7 @@ func (ctx *observedCatalogRefreshWait) Done() <-chan struct{} {
 }
 
 func TestFileRefreshWaiterRetriesCanceledOwnerAndReusesCompletedResults(t *testing.T) {
-	for _, outcome := range []string{"canceled owner", "canceled owner with newer cache", "verified release", "verified miss", "remote failure"} {
+	for _, outcome := range []string{"canceled owner", "canceled owner with newer cache", "verified release", "verified miss", "remote failure", "remote failure with newer cache"} {
 		t.Run(outcome, func(t *testing.T) {
 			public, key, _ := ed25519.GenerateKey(nil)
 			config := Catalog{URL: "https://catalog.example/index.json", PublicKey: base64.StdEncoding.EncodeToString(public)}
@@ -156,7 +226,7 @@ func TestFileRefreshWaiterRetriesCanceledOwnerAndReusesCompletedResults(t *testi
 					}
 					if outcome == "verified miss" {
 						body = oldBody
-					} else if outcome == "remote failure" {
+					} else if strings.HasPrefix(outcome, "remote failure") {
 						status = http.StatusServiceUnavailable
 					}
 				}
@@ -198,6 +268,11 @@ func TestFileRefreshWaiterRetriesCanceledOwnerAndReusesCompletedResults(t *testi
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
+			if entries, err := directory.List(ctx); err != nil || calls.Load() != 2 || !slices.ContainsFunc(entries, func(item Entry) bool {
+				return item.Publisher == "author" && item.Version == "1.0.0"
+			}) {
+				t.Fatal("pending file check blocked or replaced the verified catalog", err, calls.Load())
+			}
 			waiterContext := &observedCatalogRefreshWait{Context: ctx, waiting: make(chan struct{})}
 			waiter := start(waiterContext)
 			select {
@@ -207,7 +282,8 @@ func TestFileRefreshWaiterRetriesCanceledOwnerAndReusesCompletedResults(t *testi
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
-			if outcome == "canceled owner with newer cache" {
+			newerCache := strings.HasSuffix(outcome, "with newer cache")
+			if newerCache {
 				// An ordinary directory read can replace an expired cache while
 				// the original file refresh is still waiting on the network.
 				directory.mu.Lock()
@@ -228,8 +304,14 @@ func TestFileRefreshWaiterRetriesCanceledOwnerAndReusesCompletedResults(t *testi
 				if !errors.Is(owned.err, context.Canceled) || waited.err != nil || calls.Load() != 3 {
 					t.Fatal("live waiter reused a canceled owner's stale cache", owned.err, waited.err, calls.Load())
 				}
-			} else if calls.Load() != 2 || waited.err != owned.err || (waited.err != nil) != (outcome == "remote failure") {
-				t.Fatal("waiter repeated or changed the completed refresh", owned.err, waited.err, calls.Load())
+			} else {
+				wantCalls := int64(2)
+				if newerCache {
+					wantCalls = 3
+				}
+				if calls.Load() != wantCalls || waited.err != owned.err || (waited.err != nil) != strings.HasPrefix(outcome, "remote failure") {
+					t.Fatal("waiter repeated or changed the completed refresh", owned.err, waited.err, calls.Load())
+				}
 			}
 			found := false
 			for _, entry := range waited.entries {
@@ -239,6 +321,19 @@ func TestFileRefreshWaiterRetriesCanceledOwnerAndReusesCompletedResults(t *testi
 			}
 			if found != (ownerCanceled || outcome == "verified release") {
 				t.Fatal("waiter returned the wrong verified release set", waited.err, found)
+			}
+			if strings.HasPrefix(outcome, "remote failure") {
+				cached, err := directory.List(ctx)
+				if err != nil || !slices.ContainsFunc(cached, func(item Entry) bool {
+					return item.Publisher == "author" && (!newerCache || item.Digest == candidate.Digest)
+				}) {
+					t.Fatal("failed file refresh replaced the concurrently usable catalog", err)
+				}
+				if newerCache {
+					if _, err := directory.ListForRelease(ctx, "another-missing-file"); err != nil || calls.Load() != 4 {
+						t.Fatal("older failed file refresh blocked the newer catalog", err, calls.Load())
+					}
+				}
 			}
 		})
 	}

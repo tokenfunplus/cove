@@ -251,6 +251,7 @@ export function CatalogCard({
   openInstalled,
   install,
   installPending = false,
+  updateAvailable = false,
 }: {
   versions: CatalogEntry[];
   view: (entry: CatalogEntry) => void;
@@ -258,6 +259,7 @@ export function CatalogCard({
   openInstalled?: () => void;
   install?: (entry: CatalogEntry) => void;
   installPending?: boolean;
+  updateAvailable?: boolean;
 }) {
   const entry = versions[0];
   const card = useRef<HTMLElement>(null);
@@ -334,7 +336,9 @@ export function CatalogCard({
             {installed && openInstalled
               ? "Open app"
               : install
-                ? "Install"
+                ? updateAvailable
+                  ? "Update"
+                  : "Install"
                 : "View app"}{" "}
             <ArrowRight />
           </Button>
@@ -352,6 +356,7 @@ export function CatalogDetail({
   back,
   copies = [],
   openCopy,
+  updateAvailable = false,
 }: {
   versions: CatalogEntry[];
   selected: CatalogEntry;
@@ -364,6 +369,7 @@ export function CatalogDetail({
   back: () => void;
   copies?: { id: string; name: string }[];
   openCopy?: (id: string) => void;
+  updateAvailable?: boolean;
 }) {
   const preview = useQuery(catalogPreviewOptions(selected));
   const pkg = preview.data;
@@ -422,7 +428,9 @@ export function CatalogDetail({
                 ? copies.length === 1
                   ? "Open app"
                   : "Choose a copy"
-                : "Get app"}{" "}
+                : updateAvailable
+                  ? "Update app"
+                  : "Get app"}{" "}
               <ArrowRight />
             </Button>
             {versions.length > 1 ? (
