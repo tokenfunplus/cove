@@ -36,11 +36,11 @@ func (s *SQLiteStore) AppTask(ctx context.Context, instance, id string) (AppTask
 func (s *SQLiteStore) appTask(ctx context.Context, instance, id string, generationOnly bool) (AppTask, error) {
 	var t AppTask
 	var verification, snapshot, inputs string
-	query := "SELECT id,state,result,detail,fingerprint,verification,snapshot,coalesce(json_extract(request,'$.Target.input'),''),coalesce(json_extract(request,'$.Target.destination'),''),coalesce(json_extract(request,'$.Target.modelId'),''),coalesce(json_extract(request,'$.Release'),'') FROM mini_app_tasks WHERE instance_id=? AND id=?"
+	query := "SELECT id,state,result,detail,fingerprint,verification,snapshot,coalesce(json_extract(request,'$.Target.input'),''),coalesce(json_extract(request,'$.Target.destination'),''),coalesce(json_extract(request,'$.Target.modelId'),''),coalesce(json_extract(request,'$.Release'),''),coalesce(json_extract(request,'$.Target.action'),'') FROM mini_app_tasks WHERE instance_id=? AND id=?"
 	if generationOnly {
 		query += generationTaskPredicate
 	}
-	err := s.db.QueryRowContext(ctx, query, instance, id).Scan(&t.ID, &t.State, &t.Result, &t.Error, &t.Fingerprint, &verification, &snapshot, &inputs, &t.Destination, &t.ModelID, &t.ReleaseID)
+	err := s.db.QueryRowContext(ctx, query, instance, id).Scan(&t.ID, &t.State, &t.Result, &t.Error, &t.Fingerprint, &verification, &snapshot, &inputs, &t.Destination, &t.ModelID, &t.ReleaseID, &t.Action)
 	if err == nil && inputs != "" {
 		t.Inputs = json.RawMessage(inputs)
 	}

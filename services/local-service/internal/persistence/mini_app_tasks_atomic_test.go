@@ -26,7 +26,7 @@ func taskActivityStore(t *testing.T) *SQLiteStore {
 	return store
 }
 
-const frozenActivityTask = `{"Release":"original-release","Target":{"Action":"fixture.generate","Surface":"panel"}}`
+const frozenActivityTask = `{"Release":"original-release","Target":{"action":"fixture.generate","surface":"panel"}}`
 
 func TestTaskReadsRetainTheFrozenRelease(t *testing.T) {
 	store := taskActivityStore(t)
@@ -35,12 +35,12 @@ func TestTaskReadsRetainTheFrozenRelease(t *testing.T) {
 	}
 	// The active instance uses "release", while the task belongs to its earlier release.
 	task, err := store.AppTask(t.Context(), "instance", "task")
-	if err != nil || task.ReleaseID != "original-release" {
-		t.Fatal("task detail lost its originating release", task, err)
+	if err != nil || task.ReleaseID != "original-release" || task.Action != "fixture.generate" {
+		t.Fatal("task detail lost its originating release or action", task, err)
 	}
 	tasks, err := store.ListAppTasks(t.Context(), "instance")
-	if err != nil || len(tasks) != 1 || tasks[0].ReleaseID != "original-release" {
-		t.Fatal("task history lost its originating release", tasks, err)
+	if err != nil || len(tasks) != 1 || tasks[0].ReleaseID != "original-release" || tasks[0].Action != task.Action {
+		t.Fatal("task history lost its originating release or action", tasks, err)
 	}
 }
 

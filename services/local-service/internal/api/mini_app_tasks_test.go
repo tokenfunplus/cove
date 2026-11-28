@@ -78,12 +78,12 @@ func TestGenerationTaskEndpointsExcludeProposals(t *testing.T) {
 	if err := json.Unmarshal(call("GET", "/tasks", 200), &history); err != nil {
 		t.Fatal(err)
 	}
-	if len(history.Tasks) != 1 || history.Tasks[0].ID != "generate" || history.Tasks[0].ReleaseID != release.ID {
+	if len(history.Tasks) != 1 || history.Tasks[0].ID != "generate" || history.Tasks[0].ReleaseID != release.ID || history.Tasks[0].Action != "generate" {
 		t.Fatalf("unexpected generation history: %+v", history.Tasks)
 	}
 	var detail persistence.AppTask
-	if err := json.Unmarshal(call("GET", "/tasks/generate", 200), &detail); err != nil || detail.ReleaseID != release.ID {
-		t.Fatalf("generation detail lost its release: %+v, %v", detail, err)
+	if err := json.Unmarshal(call("GET", "/tasks/generate", 200), &detail); err != nil || detail.ReleaseID != release.ID || detail.Action != history.Tasks[0].Action {
+		t.Fatalf("generation detail lost its release or action: %+v, %v", detail, err)
 	}
 	call("DELETE", "/tasks/generate", 200)
 	if len(model.stopped) != 1 || model.stopped[0] != "generate" {
