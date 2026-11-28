@@ -161,8 +161,14 @@ export function App() {
           attempt.current++;
           allowed.current = undefined;
         }
-        if (target.href !== previous.href || (!target.entry && previous.entry))
-          fragmentOrigin.current = { previous, href: target.href };
+        if (target.href !== previous.href || (!target.entry && previous.entry)) {
+          const pending = fragmentOrigin.current;
+          const originKey = pending?.previous.entry?.key;
+          if (originKey && (!previous.entry || previous.entry.key === originKey) &&
+            (!target.entry || target.entry.key === originKey))
+            pending.href = target.href;
+          else fragmentOrigin.current = { previous, href: target.href };
+        }
         else if (fragmentOrigin.current?.href !== target.href)
           fragmentOrigin.current = undefined;
         current.current = target;

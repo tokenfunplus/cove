@@ -791,3 +791,64 @@ test("an earlier Chat branch keeps an origin that survives truncating a later re
     vi.unstubAllGlobals();
   }
 });
+
+test.each([
+  { copied: false, interleaved: false },
+  { copied: true, interleaved: false },
+  { copied: false, interleaved: true },
+  { copied: true, interleaved: true },
+])("Chrome native fragment popstates retain the known origin (copied=$copied, interleaved=$interleaved)", async ({ copied, interleaved }) => {
+  vi.stubGlobal("navigation", undefined);
+  try {
+    window.history.replaceState(null, "", "/apps");
+    render(<App />);
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "App workspace" });
+    const apps = workspaceEntry()!;
+    await user.click(screen.getByRole("button", { name: "Open Chat" }));
+    const chat = workspaceEntry()!;
+    const state = window.history.state;
+    const start = window.location.href;
+    await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
+    const push = (hash: string) => {
+      window.history.pushState(copied ? state : null, "", "/" + hash);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+      return window.location.href;
+    };
+    const changed = (oldURL: string, newURL: string) =>
+      window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL }));
+    act(() => {
+      const one = push("#one");
+      const two = push("#two");
+      if (interleaved) {
+        changed(start, one);
+        const three = push("#three");
+        changed(one, two);
+        changed(two, three);
+      } else {
+        changed(start, one);
+        changed(one, two);
+      }
+    });
+    const count = interleaved ? 3 : 2;
+    const latest = workspaceEntry()!;
+    expect(latest?.index).toBe(chat.index + count);
+    expect(latest?.key).not.toBe(chat.key);
+    const length = window.history.length;
+    act(() => window.history.go(-count - 1));
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(workspaceEntry()?.key).toBe(latest.key));
+    await user.click(screen.getByRole("button", { name: "Stay" }));
+    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("Protected");
+    act(() => window.history.go(-count - 1));
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(workspaceEntry()?.key).toBe(latest.key));
+    await user.click(screen.getByRole("button", { name: "Leave" }));
+    await screen.findByRole("heading", { name: "App workspace" });
+    expect(workspaceEntry()?.key).toBe(apps.key);
+    expect(window.history.length).toBe(length);
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});
