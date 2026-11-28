@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-export async function runMiniAppScrollHistory({ api, cdp, evaluate, until, click, loadPage, origin, snapshot }) {
+export async function runMiniAppScrollHistory({ api, cdp, evaluate, until, click, fill, loadPage, origin, snapshot }) {
   const source = (await api("/api/mini-apps/catalog")).packages.find((entry) => entry.app === "japanese-review-book" && entry.version === "1.2.0");
   const pkg = await api(`/api/mini-apps/catalog/${source.publisher}/${source.app}/${source.version}`);
   const entries = Array.from({ length: 24 }, (_, index) => ({
@@ -24,8 +24,8 @@ export async function runMiniAppScrollHistory({ api, cdp, evaluate, until, click
   const top = () => evaluate("document.querySelector('main.mini-app-shell').scrollTop");
   const waitTop = (value) => until(`Math.abs(document.querySelector('main.mini-app-shell').scrollTop - ${value}) < 2`);
   const key = () => evaluate("history.state['cove.workspace-history.v1'].key");
-  const button = async (label) => {
-    const expression = `Array.from(document.querySelectorAll('main.mini-app-shell button')).find(element => element.textContent.trim() === ${JSON.stringify(label)})`;
+  const button = async (label, scope = "main.mini-app-shell") => {
+    const expression = `Array.from(document.querySelectorAll(${JSON.stringify(scope + " button")})).find(element => element.textContent.trim() === ${JSON.stringify(label)})`;
     await until(`!!(${expression})`);
     await evaluate(`(${expression}).setAttribute('data-scroll-history-button', '')`);
     await click("[data-scroll-history-button]");
@@ -79,9 +79,14 @@ export async function runMiniAppScrollHistory({ api, cdp, evaluate, until, click
     await waitTop(listTop);
     assert.equal(await key(), listKey, "Clicking the current catalog is a no-op for history and scroll");
     assert.equal(await evaluate("typeof window.navigation"), "undefined", "The fragment check exercises the native fallback");
+    const beforeFragmentLength = await evaluate("history.length");
+    const beforeFragmentEntry = await evaluate("history.state['cove.workspace-history.v1']");
     await evaluate("location.hash = '#native-scroll'");
     await until("location.hash === '#native-scroll' && history.state?.['cove.workspace-history.v1']?.key !== " + JSON.stringify(listKey));
     const fragmentKey = await key();
+    const fragmentEntry = await evaluate("history.state['cove.workspace-history.v1']");
+    assert((await evaluate("history.length")) <= beforeFragmentLength, "The native fragment replaced existing forward entries");
+    assert.notEqual(fragmentEntry.lineage, beforeFragmentEntry.lineage, "A truncated-forward fragment has scroll identity without an inferred distance");
     await waitTop(listTop);
     await evaluate("document.querySelector('main.mini-app-shell').scrollTop = 1000");
     await waitTop(1000);
@@ -94,6 +99,52 @@ export async function runMiniAppScrollHistory({ api, cdp, evaluate, until, click
     await waitTop(1000);
     assert.equal(await key(), fragmentKey, "A fragment stamped after popstate retains its own position");
     await snapshot("mini-app-native-fragment-after-history-forward");
+
+    await loadPage("Page.navigate", { url: origin + "/apps" });
+    await until("!!document.querySelector('main.mini-app-shell') && !!history.state?.['cove.workspace-history.v1']");
+    const apps = await evaluate("history.state['cove.workspace-history.v1']");
+    await click('main.mini-app-shell a[href="/"]');
+    await until("!!document.querySelector('button[aria-label=\"New conversation\"]')");
+    await click('button[aria-label="New conversation"]');
+    await fill("#generation-input", "Keep my coalesced fallback draft");
+    const chat = await evaluate("history.state['cove.workspace-history.v1']");
+    await evaluate("location.hash = '#one'; location.hash = '#two'");
+    await until("location.hash === '#two' && !!history.state?.['cove.workspace-history.v1'] && history.state['cove.workspace-history.v1'].key !== " + JSON.stringify(chat.key));
+    const latest = await evaluate("history.state['cove.workspace-history.v1']");
+    assert.equal(latest.index, chat.index + 2, "A complete coalesced push chain has a proven distance");
+    const fragmentLength = await evaluate("history.length");
+    const atKey = (entry) => "history.state?.['cove.workspace-history.v1']?.key === " + JSON.stringify(entry.key);
+    await evaluate("history.go(-3)");
+    await until("document.querySelector('.confirmation-dialog__panel')?.textContent.includes('Discard unsent draft?')");
+    await until(atKey(latest));
+    await snapshot("mini-app-coalesced-fallback-confirmation");
+    await button("Stay", ".confirmation-dialog__panel");
+    assert.equal(await evaluate("document.querySelector('#generation-input').value"), "Keep my coalesced fallback draft");
+    await evaluate("history.back()");
+    await until("location.hash === '#one' && !!history.state?.['cove.workspace-history.v1']");
+    const intermediate = await evaluate("history.state['cove.workspace-history.v1']");
+    assert.notEqual(intermediate.lineage, chat.lineage, "An intermediate entry gets identity without guessing its position");
+    await evaluate("history.go(-2)");
+    await until("!!document.querySelector('.confirmation-dialog__panel')");
+    await until(atKey(chat));
+    await button("Stay", ".confirmation-dialog__panel");
+    for (const entry of [intermediate, latest]) {
+      await evaluate("history.forward()");
+      await until(atKey(entry));
+    }
+    await evaluate("history.go(-3)");
+    await until("!!document.querySelector('.confirmation-dialog__panel')");
+    await until(atKey(latest));
+    await button("Discard and continue", ".confirmation-dialog__panel");
+    await until("!!document.querySelector('main.mini-app-shell')");
+    assert.equal(await key(), apps.key, "Declining and later approving leave retains the exact Apps destination");
+    assert.equal(await evaluate("history.length"), fragmentLength);
+    for (const entry of [chat, intermediate, latest]) {
+      await evaluate("history.forward()");
+      await until(atKey(entry));
+    }
+    assert.equal(await evaluate("history.length"), fragmentLength, "Coalesced fallback preserves all physical entries");
+    await snapshot("mini-app-coalesced-fallback-after-forward");
   } finally {
     await cdp("Page.removeScriptToEvaluateOnNewDocument", { identifier: injection.identifier });
   }

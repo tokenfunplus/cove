@@ -43,13 +43,20 @@ export function ensureWorkspaceEntry(rebase = false) {
 }
 
 /** Stamp a newly created native fragment entry without breaking its lineage. */
-export function trackWorkspaceFragment(previous: WorkspaceEntry) {
+export function trackWorkspaceFragment(previous: WorkspaceEntry, distance = 1) {
   const entry = {
     ...previous,
-    index: previous.index + 1,
+    index: previous.index + distance,
     key: crypto.randomUUID(),
   };
   window.history.replaceState(withEntry(window.history.state, entry), "");
+  window.dispatchEvent(new Event(workspaceFragmentStamped));
+  return entry;
+}
+
+/** Give an unproven fragment its own identity without claiming a distance. */
+export function rebaseWorkspaceFragment() {
+  const entry = ensureWorkspaceEntry(true);
   window.dispatchEvent(new Event(workspaceFragmentStamped));
   return entry;
 }

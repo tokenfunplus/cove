@@ -191,6 +191,7 @@ test("unmanaged entries never guess a traversal distance and preserve the full p
 });
 
 test("native hash-only entries retain the known history lineage without consuming the fragment", () => {
+  window.history.pushState(null, "", "/");
   render(<App />);
   const before = workspaceEntry()!;
   const oldURL = window.location.href;
@@ -541,4 +542,114 @@ test("an unrelated queued Chat traversal clears a previously approved Apps targe
   await screen.findByRole("dialog", { name: "Protect Chat" });
   expect(screen.queryByRole("heading", { name: "App workspace" })).toBeNull();
   expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("New protected draft");
+});
+
+test.each([
+  { name: "coalesced", fragments: ["#one", "#two"], stamped: true },
+  { name: "repeated URLs", fragments: ["#one", "#two", "#one", ""], stamped: true },
+  { name: "bounded overflow", fragments: Array.from({ length: 33 }, (_, index) => "#fragment-" + index), stamped: false },
+])("native fallback preserves Apps through $name fragments and intermediate traversals", async ({ fragments, stamped }) => {
+  vi.stubGlobal("navigation", undefined);
+  try {
+    window.history.replaceState(null, "", "/apps");
+    render(<App />);
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "App workspace" });
+    const apps = workspaceEntry()!;
+    await user.click(screen.getByRole("button", { name: "Open Chat" }));
+    const chat = workspaceEntry()!;
+    await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
+    act(() => { fragments.forEach((fragment) => { window.location.hash = fragment; }); });
+    // Native popstate and hashchange notifications are queued after all pushes.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+    const latest = workspaceEntry();
+    if (stamped) expect(latest?.index).toBe(chat.index + fragments.length);
+    else {
+      expect(latest?.lineage).not.toBe(chat.lineage);
+      expect(latest?.index).toBe(0);
+    }
+    const length = window.history.length;
+    act(() => window.history.go(-fragments.length - 1));
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(workspaceEntry()?.key).toBe(stamped ? latest!.key : chat.key));
+    await user.click(screen.getByRole("button", { name: "Stay" }));
+    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("Protected");
+    if (stamped) {
+      act(() => window.history.back());
+      await waitFor(() => expect(window.location.hash).toBe(fragments.at(-2)));
+      await waitFor(() => expect(workspaceEntry()).toBeDefined());
+      expect(workspaceEntry()?.lineage).not.toBe(chat.lineage);
+      act(() => window.history.go(-fragments.length));
+      await screen.findByRole("dialog");
+      await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
+      await user.click(screen.getByRole("button", { name: "Stay" }));
+      act(() => window.history.forward());
+      await waitFor(() => expect(window.location.hash).toBe(fragments[0]));
+      await waitFor(() => expect(workspaceEntry()).toBeDefined());
+      expect(workspaceEntry()?.lineage).not.toBe(chat.lineage);
+      act(() => window.history.go(fragments.length - 1));
+      await waitFor(() => expect(workspaceEntry()?.key).toBe(latest!.key));
+    }
+    act(() => window.history.go(stamped ? -fragments.length - 1 : -1));
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(workspaceEntry()?.key).toBe(stamped ? latest!.key : chat.key));
+    await user.click(screen.getByRole("button", { name: "Leave" }));
+    await screen.findByRole("heading", { name: "App workspace" });
+    expect(workspaceEntry()?.key).toBe(apps.key);
+    expect(window.history.length).toBe(length);
+    act(() => window.history.forward());
+    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
+    act(() => window.history.go(fragments.length));
+    if (stamped) await waitFor(() => expect(workspaceEntry()?.key).toBe(latest!.key));
+    else await waitFor(() => expect(window.location.hash).toBe(fragments.at(-1)));
+    expect(window.history.length).toBe(length);
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+  }
+});
+
+test("a single fragment that truncates forward history keeps its own identity and the older Apps target", async () => {
+  vi.stubGlobal("navigation", undefined);
+  try {
+    window.history.replaceState(null, "", "/apps");
+    render(<App />);
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "App workspace" });
+    const apps = workspaceEntry()!;
+    await user.click(screen.getByRole("button", { name: "Open Chat" }));
+    const chat = workspaceEntry()!;
+    act(() => navigateWorkspace("/apps?section=catalog"));
+    act(() => window.history.back());
+    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
+    await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
+    const length = window.history.length;
+    act(() => { window.location.hash = "#native"; });
+    await waitFor(() => {
+      expect(workspaceEntry()).toBeDefined();
+      expect(workspaceEntry()?.key).not.toBe(chat.key);
+    });
+    const fragment = workspaceEntry()!;
+    expect(window.history.length).toBe(length);
+    expect(fragment.lineage).not.toBe(chat.lineage);
+    act(() => window.history.go(-2));
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
+    await user.click(screen.getByRole("button", { name: "Stay" }));
+    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("Protected");
+    act(() => window.history.forward());
+    await waitFor(() => expect(workspaceEntry()?.key).toBe(fragment.key));
+    act(() => window.history.go(-2));
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
+    await user.click(screen.getByRole("button", { name: "Leave" }));
+    await screen.findByRole("heading", { name: "App workspace" });
+    expect(workspaceEntry()?.key).toBe(apps.key);
+    expect(window.history.length).toBe(length);
+    act(() => window.history.go(2));
+    await waitFor(() => expect(workspaceEntry()?.key).toBe(fragment.key));
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+  }
 });

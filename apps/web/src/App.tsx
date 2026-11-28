@@ -6,6 +6,7 @@ import {
   ensureWorkspaceEntry,
   isWorkspaceNavigation,
   navigateWorkspace,
+  rebaseWorkspaceFragment,
   trackWorkspaceFragment,
   workspaceEntry,
 } from "@/lib/workspace-navigation";
@@ -15,6 +16,7 @@ const currentLocation = () => ({
   entry: workspaceEntry(),
   state: window.history.state as unknown,
   href: window.location.href,
+  historyLength: window.history.length,
 });
 
 export function App() {
@@ -29,8 +31,16 @@ export function App() {
   );
   const allowed = useRef<{ key: string; href: string } | undefined>(undefined);
   const fragmentOrigin = useRef<
-    { previous: ReturnType<typeof currentLocation>; href: string } | undefined
+    {
+      previous: ReturnType<typeof currentLocation>;
+      href: string;
+      steps?: number;
+      lastHref?: string;
+    } | undefined
   >(undefined);
+  const fragmentFallback = useRef<ReturnType<typeof currentLocation> | undefined>(
+    undefined,
+  );
   const attempt = useRef(0);
   useEffect(() => {
     if (!current.current) {
@@ -87,6 +97,7 @@ export function App() {
         attempt.current++;
         allowed.current = undefined;
         fragmentOrigin.current = undefined;
+        fragmentFallback.current = undefined;
         done();
       }
       const commit = () => {
@@ -100,6 +111,14 @@ export function App() {
         (allowed.current?.key === target.entry?.key &&
           allowed.current?.href === target.href)
       ) {
+        if (isWorkspaceNavigation(event)) {
+          const fallback = fragmentFallback.current;
+          if (
+            fallback?.entry && target.entry?.lineage === fallback.entry.lineage &&
+            ((target.entry.key !== current.current?.entry?.key && target.entry.index <= fallback.entry.index) ||
+              (target.entry.key === fallback.entry.key && target.href !== fallback.href))
+          ) fragmentFallback.current = undefined;
+        }
         allowed.current = undefined;
         commit();
         return;
@@ -117,15 +136,24 @@ export function App() {
           attempt.current++;
           allowed.current = undefined;
         }
-        fragmentOrigin.current =
-          target.href !== previous.href
-            ? { previous, href: target.href }
-            : undefined;
+        if (target.href !== previous.href || (!target.entry && previous.entry))
+          fragmentOrigin.current = { previous, href: target.href };
+        else if (fragmentOrigin.current?.href !== target.href)
+          fragmentOrigin.current = undefined;
         current.current = target;
         return;
       }
       if (!address.startsWith("/apps") && next.startsWith("/apps")) {
-        const previous = current.current!;
+        const actualPrevious = current.current!;
+        const fallback = fragmentFallback.current;
+        const fallbackURL = fallback && new URL(fallback.href);
+        const previous =
+          actualPrevious.entry?.lineage !== target.entry?.lineage &&
+          fallback?.entry && fallbackURL &&
+          fallback.entry.lineage === target.entry?.lineage &&
+          fallbackURL.pathname + fallbackURL.search === address
+            ? fallback
+            : actualPrevious;
         const delta =
           previous.entry && target.entry?.lineage === previous.entry.lineage
             ? target.entry.index - previous.entry.index
@@ -181,19 +209,36 @@ export function App() {
       )
         return;
       const pending = fragmentOrigin.current;
-      if (pending && pending.href !== event.newURL) return;
-      fragmentOrigin.current = undefined;
       const previous = pending?.previous ?? current.current!;
       const target = currentLocation();
-      // A native fragment creates a successor with empty or copied state. A
-      // traversal to an already stamped entry must retain that entry's position.
-      if (
-        !navigation &&
-        previous.entry &&
-        (!target.entry || target.entry.key === previous.entry.key)
+      if (navigation) {
+        if (pending && pending.href !== event.newURL) return;
+      } else if (
+        previous.entry && (!target.entry || target.entry.key === previous.entry.key)
       ) {
-        trackWorkspaceFragment(previous.entry);
+        const chain: NonNullable<typeof fragmentOrigin.current> = pending ?? {
+          previous, href: event.newURL,
+        };
+        if (event.oldURL !== (chain.lastHref ?? previous.href)) return;
+        chain.lastHref = event.newURL;
+        chain.steps = Math.min(33, (chain.steps ?? 0) + 1);
+        fragmentOrigin.current = chain;
+        if (chain.href !== event.newURL) return;
+        const growth = target.historyLength - previous.historyLength;
+        fragmentFallback.current ??= previous;
+        if (chain.steps <= 32 && growth === chain.steps && growth > 0) {
+          // Only a complete observed push chain with matching history growth
+          // proves the distance. Never stamp the current entry for a stale URL.
+          trackWorkspaceFragment(previous.entry, growth);
+          if (fragmentFallback.current?.entry?.lineage === previous.entry.lineage)
+            fragmentFallback.current = previous;
+        } else if (!target.entry) {
+          rebaseWorkspaceFragment();
+        }
+        // Unproven positions get scroll identity in a separate lineage. Their
+        // guard returns to the retained origin without overwriting older Apps.
       }
+      fragmentOrigin.current = undefined;
       attempt.current++;
       current.current = currentLocation();
     };

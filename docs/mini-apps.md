@@ -410,6 +410,9 @@ shared with the model. Historical candidates become selectable after the
 saved task inputs load, retaining their material bindings, while their originating
 release remains active. After an upgrade, older task results stay readable but
 require a new model task before candidates can be saved with the current release.
+Task details retain their frozen originating action. Recovering an admitted task
+does not repeat inference or apply another action's bindings; open its original
+instance and action before using its candidates.
 
 A legacy file install whose digest matches a bundled official release can
 upgrade to its trusted successor after the user's review. Modified personal
@@ -419,7 +422,9 @@ installation also checks the selected distribution authority.
 
 NearAI progress and result delivery retry temporary Local Service failures up
 to eight sends, with 7.1 seconds of bounded backoff, using the same claim and
-payload. Accepted settlements are idempotent for that exact
+payload. Each settlement send has its own two-second deadline, independent of
+task cancellation, so a stalled response can enter the retry sequence. Accepted
+settlements are idempotent for that exact
 browser session and receipt, even after generation permission is revoked. This
 returns only an acknowledgement and does not authorize new work. Service restart
 invalidates that browser session; reopen Cove and inspect the saved result

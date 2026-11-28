@@ -725,7 +725,7 @@ try {
     await cdp("Input.insertText", { text: value });
   }
   if (process.env.COVE_BROWSER_SCENARIO === "mini-app-scroll-history") {
-    await runMiniAppScrollHistory({api,cdp,evaluate,until,click,loadPage,origin,snapshot});
+    await runMiniAppScrollHistory({api,cdp,evaluate,until,click,fill,loadPage,origin,snapshot});
     assert.equal(exceptions.length, 0);
     socket.close();
     console.log("Mini App scroll history acceptance passed.");

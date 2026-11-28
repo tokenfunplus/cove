@@ -219,9 +219,14 @@ use civil calendar arithmetic, so DST changes cannot shift a reviewed date.
 
 Where the browser exposes synchronous Navigation API entry-change events, native
 fragment pushes receive their history identity at commit, including rapid pushes
-whose ordinary hash events arrive together. Older browsers retain ordinary
-fragment tracking and the conservative fallback for entries without metadata;
-untracked or coalesced legacy entries have no guaranteed numeric traversal.
+whose ordinary hash events arrive together. Without those events, only a bounded
+contiguous fragment chain with a proven distance retains its prior lineage.
+An unproven fragment gets an independent scroll identity; it does not acquire
+a guessed position in the older lineage. If declining a protected traversal
+requires crossing that boundary, Cove returns to the retained known Chat origin
+while preserving the Apps destination and intervening entries. This can restore
+the known Chat URL rather than an unproven intermediate fragment. External
+entries without a known origin retain the conservative legacy fallback.
 
 A superseding browser traversal releases the obsolete restoration waiter and
 invalidates its pending approval. The actual entry is then handled as a fresh
