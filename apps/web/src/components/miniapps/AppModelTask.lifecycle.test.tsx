@@ -42,6 +42,7 @@ afterEach(() => {
 });
 const running: AppTask = {
   id: "task",
+  release_id: "r",
   action: "study",
   modelId: "fixture",
   state: "running",
@@ -127,7 +128,7 @@ test("an unsaved result blocks new generation and retries only the retained save
   expect(startVerifiedAppTask).not.toHaveBeenCalled();
 });
 test("a pending save in another app directs recovery to Activity without retrying admission", async () => {
-  vi.spyOn(miniApps, "hostActivity").mockResolvedValue({ activity: [] });
+  vi.spyOn(miniApps, "hostActivity").mockResolvedValue({ activity: [{ instance_id: "other", instance_name: "Other app", operation_id: "waiting", action: "generate", release_id: "r", surface: "page", status: "save_failed", time: 1 }] });
   vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [] });
   const start = vi.spyOn(miniApps, "startTask").mockRejectedValue(
     new LocalServiceError({
@@ -442,4 +443,110 @@ test("a candidate save can select fifty rows and explains the limit", async () =
   expect(
     screen.getByText("Select up to 50 candidates for one save."),
   ).toBeDefined();
+});
+
+
+test.each(["old-release", undefined])("historical candidates from release %s remain readable without applying current bindings", async (release) => {
+  const old: AppTask = {
+    ...running,
+    release_id: release,
+    state: "completed",
+    inputs: { passage: "Original text", material: "M1" },
+    result: '[{"question":"Original question","answer":"Original answer"}]',
+  };
+  vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [old] });
+  vi.spyOn(miniApps, "task").mockResolvedValue(old);
+  const check = vi.spyOn(miniApps, "checkCandidates");
+  const choose = vi.fn();
+  const preview = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+      <AppModelTask
+        instance={{ id: "book", name: "Book", release_id: "new-release", enabled: true, revision: 2, grants: ["records.query", "records.commit"] }}
+        actionId="study"
+        action={{ title: "Create cards", op: "generate", inputs: { passage: "text", reference: "text" }, candidate_bindings: { source: "reference" }, defaults: { reference: "" }, surfaces: ["page"] }}
+        inputs={{ passage: "Current text", reference: "" }}
+        surface="page"
+        localRequired={false}
+        candidate={{ title: "Save", op: "create", inputs: { question: "text", answer: "text", source: "text" }, surfaces: ["page"] }}
+        previewCandidates={preview}
+        choose={choose}
+      />
+    </QueryClientProvider>,
+  );
+  fireEvent.change(await screen.findByLabelText("Recent tasks"), { target: { value: old.id } });
+  await screen.findByText(old.result!);
+  expect(screen.getByText(/different or unknown app release/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Use candidate 1" })).toBeNull();
+  expect(screen.queryByLabelText("Select candidate 1")).toBeNull();
+  expect(check).not.toHaveBeenCalled();
+  expect(choose).not.toHaveBeenCalled();
+  expect(preview).not.toHaveBeenCalled();
+});
+
+
+test.each(["revision", "action", "surface", "same"])("an ambiguous admission binds its operation identity to %s", async (change) => {
+  vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [] });
+  vi.spyOn(miniApps, "task").mockRejectedValue(new LocalServiceError({ error: { code: "not_found", message: "No admitted task", details: null, request_id: "fixture" } }));
+  const start = vi.spyOn(miniApps, "startTask").mockRejectedValueOnce(new Error("Lost admission response")).mockResolvedValue(running);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const view = (changed = false) => <QueryClientProvider client={client}><AppModelTask
+    instance={{ id: "book", name: "Book", enabled: true, revision: changed && change === "revision" ? 2 : 1, release_id: "r", grants: ["ai.generate"] }}
+    actionId={changed && change === "action" ? "practice" : "study"}
+    action={{ title: "Generate", op: "generate", inputs: { passage: "text" }, surfaces: ["page", "panel"] }}
+    inputs={{ passage: "Original input" }} surface={changed && change === "surface" ? "panel" : "page"} localRequired={false} previewCandidates={vi.fn()} choose={vi.fn()}
+  /></QueryClientProvider>;
+  const page = render(view());
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  await screen.findByText("Lost admission response");
+  const first = start.mock.calls[0][1].operationId;
+  page.rerender(view(true));
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  await waitFor(() => expect(start).toHaveBeenCalledTimes(2));
+  expect(miniApps.task).toHaveBeenCalledWith("book", first);
+  if (change === "same") expect(start.mock.calls[1][1].operationId).toBe(first);
+  else expect(start.mock.calls[1][1].operationId).not.toBe(first);
+});
+
+test("an ambiguous admission recovers the admitted task before any new paid request", async () => {
+  vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [] });
+  const start = vi.spyOn(miniApps, "startTask").mockRejectedValue(new Error("Lost admission response"));
+  vi.spyOn(miniApps, "task").mockImplementation(async (_instance, id) => ({ ...running, id, inputs: { passage: "Original paid input" } }));
+  form();
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  await screen.findByText("Lost admission response");
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  await screen.findByText("Original paid input");
+  expect(start).toHaveBeenCalledOnce();
+  expect(startVerifiedAppTask).toHaveBeenCalledWith("book", start.mock.calls[0][1].operationId);
+});
+
+test("confirmed task detail clears a stale pending history entry when history refresh fails", async () => {
+  let saved = false;
+  const waiting: AppTask = { ...running, browser: false, state: "save_failed", pending_save: true, result: "Frozen model result", inputs: { passage: "Paid input" } };
+  vi.spyOn(miniApps, "tasks").mockImplementation(async () => {
+    if (saved) throw new Error("History refresh unavailable");
+    return { tasks: [waiting] };
+  });
+  vi.spyOn(miniApps, "task").mockImplementation(async () => saved ? { ...waiting, state: "completed", pending_save: false } : waiting);
+  vi.spyOn(miniApps, "retryTaskSave").mockImplementation(async () => { saved = true; });
+  form();
+  fireEvent.click(await screen.findByRole("button", { name: "Retry saving result" }));
+  await screen.findByText("Task completed");
+  expect(screen.queryByRole("region", { name: "Unsaved task result" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Start model task" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+
+test("a resolved global save block clears the old admission error without starting another task", async () => {
+  vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [] });
+  const activity = vi.spyOn(miniApps, "hostActivity").mockResolvedValue({ activity: [{ instance_id: "other", instance_name: "Other app", operation_id: "waiting", action: "generate", release_id: "r", surface: "page", status: "save_failed", time: 1 }] });
+  const start = vi.spyOn(miniApps, "startTask").mockRejectedValue(new LocalServiceError({ error: { code: "task_save_pending", message: "A result is waiting", details: null, request_id: "fixture" } }));
+  form();
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  await screen.findByText(/A result from Other app is waiting/);
+  activity.mockResolvedValue({ activity: [] });
+  await waitFor(() => expect(screen.queryByRole("link", { name: "Open Activity" })).toBeNull(), { timeout: 3000 });
+  expect(start).toHaveBeenCalledOnce();
+  expect(startVerifiedAppTask).not.toHaveBeenCalled();
 });

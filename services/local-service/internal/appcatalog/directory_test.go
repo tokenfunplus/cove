@@ -1,6 +1,7 @@
 package appcatalog
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -67,7 +68,16 @@ func TestDirectoryFallbackAndPersistentTrust(t *testing.T) {
 	code = 503
 	checkFallback("unavailable")
 	code = 200
-	body = "invalid"
+	var invalidSignature struct{ Payload, Signature []byte }
+	if err := json.Unmarshal([]byte(signed(index)), &invalidSignature); err != nil {
+		t.Fatal(err)
+	}
+	invalidSignature.Signature[0] ^= 1
+	invalidEnvelope, err := json.Marshal(invalidSignature)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = string(invalidEnvelope)
 	checkFallback("invalid signature")
 	index.Sequence--
 	body = signed(index)
@@ -250,9 +260,22 @@ func TestDirectoryCachesVerifiedResultsAndBriefBundledFailures(t *testing.T) {
 	if err != nil || calls != 1 {
 		t.Fatal(err, calls)
 	}
-	first[len(first)-1].Raw = nil
-	if _, err := directory.List(t.Context()); err != nil || calls != 1 {
+	remoteIndex := -1
+	for n, item := range first {
+		if item.Publisher == "author" {
+			remoteIndex = n
+		}
+	}
+	if remoteIndex == -1 || !bytes.Equal(first[remoteIndex].Raw, source) {
+		t.Fatal("verified result omitted the remote package")
+	}
+	first[remoteIndex].Raw[0] ^= 1
+	second, err := directory.List(t.Context())
+	if err != nil || calls != 1 {
 		t.Fatal("verified cache missed", err, calls)
+	}
+	if !bytes.Equal(second[remoteIndex].Raw, source) {
+		t.Fatal("mutating a returned package changed the verified cache")
 	}
 	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()

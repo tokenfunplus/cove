@@ -33,6 +33,7 @@ var (
 const MaxPackageBytes = 1 << 20
 const maxTextBytes = 60000
 const maxRecords = 2000
+const maxRecordBytes = 96 << 10
 
 var capabilities = []string{"blobs.import", "records.query", "records.commit", "ai.generate", "mac.files.pick", "mac.selection.receive", "chat.attach", "speech.speak", "documents.search"}
 var surfaces = []string{"page", "chat", "panel"}
@@ -169,7 +170,10 @@ func resolve(v any, inputs map[string]any, now time.Time) any {
 	}
 	if dayOffset.MatchString(s) {
 		days, _ := strconv.Atoi(strings.TrimPrefix(s, "$today"))
-		return now.AddDate(0, 0, days).Format(time.DateOnly)
+		// Dates are civil values. Local midnight can be skipped by a time zone
+		// transition, so apply offsets to the local calendar date in UTC.
+		year, month, day := now.Date()
+		return time.Date(year, month, day+days, 0, 0, 0, 0, time.UTC).Format(time.DateOnly)
 	}
 	return v
 }
@@ -367,6 +371,15 @@ func Validate(raw []byte) (Package, error) {
 		for _, row := range rows {
 			if !validValues(row, fields, nil, true) {
 				return p, invalid("seed fields")
+			}
+			// Count the stored JSON, including escaping and resolved date lengths.
+			resolved := make(map[string]any, len(row))
+			for k, v := range row {
+				resolved[k] = resolve(v, nil, time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC))
+			}
+			encoded, err := json.Marshal(resolved)
+			if err != nil || len(encoded) > maxRecordBytes {
+				return p, invalid("seed record size limit")
 			}
 		}
 	}

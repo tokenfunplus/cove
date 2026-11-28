@@ -2,6 +2,23 @@ import AppKit
 import CoveLauncher
 import UniformTypeIdentifiers
 
+struct MiniAppSelectionTarget: Codable, Equatable {
+    let instance, name, view, action, title, field: String
+    let revision: Int
+}
+
+@MainActor
+func miniAppSelectionMenu(_ targets: [MiniAppSelectionTarget]) -> NSPopUpButton {
+    let list = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 380, height: 28))
+    for target in targets {
+        let item = NSMenuItem(title: target.name + " · " + target.title + " · " + target.field, action: nil, keyEquivalent: "")
+        item.representedObject = target
+        list.menu?.addItem(item)
+    }
+    list.selectItem(at: 0)
+    return list
+}
+
 @MainActor
 func pickMiniAppText(_ id: UUID, service: BundledServiceManager) async {
     struct Claim: Decodable { let instance: String }
@@ -58,26 +75,24 @@ func miniAppNotice(_ message: String) {
 
 @MainActor
 func chooseMiniAppForSelection(_ text: String, launcher: LauncherStateMachine, service: BundledServiceManager) async -> UUID? {
-    struct Target: Codable { let instance, name, view, action, title, field: String; let revision: Int }
-    struct Selection: Encodable { let target: Target; let text: String }
+    struct Selection: Encodable { let target: MiniAppSelectionTarget; let text: String }
     do {
         try launcher.start()
         let data = try await service.miniAppSelectionTargets()
-        let targets = try JSONDecoder().decode([Target].self, from: data)
+        let targets = try JSONDecoder().decode([MiniAppSelectionTarget].self, from: data)
         guard !targets.isEmpty else {
             miniAppNotice("Enable selection access and a text action in a Mini App's settings first.")
             return nil
         }
         let alert = NSAlert()
         alert.messageText = "Send selected text to a Mini App"
-        let list = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 380, height: 28))
-        for target in targets { list.addItem(withTitle: target.name + " · " + target.title + " · " + target.field) }
+        let list = miniAppSelectionMenu(targets)
         alert.accessoryView = list
         alert.addButton(withTitle: "Send selection")
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        let target = targets[list.indexOfSelectedItem]
+        guard let target = list.selectedItem?.representedObject as? MiniAppSelectionTarget else { return nil }
         let receipt = try await service.stageMiniAppSelection(JSONEncoder().encode(Selection(target: target, text: text)))
         guard let object = try JSONSerialization.jsonObject(with: receipt) as? [String:String], let raw = object["id"], let selection = UUID(uuidString: raw) else { return nil }
         if let id = UUID(uuidString: target.instance),

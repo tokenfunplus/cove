@@ -171,11 +171,12 @@ if [ -n "${COVE_APP_CATALOG_DEFAULTS_FILE:-}" ]; then
 import { readFileSync, writeFileSync } from "node:fs";
 const [input, output] = process.argv.slice(2);
 const { url, public_key } = JSON.parse(readFileSync(input, "utf8"));
+if (typeof url !== "string") throw new Error("Invalid Mini App catalog URL.");
 const endpoint = new URL(url);
 if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || typeof public_key !== "string" || !/^[A-Za-z0-9+/]{43}=$/.test(public_key) || Buffer.from(public_key,"base64").length !== 32) {
   throw new Error("Invalid Mini App catalog URL or Ed25519 public key.");
 }
-writeFileSync(output, JSON.stringify({ url, public_key }) + "\n");
+writeFileSync(output, JSON.stringify({ url: endpoint.href, public_key }) + "\n");
 JS
 fi
 test -x "$cove_app/Contents/Resources/cove-local-service" || fail "Local Service executable is missing"

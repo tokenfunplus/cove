@@ -75,17 +75,30 @@ function escapedName(value: string) {
 
 export function mentionedApps(text: string, apps: ReturnType<typeof chatApps>) {
   const question = text.split(/(?:^|\n)Reference from /, 1)[0];
-  return apps.filter(({ instance, packageName }) => {
-    return [instance.name, packageName].some((value) => {
+  const matches = apps.flatMap((app) => {
+    return [app.instance.name, app.packageName].flatMap((value) => {
       const name = escapedName(value.trim());
-      if (!name) return false;
+      if (!name) return [];
       const explicit = new RegExp(
-        String.raw`(?:^|[^\p{L}\p{N}_])@${name}(?![\p{L}\p{N}_])`,
-        "iu",
+        String.raw`(^|[^\p{L}\p{N}_])@${name}(?![\p{L}\p{N}_])`,
+        "giu",
       );
-      return explicit.test(question);
+      return [...question.matchAll(explicit)].map((match) => ({
+        app,
+        start: match.index! + match[1].length,
+        length: value.trim().length,
+      }));
     });
   });
+  return apps.filter((app) =>
+    matches.some(
+      (match) =>
+        match.app === app &&
+        !matches.some(
+          (other) => other.start === match.start && other.length > match.length,
+        ),
+    ),
+  );
 }
 
 export function appDiscoveryIntent(
@@ -105,6 +118,7 @@ export function useChatApps(enabled = true) {
   const hasApps = useSyncExternalStore(
     (notify) => cache.getQueryCache().subscribe(notify),
     () =>
+      cache.getQueryData<boolean | null>(appKeys.presence) === null ||
       cache.getQueryData<boolean>(appKeys.presence) === true ||
       !!cache.getQueryData<{ instances: MiniAppInstance[] }>(appKeys.instances)
         ?.instances.length,
@@ -138,8 +152,11 @@ export function useChatApps(enabled = true) {
   });
   return useMemo(
     () =>
-      chatApps(instances.data?.instances ?? [], releases.data?.packages ?? []),
-    [instances.data, releases.data],
+      chatApps(
+        instances.isError ? [] : (instances.data?.instances ?? []),
+        releases.isError ? [] : (releases.data?.packages ?? []),
+      ),
+    [instances.data, releases.data, instances.isError, releases.isError],
   );
 }
 
@@ -211,20 +228,51 @@ function AppWelcomeQueries({ startDraft }: WelcomeProps) {
   const apps = useChatApps();
   const [open, setOpen] = useState(false);
   const [instance, setInstance] = useState<string>();
+  const [question, setQuestion] = useState<string>();
   return (
     <>
       <AppStarters
         apps={apps}
-        open={(id) => {
+        open={(id, intent) => {
           setInstance(id);
+          setQuestion(intent);
           setOpen(true);
         }}
       />
       {open && (
         <Suspense fallback={null}>
           <AppPicker
+            key={instance ?? "all"}
             surface="chat"
             initialInstance={instance}
+            introduction={
+              question &&
+              !instance && (
+                <section
+                  aria-label="Apps with due questions"
+                  className="space-y-2"
+                >
+                  <p>Choose an app to find its due questions.</p>
+                  {apps.flatMap((app) =>
+                    app.actions
+                      .filter(
+                        (action) =>
+                          action.op === "query" &&
+                          /\bdue\b/i.test(action.title),
+                      )
+                      .map((action) => (
+                        <Button
+                          key={app.instance.id + action.title}
+                          variant="outline"
+                          onClick={() => setInstance(app.instance.id)}
+                        >
+                          {app.instance.name} · {action.title}
+                        </Button>
+                      )),
+                  )}
+                </section>
+              )
+            }
             close={() => setOpen(false)}
             attach={(body) => {
               setOpen(false);

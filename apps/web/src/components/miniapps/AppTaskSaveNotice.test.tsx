@@ -134,6 +134,7 @@ test("the blocked notice identifies the app and opens Activity through draft-awa
   const navigation = vi.fn();
   window.addEventListener("popstate", navigation);
   await userEvent.setup().click(link);
+  expect(window.location.pathname + window.location.search).toBe("/apps?section=activity");
   expect(navigation).toHaveBeenCalledOnce();
   window.removeEventListener("popstate", navigation);
   window.history.replaceState(null, "", "/");
@@ -159,4 +160,24 @@ test("a failed discard closes the confirmation and exposes the recoverable stora
     ).disabled,
   ).toBe(false);
   expect(onSaved).not.toHaveBeenCalled();
+});
+
+
+test("a successful live activity refresh clears an obsolete task-save block", async () => {
+  vi.mocked(request).mockResolvedValue({ activity: [] });
+  const cleared = vi.fn();
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+    <AppTaskSaveBlockedNotice error={{ envelope: { error: { code: "task_save_pending" } } }} onCleared={cleared} />
+  </QueryClientProvider>);
+  await waitFor(() => expect(cleared).toHaveBeenCalled());
+});
+
+test("a failed live activity refresh does not clear an unresolved task-save block", async () => {
+  vi.mocked(request).mockRejectedValue(new Error("Activity unavailable"));
+  const cleared = vi.fn();
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+    <AppTaskSaveBlockedNotice error={{ envelope: { error: { code: "task_save_pending" } } }} onCleared={cleared} />
+  </QueryClientProvider>);
+  await waitFor(() => expect(request).toHaveBeenCalled());
+  expect(cleared).not.toHaveBeenCalled();
 });

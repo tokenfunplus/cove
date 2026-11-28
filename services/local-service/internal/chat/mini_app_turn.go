@@ -145,8 +145,14 @@ func (s *appTurnStream) read(ctx context.Context) ([]provider.Event, error) {
 // JSON objects that explicitly name an action must satisfy the selected contract.
 func appProposalReply(body string) bool {
 	raw := strings.TrimSpace(body)
+	explicit := strings.HasPrefix(raw, "Proposed action:")
+	labeled := false
 	for _, prefix := range []string{"Suggestion:", "Suggested:", "Proposed action:"} {
+		labeled = labeled || strings.HasPrefix(raw, prefix)
 		raw = strings.TrimSpace(strings.TrimPrefix(raw, prefix))
+	}
+	if explicit || labeled && (strings.HasPrefix(raw, "{") || strings.HasPrefix(raw, "[") || strings.HasPrefix(raw, "```")) {
+		return true
 	}
 	if strings.HasPrefix(raw, "```json") && strings.HasSuffix(raw, "```") {
 		raw = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(raw, "```json"), "```"))

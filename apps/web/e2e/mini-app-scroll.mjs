@@ -3,21 +3,45 @@ import assert from "node:assert/strict";
 export async function checkMiniAppScroll(
   { cdp, evaluate, until, snapshot },
   modal,
+  snapshotName,
 ) {
-  await cdp("Emulation.setDeviceMetricsOverride", {
-    width: 900,
-    height: 560,
-    deviceScaleFactor: 1,
-    mobile: false,
-  });
   const target = modal
-    ? ".study-dialog button:not(:disabled)"
-    : '[aria-label="Instance attachments"]';
+    ? ".study-dialog-body button:not(:disabled)"
+    : '[aria-label="Instance attachments"] input[type="file"]';
+  const region = modal ? ".study-dialog-body" : "main.mini-app-shell";
   await until(`!!document.querySelector(${JSON.stringify(target)})`);
+  await evaluate(`(() => {
+    document.querySelector('[data-mini-scroll-target]')?.removeAttribute('data-mini-scroll-target');
+    const nodes = document.querySelectorAll(${JSON.stringify(target)});
+    nodes[nodes.length - 1].setAttribute('data-mini-scroll-target', '');
+  })()`);
+  const measure = `(() => {
+    const container = document.querySelector(${JSON.stringify(region)});
+    const bounds = container.getBoundingClientRect();
+    const rect = document.querySelector('[data-mini-scroll-target]').getBoundingClientRect();
+    const top = Math.max(0, bounds.top), bottom = Math.min(innerHeight, bounds.bottom);
+    return { top: container.scrollTop, scrollable: container.scrollHeight > container.clientHeight,
+      visible: rect.top >= top && rect.bottom <= bottom };
+  })()`;
+  let start;
+  for (const height of [560, 420, 320]) {
+    await cdp("Emulation.setDeviceMetricsOverride", {
+      width: 900,
+      height,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await evaluate(`document.querySelector(${JSON.stringify(region)}).scrollTop = 0`);
+    start = await evaluate(measure);
+    if (start.scrollable && !start.visible) break;
+  }
+  assert(start.scrollable, "The intended region has content to scroll");
+  assert.equal(start.visible, false, "The same bottom control starts clipped before the wheel gesture");
   const point = await evaluate(`(() => {
-    const el = ${modal ? 'document.querySelector(".study-dialog")' : 'document.querySelector("main")'};
+    const el = document.querySelector(${JSON.stringify(region)});
     const r = el.getBoundingClientRect();
-    return { x: Math.min(innerWidth - 30, r.right - 30), y: innerHeight / 2 };
+    const top = Math.max(0, r.top), bottom = Math.min(innerHeight, r.bottom);
+    return { x: Math.min(innerWidth - 30, r.right - 30), y: (top + bottom) / 2 };
   })()`);
   await cdp("Input.dispatchMouseEvent", {
     type: "mouseWheel",
@@ -25,21 +49,15 @@ export async function checkMiniAppScroll(
     deltaX: 0,
     deltaY: 100000,
   });
-  await until(`(() => {
-    const nodes = document.querySelectorAll(${JSON.stringify(target)});
-    const el = nodes[nodes.length - 1];
-    const r = el.getBoundingClientRect();
-    return r.bottom <= innerHeight && r.top >= 0;
-  })()`);
-  await snapshot(
-    modal
-      ? "mini-app-install-scroll-bottom"
-      : "mini-app-attachments-scroll-bottom",
+  await until(`(() => { const current = ${measure}; return current.top > ${start.top} && current.visible; })()`);
+  assert(
+    (await evaluate(measure)).top > start.top,
+    "The wheel gesture moves the intended scroll container",
   );
+  await snapshot(snapshotName);
   assert.equal(
     await evaluate(`(() => {
-    const nodes = document.querySelectorAll(${JSON.stringify(target)});
-    const el = nodes[nodes.length - 1]; const r = el.getBoundingClientRect();
+    const el = document.querySelector('[data-mini-scroll-target]'); const r = el.getBoundingClientRect();
     return el.contains(document.elementFromPoint(r.left + r.width / 2, r.bottom - 4));
   })()`),
     true,

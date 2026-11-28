@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { MiniAppPackage } from "@cove/api-contract";
@@ -291,4 +291,35 @@ test("a suggestion waiting for storage is saved through the task endpoint withou
     "/api/mini-apps/instances/book/tasks/waiting/retry-save",
   );
   expect(screen.getByText("Frozen note")).toBeTruthy();
+});
+
+
+test("a live activity refresh clears an obsolete proposal admission error", async () => {
+  const pkg: MiniAppPackage = { format: 1, publisher: "author", app: "notes", name: "Notes", schema_version: 1, version: "1.0.0", capabilities: ["records.commit"], collections: {}, pages: [], actions: { add: { title: "Add note", op: "create", inputs: { text: "text" }, surfaces: ["panel"] } } };
+  const endpoint = "/api/mini-apps/instances/book/proposals";
+  let submissions = 0;
+  vi.mocked(request).mockImplementation(async (path, options) => {
+    if (path === endpoint + "?surface=panel") return null;
+    if (path === endpoint && options?.method === "POST") {
+      submissions++;
+      throw { envelope: { error: { code: "task_save_pending" } } };
+    }
+    if (path === "/api/mini-apps/activity?limit=100") return { activity: [{ instance_name: "Other app", status: "save_failed" }] };
+    throw new Error("Unexpected request: " + path);
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  render(<QueryClientProvider client={client}><AppProposal instance={{ id: "book", release_id: "r", enabled: true, revision: 1, grants: ["records.commit"], name: "Notes" }} pkg={pkg} actions={["add"]} surface="panel" localRequired choose={vi.fn()} /></QueryClientProvider>);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Ask a model to propose an action" }));
+  await user.click(screen.getByLabelText("Add note"));
+  await user.type(screen.getByLabelText("What would you like to do?"), "Keep this question");
+  await user.selectOptions(screen.getByLabelText("Model provider"), "local");
+  await screen.findByRole("option", { name: "model-1" });
+  await user.selectOptions(screen.getByLabelText("Model", { exact: true }), "model-1");
+  await user.click(screen.getByRole("button", { name: "Request suggestion" }));
+  await screen.findByText(/A result from Other app is waiting/);
+  act(() => client.setQueryData(["mini-app-host-activity"], { activity: [] }));
+  await waitFor(() => expect(screen.queryByRole("link", { name: "Open Activity" })).toBeNull());
+  expect(submissions).toBe(1);
+  expect((screen.getByLabelText("What would you like to do?") as HTMLTextAreaElement).value).toBe("Keep this question");
 });

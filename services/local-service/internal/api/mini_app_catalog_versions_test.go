@@ -97,7 +97,7 @@ func TestCatalogOffersNewestUsableReleaseWhenPublisherTargetsTwoHosts(t *testing
 	if list.Warning != "" || len(offered) != 1 || offered[0].Version != "1.1.0" {
 		t.Fatalf("catalog offered incorrect releases: %+v", offered)
 	}
-	call("POST", "/author/reading-inbox/1.1.0/install", `{"digest":"`+offered[0].Digest+`"}`, 200)
+	call("POST", "/author/reading-inbox/1.1.0/install", `{"digest":"`+offered[0].Digest+`","catalog_authority":"`+offered[0].CatalogAuthority+`"}`, 200)
 	call("GET", "/author/reading-inbox/2.0.0", "", 409)
 	call("POST", "/author/reading-inbox/2.0.0/install", "{}", 409)
 }

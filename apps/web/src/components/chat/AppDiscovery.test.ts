@@ -72,6 +72,25 @@ test("discovery uses only enabled instances and granted chat actions", () => {
   expect(appDiscoveryQuestion("Help me write a web app")).toBe(false);
 });
 
+test("mentions choose the longest name at each position and preserve separate mentions and duplicate names", () => {
+  const available = chatApps(
+    [
+      { ...instance, id: "short", name: "Study" },
+      { ...instance, id: "long", name: "Study Notes" },
+      { ...instance, id: "second-long", name: "Study Notes" },
+    ],
+    [{ ...release, package: { ...release.package, name: "Notebook" } }],
+  );
+  const ids = (text: string) =>
+    mentionedApps(text, available).map((app) => app.instance.id);
+  expect(ids("@Study Notes find records")).toEqual(["long", "second-long"]);
+  expect(ids("@Study Notes and @Study find records")).toEqual([
+    "short",
+    "long",
+    "second-long",
+  ]);
+});
+
 test.each([
   "Which apps use SQLite?",
   "What apps should I build?",

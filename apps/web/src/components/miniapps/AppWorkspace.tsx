@@ -400,9 +400,7 @@ export function AppView({
   });
   const records = rows.data?.pages.flatMap((page) => page.records ?? []) ?? [];
   const selectionScope = JSON.stringify([query, search]);
-  const previousRows = useRef<
-    { scope: string; revisions: Map<string, number> } | undefined
-  >(undefined);
+  const previousRows = useRef(new Map<string, Map<string, number>>());
   useEffect(() => {
     if (!rows.data) return;
     const revisions = new Map(
@@ -410,13 +408,12 @@ export function AppView({
         .flatMap((page) => page.records ?? [])
         .map((record) => [record.id, record.revision]),
     );
-    const previous = previousRows.current;
-    previousRows.current = { scope: selectionScope, revisions };
+    const previous = previousRows.current.get(selectionScope);
+    previousRows.current.set(selectionScope, revisions);
     const stale = (record: MiniAppRecord) =>
       revisions.has(record.id)
         ? revisions.get(record.id) !== record.revision
-        : previous?.scope === selectionScope &&
-          previous.revisions.has(record.id);
+        : previous?.has(record.id);
     const staleIds = Object.keys(selectedRecords).filter((id) =>
       stale(selectedRecords[id]),
     );
@@ -439,6 +436,12 @@ export function AppView({
       });
   }, [rows.data, selectionScope, form, selectedRecords]);
   const selected = Object.values(selectedRecords);
+  const selectedPracticeRecords = records.filter(
+    (record) => selectedRefs[record.id] === record.revision,
+  );
+  const practiceQueue = selectedPracticeRecords.length
+    ? selectedPracticeRecords
+    : records;
   const [practiceRecords, setPracticeRecords] = useState<typeof records>();
   const [detail, setDetail] = useState<MiniAppRecord>();
   const transfer = useMutation({
@@ -627,13 +630,11 @@ export function AppView({
                     ? "Allow saving changes in Settings to practice"
                     : undefined
                 }
-                onClick={() =>
-                  setPracticeRecords(selected.length ? selected : records)
-                }
+                onClick={() => setPracticeRecords(practiceQueue)}
                 className="mt-5 h-11 gap-2 rounded-xl px-5"
               >
                 <Play className="size-4" aria-hidden="true" /> Start practice (
-                {selected.length || records.length})
+                {practiceQueue.length})
               </Button>
             )}
             {rows.hasNextPage && (

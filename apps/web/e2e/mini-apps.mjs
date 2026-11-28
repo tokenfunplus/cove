@@ -143,7 +143,7 @@ export async function runMiniAppsAcceptance({
 
   await goto("/apps/" + first + "/home");
   await readyRows(3);
-  await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, false);
+  await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, false, "mini-app-attachments-scroll-bottom");
   await click('[aria-label="Select record 1"]');
   await button("Mark learned and review in a week");
   await button("Preview changes");
@@ -166,9 +166,10 @@ export async function runMiniAppsAcceptance({
   await until("!!document.querySelector('[role=dialog]')");
   await button("Discover");
   await click('[data-app="cove/japanese-review-book"] .mini-app-card-cover');
-  await button("Get app");
+  await button("Choose a copy");
+  await button("Create another copy");
   await until("document.querySelectorAll('[role=dialog]').length===2");
-  await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true);
+  await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true, "mini-app-chat-install-scroll-bottom");
   await button("Cancel", ".study-dialog");
   await button("Back to Discover");
   await click(
@@ -291,7 +292,7 @@ export async function runMiniAppsAcceptance({
   await readyRows(1);
   const inbox = await evaluate("location.pathname.split('/')[2]");
   const instanceURL = "/api/mini-apps/instances/" + inbox;
-  const runInbox = async (action, inputs = {}, records = []) => {
+  const runInbox = async (action, inputs = {}, records = [], review = () => {}) => {
     const invocation = {
       operation_id: randomUUID(),
       surface: "chat",
@@ -300,6 +301,7 @@ export async function runMiniAppsAcceptance({
     };
     const url = instanceURL + "/actions/" + action;
     const result = await api(url, "POST", invocation);
+    review(result);
     return result.confirmation
       ? api(url, "POST", { ...invocation, confirm: result.confirmation })
       : result;
@@ -343,20 +345,29 @@ export async function runMiniAppsAcceptance({
   );
   await fill("#generation-input", "");
   const migrated = after.collections.items.find((row) => row.id === saved.id);
+  const defer = async (record, days) => {
+    let reviewedDate;
+    const result = await runInbox("inbox.defer", {}, [record], (preview) => {
+      // The confirmation binds the service's civil preview date, independently
+      // of this process's clock and of a later preview crossing midnight.
+      const previewDate = preview.confirmation?.split(".")[0];
+      assert.match(previewDate, /^\d{4}-\d{2}-\d{2}$/);
+      const expected = new Date(previewDate + "T00:00:00Z");
+      expected.setUTCDate(expected.getUTCDate() + days);
+      reviewedDate = expected.toISOString().slice(0, 10);
+      assert.equal(preview.records[0].fields.revisit, reviewedDate, `Deferral previews exactly ${days} days from its own date`);
+    });
+    assert.equal(result.records[0].fields.revisit, reviewedDate, "Confirmation preserves the reviewed deferral date");
+    return result;
+  };
   const {
     records: [firstDefer],
-  } = await runInbox("inbox.defer", {}, [migrated]);
+  } = await defer(migrated, 2);
   const {
     records: [secondDefer],
-  } = await runInbox("inbox.defer", {}, [firstDefer]);
+  } = await defer(firstDefer, 7);
   assert.equal(firstDefer.fields.deferrals, 1);
   assert.equal(secondDefer.fields.deferrals, 2);
-  assert.equal(
-    (Date.parse(secondDefer.fields.revisit) -
-      Date.parse(firstDefer.fields.revisit)) /
-      86400000,
-    5,
-  );
   assert.equal(
     (await runInbox("inbox.upcoming")).records.some(
       (row) => row.id === saved.id,

@@ -69,7 +69,7 @@ func TestMiniAppDraftValidationDoesNotGrantPublisherAuthorityOrInstall(t *testin
 		}
 	}
 	post("preview", raw, token, csrf, http.StatusBadRequest)
-	post("install", raw, token, csrf, http.StatusBadRequest)
+	post("install", raw, token, csrf, http.StatusConflict)
 	post("validate", []byte(`{}`), token, csrf, http.StatusBadRequest)
 	post("validate", []byte(strings.Repeat(" ", (1<<20)+1)), token, csrf, http.StatusBadRequest)
 	releases, err := server.apps.Releases(context.Background())

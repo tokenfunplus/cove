@@ -105,8 +105,9 @@ func (s *Service) CheckCandidates(ctx context.Context, id string, req CandidateC
 		for _, row := range rows {
 			seen[signature(row.Fields, false)] = true
 		}
+		now := s.now()
 		for index, raw := range req.Items {
-			item, err := actionInputs(target, raw, s.now())
+			item, err := actionInputs(target, raw, now)
 			if err != nil {
 				result.Invalid = append(result.Invalid, CandidateIssue{Index: index, Message: "These values do not meet the app's requirements. Review this candidate before saving it."})
 				continue

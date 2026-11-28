@@ -28,4 +28,24 @@ The first successful browser claim is the admission boundary for an active reque
 
 Debate and Mini App browser workers share one bounded delivery policy: at most five sends, with abort-aware exponential backoff for connection and Local Service storage errors. Every retry carries the same claim and frozen result; neither a claim nor chargeable inference repeats.
 
-If delivery of a verified Debate result remains unsuccessful, the browser attempts a failed terminal receipt using a separate three-second cleanup window. The service accepts only the first result for that claim. A lost success response therefore cannot be overwritten by cleanup, while a reachable service can end a rejected or interrupted delivery without waiting for the inference deadline. An unreachable or unauthorized service still relies on its existing expiry. Mini App workers do not opt into this empty-result cleanup: their paid results follow the separate retained-result recovery contract in ADR-0073.
+The service freezes the first accepted receipt and binds its exact result and
+claim to a digest stored with the terminal turn. Repeating that receipt returns
+the saved turn after a lost acknowledgement, including after worker shutdown.
+An altered result or an empty failure receipt cannot replace accepted output.
+An acceptance before expiry or Stop retains its result while later results are
+rejected. This uses existing turn JSON without a database migration.
+
+If local storage fails, accepted receipts remain in bounded service memory after
+their workers stop. Another Debate cannot start until those receipts are saved.
+Delivery retries and Resume save those same results before admitting another
+turn, so a storage failure cannot charge again for a completed seat. Stop also
+saves accepted results before proceeding; another storage failure retains the
+original receipts. Explicit history deletion releases matching unsaved results
+only after its durable deletion succeeds. Ordinary Chat may continue once the
+failed Debate releases its active-work reservation. Restart cannot recover an
+unsaved in-memory receipt and never automatically repeats the paid request.
+
+If the service rejects a result before acceptance, a failed terminal receipt can
+end that claim before its inference deadline. An unreachable or unauthorized
+service still relies on expiry. Mini App results follow their separate retained
+recovery contract in ADR-0073.

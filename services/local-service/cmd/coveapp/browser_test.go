@@ -65,6 +65,7 @@ func TestAuthorBrowserPreviewRunsFixtureAndUpgradesPersonalPackage(t *testing.T)
 			return err
 		}
 		csrf := ""
+		var reviewedRelease miniapps.Release
 		call := func(method, path, body string, dst any) error {
 			req, err := http.NewRequestWithContext(ctx, method, origin+path, strings.NewReader(body))
 			if err != nil {
@@ -74,6 +75,10 @@ func TestAuthorBrowserPreviewRunsFixtureAndUpgradesPersonalPackage(t *testing.T)
 			req.Header.Set("Origin", origin)
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Cove-CSRF-Token", csrf)
+			if path == "/api/mini-apps/packages/install" {
+				req.Header.Set("X-Cove-Release-ID", reviewedRelease.ID)
+				req.Header.Set("X-Cove-Package-Digest", reviewedRelease.Digest)
+			}
 			r, err := client.Do(req)
 			if err != nil {
 				return err
@@ -126,6 +131,9 @@ func TestAuthorBrowserPreviewRunsFixtureAndUpgradesPersonalPackage(t *testing.T)
 			return err
 		}
 		var release miniapps.Release
+		if err := call("POST", "/api/mini-apps/packages/preview", string(next), &reviewedRelease); err != nil {
+			return err
+		}
 		if err := call("POST", "/api/mini-apps/packages/install", string(next), &release); err != nil {
 			return err
 		}

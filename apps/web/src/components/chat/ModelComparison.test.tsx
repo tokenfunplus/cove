@@ -102,6 +102,7 @@ test("a Model Comparison renders one independent answer card per Generation Targ
   );
 
   expect(markup).toContain('data-generation-target="target-a"');
+  expect(markup).toContain('data-app-selection-source="conversation-1"');
   expect(markup).toContain('data-generation-target="target-b"');
   expect(markup).toContain("model-comparison-grid");
   expect(markup).toMatch(
@@ -247,6 +248,7 @@ test("completed comparison answers move from the Live Turn into history without 
   );
 
   expect(markup.match(/Answer A/g)).toHaveLength(1);
+  expect(markup).toContain('data-app-selection-source="conversation-1"');
   expect(markup.match(/Answer B/g)).toHaveLength(1);
   expect(markup).toContain("Use for next turn");
 });

@@ -1,6 +1,7 @@
 // Build static CoveWeb package pages and a signed index into a new directory.
 import { createPrivateKey, createPublicKey, sign } from "node:crypto";
 import {
+  chmod,
   mkdir,
   readFile,
   writeFile,
@@ -819,7 +820,9 @@ function publicPreview(app) {
   const secondary = textFields.find(
     (name) => name !== front && name !== query?.reveal_field,
   );
-  const rows = collection ? (app.seed?.[collection] ?? []).slice(0, 3) : [];
+  const rows = collection && Object.hasOwn(app.seed ?? {}, collection)
+    ? app.seed[collection].slice(0, 3)
+    : [];
   const asset = app.assets?.[page.image];
   const practice = Boolean(page.practice || query?.reveal_field);
   if (asset)
@@ -1102,6 +1105,7 @@ try {
 <section class="app-grid" aria-label="Available apps">${listing.join("")}</section>`,
     ),
   );
+  await chmod(staging, 0o755);
   await rename(staging, destination);
 } finally {
   await rm(staging, { recursive: true, force: true });

@@ -28,6 +28,22 @@ func taskActivityStore(t *testing.T) *SQLiteStore {
 
 const frozenActivityTask = `{"Release":"original-release","Target":{"Action":"fixture.generate","Surface":"panel"}}`
 
+func TestTaskReadsRetainTheFrozenRelease(t *testing.T) {
+	store := taskActivityStore(t)
+	if err := store.BeginAppTask(t.Context(), "instance", "task", "fingerprint", frozenActivityTask); err != nil {
+		t.Fatal(err)
+	}
+	// The active instance uses "release", while the task belongs to its earlier release.
+	task, err := store.AppTask(t.Context(), "instance", "task")
+	if err != nil || task.ReleaseID != "original-release" {
+		t.Fatal("task detail lost its originating release", task, err)
+	}
+	tasks, err := store.ListAppTasks(t.Context(), "instance")
+	if err != nil || len(tasks) != 1 || tasks[0].ReleaseID != "original-release" {
+		t.Fatal("task history lost its originating release", tasks, err)
+	}
+}
+
 func failTaskActivity(t *testing.T, store *SQLiteStore, status string) {
 	t.Helper()
 	// The status is supplied only by these fixed test cases.

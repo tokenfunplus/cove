@@ -3,7 +3,10 @@ import { sessionKey } from "@/api/queryKeys";
 import { appKeys } from "@/api/mini-apps";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { observeMiniAppInventoryChanges } from "@/lib/mini-app-inventory";
+import {
+  miniAppInventoryRevision,
+  observeMiniAppInventoryChanges,
+} from "@/lib/mini-app-inventory";
 
 export function useLocalSession() {
   const cache = useQueryClient();
@@ -22,8 +25,10 @@ export function useLocalSession() {
     queryKey: sessionKey,
     // The proof stays inside the HTTP client; query data contains readiness only.
     queryFn: async () => {
+      const revision = miniAppInventoryRevision();
       const session = await getSession();
-      cache.setQueryData(appKeys.presence, session.has_mini_apps === true);
+      if (revision === miniAppInventoryRevision())
+        cache.setQueryData(appKeys.presence, session.has_mini_apps ?? null);
       return Boolean(session.csrf_token);
     },
     staleTime: Infinity,

@@ -3,6 +3,7 @@ import { request } from "@/api/client";
 import { runVerifiedBrowserTurn } from "./debate-browser-turn";
 import { retryBrowserDelivery } from "./retry-browser-delivery";
 import type { SecureInferenceTransport } from "./secure-inference";
+import { failedVerificationForContract } from "./verification-record";
 
 /** Only an explicit start triggers a chargeable request. Polling old jobs never claims work. */
 export function runVerifiedAppTask(
@@ -33,11 +34,37 @@ export function runVerifiedAppTask(
   return runVerifiedBrowserTurn(
     {
       claim: async () => {
-        const { snapshot, prompt, max_tokens } = await send<{
+        let claimed: {
           snapshot: ProviderSnapshot;
           prompt: string;
           max_tokens?: number | null;
-        }>("claim", {});
+        };
+        try {
+          claimed = await send<{
+            snapshot: ProviderSnapshot;
+            prompt: string;
+            max_tokens?: number | null;
+          }>("claim", {});
+        } catch (error) {
+          // A lost claim response may still reserve the task. Only this exact
+          // claim can settle it; another browser's claim remains untouched.
+          await request(base + "settle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              claim_id,
+              body: "",
+              verification: failedVerificationForContract(
+                undefined,
+                "browser_claim_failed",
+                "The browser could not receive its task claim.",
+              ),
+            }),
+            signal: AbortSignal.timeout(3000),
+          }).catch(() => {});
+          throw error;
+        }
+        const { snapshot, prompt, max_tokens } = claimed;
         return {
           turn: {
             snapshot,

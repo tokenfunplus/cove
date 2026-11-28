@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { MiniAppPackage } from "@cove/api-contract";
@@ -198,7 +198,9 @@ test("Discover defaults to the newest release and keeps older versions in app de
   expect(select.options).toHaveLength(3);
   expect(select.options[0].textContent).toBe("1.10.0 · Latest");
   await user.selectOptions(select, "1.0.0");
-  await user.click(await screen.findByRole("button", { name: "Get app" }));
+  const getApp = await screen.findByRole("button", { name: "Get app" });
+  await waitFor(() => expect((getApp as HTMLButtonElement).disabled).toBe(false));
+  await user.click(getApp);
   await screen.findByRole("button", { name: "Install app" });
   expect(screen.getByText(/Version 1\.0\.0/)).toBeTruthy();
   expect(install).not.toHaveBeenCalled();
@@ -283,4 +285,88 @@ test("navigation from an installation preview follows the new section without lo
       })) as HTMLTextAreaElement
     ).value,
   ).toBe(raw);
+});
+
+
+test("another catalog copy retains the selected signer when an installed signer has identical bytes", async () => {
+  const selected: CatalogEntry = { ...review, digest: "same-bytes", origin: "catalog", catalog_authority: "key-b", official_catalog: false };
+  vi.mocked(miniApps.catalog).mockResolvedValue({ packages: [selected] });
+  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [{ id: "release-a", digest: selected.digest, origin: "catalog", catalog_authority: "key-a", official_catalog: false, package: review }] });
+  vi.mocked(miniApps.instances).mockResolvedValue({ instances: [{ id: "copy-a", name: "Signer A copy", release_id: "release-a", enabled: true, revision: 1, grants: [] }] });
+  const install = vi.spyOn(miniApps, "catalogInstall").mockResolvedValue({ id: "release-b", digest: selected.digest, origin: "catalog", catalog_authority: "key-b", official_catalog: false, package: review });
+  const create = vi.spyOn(miniApps, "create").mockResolvedValue({ id: "copy-b", name: review.name, release_id: "release-b", enabled: true, revision: 1, grants: [] });
+  show("catalog");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "View Review book" }));
+  await user.click(await screen.findByRole("button", { name: "Create another copy" }));
+  await user.click(await screen.findByRole("button", { name: "Install app" }));
+  await waitFor(() => expect(install).toHaveBeenCalledExactlyOnceWith(selected));
+  await waitFor(() => expect(create).toHaveBeenCalledWith("release-b", review.name, [], false));
+});
+
+test.each(["import", "developer"])("a late %s preview does not reopen review after leaving its entry", async (source) => {
+  let complete!: (release: Awaited<ReturnType<typeof miniApps.localPackage>>) => void;
+  vi.spyOn(miniApps, "localPackage").mockReturnValue(new Promise((resolve) => { complete = resolve; }));
+  const { rerender, view } = show("agent", vi.fn());
+  const user = userEvent.setup();
+  const raw = JSON.stringify(review);
+  if (source === "import") {
+    await user.upload(screen.getByLabelText("Choose a Mini App package"), new File([raw], "review.coveapp", { type: "application/json" }));
+  } else {
+    const editor = await screen.findByRole("textbox", { name: "App package JSON" });
+    await user.click(editor);
+    await user.paste(raw);
+    await user.click(screen.getByRole("button", { name: "Validate and preview package" }));
+  }
+  await waitFor(() => expect(miniApps.localPackage).toHaveBeenCalledTimes(1));
+  rerender(view("mine"));
+  await act(async () => { complete({ id: "late", digest: "late", origin: "local", package: review }); });
+  expect(screen.queryByRole("dialog", { name: "Review installation" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Start with something useful." })).toBeTruthy();
+});
+
+test("catalog Install buttons are disabled while a selected release preview is pending", async () => {
+  show("catalog");
+  await waitFor(() => expect(miniApps.catalogPreview).toHaveBeenCalledTimes(2));
+  let complete!: (pkg: MiniAppPackage) => void;
+  vi.mocked(miniApps.catalogPreview).mockReturnValue(new Promise((resolve) => { complete = resolve; }));
+  const user = userEvent.setup();
+  const reviewCard = screen.getByRole("heading", { name: "Review book", level: 3 }).closest("article")!;
+  await user.click(within(reviewCard).getByRole("button", { name: "Install" }));
+  expect(screen.getAllByRole("button", { name: "Install" }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+  await act(async () => { complete(review); });
+  await screen.findByRole("dialog", { name: "Review installation" });
+  expect(screen.getByText(/Version 1\.10\.0/)).toBeTruthy();
+});
+
+test("Discover and app details offer the same installed copies across release versions", async () => {
+  const copies = ["first", "second"].map((id) => ({ id, name: `${id} review copy`, release_id: "old", revision: 1, enabled: true, grants: [] }));
+  vi.mocked(miniApps.instances).mockResolvedValue({ instances: copies });
+  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [{ id: "old", digest: "review-1", origin: "builtin", package: { ...review, version: "1.0.0" } }] });
+  const { open } = show("catalog");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Open app" }));
+  await user.click(await screen.findByRole("button", { name: "Choose a copy" }));
+  await user.click(screen.getByRole("button", { name: "second review copy" }));
+  expect(open).toHaveBeenCalledWith("second");
+  expect(screen.queryByRole("button", { name: "Get app" })).toBeNull();
+});
+
+test("a superseded developer preview cannot replace the most recently imported package", async () => {
+  let complete!: (release: Awaited<ReturnType<typeof miniApps.localPackage>>) => void;
+  const imported = { ...inbox, publisher: "personal" };
+  vi.spyOn(miniApps, "localPackage")
+    .mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }))
+    .mockResolvedValueOnce({ id: "imported", digest: "imported", origin: "local", package: imported });
+  show("agent", vi.fn());
+  const user = userEvent.setup();
+  const editor = await screen.findByRole("textbox", { name: "App package JSON" });
+  await user.click(editor);
+  await user.paste(JSON.stringify(review));
+  await user.click(screen.getByRole("button", { name: "Validate and preview package" }));
+  await user.upload(screen.getByLabelText("Choose a Mini App package"), new File([JSON.stringify(imported)], "inbox.coveapp", { type: "application/json" }));
+  const dialog = await screen.findByRole("dialog", { name: "Review installation" });
+  expect(within(dialog).getByRole("textbox", { name: "App name" }).getAttribute("value")).toBe("Reading Inbox");
+  await act(async () => { complete({ id: "old", digest: "old", origin: "local", package: review }); });
+  expect(within(screen.getByRole("dialog", { name: "Review installation" })).getByRole("textbox", { name: "App name" }).getAttribute("value")).toBe("Reading Inbox");
 });

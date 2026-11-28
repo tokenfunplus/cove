@@ -109,6 +109,7 @@ export function AppActionForm({
             instance.release_id,
             initialInputs,
             command,
+            initial,
           ),
         };
       }

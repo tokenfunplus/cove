@@ -65,6 +65,12 @@ export async function runReviewBookUpgrade({
   }
   await button("Question library");
   await readyRows(3);
+  const selectedQuestion = await evaluate(
+    `document.querySelector('[aria-label="Select record 1"]').parentElement.querySelector('.study-record-open strong').textContent`,
+  );
+  const selectedCards = after.filter((row) => row.fields.question === selectedQuestion);
+  assert.equal(selectedCards.length, 1, "The first displayed question identifies one saved card");
+  const selectedID = selectedCards[0].id;
   await click('[aria-label="Select record 1"]');
   await button("Edit question and answer");
   assert(
@@ -86,12 +92,17 @@ export async function runReviewBookUpgrade({
     "!document.querySelector('section[aria-label=\"Edit question and answer\"]')",
   );
   const edited = (await api(root + book.id + "/export")).collections.questions;
-  assert.equal(
-    edited.filter((row) => row.fields.question === "Reviewed first card")
-      .length,
-    1,
+  assert.deepEqual(
+    edited.map((row) => row.id).sort(),
+    after.map((row) => row.id).sort(),
+    "Editing a question preserves the complete record ID set",
   );
-  for (const row of after.slice(1)) {
+  assert.equal(
+    edited.find((row) => row.id === selectedID)?.fields.question,
+    "Reviewed first card",
+    "The edited question retains the selected record's ID",
+  );
+  for (const row of after.filter((row) => row.id !== selectedID)) {
     assert.deepEqual(
       edited.find((saved) => saved.id === row.id),
       row,

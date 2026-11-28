@@ -36,19 +36,30 @@ const second: MiniAppInstance = {
   grants: ["ai.generate"],
 };
 
-function show(previous: MiniAppInstance[]) {
-  render(
-    <QueryClientProvider client={new QueryClient()}>
+function show(previous: MiniAppInstance[], targetInstance?: MiniAppInstance) {
+  const cache = new QueryClient();
+  const content = (copies: MiniAppInstance[], target?: MiniAppInstance) => (
+    <QueryClientProvider client={cache}>
       <PackagePreview
         pkg={pkg}
-        previous={previous}
+        previous={copies}
+        targetInstance={target}
         versions={{ old: "1.0.0" }}
-        source={{ kind: "local", raw: "fixture", origin: "local" }}
+        source={{
+          kind: "local",
+          raw: "fixture",
+          origin: "local",
+          release_id: "fixture-preview",
+          digest: "fixture",
+        }}
         close={vi.fn()}
         open={vi.fn()}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const view = render(content(previous, targetInstance));
+  return (copies: MiniAppInstance[], target?: MiniAppInstance) =>
+    view.rerender(content(copies, target));
 }
 
 afterEach(() => {
@@ -85,6 +96,10 @@ test("a file import defaults to the existing instance and preserves its grant ch
   await waitFor(() =>
     expect(update).toHaveBeenCalledWith(first, "new", ["records.query"], false),
   );
+  expect(install).toHaveBeenCalledWith("fixture", "install", {
+    id: "fixture-preview",
+    digest: "fixture",
+  });
   expect(create).not.toHaveBeenCalled();
 });
 
@@ -180,6 +195,147 @@ test("switching from an updated copy to a new copy resets cloud permission", asy
   ).toBe(false);
 });
 
+test.each(["directory", "settings"])(
+  "%s updates require a new review after permissions change",
+  async (surface) => {
+    const allowed = {
+      ...first,
+      grants: [...pkg.capabilities],
+      cloud_enabled: true,
+    };
+    const revoked = {
+      ...allowed,
+      revision: allowed.revision + 1,
+      grants: [],
+      cloud_enabled: false,
+    };
+    const install = vi.spyOn(miniApps, "localPackage").mockResolvedValue({
+      id: "new",
+      digest: "fixture",
+      origin: "local",
+      package: pkg,
+    });
+    const update = vi.spyOn(miniApps, "upgrade").mockResolvedValue(revoked);
+    const refresh = surface === "settings" ? show([], allowed) : show([allowed]);
+    const user = userEvent.setup();
+    await user.click(screen.getByText("More access"));
+    const model = screen.getByRole("checkbox", {
+      name: "Use AI tools",
+    }) as HTMLInputElement;
+    const cloud = screen.getByRole("checkbox", {
+      name: "Allow cloud models",
+    }) as HTMLInputElement;
+    expect(model.checked).toBe(true);
+    expect(cloud.checked).toBe(true);
+
+    if (surface === "settings") refresh([], revoked);
+    else refresh([revoked]);
+    const apply = screen.getByRole("button", { name: "Update to 1.1.0" });
+    expect(apply.matches(":disabled")).toBe(true);
+    await user.click(apply);
+    expect(install).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole("button", { name: "Review current copy" }),
+    );
+    expect(model.checked).toBe(false);
+    expect(cloud.checked).toBe(false);
+    expect(apply.matches(":disabled")).toBe(false);
+    await user.click(apply);
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith(revoked, "new", [], false),
+    );
+  },
+);
+
+test("removing the reviewed target blocks an update and a separate copy resets access", async () => {
+  const install = vi.spyOn(miniApps, "localPackage").mockResolvedValue({
+    id: "new",
+    digest: "fixture",
+    origin: "local",
+    package: pkg,
+  });
+  const update = vi.spyOn(miniApps, "upgrade");
+  const create = vi.spyOn(miniApps, "create").mockResolvedValue(first);
+  const refresh = show([{ ...first, cloud_enabled: true }]);
+  const user = userEvent.setup();
+  refresh([]);
+  const apply = screen.getByRole("button", { name: "Update to 1.1.0" });
+  expect(apply.matches(":disabled")).toBe(true);
+  await user.click(apply);
+  expect(install).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Review current copy" })).toBeNull();
+  await user.selectOptions(screen.getByRole("combobox"), "");
+  await user.click(screen.getByRole("button", { name: "Install app" }));
+  await waitFor(() =>
+    expect(create).toHaveBeenCalledWith("new", pkg.name, [], false),
+  );
+  expect(update).not.toHaveBeenCalled();
+});
+
+test("a manual target switch reviews the latest copy instead of reusing previous choices", async () => {
+  const latest = { ...second, revision: 9, grants: [], cloud_enabled: false };
+  vi.spyOn(miniApps, "localPackage").mockResolvedValue({
+    id: "new",
+    digest: "fixture",
+    origin: "local",
+    package: pkg,
+  });
+  const update = vi.spyOn(miniApps, "upgrade").mockResolvedValue(latest);
+  const refresh = show([first, { ...second, cloud_enabled: true }]);
+  const user = userEvent.setup();
+  await user.selectOptions(screen.getByRole("combobox"), second.id);
+  refresh([first, latest]);
+  expect(
+    screen.getByRole("button", { name: "Update to 1.1.0" }).matches(":disabled"),
+  ).toBe(true);
+  await user.selectOptions(screen.getByRole("combobox"), first.id);
+  await user.selectOptions(screen.getByRole("combobox"), second.id);
+  await user.click(screen.getByRole("button", { name: "Update to 1.1.0" }));
+  await waitFor(() =>
+    expect(update).toHaveBeenCalledWith(latest, "new", [], false),
+  );
+});
+
+test("an in-flight package install keeps the approved revision and access together", async () => {
+  let finishInstall!: (
+    value: Awaited<ReturnType<typeof miniApps.localPackage>>,
+  ) => void;
+  vi.spyOn(miniApps, "localPackage").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finishInstall = resolve;
+      }),
+  );
+  const update = vi
+    .spyOn(miniApps, "upgrade")
+    .mockRejectedValue(
+      new Error("The reviewed copy changed. Review the installation again."),
+    );
+  const allowed = { ...first, cloud_enabled: true };
+  const refresh = show([allowed]);
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: "Update to 1.1.0" }));
+  await waitFor(() => expect(finishInstall).toBeDefined());
+  refresh([{ ...first, revision: 4, grants: [], cloud_enabled: false }]);
+  await act(async () =>
+    finishInstall({
+      id: "new",
+      digest: "fixture",
+      origin: "local",
+      package: pkg,
+    }),
+  );
+  await waitFor(() =>
+    expect(update).toHaveBeenCalledWith(allowed, "new", ["records.query"], true),
+  );
+  await screen.findByText(
+    "The reviewed copy changed. Review the installation again.",
+  );
+});
+
 test("an installation dialog locks all close controls until settlement, then restores close and focus", async () => {
   let rejectInstall!: (error: Error) => void;
   vi.spyOn(miniApps, "localPackage").mockImplementation(
@@ -200,7 +356,13 @@ test("an installation dialog locks all close controls until settlement, then res
             dialog
             pkg={pkg}
             previous={[]}
-            source={{ kind: "local", raw: "fixture", origin: "local" }}
+            source={{
+              kind: "local",
+              raw: "fixture",
+              origin: "local",
+              release_id: "fixture-preview",
+              digest: "fixture",
+            }}
             close={() => {
               closed();
               setVisible(false);

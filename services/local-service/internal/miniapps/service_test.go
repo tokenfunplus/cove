@@ -355,40 +355,68 @@ func TestSignedCatalogCanUpdateBundledIndependentPublisher(t *testing.T) {
 }
 
 func TestLegacyOfficialFileCanUpgradeButModifiedFilesCannotClaimItsOrigin(t *testing.T) {
-	db, service := storeAt(t, ":memory:")
-	defer db.Close()
 	raw, err := os.ReadFile("../appcatalog/packages/reading-inbox.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}
-	old, err := service.Install(t.Context(), raw, "local")
+	nextRaw, err := os.ReadFile("../appcatalog/packages/reading-inbox-1.1.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}
-	book, err := service.Create(t.Context(), CreateRequest{ReleaseID: old.ID, Name: "Old file install", Grants: old.Package.Capabilities})
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := call(t, service, book.ID, read("inbox.all")).Records
-	old, err = service.Release(t.Context(), old.ID)
-	if err != nil || !old.LegacyVerified {
-		t.Fatal("official old bytes were not recognized", err)
-	}
-	raw, err = os.ReadFile("../appcatalog/packages/reading-inbox-1.1.coveapp")
-	if err != nil {
-		t.Fatal(err)
-	}
-	next, err := service.Install(t.Context(), raw, "builtin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	updated, err := service.Upgrade(t.Context(), book.ID, UpgradeRequest{Revision: book.Revision, ReleaseID: next.ID, Grants: book.Grants})
-	if err != nil || updated.ID != book.ID {
-		t.Fatal(updated, err)
-	}
-	after := call(t, service, book.ID, read("inbox.all")).Records
-	if len(after) != len(before) || after[0].ID != before[0].ID || after[0].Fields["note"] != before[0].Fields["note"] {
-		t.Fatal("old content changed")
+	for _, modified := range []bool{false, true} {
+		name := "exact bundled bytes"
+		if modified {
+			name = "modified bytes with same identity"
+		}
+		t.Run(name, func(t *testing.T) {
+			db, service := storeAt(t, ":memory:")
+			t.Cleanup(func() { _ = db.Close() })
+			local := raw
+			if modified {
+				pkg, err := Validate(raw)
+				if err != nil {
+					t.Fatal(err)
+				}
+				pkg.Description = "A personal edition with modified package bytes."
+				local, err = json.Marshal(pkg)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			old, err := service.Install(t.Context(), local, "local")
+			if err != nil {
+				t.Fatal(err)
+			}
+			book, err := service.Create(t.Context(), CreateRequest{ReleaseID: old.ID, Name: "Old file install", Grants: old.Package.Capabilities})
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := call(t, service, book.ID, read("inbox.all")).Records
+			old, err = service.Release(t.Context(), old.ID)
+			if err != nil || old.LegacyVerified == modified {
+				t.Fatal("legacy provenance did not require exact bundled bytes", old.LegacyVerified, err)
+			}
+			next, err := service.Install(t.Context(), nextRaw, "builtin")
+			if err != nil {
+				t.Fatal(err)
+			}
+			updated, err := service.Upgrade(t.Context(), book.ID, UpgradeRequest{Revision: book.Revision, ReleaseID: next.ID, Grants: book.Grants})
+			if modified {
+				if !errors.Is(err, ErrInvalid) {
+					t.Fatal("modified file acquired an official successor", updated, err)
+				}
+				current, err := service.Instance(t.Context(), book.ID)
+				if err != nil || current.ReleaseID != old.ID || current.Revision != book.Revision {
+					t.Fatal("rejected upgrade changed the installed instance", current, err)
+				}
+			} else if err != nil || updated.ID != book.ID {
+				t.Fatal(updated, err)
+			}
+			after := call(t, service, book.ID, read("inbox.all")).Records
+			if len(after) != len(before) || after[0].ID != before[0].ID || after[0].Fields["note"] != before[0].Fields["note"] {
+				t.Fatal("old content changed")
+			}
+		})
 	}
 }
 

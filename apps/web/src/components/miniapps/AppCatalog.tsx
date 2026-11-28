@@ -227,12 +227,14 @@ export function CatalogCard({
   installed,
   openInstalled,
   install,
+  installPending = false,
 }: {
   versions: CatalogEntry[];
   view: (entry: CatalogEntry) => void;
   installed: boolean;
   openInstalled?: () => void;
   install?: (entry: CatalogEntry) => void;
+  installPending?: boolean;
 }) {
   const entry = versions[0];
   const card = useRef<HTMLElement>(null);
@@ -297,6 +299,7 @@ export function CatalogCard({
             variant="ghost"
             size="sm"
             className="gap-2 rounded-full"
+            disabled={!installed && installPending}
             onClick={() =>
               installed && openInstalled
                 ? openInstalled()

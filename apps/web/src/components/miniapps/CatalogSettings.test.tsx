@@ -17,6 +17,37 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test("Use Cove defaults restores unsaved edits when defaults are already active", async () => {
+  const defaults = {
+    url: "https://official.example/catalog.json",
+    public_key: "official-key",
+  };
+  vi.spyOn(miniApps, "catalogSettings").mockResolvedValue({
+    ...defaults,
+    defaults,
+    mode: "default",
+  });
+  const save = vi.spyOn(miniApps, "useCatalogDefaults");
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <CatalogSettings expanded />
+    </QueryClientProvider>,
+  );
+  const input = await screen.findByRole("textbox", {
+    name: "HTTPS catalog URL",
+  });
+  await userEvent.clear(input);
+  await userEvent.type(input, "https://edited.example/catalog.json");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Use Cove defaults" }),
+  );
+  expect((input as HTMLInputElement).value).toBe(defaults.url);
+  expect(save).not.toHaveBeenCalled();
+  expect(screen.getByRole("status").textContent).toBe(
+    "Catalog settings saved.",
+  );
+});
+
 test("a signing authority change previews its key and requires a separate confirmation", async () => {
   const old = {
     url: "https://old.example/catalog.json",

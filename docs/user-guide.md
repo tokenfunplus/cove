@@ -24,7 +24,7 @@ In Chat or the Quick Panel, open Mini Apps from the composer tools and choose yo
 
 Your records, attachments, permissions and saved model results live in Cove’s local database on this Mac. Checking for app updates downloads the catalog and compares versions on your Mac. Choosing a cloud model sends the reviewed request to that provider. Select **Only on this Mac** to use a Cove-managed local model.
 
-For a bundled or catalog app, open the instance’s **Settings → Check for updates**. Review the version and permissions, then choose **Upgrade instance** to update that instance in place. Added permissions start unchecked. If a data migration fails, Cove keeps the previous release and records. For a personal app, choose **My apps → Import package**, open the newer file and select the existing instance under **Install for**. Other instances can stay on their current versions.
+For a bundled or catalog app, open the instance’s **Settings → Check for updates**. Review the version and permissions, then choose **Update to &lt;version&gt;** to update that instance in place. Added permissions start unchecked. If a data migration fails, Cove keeps the previous release and records. For a personal app, choose **My apps → Import app**, open the newer file and select the existing instance under **Update an existing copy**. Other instances can stay on their current versions.
 
 ## Use the Quick Panel
 

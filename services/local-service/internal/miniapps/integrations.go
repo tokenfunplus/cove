@@ -116,10 +116,20 @@ func (s *Service) StartModel(ctx context.Context, model ModelExecutor, id string
 	if release.Package.Actions[in.Action].Op != "generate" {
 		return empty, ErrInvalid
 	}
+	// Retry identity binds the submitted request, while the saved target captures
+	// the resolved defaults used by this attempt rather than a later clock value.
+	identity, err := json.Marshal(struct {
+		Release string
+		Target  ModelRequest
+	}{inst.ReleaseID, in})
+	if err != nil {
+		return empty, err
+	}
 	result, err := s.Invoke(ctx, id, Invocation{ExpectedRevision: inst.Revision, Action: in.Action, Surface: in.Surface, Inputs: in.Input, OperationID: in.OperationID})
 	if err != nil {
 		return empty, err
 	}
+	in.Input = result.Inputs
 	frozen, err := json.Marshal(struct {
 		Release, Prompt string
 		Target          ModelRequest
@@ -133,11 +143,7 @@ func (s *Service) StartModel(ctx context.Context, model ModelExecutor, id string
 		object := proposalTool("candidate", next, candidateDefinition(release.Package, action)).Function.Parameters
 		low, high := 1, 8
 		if action.CountInput != "" {
-			inputs, err := actionInputs(action, in.Input, s.now())
-			if err != nil {
-				return empty, err
-			}
-			high = int(inputs[action.CountInput].(float64))
+			high = int(in.Input[action.CountInput].(float64))
 			low = high
 		}
 		candidates, err = json.Marshal(map[string]any{"type": "array", "items": object, "minItems": low, "maxItems": high})
@@ -145,7 +151,7 @@ func (s *Service) StartModel(ctx context.Context, model ModelExecutor, id string
 			return empty, err
 		}
 	}
-	return model.StartAppTask(ctx, chat.AppTaskInput{InstanceChanges: &s.InstanceChanges, BrowserOwner: in.BrowserOwner, CandidateSchema: candidates, Instance: id, ID: in.OperationID, Fingerprint: digest(frozen), Request: string(frozen), Prompt: result.Prompt, ProviderID: in.ProviderID, ModelID: in.ModelID, Destination: in.Destination, LocalOnly: in.LocalOnly}, func() error {
+	return model.StartAppTask(ctx, chat.AppTaskInput{InstanceChanges: &s.InstanceChanges, BrowserOwner: in.BrowserOwner, CandidateSchema: candidates, Instance: id, ID: in.OperationID, Fingerprint: digest(identity), Request: string(frozen), Prompt: result.Prompt, ProviderID: in.ProviderID, ModelID: in.ModelID, Destination: in.Destination, LocalOnly: in.LocalOnly}, func() error {
 		current, err := s.Instance(ctx, id)
 		if err != nil {
 			return err

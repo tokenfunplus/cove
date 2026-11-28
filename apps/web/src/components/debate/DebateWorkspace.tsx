@@ -1,5 +1,5 @@
 import { Disclosure, DisclosureTrigger, DisclosureContent } from "@/components/ui/disclosure";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useDebate } from "@/api/hooks/useDebates";
 import { getDebateExport, getDebateTurn } from "@/api/debates";
 import type { DebateControls, DebateRules, DebateTurn } from "@cove/api-contract";
@@ -8,6 +8,7 @@ import { DebateSummaryCard } from "./DebateSummaryCard";
 import { DebateSpeechControl } from "./DebateSpeechControl";
 import { debateMarkdown } from "@/lib/debate-export";
 import { summarize } from "@/lib/chat/timeline";
+import { setInteractiveDraftDirty } from "@/lib/chat/interactive-drafts";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -58,6 +59,12 @@ export function DebateWorkspace({
   const [before, setBefore] = useState(0);
   const debate = useDebate(id, before);
   const [draft, setDraft] = useState("");
+  const draftToken = useId();
+  useEffect(() => {
+    const token = `debate-intervention:${draftToken}:${id}`;
+    setInteractiveDraftDirty(token, !!draft.trim());
+    return () => setInteractiveDraftDirty(token, false);
+  }, [draft, draftToken, id]);
   const [interventionId, setInterventionId] = useState(() =>
     crypto.randomUUID(),
   );

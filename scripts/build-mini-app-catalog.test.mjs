@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, verify } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, writeFile, rm, readdir } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rm, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -38,6 +38,9 @@ test("catalog links and downloads resolve to the bytes in the signed release", a
     { encoding: "utf8" },
   );
   assert.equal(build.status, 0, build.stderr);
+  if (process.platform !== "win32") {
+    assert.equal((await stat(site)).mode & 0o777, 0o755);
+  }
   const envelope = JSON.parse(
     await readFile(join(site, "catalog.json"), "utf8"),
   );
@@ -200,4 +203,35 @@ test("public pages escape authored text while preserving signed downloads and ex
     verify(null, payload, publicKey, Buffer.from(envelope.signature, "base64")),
   );
   assert.deepEqual(Buffer.from(JSON.parse(payload).packages[0], "base64"), raw);
+});
+
+test("public preview accepts an unseeded collection named constructor", async (t) => {
+  const temp = await mkdtemp(join(tmpdir(), "cove-catalog-prototype-"));
+  t.after(() => rm(temp, { recursive: true, force: true }));
+  const starter = JSON.parse(await readFile(fileURLToPath(new URL(
+    "../services/local-service/cmd/coveapp/starter.coveapp", import.meta.url,
+  )), "utf8"));
+  starter.collections = { constructor: starter.collections.notes };
+  for (const action of Object.values(starter.actions)) {
+    action.collection = "constructor";
+  }
+  starter.seed = {};
+  const source = join(temp, "prototype.coveapp");
+  await writeFile(source, JSON.stringify(starter));
+  const { privateKey } = generateKeyPairSync("ed25519");
+  const pem = join(temp, "fixture.pem"), site = join(temp, "site");
+  await writeFile(pem, privateKey.export({ type: "pkcs8", format: "pem" }), {
+    mode: 0o600,
+  });
+  const build = spawnSync(process.execPath, [
+    fileURLToPath(new URL("./build-mini-app-catalog.mjs", import.meta.url)),
+    "--sequence", "44", site, pem, source,
+  ], { encoding: "utf8" });
+  assert.equal(build.status, 0, build.stderr);
+  const html = await readFile(join(site, "apps/personal/notes/index.html"), "utf8");
+  assert.match(html, /A fresh space for your ideas\./);
+  assert.deepEqual(
+    await readFile(join(site, "apps/personal/notes/1.0.0.coveapp")),
+    await readFile(source),
+  );
 });

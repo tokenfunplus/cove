@@ -70,7 +70,10 @@ function modelInputs(action: MiniAppAction, fields: MiniAppFields) {
   const local = new Set(Object.values(action.candidate_bindings ?? {}));
   return Object.fromEntries(
     Object.entries(fields).filter(
-      ([name]) => !local.has(name) || name === action.text_input,
+      ([name]) =>
+        !local.has(name) ||
+        name === action.text_input ||
+        name === action.count_input,
     ),
   );
 }
@@ -126,7 +129,15 @@ export function AppModelTask({
   const recent =
     started ??
     previous.find((job) => job.state === "running" || taskNeedsSave(job));
-  const retryKey = useRef<{ key: string; id: string } | undefined>(undefined);
+  const retryKey = useRef<
+    | {
+        key: string;
+        id: string;
+        instance: string;
+        data: { destination: string; model: string; inputs: MiniAppFields };
+      }
+    | undefined
+  >(undefined);
   const { poll, task } = useAppTaskStatus(instance.id, recent, "generation");
   const active = task?.state === "running";
   const pendingById = new Map(
@@ -134,7 +145,10 @@ export function AppModelTask({
       .filter(taskNeedsSave)
       .map((job) => [job.id, job]),
   );
-  if (task && taskNeedsSave(task)) pendingById.set(task.id, task);
+  if (task) {
+    if (taskNeedsSave(task)) pendingById.set(task.id, task);
+    else if (task.state !== "running") pendingById.delete(task.id);
+  }
   const pendingSaves = [...pendingById.values()];
   const savePending = pendingSaves.length > 0;
   useEffect(() => {
@@ -143,6 +157,16 @@ export function AppModelTask({
     if (task && task.state !== "running")
       stopVerifiedAppTask(instance.id, task.id);
   }, [instance.id, task?.id, task?.state]);
+  function runBrowserTask(job: AppTask, owner: string) {
+    if (!job.browser || job.state !== "running") return;
+    void startVerifiedAppTask(owner, job.id).catch((error) => {
+      if (
+        cancelledBrowserTask.current !== job.id &&
+        !(error instanceof DOMException && error.name === "AbortError")
+      )
+        setBrowserError(error);
+    });
+  }
   const start = useMutation({
     retry: false,
     mutationFn: async () => {
@@ -157,30 +181,53 @@ export function AppModelTask({
         model,
         inputs: { ...inputs },
       };
-      const fingerprint = JSON.stringify([data, profile.id, policyLocal]);
-      if (retryKey.current?.key !== fingerprint)
-        retryKey.current = { key: fingerprint, id: crypto.randomUUID() };
-      const job = await miniApps.startTask(instance.id, {
+      const command = {
         expected_instance_revision: instance.revision,
         action: actionId,
         input: data.inputs,
         providerId: profile.id,
         modelId: model,
         localOnly: policyLocal,
-        operationId: retryKey.current.id,
         surface,
         destination: data.destination,
+      };
+      const fingerprint = JSON.stringify([
+        instance.id,
+        instance.release_id,
+        command,
+      ]);
+      if (retryKey.current) {
+        const previous = retryKey.current;
+        let admitted: AppTask | undefined;
+        try {
+          admitted = await miniApps.task(previous.instance, previous.id);
+        } catch (error) {
+          if (
+            (error as { envelope?: { error?: { code?: string } } })?.envelope
+              ?.error?.code !== "not_found"
+          )
+            throw error;
+        }
+        if (admitted) {
+          retryKey.current = undefined;
+          setSubmitted({ ...previous.data, id: admitted.id });
+          runBrowserTask(admitted, previous.instance);
+          return admitted;
+        }
+      }
+      if (retryKey.current?.key !== fingerprint)
+        retryKey.current = {
+          key: fingerprint,
+          id: crypto.randomUUID(),
+          instance: instance.id,
+          data,
+        };
+      const job = await miniApps.startTask(instance.id, {
+        ...command,
+        operationId: retryKey.current.id,
       });
       retryKey.current = undefined;
-      if (job.browser && job.state === "running") {
-        void startVerifiedAppTask(instance.id, job.id).catch((error) => {
-          if (
-            cancelledBrowserTask.current !== job.id &&
-            !(error instanceof DOMException && error.name === "AbortError")
-          )
-            setBrowserError(error);
-        });
-      }
+      runBrowserTask(job, instance.id);
       setSubmitted({ ...data, id: job.id });
       return job;
     },
@@ -206,6 +253,7 @@ export function AppModelTask({
     task?.inputs ??
     (submitted?.id === task?.id ? submitted?.inputs : undefined);
   const inputReady = !!source;
+  const candidateReleaseMatches = task?.release_id === instance.release_id;
   const bindings = action.candidate_bindings ?? {};
   const generated = candidate && {
     ...candidate,
@@ -221,7 +269,7 @@ export function AppModelTask({
       )
     : undefined;
   const parsed =
-    inputReady && generated && task?.result
+    inputReady && candidateReleaseMatches && generated && task?.result
       ? candidateBatch(task.result, generated, expectedCount)
       : { rows: [], rejected: 0 };
   const raw = parsed.rows;
@@ -342,7 +390,13 @@ export function AppModelTask({
         }
       />
       {!savePending && (
-        <AppTaskSaveBlockedNotice error={start.error ?? browserError} />
+        <AppTaskSaveBlockedNotice
+          error={start.error ?? browserError}
+          onCleared={() => {
+            if (taskSavePendingError(start.error)) start.reset();
+            if (taskSavePendingError(browserError)) setBrowserError(undefined);
+          }}
+        />
       )}
       {poll.isError && (
         <Button variant="outline" size="sm" onClick={() => void poll.refetch()}>
@@ -413,6 +467,12 @@ export function AppModelTask({
               Loading the saved task input before using candidates…
             </p>
           )}
+          {task.state === "completed" && candidate && !candidateReleaseMatches && (
+            <p role="status">
+              This result belongs to a different or unknown app release. Start a
+              new model task to use candidates with the current release.
+            </p>
+          )}
           {task.state === "completed" &&
             inputReady &&
             (results.length ? (
@@ -428,7 +488,7 @@ export function AppModelTask({
               />
             ) : (
               <p className="whitespace-pre-wrap break-words text-sm">
-                {expectedCount !== undefined && (
+                {candidateReleaseMatches && expectedCount !== undefined && (
                   <strong className="block">
                     Expected {expectedCount} valid candidates. Review the model
                     response or try again.

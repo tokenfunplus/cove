@@ -21,6 +21,8 @@ export type PackageSource =
   | {
       kind: "local";
       raw: string;
+      release_id: string;
+      digest: string;
       origin?: string;
       catalog_authority?: string;
       official_catalog?: boolean;
@@ -29,6 +31,10 @@ export type PackageSource =
   | { kind: "installed"; release: MiniAppRelease };
 
 type OpenApp = (id: string, view?: string, replace?: boolean) => void;
+
+function snapshotTarget(target?: MiniAppInstance) {
+  return target ? { ...target, grants: [...target.grants] } : undefined;
+}
 
 const permissionCopy: Record<string, { title: string; description: string }> = {
   "records.query": {
@@ -113,7 +119,7 @@ function AccessChoice({
 export function PackagePreview({
   pkg,
   previous,
-  source,
+  source: initialSource,
   close,
   open,
   targetInstance,
@@ -131,6 +137,11 @@ export function PackagePreview({
 }) {
   const cache = useQueryClient();
   const formId = useId();
+  const [source] = useState<PackageSource>(() =>
+    initialSource.kind === "catalog"
+      ? { ...initialSource, entry: { ...initialSource.entry } }
+      : { ...initialSource },
+  );
   const [name, setName] = useState(pkg.name);
   const firstTarget =
     targetInstance ??
@@ -141,9 +152,16 @@ export function PackagePreview({
     firstTarget?.id ??
       (source.kind !== "installed" && previous.length > 1 ? "choose" : ""),
   );
+  const [upgrade, setReviewedTarget] = useState(() => snapshotTarget(firstTarget));
   const upgradeId = targetInstance?.id ?? selectedId;
-  const upgrade =
+  const currentTarget =
     targetInstance ?? previous.find((item) => item.id === upgradeId);
+  const targetChanged =
+    upgradeId !== selectedId ||
+    (upgrade !== undefined &&
+      (currentTarget?.id !== upgrade.id ||
+        currentTarget.revision !== upgrade.revision ||
+        currentTarget.release_id !== upgrade.release_id));
   const [grants, setGrants] = useState<string[]>(
     () =>
       firstTarget?.grants.filter((cap) => pkg.capabilities.includes(cap)) ?? [],
@@ -154,20 +172,37 @@ export function PackagePreview({
   const submitting = useRef(false);
   const install = useMutation({
     retry: false,
-    mutationFn: async (create: boolean) => {
+    mutationFn: async (approval: {
+      create: boolean;
+      target?: MiniAppInstance;
+      grants: string[];
+      cloudEnabled: boolean;
+      name: string;
+    }) => {
       const release =
         source.kind === "installed"
           ? source.release
           : source.kind === "catalog"
             ? await miniApps.catalogInstall(source.entry)
-            : await miniApps.localPackage(source.raw, "install");
+            : await miniApps.localPackage(source.raw, "install", {
+                id: source.release_id,
+                digest: source.digest,
+              });
       await cache.invalidateQueries({ queryKey: appKeys.releases });
-      if (!create) return;
-      if (upgradeId && !upgrade)
-        throw new Error("This copy changed. Review the installation again.");
-      return upgrade
-        ? miniApps.upgrade(upgrade, release.id, grants, cloudEnabled)
-        : miniApps.create(release.id, name.trim(), grants, cloudEnabled);
+      if (!approval.create) return;
+      return approval.target
+        ? miniApps.upgrade(
+            approval.target,
+            release.id,
+            approval.grants,
+            approval.cloudEnabled,
+          )
+        : miniApps.create(
+            release.id,
+            approval.name,
+            approval.grants,
+            approval.cloudEnabled,
+          );
     },
     onSuccess: async (book) => {
       if (book) {
@@ -176,14 +211,41 @@ export function PackagePreview({
       } else close();
     },
   });
+  function reviewTarget(
+    target: MiniAppInstance | undefined,
+    id = target?.id ?? "",
+  ) {
+    setUpgrade(id);
+    setReviewedTarget(snapshotTarget(target));
+    setCloudEnabled(target?.cloud_enabled === true);
+    setGrants(
+      target?.grants.filter((capability) =>
+        pkg.capabilities.includes(capability),
+      ) ?? [],
+    );
+    install.reset();
+  }
   function submit(create: boolean) {
-    if (submitting.current) return;
+    if (
+      submitting.current ||
+      (create && (targetChanged || upgradeId === "choose"))
+    )
+      return;
     submitting.current = true;
-    install.mutate(create, {
-      onSettled: () => {
-        submitting.current = false;
+    install.mutate(
+      {
+        create,
+        target: snapshotTarget(upgrade),
+        grants: [...grants],
+        cloudEnabled,
+        name: name.trim(),
       },
-    });
+      {
+        onSettled: () => {
+          submitting.current = false;
+        },
+      },
+    );
   }
   const core: string[] = pkg.capabilities.filter(
     (capability) =>
@@ -267,7 +329,7 @@ export function PackagePreview({
               </p>
             </div>
           )}
-          {!targetInstance && previous.length > 0 && (
+          {!targetInstance && (previous.length > 0 || selectedId !== "") && (
             <label className={labelStyle}>
               Update an existing copy
               <select
@@ -279,20 +341,17 @@ export function PackagePreview({
                   const target = previous.find(
                     (item) => item.id === event.target.value,
                   );
-                  setUpgrade(event.target.value);
-                  setCloudEnabled(target?.cloud_enabled === true);
-                  setGrants(
-                    target
-                      ? target.grants.filter((capability) =>
-                          pkg.capabilities.includes(capability),
-                        )
-                      : [],
-                  );
+                  reviewTarget(target, event.target.value);
                 }}
               >
                 {previous.length > 1 && (
                   <option value="choose" disabled>
                     Choose a copy to update
+                  </option>
+                )}
+                {upgrade && !currentTarget && (
+                  <option value={selectedId} disabled>
+                    {upgrade.name} · No longer available
                   </option>
                 )}
                 {previous.map((item) => (
@@ -310,6 +369,26 @@ export function PackagePreview({
                 own data.
               </span>
             </label>
+          )}
+          {targetChanged && (
+            <div
+              role="alert"
+              className="space-y-3 rounded-2xl bg-muted/50 p-4 text-sm"
+            >
+              <p>
+                This copy changed or is no longer available. Review its current
+                access before updating.
+              </p>
+              {currentTarget && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => reviewTarget(currentTarget)}
+                >
+                  Review current copy
+                </Button>
+              )}
+            </div>
           )}
           {upgradeId === "" && (
             <label className={labelStyle}>
@@ -426,6 +505,7 @@ export function PackagePreview({
           </Button>
           <Button
             disabled={
+              targetChanged ||
               upgradeId === "choose" ||
               (!upgrade && (!name.trim() || nameTooLong))
             }

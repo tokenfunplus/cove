@@ -407,7 +407,9 @@ An editor keeps the selected record IDs and revisions until the user closes or
 confirms it. A stale record requires a new preview. A scoped Chat write can
 use an authorized local query to select records even when that query was not
 shared with the model. Historical candidates become selectable after the
-saved task inputs load, retaining their material bindings.
+saved task inputs load, retaining their material bindings, while their originating
+release remains active. After an upgrade, older task results stay readable but
+require a new model task before candidates can be saved with the current release.
 
 A legacy file install whose digest matches a bundled official release can
 upgrade to its trusted successor after the user's review. Modified personal
@@ -417,7 +419,10 @@ installation also checks the selected distribution authority.
 
 NearAI progress and result delivery retry temporary Local Service failures with
 the same claim and payload. Accepted settlements are idempotent for that exact
-browser and receipt, including after a service restart. A verified result is
+browser session and receipt, even after generation permission is revoked. This
+returns only an acknowledgement and does not authorize new work. Service restart
+invalidates that browser session; reopen Cove and inspect the saved result
+instead of replaying the old settlement. A verified result is
 never replaced by an empty failure because its delivery was interrupted.
 Permanent service unavailability or closing the tab can still prevent delivery.
 

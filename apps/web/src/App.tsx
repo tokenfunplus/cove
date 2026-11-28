@@ -6,6 +6,7 @@ import {
   ensureWorkspaceEntry,
   isWorkspaceNavigation,
   navigateWorkspace,
+  trackWorkspaceFragment,
   workspaceEntry,
 } from "@/lib/workspace-navigation";
 
@@ -27,12 +28,49 @@ export function App() {
     undefined,
   );
   const allowed = useRef<{ key: string; href: string } | undefined>(undefined);
+  const fragmentOrigin = useRef<
+    { previous: ReturnType<typeof currentLocation>; href: string } | undefined
+  >(undefined);
   const attempt = useRef(0);
   useEffect(() => {
     if (!current.current) {
       ensureWorkspaceEntry();
     }
     current.current = currentLocation();
+    const navigation = (window as Window & { navigation?: EventTarget })
+      .navigation;
+    const entryChanged = (event: Event) => {
+      const change = event as Event & {
+        navigationType?: string | null;
+        from?: { url?: string | null };
+      };
+      const previous = current.current!;
+      if (
+        change.navigationType !== "push" ||
+        !change.from?.url ||
+        !previous.entry ||
+        restoring.current
+      )
+        return;
+      const from = new URL(change.from.url);
+      const destination = new URL(window.location.href);
+      if (
+        from.href !== previous.href ||
+        from.pathname + from.search !==
+          destination.pathname + destination.search ||
+        from.hash === destination.hash
+      )
+        return;
+      const entry = workspaceEntry();
+      if (entry && entry.key !== previous.entry.key) return;
+      // Native fragment pushes commit synchronously. Stamp every entry here,
+      // before queued popstate/hashchange events can observe a later fragment.
+      trackWorkspaceFragment(previous.entry);
+      attempt.current++;
+      allowed.current = undefined;
+      fragmentOrigin.current = undefined;
+      current.current = currentLocation();
+    };
     const navigate = (event: Event) => {
       const next = window.location.pathname + window.location.search;
       const target = currentLocation();
@@ -47,6 +85,7 @@ export function App() {
       }
       const commit = () => {
         attempt.current++;
+        fragmentOrigin.current = undefined;
         current.current = currentLocation();
         setAddress(next);
       };
@@ -60,6 +99,19 @@ export function App() {
         return;
       }
       if (next === address) {
+        const previous = current.current!;
+        if (
+          !target.entry ||
+          target.entry.key !== previous.entry?.key ||
+          target.href !== previous.href
+        ) {
+          attempt.current++;
+          allowed.current = undefined;
+        }
+        fragmentOrigin.current =
+          target.href !== previous.href
+            ? { previous, href: target.href }
+            : undefined;
         current.current = target;
         return;
       }
@@ -119,17 +171,30 @@ export function App() {
         restoring.current
       )
         return;
-      // Native hash entries can copy history.state without incrementing our index.
-      // Rebase rather than treating those duplicate positions as known distances.
+      const pending = fragmentOrigin.current;
+      if (pending && pending.href !== event.newURL) return;
+      fragmentOrigin.current = undefined;
+      const previous = pending?.previous ?? current.current!;
+      const target = currentLocation();
+      // A native fragment creates a successor with empty or copied state. A
+      // traversal to an already stamped entry must retain that entry's position.
+      if (
+        !navigation &&
+        previous.entry &&
+        (!target.entry || target.entry.key === previous.entry.key)
+      ) {
+        trackWorkspaceFragment(previous.entry);
+      }
       attempt.current++;
-      ensureWorkspaceEntry(true);
       current.current = currentLocation();
     };
     window.addEventListener("popstate", navigate);
     window.addEventListener("hashchange", hashChanged);
+    navigation?.addEventListener("currententrychange", entryChanged);
     return () => {
       window.removeEventListener("popstate", navigate);
       window.removeEventListener("hashchange", hashChanged);
+      navigation?.removeEventListener("currententrychange", entryChanged);
     };
   }, [address]);
   const [incoming, setIncoming] = useState<{
@@ -141,7 +206,15 @@ export function App() {
       <Suspense fallback={<p role="status">Opening apps…</p>}>
         <MiniAppsPage
           attach={async (body) => {
+            const token = attempt.current;
+            const origin = currentLocation();
             const chat = await createConversation();
+            if (
+              attempt.current !== token ||
+              window.location.href !== origin.href ||
+              workspaceEntry()?.key !== origin.entry?.key
+            )
+              return;
             setIncoming({ conversation: chat.id, body });
             navigateWorkspace(
               "/#conversation=" + encodeURIComponent(chat.id),

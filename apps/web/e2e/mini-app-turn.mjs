@@ -35,6 +35,12 @@ export async function runMiniAppTurn({
     name: "Turn reading list",
     grants: release.package.capabilities,
   });
+  const query = () =>
+    api(
+      "/api/mini-apps/instances/" + book.id + "/actions/inbox.queue",
+      "POST",
+      { surface: "chat", operation_id: crypto.randomUUID(), inputs: {} },
+    );
   await loadPage("Page.navigate", { url: origin + "/" });
   await until('!!document.querySelector("#generation-input")');
   async function button(name, parent = "body") {
@@ -120,19 +126,25 @@ export async function runMiniAppTurn({
   await until(
     'document.querySelector("#generation-input").value.includes("Selected app records (reference data)")',
   );
+  const selectedRecord = (await query()).records[0];
+  assert(selectedRecord, "The selected reference has a saved source record");
+  const beforeRecordSharing = requests.length;
   await click('button[aria-label="Send message"]');
   await until(
     'document.body.textContent.includes("Browser answer from model-one")&&!document.querySelector(\'button[aria-label="Stop generation"]\')',
   );
-  assert(
-    requests.some(
-      (req) =>
-        req.messages
-          .at(-1)
-          ?.content.includes("Reference from Turn reading list") &&
-        !JSON.stringify(req).includes(book.id),
-    ),
+  const sharedRequests = requests.slice(beforeRecordSharing);
+  assert.equal(
+    sharedRequests.length,
+    1,
+    "Sharing selected records sends exactly one request to the selected model",
   );
+  const sharedRequest = sharedRequests[0];
+  assert(sharedRequest.messages.at(-1)?.content.includes("Reference from Turn reading list"));
+  assert(sharedRequest.messages.at(-1)?.content.includes(selectedRecord.fields.title));
+  for (const localID of [book.id, selectedRecord.id]) {
+    assert(!JSON.stringify(sharedRequest).includes(localID), "Shared reference text omits local App and record IDs");
+  }
   await until(
     "!!document.querySelector(" +
       JSON.stringify(region + ' [aria-label="Select record 1"]') +
@@ -147,12 +159,6 @@ export async function runMiniAppTurn({
     await click(selection);
   await button(write, region);
   await button("Preview changes", region);
-  const query = () =>
-    api(
-      "/api/mini-apps/instances/" + book.id + "/actions/inbox.queue",
-      "POST",
-      { surface: "chat", operation_id: crypto.randomUUID(), inputs: {} },
-    );
   assert((await query()).records.length > 0);
   await button("Confirm changes", region);
   await until(
@@ -388,4 +394,54 @@ export async function runMiniAppTurn({
     requestsBeforeHistory,
     "History confirmation must not invoke a model",
   );
+
+  // Chromium exposes synchronous entry commits even when native hash events
+  // queue behind several pushes. Preserve every physical entry through the guard.
+  assert.equal(await evaluate("typeof window.navigation?.addEventListener"), "function");
+  await click('a[href="/"]');
+  await until(`!!document.querySelector('button[aria-label="New conversation"]')`);
+  await click('button[aria-label="New conversation"]');
+  await until('!!document.querySelector("#generation-input")');
+  await fill("#generation-input", "Keep my rapid fragment draft");
+  const rapidChat = await evaluate("({href:location.href,state:history.state})");
+  const rapid = await evaluate(`(() => {
+    const signals = [];
+    const listener = event => signals.push(event.navigationType);
+    navigation.addEventListener('currententrychange', listener);
+    location.hash = '#one';
+    const first = { href: location.href, state: history.state };
+    location.hash = '#two';
+    const second = { href: location.href, state: history.state };
+    navigation.removeEventListener('currententrychange', listener);
+    return { first, second, signals };
+  })()`);
+  const historyKey = "cove.workspace-history.v1";
+  assert.equal(rapid.signals.filter(type => type === "push").length, 2);
+  assert.equal(rapid.first.state[historyKey].index, rapidChat.state[historyKey].index + 1);
+  assert.equal(rapid.second.state[historyKey].index, rapidChat.state[historyKey].index + 2);
+  const rapidLength = await evaluate("history.length");
+  const atEntry = entry => "location.href===" + JSON.stringify(entry.href) +
+    " && JSON.stringify(history.state)===" + JSON.stringify(JSON.stringify(entry.state));
+  await evaluate("history.go(-3)");
+  await until("document.body.textContent.includes('Discard unsent draft?')");
+  await until(atEntry(rapid.second));
+  await button("Stay", "[role=dialog]");
+  assert.equal(await evaluate('document.querySelector("#generation-input").value'), "Keep my rapid fragment draft");
+  await snapshot("mini-app-rapid-fragment-stay");
+  await evaluate("history.go(-3)");
+  await until("document.body.textContent.includes('Discard unsent draft?')");
+  await until(atEntry(rapid.second));
+  await button("Discard and continue", "[role=dialog]");
+  await until(atEntry(appsEntry));
+  await until("!!document.querySelector('.mini-app-shell')");
+  for (const entry of [rapidChat, rapid.first, rapid.second]) {
+    await evaluate("history.forward()");
+    await until(atEntry(entry));
+  }
+  assert.equal(await evaluate("history.length"), rapidLength);
+  assert.equal(requests.length, requestsBeforeHistory, "Rapid fragment confirmation stays local");
+  await evaluate("history.go(-3)");
+  await until(atEntry(appsEntry));
+  await snapshot("mini-app-rapid-fragment-leave");
+
 }

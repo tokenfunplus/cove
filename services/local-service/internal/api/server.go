@@ -323,12 +323,16 @@ func (server *Server) launch(writer http.ResponseWriter, request *http.Request) 
 
 func (server *Server) session(writer http.ResponseWriter, request *http.Request) {
 	session, _ := localsecurity.SessionFromRequest(request)
-	hasApps := false
+	response := map[string]any{"csrf_token": session.CSRFToken}
 	if server.apps != nil {
 		instances, err := server.apps.Instances(request.Context())
-		hasApps = err == nil && len(instances) > 0
+		if err == nil {
+			response["has_mini_apps"] = len(instances) > 0
+		}
+	} else {
+		response["has_mini_apps"] = false
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"csrf_token": session.CSRFToken, "has_mini_apps": hasApps})
+	writeJSON(writer, http.StatusOK, response)
 }
 
 func (server *Server) getSettings(writer http.ResponseWriter, request *http.Request) {

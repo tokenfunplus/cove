@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,6 +19,70 @@ type failingAppSettlementStore struct {
 	failures       atomic.Int32
 	alwaysFail     atomic.Bool
 	loseBrowserAck atomic.Bool
+}
+
+type pausedAppReplayReadStore struct {
+	*failingAppSettlementStore
+	block   atomic.Bool
+	read    chan struct{}
+	release chan struct{}
+}
+
+func (store *pausedAppReplayReadStore) FindAppTask(ctx context.Context, instance, id string) (persistence.AppTask, bool, error) {
+	task, found, err := store.failingAppSettlementStore.FindAppTask(ctx, instance, id)
+	if store.block.Swap(false) {
+		close(store.read)
+		<-store.release
+	}
+	return task, found, err
+}
+
+func TestAppTaskReplayReadSerializesWithPendingSave(t *testing.T) {
+	service, fault, upstream, input := settlementFixture(t)
+	fault.alwaysFail.Store(true)
+	if _, err := service.StartAppTask(t.Context(), input, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	waitForAppWorker(t, service)
+	fault.alwaysFail.Store(false)
+	store := &pausedAppReplayReadStore{failingAppSettlementStore: fault, read: make(chan struct{}), release: make(chan struct{})}
+	service.store = store
+	store.block.Store(true)
+	var release sync.Once
+	defer release.Do(func() { close(store.release) })
+	type response struct {
+		task persistence.AppTask
+		err  error
+	}
+	replayed := make(chan response, 1)
+	go func() {
+		task, err := service.StartAppTask(t.Context(), input, func() error { return nil })
+		replayed <- response{task: task, err: err}
+	}()
+	<-store.read
+	saveStarted, saved := make(chan struct{}), make(chan error, 1)
+	go func() {
+		close(saveStarted)
+		saved <- service.RetryAppTaskSave(t.Context(), input.Instance, input.ID)
+	}()
+	<-saveStarted
+	select {
+	case err := <-saved:
+		t.Fatal("save overtook a replay that had already read the running row", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	release.Do(func() { close(store.release) })
+	result := <-replayed
+	if result.err != nil || result.task.State != "save_failed" || !result.task.PendingSave || result.task.Result != "Frozen candidate" {
+		t.Fatal("replay did not return its consistent pending-state view", result)
+	}
+	if err := <-saved; err != nil {
+		t.Fatal(err)
+	}
+	result.task, result.err = service.StartAppTask(t.Context(), input, func() error { return nil })
+	if result.err != nil || result.task.State != "completed" || result.task.PendingSave || upstream.streamCalls() != 1 {
+		t.Fatal("replay after saving returned an obsolete running result", result)
+	}
 }
 
 func (store *failingAppSettlementStore) FinishAppTask(ctx context.Context, instance, id, state, result, detail string) error {

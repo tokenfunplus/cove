@@ -172,6 +172,12 @@ function CatalogForm({
             onClick={() => {
               onEdit();
               save.reset();
+              if (mode === "default") {
+                setIndex(url);
+                setKey(publicKey);
+                onSaved();
+                return;
+              }
               const config = { ...defaults, useDefaults: true };
               if (config.public_key !== publicKey) setConfirmation(config);
               else save.mutate({ config, confirmed: false, useDefaults: true });

@@ -83,6 +83,19 @@ func (s *Service) hasPendingAppTaskSave() bool {
 func (s *Service) ProjectAppTask(instance string, task persistence.AppTask) persistence.AppTask {
 	s.appTask.Lock()
 	defer s.appTask.Unlock()
+	return s.projectAppTaskLocked(instance, task)
+}
+
+// A replay's durable state and pending projection must share one worker-lock
+// view, otherwise a completed save can leave an obsolete running response.
+func (s *Service) findProjectedAppTask(ctx context.Context, store AppTaskStore, instance, id string) (persistence.AppTask, bool, error) {
+	s.appTask.Lock()
+	defer s.appTask.Unlock()
+	task, found, err := store.FindAppTask(ctx, instance, id)
+	return s.projectAppTaskLocked(instance, task), found, err
+}
+
+func (s *Service) projectAppTaskLocked(instance string, task persistence.AppTask) persistence.AppTask {
 	pending := s.appTask.pending
 	if pending == nil || pending.instance != instance || pending.id != task.ID {
 		return task

@@ -45,6 +45,13 @@ func (s *Server) miniAppRoutes(mux *http.ServeMux, session func(http.Handler) ht
 	const prefix = "/api/mini-apps"
 	register := func(method, path string, fn http.HandlerFunc) {
 		mux.Handle(method+" "+prefix+path, session(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// ServeMux also matches HEAD to GET. Shared handlers dispatch on the
+			// method, so do not let an implicit HEAD reach a mutation branch.
+			if r.Method != method {
+				w.Header().Set("Allow", method)
+				writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "This Mini App endpoint does not support this method.")
+				return
+			}
 			if s.apps == nil {
 				writeError(w, 503, "unavailable", "Mini Apps are unavailable.")
 				return
@@ -186,17 +193,31 @@ func (s *Server) appPackages(w http.ResponseWriter, r *http.Request) {
 		appReply(w, item, err)
 		return
 	}
+	installing := r.URL.Path == "/api/mini-apps/packages/install"
+	if installing && (r.Header.Get("X-Cove-Release-ID") == "" || r.Header.Get("X-Cove-Package-Digest") == "") {
+		appReply(w, nil, miniapps.ErrConflict)
+		return
+	}
 	origin, err := s.fileOrigin(r, raw)
 	if err != nil {
+		if installing && errors.Is(err, miniapps.ErrInvalid) {
+			if _, validationErr := miniapps.Validate(raw); validationErr == nil {
+				err = miniapps.ErrConflict
+			}
+		}
 		appReply(w, nil, err)
 		return
 	}
-	if r.URL.Path == "/api/mini-apps/packages/preview" {
-		item, err := miniapps.Preview(raw, origin)
+	item, err := miniapps.Preview(raw, origin)
+	if err != nil || !installing {
 		appReply(w, item, err)
 		return
 	}
-	item, err := s.apps.Install(r.Context(), raw, origin)
+	if item.ID != r.Header.Get("X-Cove-Release-ID") || item.Digest != r.Header.Get("X-Cove-Package-Digest") {
+		appReply(w, nil, miniapps.ErrConflict)
+		return
+	}
+	item, err = s.apps.Install(r.Context(), raw, origin)
 	appReply(w, item, err)
 }
 func (s *Server) appInstances(w http.ResponseWriter, r *http.Request) {
@@ -343,12 +364,13 @@ func (s *Server) appCatalog(w http.ResponseWriter, r *http.Request) {
 		}
 		if r.Method == "POST" {
 			var in struct {
-				Digest string `json:"digest"`
+				Digest           string `json:"digest"`
+				CatalogAuthority string `json:"catalog_authority"`
 			}
 			if !appInput(w, r, &in) {
 				return
 			}
-			if in.Digest != e.Digest {
+			if in.Digest != e.Digest || in.CatalogAuthority != e.CatalogAuthority {
 				appReply(w, nil, miniapps.ErrConflict)
 				return
 			}

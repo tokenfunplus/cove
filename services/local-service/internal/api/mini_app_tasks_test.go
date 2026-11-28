@@ -43,7 +43,7 @@ func TestGenerationTaskEndpointsExcludeProposals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.BeginAppTask(ctx, book.ID, "generate", "generation", `{"Target":{"action":"generate"}}`); err != nil {
+	if err := store.BeginAppTask(ctx, book.ID, "generate", "generation", fmt.Sprintf(`{"Release":%q,"Target":{"action":"generate"}}`, release.ID)); err != nil {
 		t.Fatal(err)
 	}
 	proposal := fmt.Sprintf(`{"ProposalRevision":%d,"Release":%q,"Target":{"surface":"chat"}}`, book.Revision, release.ID)
@@ -78,8 +78,12 @@ func TestGenerationTaskEndpointsExcludeProposals(t *testing.T) {
 	if err := json.Unmarshal(call("GET", "/tasks", 200), &history); err != nil {
 		t.Fatal(err)
 	}
-	if len(history.Tasks) != 1 || history.Tasks[0].ID != "generate" {
+	if len(history.Tasks) != 1 || history.Tasks[0].ID != "generate" || history.Tasks[0].ReleaseID != release.ID {
 		t.Fatalf("unexpected generation history: %+v", history.Tasks)
+	}
+	var detail persistence.AppTask
+	if err := json.Unmarshal(call("GET", "/tasks/generate", 200), &detail); err != nil || detail.ReleaseID != release.ID {
+		t.Fatalf("generation detail lost its release: %+v, %v", detail, err)
 	}
 	call("DELETE", "/tasks/generate", 200)
 	if len(model.stopped) != 1 || model.stopped[0] != "generate" {

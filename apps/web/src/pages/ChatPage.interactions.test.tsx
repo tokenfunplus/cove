@@ -151,6 +151,7 @@ function configureWorkspace(targetCount = 1) {
   feed = createBatchEventFeed(fixture.pendingBatch);
   vi.mocked(transport.getSession).mockResolvedValue({
     csrf_token: "synthetic-session",
+    has_mini_apps: false,
   });
   vi.mocked(transport.getConversations).mockResolvedValue([
     fixture.conversation,
@@ -2977,4 +2978,36 @@ test("browser workspace navigation protects an unsent chat draft",async()=>{
  expect(await screen.findByText("Discard unsent draft?")).toBeDefined();
  await userEvent.click(screen.getByRole("button",{name:"Stay"}));
  expect((input as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+});
+
+
+test("Apps navigation protects an unsent Debate intervention and permits an empty workspace", async () => {
+  configureWorkspace(2);
+  fixture.conversation.debate_id = fixture.conversation.id;
+  const view: DebateView = {
+    session: { id: fixture.conversation.id, client_request_id: "debate-request", topic: "Should a team stay small?", seats: fixture.settings.active_model_set.map((seat, index) => ({ ...seat, role: index ? "Challenger" : "Advocate" })), rules: defaultDebateRules, status: "paused", round: 1, position: 0, opening_done: [true, true], total_turns: 0, created_at: fixture.conversation.created_at, updated_at: fixture.conversation.updated_at },
+    turns: [], interventions: [], has_more: false,
+  };
+  vi.mocked(debateApi.getDebate).mockResolvedValue(view);
+  vi.mocked(debateApi.watchDebate).mockResolvedValue(undefined);
+  render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+  const input = await screen.findByRole("textbox", { name: "Your intervention" });
+  const user = userEvent.setup();
+  await user.type(input, "Keep this intervention.");
+  const proceed = vi.fn(async () => {});
+  let allowed = true;
+  act(() => {
+    allowed = window.dispatchEvent(new CustomEvent("cove-workspace-navigation", { cancelable: true, detail: { proceed } }));
+  });
+  expect(allowed).toBe(false);
+  const dialog = await screen.findByRole("dialog", { name: "Discard unsent draft?" });
+  await user.click(within(dialog).getByRole("button", { name: "Stay" }));
+  expect((input as HTMLTextAreaElement).value).toBe("Keep this intervention.");
+  expect(proceed).not.toHaveBeenCalled();
+  await user.clear(input);
+  act(() => {
+    allowed = window.dispatchEvent(new CustomEvent("cove-workspace-navigation", { cancelable: true, detail: { proceed } }));
+  });
+  expect(allowed).toBe(true);
+  expect(screen.queryByRole("dialog", { name: "Discard unsent draft?" })).toBeNull();
 });

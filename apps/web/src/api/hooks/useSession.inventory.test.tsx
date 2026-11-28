@@ -127,3 +127,59 @@ test("a cross-tab install wakes a previously empty Chat without startup or focus
   });
   expect(instances).toHaveBeenCalledTimes(calls);
 });
+
+test("an install notice received during session startup survives a stale empty presence response", async () => {
+  let finish!: (value: { csrf_token: string; has_mini_apps: boolean }) => void;
+  vi.mocked(getSession).mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const instances = vi
+    .spyOn(miniApps, "instances")
+    .mockResolvedValue({ instances: [] });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  function Session({ showInventory }: { showInventory: boolean }) {
+    useLocalSession();
+    return showInventory ? <Apps /> : null;
+  }
+  function Apps() {
+    useChatApps();
+    return null;
+  }
+  const view = render(
+    <QueryClientProvider client={cache}>
+      <Session showInventory={false} />
+    </QueryClientProvider>,
+  );
+  await act(async () =>
+    window.dispatchEvent(new Event("cove-mini-app-inventory-changed")),
+  );
+  await act(async () => finish({ csrf_token: "proof", has_mini_apps: false }));
+  expect(cache.getQueryData(appKeys.presence)).toBe(true);
+  view.rerender(
+    <QueryClientProvider client={cache}>
+      <Session showInventory />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(instances).toHaveBeenCalledOnce());
+});
+
+test("unknown inventory presence retries the read after session startup", async () => {
+  vi.mocked(getSession).mockResolvedValue({ csrf_token: "proof" });
+  const instances = vi
+    .spyOn(miniApps, "instances")
+    .mockResolvedValue({ instances: [] });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <Inventory />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(instances).toHaveBeenCalledOnce());
+  await waitFor(() => expect(cache.getQueryData(appKeys.presence)).not.toBe(null));
+});

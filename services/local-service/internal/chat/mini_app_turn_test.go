@@ -84,6 +84,29 @@ func TestScopedTurnReceivesOneNativeOrTextProposal(t *testing.T) {
 	}
 }
 
+func TestScopedTurnRejectsTruncatedLabeledProposals(t *testing.T) {
+	for _, body := range []string{
+		`Proposed action: {"action":"choice_1"`,
+		"Suggested: ```json\n{\"action\":\"choice_1\"",
+		`Suggestion: {"action":"choice_1"`,
+	} {
+		stream := &appTurnStream{CompletionStream: &fakeStream{events: []provider.Event{{Type: provider.EventDelta, Delta: body}, {Type: provider.EventCompleted}}}, normalize: func(string) (string, error) {
+			return "", ErrAppProposalInvalid
+		}}
+		if _, err := stream.Recv(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := stream.Recv(t.Context()); !errors.Is(err, ErrAppProposalInvalid) {
+			t.Fatal("truncated labeled proposal appeared as a successful answer", body, err)
+		}
+	}
+	for _, body := range []string{`{"example":"An unrelated object"}`, `{"action":"a JSON example"`, "An ordinary answer.", "Suggestion: Try a shorter reading session.", "Suggested: Keep an ordinary note."} {
+		if appProposalReply(body) {
+			t.Fatal("unlabeled unrelated content was classified as a proposal", body)
+		}
+	}
+}
+
 func TestScopedTurnRequiresOneCompatibleModel(t *testing.T) {
 	ctx := t.Context()
 	scope := &persistence.MiniAppScope{Instance: "book", Release: "release", Revision: 1, Actions: []string{"inbox.list"}}

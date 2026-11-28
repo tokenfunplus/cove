@@ -87,3 +87,24 @@ test("changing the target or candidate content creates a distinct reviewed opera
     ),
   ).not.toBe(original);
 });
+
+test("distinct untouched single candidates have distinct operations", async () => {
+  vi.stubGlobal("crypto", webcrypto);
+  const candidate = async (text: string) =>
+    proposalOperationId(
+      "generation",
+      "book",
+      "release",
+      { text },
+      {
+        action: "notes.add",
+        surface: "chat",
+        operation_id: "unused",
+        inputs: { text },
+      },
+      { text },
+    );
+  const first = await candidate("First note");
+  expect(await candidate("First note")).toBe(first);
+  expect(await candidate("Second note")).not.toBe(first);
+});

@@ -44,10 +44,11 @@ type Invocation struct {
 	Confirm          string           `json:"confirm,omitempty"`
 }
 type Result struct {
-	NextCursor   string   `json:"next_cursor,omitempty"`
-	Records      []Record `json:"records"`
-	Confirmation string   `json:"confirmation,omitempty"`
-	Prompt       string   `json:"prompt,omitempty"`
+	Inputs       map[string]any `json:"-"`
+	NextCursor   string         `json:"next_cursor,omitempty"`
+	Records      []Record       `json:"records"`
+	Confirmation string         `json:"confirmation,omitempty"`
+	Prompt       string         `json:"prompt,omitempty"`
 }
 
 var operationID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,96}$`)
@@ -85,7 +86,7 @@ func saveRecord(tx *persistence.MiniAppStore, id, col string, r Record) error {
 	if err != nil {
 		return err
 	}
-	if len(data) > 96<<10 {
+	if len(data) > maxRecordBytes {
 		return invalid("record size limit")
 	}
 	return tx.SaveRecord(id, col, persistence.AppRecord{ID: r.ID, Revision: r.Revision, Fields: data})
@@ -188,13 +189,15 @@ func generate(p Package, a Action, inputs map[string]any) Result {
 		parameters := maps.Clone(inputs)
 		delete(parameters, a.TextInput)
 		for _, source := range a.CandidateBindings {
-			delete(parameters, source)
+			if source != a.CountInput {
+				delete(parameters, source)
+			}
 		}
 		// Invoke has already validated the values as finite JSON scalars.
 		encoded, _ := json.Marshal(parameters)
 		instruction += "\n\nUser-selected parameters (JSON):\n" + string(encoded)
 	}
-	return Result{Records: []Record{}, Prompt: instruction + "\n\nSource material:\n" + inputs[a.TextInput].(string)}
+	return Result{Inputs: maps.Clone(inputs), Records: []Record{}, Prompt: instruction + "\n\nSource material:\n" + inputs[a.TextInput].(string)}
 }
 func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result, error) {
 	var out Result
@@ -232,7 +235,7 @@ func (s *Service) Invoke(ctx context.Context, id string, req Invocation) (Result
 		original := req
 		now := s.now()
 		if date, _, ok := strings.Cut(req.Confirm, "."); ok {
-			reviewed, err := time.ParseInLocation(time.DateOnly, date, now.Location())
+			reviewed, err := time.Parse(time.DateOnly, date)
 			if err != nil {
 				return ErrConflict
 			}

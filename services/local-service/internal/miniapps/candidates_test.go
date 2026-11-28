@@ -26,6 +26,10 @@ func TestCandidatesDetectSavedAndRepeatedContentIncludingArchive(t *testing.T) {
 	write := Invocation{Action: "review.archive", Surface: "page", OperationID: "archive", Inputs: map[string]any{}, Records: []RecordRef{{ID: saved.ID, Revision: saved.Revision}}}
 	write.Confirm = call(t, service, book.ID, write).Confirmation
 	call(t, service, book.ID, write)
+	archived := call(t, service, book.ID, read("review.listArchived")).Records
+	if len(archived) != 1 || archived[0].ID != saved.ID || archived[0].Fields["archived"] != true {
+		t.Fatal("duplicate fixture was not archived", archived)
+	}
 	req := CandidateCheckRequest{ExpectedRevision: book.Revision, Action: "review.suggestQuestions", Surface: "page", Items: []map[string]any{
 		{"question": saved.Fields["question"], "answer": saved.Fields["answer"]},
 		{"question": "New question", "answer": "A new answer"},

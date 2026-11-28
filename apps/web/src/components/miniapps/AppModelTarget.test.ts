@@ -3,6 +3,7 @@ import { loopbackEndpoint } from "./AppModelTarget";
 
 test.each([
   ["http://localhost:11434/v1", true],
+  ["http://localhost.:11434/v1", true],
   ["http://127.0.0.1:11434/v1", true],
   ["http://127.31.4.8/v1", true],
   ["http://[::1]:11434/v1", true],

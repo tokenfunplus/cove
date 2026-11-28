@@ -43,6 +43,13 @@ func (s *Server) appBrowserStep(w http.ResponseWriter, r *http.Request, step str
 	s.apps.InstanceChanges.Lock()
 	defer s.apps.InstanceChanges.Unlock()
 	if err := s.apps.CheckCapability(ctx, id, "ai.generate"); err != nil {
+		if step == "settle" {
+			if accepted, ackErr := model.AcknowledgeAppBrowserSettlement(ctx, id, task, session.ID, in); ackErr == nil && accepted {
+				w.Header().Set("Cache-Control", "no-store")
+				appReply(w, nil, nil)
+				return
+			}
+		}
 		appReply(w, nil, err)
 		return
 	}

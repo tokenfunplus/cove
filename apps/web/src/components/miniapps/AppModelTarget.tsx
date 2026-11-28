@@ -4,7 +4,8 @@ import {
   providerCatalogQueryOptions,
   useProviders,
 } from "@/api/hooks/useProviders";
-import { labelStyle, selectStyle } from "./presentation";
+import { ErrorMessage, labelStyle, selectStyle } from "./presentation";
+import { Button } from "@/components/ui/button";
 
 export function useAppModelTarget(
   localRequired: boolean,
@@ -30,7 +31,8 @@ export function useAppModelTarget(
     catalog,
     policyLocal,
     profile,
-    model,
+    model:
+      !catalog.isError && catalog.data?.models.includes(model) ? model : "",
     setModel,
     setLocalOnly,
     setProvider,
@@ -120,16 +122,32 @@ export function AppModelTarget({
           </select>
         </label>
       )}
+      {profile && catalog.isError && (
+        <div>
+          <ErrorMessage error={catalog.error} />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={catalog.isFetching}
+            onClick={() => void catalog.refetch()}
+          >
+            Retry model list
+          </Button>
+        </div>
+      )}
     </>
   );
 }
 
 export function loopbackEndpoint(endpoint: string) {
   try {
-    const host = new URL(endpoint).hostname.toLowerCase();
-    return host === "localhost" || host === "[::1]" ||
+    const host = new URL(endpoint).hostname.toLowerCase().replace(/\.$/, "");
+    return (
+      host === "localhost" ||
+      host === "[::1]" ||
       /^127(?:\.\d{1,3}){3}$/.test(host) ||
-      /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(host);
+      /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(host)
+    );
   } catch {
     return false;
   }

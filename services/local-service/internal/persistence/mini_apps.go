@@ -141,7 +141,13 @@ func (s *MiniAppStore) QueryAppRecords(instance, collection string, filter AppRe
 		if predicate.Field == "$id" {
 			query += " AND id " + op + " ?"
 		} else {
-			query += " AND json_extract(CAST(fields AS TEXT),?) " + op + " ?"
+			field := "json_extract(CAST(fields AS TEXT),?)"
+			if _, numeric := predicate.Value.(float64); numeric {
+				// JSON may encode a rounded float as integer digits. Compare it
+				// using the same float64 representation as the Go interpreter.
+				field = "CAST(" + field + " AS REAL)"
+			}
+			query += " AND " + field + " " + op + " ?"
 			args = append(args, "$."+predicate.Field)
 		}
 		args = append(args, predicate.Value)

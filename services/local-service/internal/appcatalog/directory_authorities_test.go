@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFollowingDefaultsSurvivesUpdatesWithoutOverridingCustomOrBundledChoices(t *testing.T) {
@@ -70,9 +71,11 @@ func TestDirectoryVersionHistoriesAreScopedToTheirSigningAuthority(t *testing.T)
 	other := []byte(strings.Replace(string(original), "First notes", "Second notes", 1))
 	unique := []byte(`{"publisher":"second-author","app":"other","name":"Other","version":"1.0.0","schema_version":1}`)
 	bodies := map[string]string{a.URL: signedTestIndex(t, keyA, 9, original), b.URL: signedTestIndex(t, keyB, 2, other, unique)}
+	calls := 0
 	prior := http.DefaultTransport
 	defer func() { http.DefaultTransport = prior }()
 	http.DefaultTransport = catalogTransport(func(r *http.Request) (*http.Response, error) {
+		calls++
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(bodies[r.URL.String()])), Header: make(http.Header), Request: r}, nil
 	})
 	path := filepath.Join(t.TempDir(), "catalog.json")
@@ -102,14 +105,19 @@ func TestDirectoryVersionHistoriesAreScopedToTheirSigningAuthority(t *testing.T)
 	if _, err := d.List(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	d.cachedUntil = d.cachedUntil.Add(-100000000000)
+	d.cachedUntil = time.Time{}
 	bodies[a.URL] = signedTestIndex(t, keyA, 10, other)
 	if _, err := d.List(t.Context()); err == nil {
 		t.Fatal("same signer was allowed to rewrite a published version")
 	}
 	bodies[a.URL] = signedTestIndex(t, keyA, 8, original)
+	d.cachedUntil = time.Time{}
+	beforeRollback := calls
 	if _, err := d.List(t.Context()); err == nil {
 		t.Fatal("switching signers erased rollback protection")
+	}
+	if calls != beforeRollback+1 {
+		t.Fatal("rollback check reused a cached failure instead of fetching sequence 8", calls)
 	}
 }
 

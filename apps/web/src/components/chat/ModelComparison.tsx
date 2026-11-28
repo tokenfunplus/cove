@@ -61,6 +61,7 @@ export function ModelComparisonResultGrid({
       aria-label={copy.modelComparison}
       className={comparisonStyles.modelComparisonGrid}
       data-generation-batch={batch.id}
+      data-app-selection-source={batch.conversation_id}
     >
       <div className={comparisonStyles.modelComparisonGrid_cards}>
         {[...batch.targets]
@@ -226,6 +227,7 @@ export function LiveModelComparisonGrid({
         "model-comparison-grid--live",
       )}
       data-generation-batch={batch?.id}
+      data-app-selection-source={batch?.conversation_id}
     >
       <div className={comparisonStyles.modelComparisonGrid_cards}>
         {targets.map((target, index) => {

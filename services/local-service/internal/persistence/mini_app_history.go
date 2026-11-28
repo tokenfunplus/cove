@@ -76,7 +76,7 @@ type AppActivity struct {
 }
 
 func (tx *MiniAppStore) RecordActivity(instance, operation, release, action, surface, status string) error {
-	_, err := tx.tx.ExecContext(tx.ctx, `INSERT INTO mini_app_activity VALUES(?,?,?,?,?,?,unixepoch()) ON CONFLICT(instance_id,operation_id) DO UPDATE SET status=excluded.status,created_at=excluded.created_at`, instance, operation, release, action, surface, status)
+	_, err := tx.tx.ExecContext(tx.ctx, `INSERT INTO mini_app_activity VALUES(?,?,?,?,?,?,unixepoch()) ON CONFLICT(instance_id,operation_id) DO UPDATE SET status=excluded.status,created_at=excluded.created_at WHERE excluded.status!='prepared' OR mini_app_activity.status='prepared'`, instance, operation, release, action, surface, status)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (tx *MiniAppStore) RecordActivity(instance, operation, release, action, sur
 	return err
 }
 func (s *SQLiteStore) AppActivity(ctx context.Context, id string) ([]AppActivity, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT operation_id,release_id,action,surface,status,created_at FROM mini_app_activity WHERE instance_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100`, id)
+	rows, err := s.db.QueryContext(ctx, `SELECT operation_id,release_id,action,surface,status,created_at FROM mini_app_activity WHERE instance_id=? AND created_at>=unixepoch()-604800 ORDER BY created_at DESC,rowid DESC LIMIT 100`, id)
 	if err != nil {
 		return nil, err
 	}

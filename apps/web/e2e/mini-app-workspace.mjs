@@ -18,6 +18,15 @@ export async function runMiniAppWorkspace({
     catalog.packages.map((entry) => entry.publisher + "/" + entry.app),
   ).size;
   const before = (await api("/api/mini-apps/instances")).instances;
+  const installedReleases = (await api("/api/mini-apps/packages")).packages;
+  const eligibleCopies = before.filter((book) =>
+    installedReleases.some((release) =>
+      release.id === book.release_id &&
+      release.origin !== "local" &&
+      release.package.publisher === "cove" &&
+      release.package.app === "japanese-review-book",
+    ),
+  );
   await goto("/apps?section=catalog");
   await until(
     "document.querySelectorAll('#mini-app-catalog article[data-app]').length===" +
@@ -97,41 +106,36 @@ export async function runMiniAppWorkspace({
   await until(
     "new URLSearchParams(location.search).get('version')==='1.1.0' && Array.from(document.querySelectorAll('button')).some(element=>['Get app','Open app','Choose a copy'].includes(element.textContent.trim()) && !element.disabled)",
   );
-  const installedAction = await evaluate(
-    "Array.from(document.querySelectorAll('button')).find(element=>['Open app','Choose a copy'].includes(element.textContent.trim()))?.textContent.trim()",
+  const detailAction = await evaluate(
+    "Array.from(document.querySelectorAll('button')).find(element=>['Get app','Open app','Choose a copy'].includes(element.textContent.trim()))?.textContent.trim()",
   );
-  if (installedAction) {
-    const releases = (await api("/api/mini-apps/packages")).packages;
-    const copy = before.find((book) =>
-      releases.some(
-        (release) =>
-          release.id === book.release_id &&
-          release.package.publisher === "cove" &&
-          release.package.app === "japanese-review-book" &&
-          release.package.version === "1.1.0",
-      ),
-    );
-    assert(copy, "An exact installed version has an existing data owner");
-    await button(installedAction);
-    if (installedAction === "Choose a copy") await button(copy.name);
-    await until("location.pathname===" + JSON.stringify("/apps/" + copy.id));
-    assert.equal(
-      (await api("/api/mini-apps/instances/" + copy.id)).instance.id,
-      copy.id,
-    );
-    await goto(
-      "/apps?section=catalog&app=cove%2Fjapanese-review-book&version=1.1.0",
-    );
-    await button("Create another copy");
-  } else {
-    await button("Get app");
-  }
+  const exactCopies = eligibleCopies.filter((book) =>
+    installedReleases.find((release) => release.id === book.release_id)?.package.version === "1.1.0",
+  );
+  assert(exactCopies.length, "The preceding upgrade created a saved 1.1.0 copy");
+  assert.equal(
+    detailAction,
+    eligibleCopies.length === 1 ? "Open app" : "Choose a copy",
+    "The saved inventory determines how existing copies are opened",
+  );
+  const copy = exactCopies[0];
+  await button(detailAction);
+  if (detailAction === "Choose a copy") await button(copy.name);
+  await until("location.pathname===" + JSON.stringify("/apps/" + copy.id));
+  assert.equal(
+    (await api("/api/mini-apps/instances/" + copy.id)).instance.id,
+    copy.id,
+  );
+  await goto(
+    "/apps?section=catalog&app=cove%2Fjapanese-review-book&version=1.1.0",
+  );
+  await button("Create another copy");
   await until(
     "!!document.querySelector('section[aria-label=" +
       JSON.stringify("Choose app access") +
       "]')",
   );
-  await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true);
+  await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true, "mini-app-workspace-install-scroll-bottom");
   await button("Cancel");
   assert.deepEqual(
     (await api("/api/mini-apps/instances")).instances,

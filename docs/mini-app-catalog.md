@@ -80,3 +80,11 @@ New verification keys use canonical single-line base64. Earlier persisted aliase
 of the same Ed25519 key are normalized when preferences are opened. Their highest
 rollback checkpoint is retained, and conflicting same-sequence indexes or package
 versions remain rejected; normalization never blesses an arbitrary alias's bytes.
+
+Installation is bound to the reviewed source. A catalog install supplies both the
+entry's `digest` and `catalog_authority` (empty for bundled entries). A file
+install first previews the exact bytes, then sends that response's release ID
+and digest in `X-Cove-Release-ID` and `X-Cove-Package-Digest`. If the source,
+signer, attestation, or bytes change between preview and installation, the host
+returns 409 and requires a fresh review. Reusing identical bytes from another
+signing authority does not transfer its update lineage.

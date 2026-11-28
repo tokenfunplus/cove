@@ -40,11 +40,7 @@ export default function AppTurnAnswer({
         .replace(/^(?:Suggestion:|Suggested:|Proposed action:)\s*/, "")
         .replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, "$1"),
     );
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      "action" in parsed
-    )
+    if (parsed && typeof parsed === "object" && "action" in parsed)
       candidate = parsed as { action?: string; inputs?: MiniAppFields };
   } catch {}
   const ordinary = !candidate;
@@ -122,7 +118,9 @@ export default function AppTurnAnswer({
       ) : (
         <p>This reply has no usable verified app action.</p>
       );
-    proposal = verifiedGeneration ? verified.data!.proposal! : JSON.parse(body);
+    proposal = verifiedGeneration
+      ? verified.data!.proposal!
+      : (candidate as { action: string; inputs: MiniAppFields });
     if (
       !scope.actions.includes(proposal.action) ||
       !pkg.actions[proposal.action] ||

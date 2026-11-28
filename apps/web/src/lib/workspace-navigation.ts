@@ -41,6 +41,17 @@ export function ensureWorkspaceEntry(rebase = false) {
   return entry;
 }
 
+/** Stamp a newly created native fragment entry without breaking its lineage. */
+export function trackWorkspaceFragment(previous: WorkspaceEntry) {
+  const entry = {
+    ...previous,
+    index: previous.index + 1,
+    key: crypto.randomUUID(),
+  };
+  window.history.replaceState(withEntry(window.history.state, entry), "");
+  return entry;
+}
+
 const workspaceEvents = new WeakSet<Event>();
 export const isWorkspaceNavigation = (event: Event) =>
   workspaceEvents.has(event);

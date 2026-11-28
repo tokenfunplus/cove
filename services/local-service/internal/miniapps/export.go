@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"reflect"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -73,7 +74,7 @@ func decodeBackup(raw []byte) (Backup, error) {
 		return b, invalid("backup size or encoding")
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	if err := scanJSON(dec, 0); err != nil {
+	if err := scanTypedJSON(dec, 0, reflect.TypeFor[Backup]()); err != nil {
 		return b, invalid("malformed or ambiguous backup")
 	}
 	if _, err := dec.Token(); err != io.EOF {

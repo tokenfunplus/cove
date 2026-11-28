@@ -337,6 +337,10 @@ func (s *Service) Upgrade(ctx context.Context, id string, req UpgradeRequest) (I
 	return i, err
 }
 func migrate(tx *persistence.MiniAppStore, id string, old, next Package, now time.Time) error {
+	size, err := tx.InstanceRecordBytes(id)
+	if err != nil {
+		return err
+	}
 	// v1 permits additive fields with explicit defaults. Retyping or dropping
 	// data requires a future migration contract and leaves existing data intact.
 	defaults := map[string]map[string]any{}
@@ -354,7 +358,11 @@ func migrate(tx *persistence.MiniAppStore, id string, old, next Package, now tim
 				defaults[col] = map[string]any{}
 			}
 			for k, x := range fields {
-				defaults[col][k] = resolve(x, nil, now)
+				// Later defaults leave an already materialized value intact,
+				// including when several schema transitions run in one upgrade.
+				if _, exists := defaults[col][k]; !exists {
+					defaults[col][k] = resolve(x, nil, now)
+				}
 			}
 		}
 	}
@@ -383,10 +391,22 @@ func migrate(tx *persistence.MiniAppStore, id string, old, next Package, now tim
 			return err
 		}
 		for _, row := range rows {
+			before, err := json.Marshal(row.Fields)
+			if err != nil {
+				return err
+			}
 			for k, x := range defaults[col] {
 				if _, exists := row.Fields[k]; !exists {
 					row.Fields[k] = x
 				}
+			}
+			after, err := json.Marshal(row.Fields)
+			if err != nil {
+				return err
+			}
+			size += len(after) - len(before)
+			if size > 16<<20 {
+				return invalid("upgraded instance exceeds storage limit")
 			}
 			row.Revision++
 			if err := saveRecord(tx, id, col, row); err != nil {

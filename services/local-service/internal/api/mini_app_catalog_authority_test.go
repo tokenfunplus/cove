@@ -35,6 +35,9 @@ func TestCatalogUpgradeRemainsBoundToItsOriginalSigner(t *testing.T) {
 	old, _ := json.Marshal(pkg)
 	pkg.Version = "1.1.0"
 	next, _ := json.Marshal(pkg)
+	pkg.Version = "1.2.0"
+	pending, _ := json.Marshal(pkg)
+	pkg.Version = "1.1.0"
 	pkg.Description = "A different signing authority's package."
 	other, _ := json.Marshal(pkg)
 	sign := func(key ed25519.PrivateKey, packages ...[]byte) []byte {
@@ -45,7 +48,7 @@ func TestCatalogUpgradeRemainsBoundToItsOriginalSigner(t *testing.T) {
 		envelope, _ := json.Marshal(map[string][]byte{"payload": payload, "signature": ed25519.Sign(key, payload)})
 		return envelope
 	}
-	signedA, signedB := sign(keyA, old, next), sign(keyB, other)
+	signedA, signedB := sign(keyA, old, next, pending), sign(keyB, old, other, pending)
 	var networkCalls atomic.Int64
 	remote := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		networkCalls.Add(1)
@@ -73,10 +76,12 @@ func TestCatalogUpgradeRemainsBoundToItsOriginalSigner(t *testing.T) {
 	defer store.Close()
 	server := NewServer(Config{LaunchToken: "launch-token", AppCatalog: directory, Store: store})
 	token, csrf := launchBrowserSession(t, server)
-	call := func(method, path string, body any, want int) []byte {
+	call := func(method, path string, body any, want int, reviewed ...miniapps.Release) []byte {
 		t.Helper()
 		var raw []byte
-		if body != nil {
+		if exact, ok := body.(json.RawMessage); ok {
+			raw = exact
+		} else if body != nil {
 			raw, err = json.Marshal(body)
 			if err != nil {
 				t.Fatal(err)
@@ -87,6 +92,10 @@ func TestCatalogUpgradeRemainsBoundToItsOriginalSigner(t *testing.T) {
 		request.Header.Set("X-Cove-Session-Token", token)
 		request.Header.Set("X-Cove-CSRF-Token", csrf)
 		request.Header.Set("Content-Type", "application/json")
+		if len(reviewed) > 0 {
+			request.Header.Set("X-Cove-Release-ID", reviewed[0].ID)
+			request.Header.Set("X-Cove-Package-Digest", reviewed[0].Digest)
+		}
 		response := httptest.NewRecorder()
 		server.Handler().ServeHTTP(response, request)
 		if response.Code != want {
@@ -96,7 +105,7 @@ func TestCatalogUpgradeRemainsBoundToItsOriginalSigner(t *testing.T) {
 	}
 	install := func(version string, raw []byte) miniapps.Release {
 		sum := sha256.Sum256(raw)
-		result := call("POST", "/catalog/alice/notes/"+version+"/install", map[string]string{"digest": hex.EncodeToString(sum[:])}, 200)
+		result := call("POST", "/catalog/alice/notes/"+version+"/install", map[string]string{"digest": hex.EncodeToString(sum[:]), "catalog_authority": appcatalog.Authority(server.catalog.Config().PublicKey)}, 200)
 		var release miniapps.Release
 		if err := json.Unmarshal(result, &release); err != nil {
 			t.Fatal(err)
@@ -122,6 +131,12 @@ func TestCatalogUpgradeRemainsBoundToItsOriginalSigner(t *testing.T) {
 	if networkCalls.Load() != requestsBeforePreview || downloaded.CatalogAuthority != initial.CatalogAuthority || !downloaded.OfficialCatalog {
 		t.Fatal("downloaded file lost cached signer provenance", downloaded)
 	}
+	var reviewedFile miniapps.Release
+	if err := json.Unmarshal(call("POST", "/packages/preview", json.RawMessage(pending), 200), &reviewedFile); err != nil {
+		t.Fatal(err)
+	}
+	call("POST", "/packages/install", json.RawMessage(pending), 409)
+	call("POST", "/packages/install", json.RawMessage(append(append([]byte{}, pending...), '\n')), 409, reviewedFile)
 	var book miniapps.Instance
 	if err := json.Unmarshal(call("POST", "/instances", miniapps.CreateRequest{ReleaseID: initial.ID, Name: "My notes", Grants: initial.Package.Capabilities}, 200), &book); err != nil {
 		t.Fatal(err)
@@ -160,6 +175,29 @@ func TestCatalogUpgradeRemainsBoundToItsOriginalSigner(t *testing.T) {
 	before := call("GET", "/instances/"+book.ID+"/export", nil, 200)
 	call("PUT", "/catalog-settings", map[string]any{"url": configB.URL, "public_key": configB.PublicKey}, 409)
 	call("PUT", "/catalog-settings", map[string]any{"url": configB.URL, "public_key": configB.PublicKey, "confirm_trust": true, "previous": configA}, 200)
+	// Both authorities offer identical bytes. A review from another window must
+	// still fail after settings switch, rather than adopting the new signer.
+	packagesBefore := call("GET", "/packages", nil, 200)
+	call("POST", "/packages/install", json.RawMessage(pending), 409, reviewedFile)
+	// The new directory no longer attests this other reviewed version at all.
+	call("POST", "/packages/install", json.RawMessage(next), 409, downloaded)
+	call("POST", "/catalog/alice/notes/1.0.0/install", map[string]string{"digest": initial.Digest, "catalog_authority": initial.CatalogAuthority}, 409)
+	call("POST", "/catalog/alice/notes/1.0.0/install", map[string]string{"digest": initial.Digest}, 409)
+	if after := call("GET", "/packages", nil, 200); !bytes.Equal(packagesBefore, after) {
+		t.Fatal("rejected stale preview created a release")
+	}
+	var refreshedFile miniapps.Release
+	if err := json.Unmarshal(call("POST", "/packages/preview", json.RawMessage(pending), 200), &refreshedFile); err != nil {
+		t.Fatal(err)
+	}
+	if refreshedFile.ID == reviewedFile.ID || refreshedFile.CatalogAuthority != appcatalog.Authority(configB.PublicKey) {
+		t.Fatal("file preview did not bind the replacement authority", refreshedFile)
+	}
+	call("POST", "/packages/install", json.RawMessage(pending), 200, refreshedFile)
+	refreshed := install("1.0.0", old)
+	if refreshed.ID == initial.ID || refreshed.CatalogAuthority != appcatalog.Authority(configB.PublicKey) {
+		t.Fatal("fresh review did not bind the selected authority", refreshed)
+	}
 	foreign := install("1.1.0", other)
 	if foreign.CatalogAuthority != appcatalog.Authority(configB.PublicKey) || foreign.OfficialCatalog {
 		t.Fatal("custom provenance was relabeled official", foreign)

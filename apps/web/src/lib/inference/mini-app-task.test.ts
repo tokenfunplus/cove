@@ -72,6 +72,8 @@ test("app verification claims the authorized prompt, exposes no interim answer a
     ),
   ).toBe(true);
   expect(new Set(steps.map((step) => step.data.claim_id)).size).toBe(1);
+  expect(steps[0].data.claim_id).toEqual(expect.any(String));
+  expect(steps[0].data.claim_id.length).toBeGreaterThan(0);
   for (const step of steps.filter((step) => step.path.endsWith("/progress")))
     expect(step.data).not.toHaveProperty("body");
   expect(steps.at(-1)?.data).toMatchObject({
@@ -80,12 +82,25 @@ test("app verification claims the authorized prompt, exposes no interim answer a
   });
 });
 test("a rejected app claim never opens model transport", async () => {
-  vi.mocked(request).mockRejectedValueOnce(new Error("Already claimed"));
+  vi.mocked(request)
+    .mockResolvedValue(undefined)
+    .mockRejectedValueOnce(new Error("Already claimed"));
   const load = vi.fn();
   await expect(
     runVerifiedAppTask("book", "task", new AbortController().signal, load),
   ).rejects.toThrow("Already claimed");
   expect(load).not.toHaveBeenCalled();
+  const calls = vi.mocked(request).mock.calls;
+  expect(calls).toHaveLength(2);
+  const claim = JSON.parse(calls[0][1]!.body as string);
+  expect(calls[1][0]).toBe(
+    "/api/mini-apps/instances/book/tasks/task/browser/settle",
+  );
+  expect(JSON.parse(calls[1][1]!.body as string)).toMatchObject({
+    claim_id: claim.claim_id,
+    body: "",
+    verification: { status: "failed" },
+  });
 });
 
 function verifiedTransport() {

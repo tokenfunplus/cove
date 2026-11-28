@@ -85,8 +85,11 @@ function ProposalForm({
   const { poll, task } = useAppTaskStatus(instance.id, recent, "proposal");
   const busy = task?.state === "running";
   const pendingById = new Map<string, AppTask>();
-  for (const job of [task, history.data])
-    if (job && taskNeedsSave(job)) pendingById.set(job.id, job);
+  for (const job of [history.data, task]) {
+    if (!job) continue;
+    if (taskNeedsSave(job)) pendingById.set(job.id, job);
+    else if (job.state !== "running") pendingById.delete(job.id);
+  }
   const pendingSaves = [...pendingById.values()];
   const savePending = pendingSaves.length > 0;
   const start = useMutation({
@@ -228,7 +231,12 @@ function ProposalForm({
           target.catalog.error
         }
       />
-      {!savePending && <AppTaskSaveBlockedNotice error={start.error} />}
+      {!savePending && (
+        <AppTaskSaveBlockedNotice
+          error={start.error}
+          onCleared={() => start.reset()}
+        />
+      )}
       {poll.isError && (
         <Button size="sm" variant="outline" onClick={() => void poll.refetch()}>
           Retry status

@@ -218,7 +218,10 @@ export const miniApps = {
     inventoryMutation(
       request<MiniAppRelease>(
         releaseURL(entry) + "/install",
-        post({ digest: entry.digest }),
+        post({
+          digest: entry.digest,
+          catalog_authority: entry.catalog_authority ?? "",
+        }),
       ),
     ),
   validateDraft: (raw: string) =>
@@ -226,9 +229,22 @@ export const miniApps = {
       ...post({}),
       body: raw,
     }),
-  localPackage: (raw: string, operation: "preview" | "install") => {
+  localPackage: (
+    raw: string,
+    operation: "preview" | "install",
+    reviewed?: Pick<MiniAppRelease, "id" | "digest">,
+  ) => {
     const result = request<MiniAppRelease>(root + "/packages/" + operation, {
       ...post({}),
+      headers: {
+        "Content-Type": "application/json",
+        ...(operation === "install" && reviewed
+          ? {
+              "X-Cove-Release-ID": reviewed.id,
+              "X-Cove-Package-Digest": reviewed.digest,
+            }
+          : {}),
+      },
       body: raw,
     });
     return operation === "install" ? inventoryMutation(result) : result;
@@ -364,6 +380,7 @@ export const miniApps = {
 };
 
 export interface AppTask {
+  release_id?: string;
   pending_save?: boolean;
   inputs?: MiniAppFields;
   destination?: string;

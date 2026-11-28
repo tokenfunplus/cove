@@ -113,16 +113,37 @@ func (s *Service) ProgressAppBrowser(instance, id, owner, claim, phase string) e
 	b.phase = phase
 	return nil
 }
+func appBrowserReceipt(instance, id, owner string, input DebateBrowserResult) (string, error) {
+	encoded, err := json.Marshal(input)
+	if err != nil {
+		return "", ErrAppVerification
+	}
+	sum := sha256.Sum256(append([]byte(instance+"/"+id+"/"+owner+"/"), encoded...))
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// Acknowledgement reads only an exact, already committed receipt. It cannot
+// restore a grant, accept new output, or start browser work after revocation.
+func (s *Service) AcknowledgeAppBrowserSettlement(ctx context.Context, instance, id, owner string, input DebateBrowserResult) (bool, error) {
+	store, ok := s.store.(browserAppStore)
+	if !ok {
+		return false, ErrAppBrowserModel
+	}
+	receipt, err := appBrowserReceipt(instance, id, owner, input)
+	if err != nil {
+		return false, err
+	}
+	return store.AppBrowserSettlement(ctx, instance, id, receipt)
+}
+
 func (s *Service) SettleAppBrowser(ctx context.Context, instance, id, owner string, input DebateBrowserResult) error {
 	w := &s.appTask
 	w.Lock()
 	defer w.Unlock()
-	encoded, err := json.Marshal(input)
+	receipt, err := appBrowserReceipt(instance, id, owner, input)
 	if err != nil {
-		return ErrAppVerification
+		return err
 	}
-	sum := sha256.Sum256(append([]byte(instance+"/"+id+"/"+owner+"/"), encoded...))
-	receipt := hex.EncodeToString(sum[:])
 	accepted, err := s.store.(browserAppStore).AppBrowserSettlement(ctx, instance, id, receipt)
 	if err != nil {
 		return err

@@ -90,6 +90,7 @@ export function AppSettings({
     retry: false,
     mutationFn: () => miniApps.remove(instance.id),
     onSuccess: () => {
+      cache.setQueryData<{ instances: MiniAppInstance[] }>(appKeys.instances, (data) => data && ({ instances: data.instances.filter((item) => item.id !== instance.id) }));
       removed();
       void cache.invalidateQueries({ queryKey: appKeys.instances });
     },
@@ -120,8 +121,11 @@ export function AppSettings({
     retry: false,
     mutationFn: async () => {
       if (upgrading)
-        await miniApps.upgrade(instance, releaseId, grants, cloudEnabled);
-      else await miniApps.settings(instance, enabled, grants, cloudEnabled);
+        return miniApps.upgrade(instance, releaseId, grants, cloudEnabled);
+      return miniApps.settings(instance, enabled, grants, cloudEnabled);
+    },
+    onSuccess: (saved) => {
+      cache.setQueryData<{ instances: MiniAppInstance[] }>(appKeys.instances, (data) => data && ({ instances: data.instances.map((item) => item.id === saved.id ? saved : item) }));
     },
     onSettled: () => cache.invalidateQueries({ queryKey: appKeys.instances }),
   });

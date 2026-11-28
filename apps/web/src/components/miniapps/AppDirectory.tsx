@@ -76,6 +76,7 @@ export function AppDirectory({
   const section = requestedSection ?? localSection;
   const file = useRef<HTMLInputElement>(null);
   const backupFile = useRef<HTMLInputElement>(null);
+  const previewRequest = useRef(0);
   const cache = useQueryClient();
   const [backup, setBackup] = useState<File>();
   const [search, setSearch] = useState("");
@@ -90,6 +91,7 @@ export function AppDirectory({
   const contains = (...values: (string | undefined)[]) =>
     !term || values.some((value) => value?.toLocaleLowerCase().includes(term));
   function changeSection(next: DirectorySection) {
+    previewRequest.current++;
     setPreview(undefined);
     setSearch("");
     setLocalDetail(undefined);
@@ -97,6 +99,8 @@ export function AppDirectory({
     else setLocalSection(next);
   }
   function showDetail(entry: CatalogEntry, replace = false) {
+    previewRequest.current++;
+    setPreview(undefined);
     if (navigate)
       navigate(
         "/apps?" +
@@ -124,6 +128,14 @@ export function AppDirectory({
   });
   const installed = releases.data?.packages ?? [];
   const allBooks = instances.data?.instances ?? [];
+  const catalogCopies = (entry: CatalogEntry) => allBooks.filter((book) =>
+    installed.some((release) =>
+      release.id === book.release_id &&
+      release.origin !== "local" &&
+      release.package.publisher === entry.publisher &&
+      release.package.app === entry.app,
+    ),
+  );
   const books = allBooks.filter(
     (book) =>
       !target ||
@@ -152,11 +164,15 @@ export function AppDirectory({
   const detailName = params.get("app");
   const detailVersion = params.get("version");
   useEffect(() => {
+    previewRequest.current++;
     setPreview(undefined);
   }, [requestedSection, detailName, detailVersion]);
   useEffect(() => {
     if (!navigate) return;
-    const leaveReview = () => setPreview(undefined);
+    const leaveReview = () => {
+      previewRequest.current++;
+      setPreview(undefined);
+    };
     window.addEventListener("popstate", leaveReview);
     return () => window.removeEventListener("popstate", leaveReview);
   }, [navigate]);
@@ -208,6 +224,8 @@ export function AppDirectory({
           source: {
             kind: "local",
             raw,
+            release_id: release.id,
+            digest: release.digest,
             origin: release.origin,
             catalog_authority: release.catalog_authority,
             official_catalog: release.official_catalog,
@@ -222,8 +240,15 @@ export function AppDirectory({
             : (await miniApps.localPackage(source.raw, "preview")).package;
       return { pkg, source };
     },
-    onSuccess: setPreview,
   });
+  function inspectPackage(source: PackageSource | File) {
+    const token = ++previewRequest.current;
+    inspect.mutate(source, {
+      onSuccess: (result) => {
+        if (previewRequest.current === token) setPreview(result);
+      },
+    });
+  }
   const error = instances.error ?? releases.error;
   const navigation = !target && (
     <div className="flex items-center justify-between gap-4 border-b border-border">
@@ -351,7 +376,7 @@ export function AppDirectory({
         onChange={(event) => {
           const chosen = event.target.files?.[0];
           event.target.value = "";
-          if (chosen) inspect.mutate(chosen);
+          if (chosen) inspectPackage(chosen);
         }}
       />
       <FileInput
@@ -467,7 +492,7 @@ export function AppDirectory({
                 <Button
                   key={release.id}
                   variant="outline"
-                  onClick={() => inspect.mutate({ kind: "installed", release })}
+                  onClick={() => inspectPackage({ kind: "installed", release })}
                 >
                   <Plus />
                   New instance
@@ -487,34 +512,13 @@ export function AppDirectory({
             selected={detail}
             select={(entry) => showDetail(entry, true)}
             back={() => changeSection("catalog")}
-            copies={allBooks.filter((book) =>
-              installed.some(
-                (release) =>
-                  release.id === book.release_id &&
-                  release.digest === detail.digest &&
-                  matches(release.package, detail),
-              ),
-            )}
+            copies={catalogCopies(detail)}
             openCopy={(id) => open(id)}
-            install={(pkg, entry, separate) => {
-              const existing = separate
-                ? (installed.find(
-                    (release) =>
-                      release.origin !== "local" &&
-                      release.digest === entry.digest &&
-                      matches(release.package, entry),
-                  ) ??
-                  installed.find(
-                    (release) =>
-                      release.digest === entry.digest &&
-                      matches(release.package, entry),
-                  ))
-                : undefined;
+            install={(pkg, entry) => {
+              previewRequest.current++;
               setPreview({
                 pkg,
-                source: existing
-                  ? { kind: "installed", release: existing }
-                  : { kind: "catalog", entry },
+                source: { kind: "catalog", entry },
               });
             }}
           />
@@ -604,7 +608,7 @@ export function AppDirectory({
                       <Button
                         disabled={inspect.isPending}
                         onClick={() =>
-                          inspect.mutate({
+                          inspectPackage({
                             kind: "catalog",
                             entry: versions[0],
                           })
@@ -618,33 +622,16 @@ export function AppDirectory({
                       key={versions[0].publisher + "/" + versions[0].app}
                       versions={versions}
                       view={showDetail}
+                      installPending={inspect.isPending}
                       install={(entry) =>
-                        inspect.mutate({ kind: "catalog", entry })
+                        inspectPackage({ kind: "catalog", entry })
                       }
                       openInstalled={() => {
-                        const copies = allBooks.filter((book) =>
-                          installed.some(
-                            (release) =>
-                              release.id === book.release_id &&
-                              release.origin !== "local" &&
-                              release.package.publisher ===
-                                versions[0].publisher &&
-                              release.package.app === versions[0].app,
-                          ),
-                        );
+                        const copies = catalogCopies(versions[0]);
                         if (copies.length === 1) open(copies[0].id);
                         else showDetail(versions[0]);
                       }}
-                      installed={allBooks.some((book) =>
-                        installed.some(
-                          (release) =>
-                            release.id === book.release_id &&
-                            release.origin !== "local" &&
-                            release.package.publisher ===
-                              versions[0].publisher &&
-                            release.package.app === versions[0].app,
-                        ),
-                      )}
+                      installed={catalogCopies(versions[0]).length > 0}
                     />
                   ),
                 )}
@@ -710,12 +697,16 @@ export function AppDirectory({
             onChange={setPackageDraft}
             examples={entries.filter((entry) => entry.origin === "builtin")}
             preview={async (raw) => {
+              const token = ++previewRequest.current;
               const release = await miniApps.localPackage(raw, "preview");
+              if (previewRequest.current !== token) return;
               setPreview({
                 pkg: release.package,
                 source: {
                   kind: "local",
                   raw,
+                  release_id: release.id,
+                  digest: release.digest,
                   origin: release.origin,
                   catalog_authority: release.catalog_authority,
                   official_catalog: release.official_catalog,

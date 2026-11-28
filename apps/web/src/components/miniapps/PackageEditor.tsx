@@ -129,6 +129,7 @@ export function PackageEditor({
       <label className={labelStyle}>
         App package JSON
         <Textarea
+          disabled={load.isPending}
           spellCheck={false}
           rows={14}
           value={source}

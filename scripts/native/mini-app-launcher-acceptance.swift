@@ -102,7 +102,7 @@ private enum MiniAppLauncherAcceptance {
         let catalog = try await client.call(api + "/catalog")
         guard let entries = catalog["packages"] as? [[String: Any]], let book = entries.first(where: { $0["app"] as? String == "japanese-review-book" && $0["version"] as? String == "1.1.0" }),
               let digest = book["digest"] as? String,
-              let release = try await client.call(api + "/catalog/cove/japanese-review-book/1.1.0/install", body: ["digest": digest])["id"] as? String,
+              let release = try await client.call(api + "/catalog/cove/japanese-review-book/1.1.0/install", body: ["digest": digest, "catalog_authority": book["catalog_authority"] as? String ?? ""])["id"] as? String,
               let id = try await client.call(api + "/instances", body: ["release_id": release, "name": "Picker fixture", "grants": ["mac.files.pick", "mac.selection.receive", "ai.generate", "records.query", "records.commit"]])["id"] as? String
         else { throw FixtureFailure.mismatch }
         let instance = api + "/instances/" + id

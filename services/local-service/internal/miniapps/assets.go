@@ -30,6 +30,9 @@ func validateAssets(p Package) error {
 		if err != nil || "image/"+format != asset.MIME || cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > 2048 || cfg.Height > 2048 {
 			return invalid("image dimensions or format")
 		}
+		if _, _, err := image.Decode(bytes.NewReader(raw)); err != nil {
+			return invalid("image pixel data")
+		}
 	}
 	for _, page := range p.Pages {
 		if page.Image != "" {

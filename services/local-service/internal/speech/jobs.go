@@ -164,19 +164,17 @@ func (manager *Manager) Start(ctx context.Context, owner string, input Request) 
 	if input.PreserveOtherReadings {
 		// An app cannot interrupt a reading in Chat or discard its WAV download.
 		manager.mu.Lock()
-		foreign := 0
 		busy := false
 		for _, other := range manager.jobs {
 			if other.owner != owner {
-				foreign++
 				if other.State == "preparing" || other.State == "generating" {
 					busy = true
 				}
 			}
 		}
 		manager.mu.Unlock()
-		if busy || foreign >= 4 {
-			return JobStatus{}, errors.New("Another reading is in progress or awaiting playback. Finish it before starting this reading.")
+		if busy {
+			return JobStatus{}, errors.New("Another reading is in progress. Finish it before starting this reading.")
 		}
 	}
 	if err = manager.cancelMatching(ctx, func(job *Job) bool { return !input.PreserveOtherReadings || job.owner == owner }); err != nil {

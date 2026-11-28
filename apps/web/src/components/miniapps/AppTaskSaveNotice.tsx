@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { navigateWorkspace } from "@/lib/workspace-navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { miniApps, type AppTask } from "@/api/mini-apps";
@@ -108,7 +108,13 @@ export function AppTaskSaveNotice({
   );
 }
 
-export function AppTaskSaveBlockedNotice({ error }: { error: unknown }) {
+export function AppTaskSaveBlockedNotice({
+  error,
+  onCleared,
+}: {
+  error: unknown;
+  onCleared?: () => void;
+}) {
   const pending = taskSavePendingError(error);
   const activity = useQuery({
     queryKey: ["mini-app-host-activity"],
@@ -117,10 +123,21 @@ export function AppTaskSaveBlockedNotice({ error }: { error: unknown }) {
     retry: false,
     refetchInterval: pending ? 1500 : false,
   });
-  if (!pending) return null;
   const owner = activity.data?.activity.find(
     (item) => item.status === "save_failed",
   );
+  useEffect(() => {
+    if (pending && activity.isSuccess && !activity.isFetching && !owner)
+      onCleared?.();
+  }, [
+    pending,
+    activity.isSuccess,
+    activity.isFetching,
+    activity.dataUpdatedAt,
+    owner,
+    onCleared,
+  ]);
+  if (!pending) return null;
   return (
     <p role="alert" className="text-sm leading-relaxed text-muted-foreground">
       {owner

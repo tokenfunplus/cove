@@ -8,6 +8,7 @@ import (
 )
 
 type AppTask struct {
+	ReleaseID    string                  `json:"release_id,omitempty"`
 	PendingSave  bool                    `json:"pending_save,omitempty"`
 	Inputs       json.RawMessage         `json:"inputs,omitempty"`
 	Destination  string                  `json:"destination,omitempty"`
@@ -35,11 +36,11 @@ func (s *SQLiteStore) AppTask(ctx context.Context, instance, id string) (AppTask
 func (s *SQLiteStore) appTask(ctx context.Context, instance, id string, generationOnly bool) (AppTask, error) {
 	var t AppTask
 	var verification, snapshot, inputs string
-	query := "SELECT id,state,result,detail,fingerprint,verification,snapshot,coalesce(json_extract(request,'$.Target.input'),''),coalesce(json_extract(request,'$.Target.destination'),''),coalesce(json_extract(request,'$.Target.modelId'),'') FROM mini_app_tasks WHERE instance_id=? AND id=?"
+	query := "SELECT id,state,result,detail,fingerprint,verification,snapshot,coalesce(json_extract(request,'$.Target.input'),''),coalesce(json_extract(request,'$.Target.destination'),''),coalesce(json_extract(request,'$.Target.modelId'),''),coalesce(json_extract(request,'$.Release'),'') FROM mini_app_tasks WHERE instance_id=? AND id=?"
 	if generationOnly {
 		query += generationTaskPredicate
 	}
-	err := s.db.QueryRowContext(ctx, query, instance, id).Scan(&t.ID, &t.State, &t.Result, &t.Error, &t.Fingerprint, &verification, &snapshot, &inputs, &t.Destination, &t.ModelID)
+	err := s.db.QueryRowContext(ctx, query, instance, id).Scan(&t.ID, &t.State, &t.Result, &t.Error, &t.Fingerprint, &verification, &snapshot, &inputs, &t.Destination, &t.ModelID, &t.ReleaseID)
 	if err == nil && inputs != "" {
 		t.Inputs = json.RawMessage(inputs)
 	}
@@ -151,7 +152,8 @@ func (s *SQLiteStore) ListAppTasks(ctx context.Context, instance string) ([]AppT
  coalesce(json_extract(request,'$.Target.action'),''),
  coalesce(json_extract(request,'$.Target.surface'),''),
  coalesce(json_extract(request,'$.Target.providerId'),''),
- coalesce(json_extract(request,'$.Target.modelId'),'')
+ coalesce(json_extract(request,'$.Target.modelId'),''),
+ coalesce(json_extract(request,'$.Release'),'')
  FROM mini_app_tasks WHERE instance_id=?`+generationTaskPredicate+` ORDER BY rowid DESC LIMIT 30`, instance)
 	if err != nil {
 		return nil, err
@@ -160,7 +162,7 @@ func (s *SQLiteStore) ListAppTasks(ctx context.Context, instance string) ([]AppT
 	tasks := []AppTask{}
 	for rows.Next() {
 		var t AppTask
-		if err := rows.Scan(&t.ID, &t.State, &t.Result, &t.Error, &t.Action, &t.Surface, &t.ProviderID, &t.ModelID); err != nil {
+		if err := rows.Scan(&t.ID, &t.State, &t.Result, &t.Error, &t.Action, &t.Surface, &t.ProviderID, &t.ModelID, &t.ReleaseID); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)

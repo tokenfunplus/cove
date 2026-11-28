@@ -74,7 +74,19 @@ function DocumentPicker({
       request<LocalSearchResults>(path + "/documents/search", command(scope)),
     retry: false,
   });
-  const scope = { document_ids: ids, query: query.trim() };
+  const selectedIds = library.isSuccess
+    ? ids.filter((id) => library.data.some((doc) => doc.id === id && !doc.needs_reindex))
+    : ids;
+  useEffect(() => {
+    if (!library.isSuccess) return;
+    setIds((previous) => {
+      const next = previous.filter((id) =>
+        library.data.some((doc) => doc.id === id && !doc.needs_reindex),
+      );
+      return next.length === previous.length ? previous : next;
+    });
+  }, [library.data, library.isSuccess]);
+  const scope = { document_ids: selectedIds, query: query.trim() };
   const current = JSON.stringify(scope) === JSON.stringify(search.variables);
   return (
     <div>
@@ -103,16 +115,16 @@ function DocumentPicker({
             <label key={doc.id} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={ids.includes(doc.id)}
+                checked={selectedIds.includes(doc.id)}
                 disabled={
                   doc.needs_reindex ||
-                  (!ids.includes(doc.id) && ids.length >= 4)
+                  (!selectedIds.includes(doc.id) && selectedIds.length >= 4)
                 }
                 onChange={(e) =>
                   setIds(
                     e.target.checked
-                      ? [...ids, doc.id]
-                      : ids.filter((id) => id !== doc.id),
+                      ? [...selectedIds, doc.id]
+                      : selectedIds.filter((id) => id !== doc.id),
                   )
                 }
               />
@@ -131,7 +143,7 @@ function DocumentPicker({
           <Button
             size="xs"
             type="button"
-            disabled={!ids.length || !scope.query || search.isPending}
+            disabled={!selectedIds.length || !scope.query || search.isPending}
             onClick={() => search.mutate(scope)}
           >
             {search.isPending ? "Searching…" : "Search"}
@@ -172,15 +184,23 @@ function DocumentPicker({
   );
 }
 
-export function LocalReading({
-  path,
-  text,
-  language,
-}: {
+interface ReadingProps {
   path: string;
   text: string;
   language?: "ja";
-}) {
+}
+
+export function LocalReading(props: ReadingProps) {
+  return (
+    <ReadingJob key={JSON.stringify([props.path, props.text, props.language])} {...props} />
+  );
+}
+
+function ReadingJob({
+  path,
+  text,
+  language,
+}: ReadingProps) {
   const [job, setJob] = useState<SpeechJob>();
   const [url, setURL] = useState("");
   const active = useRef(false);

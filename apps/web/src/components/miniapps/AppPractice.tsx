@@ -71,6 +71,9 @@ export function AppPractice({
       changed();
     },
   });
+  const conflict =
+    (mark.error as { envelope?: { error?: { code?: string } } })?.envelope
+      ?.error?.code === "conflict";
   const content = (
     <section className="study-session space-y-5" aria-label="Practice session">
       <div className="flex items-center justify-between gap-4">
@@ -209,6 +212,17 @@ export function AppPractice({
           </div>
         )}
         <ErrorMessage error={mark.error} />
+        {conflict && (
+          <Button
+            variant="outline"
+            onClick={() => {
+              changed();
+              finish();
+            }}
+          >
+            Return to refreshed queue
+          </Button>
+        )}
       </div>
       <Button variant="ghost" disabled={mark.isPending} onClick={finish}>
         {record ? "End practice" : "Return to book"}

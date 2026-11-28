@@ -88,7 +88,8 @@ func TestLegacyAliasConflictsRemainClosedAfterMerging(t *testing.T) {
 	}
 	prior := http.DefaultTransport
 	defer func() { http.DefaultTransport = prior }()
-	body := signedTestIndex(t, key, 9, source)
+	successor := []byte(strings.Replace(string(source), `"1.0.0"`, `"2.0.0"`, 1))
+	body := signedTestIndex(t, key, 9, successor)
 	http.DefaultTransport = catalogTransport(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header), Request: request}, nil
 	})
@@ -101,7 +102,6 @@ func TestLegacyAliasConflictsRemainClosedAfterMerging(t *testing.T) {
 		t.Fatal("higher sequence blessed a conflicting immutable version")
 	}
 	directory.cachedUntil = time.Time{}
-	successor := []byte(strings.Replace(string(source), `"1.0.0"`, `"2.0.0"`, 1))
 	body = signedTestIndex(t, key, 10, successor)
 	if _, err := directory.List(t.Context()); err != nil {
 		t.Fatal("new unambiguous release could not recover", err)

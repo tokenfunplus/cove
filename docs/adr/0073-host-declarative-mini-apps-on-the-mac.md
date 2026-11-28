@@ -188,11 +188,37 @@ preserving other browser history state. Programmatic navigation requests Chat's
 existing draft and generation confirmation before adding an entry. A protected
 Back or Forward traversal returns to the known original entry; approval revisits
 the existing target instead of replacing its URL. Staying leaves those tracked
-entries intact. Legacy, external, and rebased hash entries have no safe numeric
-traversal distance; their fallback preserves the current Chat URL and state rather
-than guessing a direction into unrelated history.
+entries intact. Native fragment entries retain the current lineage with their own
+index and key, including when Chat consumes the fragment. Back and Forward reuse
+those positions rather than rebasing them. Moving to a different history entry
+invalidates pending approval even when its URL is unchanged. Legacy and external
+entries have no safe numeric traversal distance; their fallback preserves the
+current Chat URL and state rather than guessing into unrelated history.
+
+An App snapshot handoff belongs to its initiating workspace navigation attempt.
+If the owner navigates away while a conversation is being created, completion
+does not replace the current destination or its draft.
 
 The release-authority encoding does not add a database schema migration beyond
 this branch's schema 32. The main-branch service rejects that newer schema. Earlier
 unreleased schema-32 development builds do not implement the new signer binding;
 downgrading Mini App data to those development snapshots is unsupported.
+
+## Review-bound installation and deterministic package upgrades
+
+Installation binds the exact reviewed bytes and release authority. Catalog
+confirmation includes the reviewed signing fingerprint, and file confirmation
+includes the previewed release identity and digest. Concurrent trust changes
+require a new preview instead of installing under a different authority.
+
+Skipped additive migration steps materialize the first default for each new
+field, matching sequential upgrades. Later additive defaults do not overwrite
+that stored value. Record size and instance quota checks run before migrated
+record writes, within the existing atomic upgrade transaction. Date defaults
+use civil calendar arithmetic, so DST changes cannot shift a reviewed date.
+
+Where the browser exposes synchronous Navigation API entry-change events, native
+fragment pushes receive their history identity at commit, including rapid pushes
+whose ordinary hash events arrive together. Older browsers retain ordinary
+fragment tracking and the conservative fallback for entries without metadata;
+untracked or coalesced legacy entries have no guaranteed numeric traversal.

@@ -175,6 +175,7 @@ type Service struct {
 	webToolCancels sync.Map
 	debateMu       sync.Mutex
 	debate         *debateRun
+	debatePending  map[string]*pendingDebateBrowserResult // guarded by debateMu; at most one debate's active turns
 	debateWatchers map[string]map[chan struct{}]bool
 	debateDelay    time.Duration
 	documentParser documents.Parser
@@ -402,7 +403,11 @@ func (service *Service) DeleteConversation(ctx context.Context, conversationID s
 	if err := service.stopConversationWork(ctx, conversationID); err != nil {
 		return err
 	}
-	return service.store.DeleteConversation(ctx, conversationID)
+	if err := service.store.DeleteConversation(ctx, conversationID); err != nil {
+		return err
+	}
+	service.forgetPendingDebateBrowserResults(conversationID)
+	return nil
 }
 
 // The caller holds startMu while affected work settles.
@@ -483,6 +488,7 @@ func (service *Service) ClearChatData(ctx context.Context) error {
 	if err := clearErr; err != nil {
 		return err
 	}
+	service.forgetPendingDebateBrowserResults("")
 	service.clearPreparedWebSources()
 	service.hub.forgetCompleted("")
 	service.batchHub.forgetCompleted("")

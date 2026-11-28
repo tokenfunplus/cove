@@ -13,6 +13,7 @@ export async function proposalOperationId(
   release: string,
   initial: MiniAppFields,
   command: MiniAppInvocation,
+  proposedInputs: MiniAppFields = {},
 ) {
   const changes = Object.fromEntries(
     Object.entries(command.inputs ?? {}).filter(
@@ -26,6 +27,7 @@ export async function proposalOperationId(
     release,
     command.action,
     sortedFields(changes),
+    sortedFields(proposedInputs),
     command.items?.map(sortedFields),
     command.records?.map((record) => record.id).sort(),
   ]);

@@ -54,12 +54,12 @@ func (s *Service) StartAppTask(ctx context.Context, in AppTaskInput, authorize f
 		if err := authorize(); err != nil {
 			return persistence.AppTask{}, err
 		}
-		task, found, err := store.FindAppTask(ctx, in.Instance, in.ID)
+		task, found, err := s.findProjectedAppTask(ctx, store, in.Instance, in.ID)
 		if found && (task.Fingerprint != in.Fingerprint || task.State == "expired") {
 			return persistence.AppTask{}, ErrAppTaskConflict
 		}
 		if found || err != nil {
-			return s.ProjectAppTask(in.Instance, task), err
+			return task, err
 		}
 		if s.hasPendingAppTaskSave() {
 			return persistence.AppTask{}, ErrAppTaskSavePending

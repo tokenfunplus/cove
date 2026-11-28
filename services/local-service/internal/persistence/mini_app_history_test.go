@@ -71,6 +71,42 @@ func TestCompactAppPayloadsPreservesDeduplicationAndUserRecords(t *testing.T) {
 	}
 }
 
+func TestPreparedActivityReplayPreservesAdmittedStateAndHidesExpiredRows(t *testing.T) {
+	store, err := OpenSQLite(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	err = store.MiniAppTransaction(t.Context(), func(tx *MiniAppStore) error {
+		if err := tx.AddRelease(AppRelease{ID: "r", Manifest: []byte("{}")}); err != nil {
+			return err
+		}
+		if err := tx.SaveInstance(AppInstance{ID: "i", ReleaseID: "r", Grants: []byte("[]")}); err != nil {
+			return err
+		}
+		for _, status := range []string{"prepared", "running", "prepared", "completed", "prepared"} {
+			if err := tx.RecordActivity("i", "operation", "r", "generate", "page", status); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activity, err := store.AppActivity(t.Context(), "i")
+	if err != nil || len(activity) != 1 || activity[0].Status != "completed" {
+		t.Fatalf("replay reset activity: %v %v", activity, err)
+	}
+	if _, err := store.db.Exec("UPDATE mini_app_activity SET created_at=unixepoch()-604801"); err != nil {
+		t.Fatal(err)
+	}
+	activity, err = store.AppActivity(t.Context(), "i")
+	if err != nil || len(activity) != 0 {
+		t.Fatalf("expired activity was returned: %v %v", activity, err)
+	}
+}
+
 func TestTaskHistoryBudgetCountsUTF8Bytes(t *testing.T) {
 	store, err := OpenSQLite(":memory:")
 	if err != nil {

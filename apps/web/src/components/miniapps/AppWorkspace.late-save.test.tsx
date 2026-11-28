@@ -54,16 +54,19 @@ test("a late confirmed write refreshes records without discarding a newer form o
     },
   };
   let finish!: () => void;
+  let committed = false;
+  const saved = { id: "c", revision: 1, fields: { text: "Newly saved C" } };
   const confirmation = new Promise<void>((resolve) => {
     finish = resolve;
   });
   const invoke = vi
     .spyOn(miniApps, "invoke")
     .mockImplementation(async (_, command) => {
-      if (command.action === "list") return { records: rows };
+      if (command.action === "list") return { records: committed ? [...rows, saved] : rows };
       if (command.confirm) {
         await confirmation;
-        return { records: [rows[0]] };
+        committed = true;
+        return { records: [saved] };
       }
       return { records: [rows[0]], confirmation: "reviewed" };
     });
@@ -111,12 +114,7 @@ test("a late confirmed write refreshes records without discarding a newer form o
     finish();
     await confirmation;
   });
-  await waitFor(() =>
-    expect(
-      invoke.mock.calls.filter(([, command]) => command.action === "list")
-        .length,
-    ).toBeGreaterThan(1),
-  );
+  await screen.findByText("Newly saved C");
   expect(
     (screen.getByRole("textbox", { name: "Text" }) as HTMLTextAreaElement)
       .value,

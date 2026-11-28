@@ -30,7 +30,7 @@ public enum MiniAppLink: Equatable {
             let query = parts.queryItems ?? []
             if query.isEmpty { self = .install(path[0], path[1], nil); return }
             guard query.count == 1, query[0].name == "version", let version = query[0].value,
-                  version.count <= 32, matches(version, #"^[0-9]+\.[0-9]+\.[0-9]+$"#) else { return nil }
+                  version.count <= 32, matches(version, #"^[0-9]+\.[0-9]+\.[0-9]+\z"#) else { return nil }
             self = .install(path[0], path[1], version)
         case "pick":
             guard parts.query == nil, path.count == 1, let id = UUID(uuidString: path[0]) else { return nil }

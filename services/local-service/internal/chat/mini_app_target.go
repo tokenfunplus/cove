@@ -3,9 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
-	"net"
 	"net/url"
-	"strings"
 
 	"github.com/tokenfunplus/cove/services/local-service/internal/credentials"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
@@ -55,6 +53,5 @@ func AppDestinationRemote(destination string) bool {
 	if err != nil || parsed.Hostname() == "" {
 		return true
 	}
-	host := parsed.Hostname()
-	return !strings.EqualFold(host, "localhost") && !net.ParseIP(host).IsLoopback()
+	return !provider.IsLoopbackHost(parsed.Hostname())
 }
