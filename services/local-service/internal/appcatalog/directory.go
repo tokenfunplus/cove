@@ -214,7 +214,7 @@ func (d *Directory) ListForRelease(ctx context.Context, digest string) (entries 
 				d.mu.Unlock()
 				return bundledFallback(ctx, ErrCatalogChanged)
 			}
-			retry := (errors.Is(pending.err, context.Canceled) || errors.Is(pending.err, context.DeadlineExceeded)) && d.cachedConfig == config && d.cachedErr == nil && pending.cachedUntil.Equal(d.cachedUntil)
+			retry := errors.Is(pending.err, context.Canceled) || errors.Is(pending.err, context.DeadlineExceeded)
 			entries, err = cloneEntries(pending.entries), pending.err
 			d.mu.Unlock()
 			if retry {

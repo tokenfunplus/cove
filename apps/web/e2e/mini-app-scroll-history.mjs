@@ -145,6 +145,50 @@ export async function runMiniAppScrollHistory({ api, cdp, evaluate, until, click
     }
     assert.equal(await evaluate("history.length"), fragmentLength, "Coalesced fallback preserves all physical entries");
     await snapshot("mini-app-coalesced-fallback-after-forward");
+
+    await loadPage("Page.navigate", { url: origin + "/apps" });
+    await until("!!document.querySelector('main.mini-app-shell') && !!history.state?.['cove.workspace-history.v1']");
+    const reloadApps = await evaluate("history.state['cove.workspace-history.v1']");
+    await click('main.mini-app-shell a[href="/"]');
+    await until("!!document.querySelector('button[aria-label=\"New conversation\"]')");
+    await click('button[aria-label="New conversation"]');
+    const reloadChat = await evaluate("history.state['cove.workspace-history.v1']");
+    const reloadChatURL = await evaluate("location.href");
+    await click('a[aria-label="Mini Apps"]');
+    await until("!!document.querySelector('main.mini-app-shell')");
+    await evaluate("history.back()");
+    await until(atKey(reloadChat));
+    await until("!!document.querySelector('#generation-input')");
+    const reloadLength = await evaluate("history.length");
+    await evaluate("location.hash = '#reload-fragment'");
+    await until("location.hash === '#reload-fragment' && !!history.state?.['cove.workspace-history.v1']?.chatOrigin");
+    const reloadFragment = await evaluate("history.state['cove.workspace-history.v1']");
+    assert.notEqual(reloadFragment.lineage, reloadChat.lineage);
+    assert.equal(await evaluate("history.length"), reloadLength, "The fragment truncates the one-entry forward tail");
+    assert.deepEqual(reloadFragment.chatOrigin, {
+      entry: { lineage: reloadChat.lineage, index: reloadChat.index, key: reloadChat.key }, href: reloadChatURL,
+    });
+    await loadPage("Page.reload");
+    await until("!!document.querySelector('#generation-input')");
+    assert.equal(await key(), reloadFragment.key, "Reload preserves the fragment identity and compact origin hint");
+    await fill("#generation-input", "New draft after fragment reload");
+    await evaluate("history.go(-2)");
+    await until("!!document.querySelector('.confirmation-dialog__panel')");
+    await until(atKey(reloadChat));
+    await snapshot("mini-app-reloaded-fragment-confirmation");
+    await button("Stay", ".confirmation-dialog__panel");
+    assert.equal(await evaluate("document.querySelector('#generation-input').value"), "New draft after fragment reload");
+    await evaluate("history.back()");
+    await until("!!document.querySelector('.confirmation-dialog__panel')");
+    await until(atKey(reloadChat));
+    await button("Discard and continue", ".confirmation-dialog__panel");
+    await until("!!document.querySelector('main.mini-app-shell')");
+    assert.equal(await key(), reloadApps.key, "Reload recovery keeps the original Apps destination");
+    assert.equal(await evaluate("history.length"), reloadLength);
+    await evaluate("history.go(2)");
+    await until(atKey(reloadFragment));
+    assert.equal(await evaluate("history.length"), reloadLength, "Reload recovery preserves every physical history entry");
+    await snapshot("mini-app-reloaded-fragment-after-forward");
   } finally {
     await cdp("Page.removeScriptToEvaluateOnNewDocument", { identifier: injection.identifier });
   }

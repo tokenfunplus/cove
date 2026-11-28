@@ -111,7 +111,7 @@ func (ctx *observedCatalogRefreshWait) Done() <-chan struct{} {
 }
 
 func TestFileRefreshWaiterRetriesCanceledOwnerAndReusesCompletedResults(t *testing.T) {
-	for _, outcome := range []string{"canceled owner", "verified release", "verified miss", "remote failure"} {
+	for _, outcome := range []string{"canceled owner", "canceled owner with newer cache", "verified release", "verified miss", "remote failure"} {
 		t.Run(outcome, func(t *testing.T) {
 			public, key, _ := ed25519.GenerateKey(nil)
 			config := Catalog{URL: "https://catalog.example/index.json", PublicKey: base64.StdEncoding.EncodeToString(public)}
@@ -207,13 +207,24 @@ func TestFileRefreshWaiterRetriesCanceledOwnerAndReusesCompletedResults(t *testi
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
-			if outcome == "canceled owner" {
+			if outcome == "canceled owner with newer cache" {
+				// An ordinary directory read can replace an expired cache while
+				// the original file refresh is still waiting on the network.
+				directory.mu.Lock()
+				directory.cachedUntil = time.Time{}
+				directory.mu.Unlock()
+				if _, err := directory.List(ctx); err != nil || !directory.KnownRelease(candidate.Digest) || calls.Load() != 3 {
+					t.Fatal("ordinary directory fetch did not publish the newer cache", err, calls.Load())
+				}
+			}
+			ownerCanceled := strings.HasPrefix(outcome, "canceled owner")
+			if ownerCanceled {
 				cancelOwner()
 			} else {
 				unblock()
 			}
 			owned, waited := await(owner), await(waiter)
-			if outcome == "canceled owner" {
+			if ownerCanceled {
 				if !errors.Is(owned.err, context.Canceled) || waited.err != nil || calls.Load() != 3 {
 					t.Fatal("live waiter reused a canceled owner's stale cache", owned.err, waited.err, calls.Load())
 				}
@@ -226,7 +237,7 @@ func TestFileRefreshWaiterRetriesCanceledOwnerAndReusesCompletedResults(t *testi
 					found = entry.Origin == "catalog" && entry.CatalogAuthority == Authority(config.PublicKey)
 				}
 			}
-			if found != (outcome == "canceled owner" || outcome == "verified release") {
+			if found != (ownerCanceled || outcome == "verified release") {
 				t.Fatal("waiter returned the wrong verified release set", waited.err, found)
 			}
 		})

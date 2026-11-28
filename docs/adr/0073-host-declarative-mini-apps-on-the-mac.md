@@ -227,6 +227,10 @@ requires crossing that boundary, Cove returns to the retained known Chat origin
 while preserving the Apps destination and intervening entries. This can restore
 the known Chat URL rather than an unproven intermediate fragment. External
 entries without a known origin retain the conservative legacy fallback.
+The known origin is a compact, validated same-origin Chat URL and entry identity
+in the fragment metadata, propagated to derived entries so a reload does not
+erase that fallback. It does not contain a nested history-state snapshot, draft,
+session token or app data.
 
 A superseding browser traversal releases the obsolete restoration waiter and
 invalidates its pending approval. The actual entry is then handled as a fresh

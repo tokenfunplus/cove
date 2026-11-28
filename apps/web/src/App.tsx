@@ -3,6 +3,7 @@ import { ChatPage } from "@/pages/ChatPage";
 import { QuickPanelPage } from "@/pages/QuickPanelPage";
 import { createConversation } from "@/api/conversations";
 import {
+  chatOriginFor,
   ensureWorkspaceEntry,
   isWorkspaceNavigation,
   navigateWorkspace,
@@ -18,6 +19,29 @@ const currentLocation = () => ({
   href: window.location.href,
   historyLength: window.history.length,
 });
+const hintedChatOrigin = (entry: ReturnType<typeof workspaceEntry>) => {
+  const hint = entry?.chatOrigin;
+  return hint ? {
+    entry: hint.entry, href: hint.href, state: undefined,
+    historyLength: window.history.length,
+  } : undefined;
+};
+function earliestChatOrigin(
+  previous: ReturnType<typeof currentLocation>,
+  retained: ReturnType<typeof currentLocation> | undefined,
+  address: string,
+) {
+  const candidates = [hintedChatOrigin(previous.entry), retained, previous].filter((value) => {
+    if (!value?.entry) return false;
+    const url = new URL(value.href);
+    return url.pathname + url.search === address;
+  });
+  const canonical = candidates[0];
+  return candidates.reduce((earliest, candidate) =>
+    candidate?.entry?.lineage === earliest?.entry?.lineage &&
+    candidate!.entry!.index < earliest!.entry!.index ? candidate : earliest,
+  canonical);
+}
 
 export function App() {
   const [address, setAddress] = useState(
@@ -47,6 +71,7 @@ export function App() {
       ensureWorkspaceEntry();
     }
     current.current = currentLocation();
+    fragmentFallback.current ??= hintedChatOrigin(current.current.entry);
     const navigation = (window as Window & { navigation?: EventTarget })
       .navigation;
     const entryChanged = (event: Event) => {
@@ -145,7 +170,7 @@ export function App() {
       }
       if (!address.startsWith("/apps") && next.startsWith("/apps")) {
         const actualPrevious = current.current!;
-        const fallback = fragmentFallback.current;
+        const fallback = fragmentFallback.current ?? hintedChatOrigin(actualPrevious.entry);
         const fallbackURL = fallback && new URL(fallback.href);
         const previous =
           actualPrevious.entry?.lineage !== target.entry?.lineage &&
@@ -225,15 +250,17 @@ export function App() {
         fragmentOrigin.current = chain;
         if (chain.href !== event.newURL) return;
         const growth = target.historyLength - previous.historyLength;
-        fragmentFallback.current ??= previous;
+        if (!address.startsWith("/apps")) {
+          fragmentFallback.current = earliestChatOrigin(previous, fragmentFallback.current, address);
+        }
         if (chain.steps <= 32 && growth === chain.steps && growth > 0) {
           // Only a complete observed push chain with matching history growth
           // proves the distance. Never stamp the current entry for a stale URL.
-          trackWorkspaceFragment(previous.entry, growth);
-          if (fragmentFallback.current?.entry?.lineage === previous.entry.lineage)
-            fragmentFallback.current = previous;
+          const origin = fragmentFallback.current;
+          trackWorkspaceFragment(previous.entry, growth, chatOriginFor(origin?.entry, origin?.href));
         } else if (!target.entry) {
-          rebaseWorkspaceFragment();
+          const origin = fragmentFallback.current;
+          rebaseWorkspaceFragment(chatOriginFor(origin?.entry, origin?.href));
         }
         // Unproven positions get scroll identity in a separate lineage. Their
         // guard returns to the retained origin without overwriting older Apps.
