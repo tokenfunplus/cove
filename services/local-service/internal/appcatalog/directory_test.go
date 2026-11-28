@@ -93,7 +93,11 @@ func TestDirectoryFallbackAndPersistentTrust(t *testing.T) {
 	body = signed(index)
 	checkFallback("replaced version in a newer signed index")
 	var conflict map[string]any
-	_ = json.Unmarshal(builtin[0].Raw, &conflict)
+	legacy, err := os.ReadFile("testdata/legacy-releases/japanese-review-book.coveapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = json.Unmarshal(legacy, &conflict)
 	conflict["name"] = "conflicting release"
 	duplicate, _ := json.Marshal(conflict)
 	index.Packages = [][]byte{newApp, duplicate}

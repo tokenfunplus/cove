@@ -329,15 +329,6 @@ func (s *Server) appCatalogSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) appCatalog(w http.ResponseWriter, r *http.Request) {
 	var entries []appcatalog.Entry
 	var err error
-	if r.PathValue("publisher") != "" {
-		bundled, _ := (appcatalog.Catalog{}).List(r.Context())
-		for _, entry := range bundled {
-			if entry.Publisher == r.PathValue("publisher") && entry.App == r.PathValue("app") && entry.Version == r.PathValue("version") {
-				entries = []appcatalog.Entry{entry}
-				break
-			}
-		}
-	}
 	if len(entries) == 0 {
 		entries, err = s.catalog.List(r.Context())
 	}
@@ -349,7 +340,7 @@ func (s *Server) appCatalog(w http.ResponseWriter, r *http.Request) {
 		entries = slices.DeleteFunc(entries, func(e appcatalog.Entry) bool { return !miniapps.CompatibleHostVersion(e.MinHostVersion) })
 		response := map[string]any{"packages": entries}
 		if err != nil {
-			response["warning"] = "The configured catalog is unavailable or could not be verified. Showing bundled releases."
+			response["warning"] = "The configured release source could not be verified. Installed apps remain available offline."
 		}
 		writeJSON(w, 200, response)
 		return

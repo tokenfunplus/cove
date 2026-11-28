@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 
-export async function runMiniAppScrollHistory({ api, cdp, evaluate, until, click, fill, loadPage, origin, snapshot }) {
-  const source = (await api("/api/mini-apps/catalog")).packages.find((entry) => entry.app === "japanese-review-book" && entry.version === "1.2.0");
-  const release = await api(`/api/mini-apps/catalog/${source.publisher}/${source.app}/${source.version}/install`, "POST", { digest: source.digest });
+export async function runMiniAppScrollHistory({ packageFixtures, installPackageFixture, api, cdp, evaluate, until, click, fill, loadPage, origin, snapshot }) {
+  const source = packageFixtures.find((entry) => entry.app === "japanese-review-book" && entry.version === "1.2.0");
+  const release = await installPackageFixture(source);
   const books = [];
   // Populate only this harness's disposable instance store. The long local list
   // exercises scroll restoration without putting public-market browsing in Cove.

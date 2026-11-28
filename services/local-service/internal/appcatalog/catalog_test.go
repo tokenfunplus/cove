@@ -1,12 +1,12 @@
 package appcatalog
 
 import (
-	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +36,7 @@ func TestCatalogSummariesIncludeDescriptionsWithoutExposingPackageContents(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	foundBuiltin, foundRemote := false, false
+	foundRemote := false
 	for _, item := range entries {
 		var manifest struct{ Description string }
 		if err := json.Unmarshal(item.Raw, &manifest); err != nil {
@@ -45,9 +45,7 @@ func TestCatalogSummariesIncludeDescriptionsWithoutExposingPackageContents(t *te
 		if manifest.Description == "" || item.Description != manifest.Description {
 			t.Fatalf("missing description for %s/%s: %q", item.Publisher, item.App, item.Description)
 		}
-		if item.Origin == "builtin" {
-			foundBuiltin = true
-		} else if item.Publisher == "independent" && item.Description == description {
+		if item.Publisher == "independent" && item.Description == description {
 			foundRemote = true
 		}
 		summary, err := json.Marshal(item)
@@ -62,8 +60,8 @@ func TestCatalogSummariesIncludeDescriptionsWithoutExposingPackageContents(t *te
 			t.Fatal("catalog summaries lost descriptions or exposed package internals")
 		}
 	}
-	if !foundBuiltin || !foundRemote || calls != 1 {
-		t.Fatalf("metadata coverage: builtin=%t remote=%t requests=%d", foundBuiltin, foundRemote, calls)
+	if !foundRemote || calls != 1 || len(entries) != 1 {
+		t.Fatalf("metadata coverage: remote=%t requests=%d", foundRemote, calls)
 	}
 }
 
@@ -72,11 +70,11 @@ func TestSignedCatalogRejectsChangedPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries, err := (Catalog{}).List(context.Background())
-	if err != nil || len(entries) < 2 {
-		t.Fatal("missing bundled apps", err)
+	raw, err := os.ReadFile("testdata/legacy-releases/japanese-review-book.coveapp")
+	if err != nil {
+		t.Fatal(err)
 	}
-	payload, _ := json.Marshal(map[string]any{"format": 2, "sequence": 1, "issued_at": time.Now(), "expires_at": time.Now().Add(time.Hour), "packages": [][]byte{entries[0].Raw}})
+	payload, _ := json.Marshal(map[string]any{"format": 2, "sequence": 1, "issued_at": time.Now(), "expires_at": time.Now().Add(time.Hour), "packages": [][]byte{raw}})
 	envelope := map[string][]byte{"payload": payload, "signature": ed25519.Sign(private, payload)}
 	bytes, _ := json.Marshal(envelope)
 	if packages, err := verify(bytes, public); err != nil || len(packages.Packages) != 1 {

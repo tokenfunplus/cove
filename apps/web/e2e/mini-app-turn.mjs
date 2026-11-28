@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-export async function runMiniAppTurn({
+export async function runMiniAppTurn({ packageFixtures, installPackageFixture,
   api,
   evaluate,
   until,
@@ -17,19 +17,9 @@ export async function runMiniAppTurn({
     ...settings,
     active_model_set: [{ provider_id: profile.id, model_id: "model-one" }],
   });
-  const catalog = await api("/api/mini-apps/catalog");
+  const catalog = { packages: packageFixtures };
   const app = catalog.packages.find((entry) => entry.app === "reading-inbox");
-  const release = await api(
-    "/api/mini-apps/catalog/" +
-      app.publisher +
-      "/" +
-      app.app +
-      "/" +
-      app.version +
-      "/install",
-    "POST",
-    { digest: app.digest },
-  );
+  const release = await installPackageFixture(app);
   const book = await api("/api/mini-apps/instances", "POST", {
     release_id: release.id,
     name: "Turn reading list",
@@ -176,17 +166,7 @@ export async function runMiniAppTurn({
     (entry) =>
       entry.app === "japanese-review-book" && entry.version === "1.1.0",
   );
-  const installed = await api(
-    "/api/mini-apps/catalog/" +
-      review.publisher +
-      "/" +
-      review.app +
-      "/" +
-      review.version +
-      "/install",
-    "POST",
-    { digest: review.digest },
-  );
+  const installed = await installPackageFixture(review);
   const reviewBook = await api("/api/mini-apps/instances", "POST", {
     release_id: installed.id,
     name: "Turn review book",

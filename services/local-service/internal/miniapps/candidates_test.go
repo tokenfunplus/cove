@@ -10,7 +10,7 @@ import (
 func TestCandidatesDetectSavedAndRepeatedContentIncludingArchive(t *testing.T) {
 	db, service := storeAt(t, ":memory:")
 	defer db.Close()
-	raw, err := os.ReadFile("../appcatalog/packages/japanese-review-book-1.1.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book-1.1.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestCandidatesDetectSavedAndRepeatedContentIncludingArchive(t *testing.T) {
 func TestCandidateValidationIsPerItemAndDoesNotHideValidResults(t *testing.T) {
 	db, service := storeAt(t, ":memory:")
 	defer db.Close()
-	raw, _ := os.ReadFile("../appcatalog/packages/japanese-review-book-1.1.coveapp")
+	raw, _ := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book-1.1.coveapp")
 	release, err := service.Install(t.Context(), raw, "builtin")
 	if err != nil {
 		t.Fatal(err)

@@ -465,7 +465,7 @@ export function AppDirectory({
                 }}
               >
                 <Plus />
-                New instance
+                  {books.length ? "New instance" : "Preview release"}
               </Button>
             ))}
         </section>

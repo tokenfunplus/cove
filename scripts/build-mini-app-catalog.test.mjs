@@ -12,7 +12,7 @@ test("catalog links and downloads resolve to the bytes in the signed release", a
   t.after(() => rm(temp, { recursive: true, force: true }));
   const source = fileURLToPath(
     new URL(
-      "../services/local-service/internal/appcatalog/packages/",
+      "../services/local-service/internal/appcatalog/testdata/legacy-releases/",
       import.meta.url,
     ),
   );

@@ -17,7 +17,7 @@ func TestReviewBookUpgradeAndPractice(t *testing.T) {
 	db, s := storeAt(t, filepath.Join(t.TempDir(), "review.sqlite"))
 	defer db.Close()
 	install := func(file string) Release {
-		raw, err := os.ReadFile("../appcatalog/packages/" + file + ".coveapp")
+		raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/" + file + ".coveapp")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -185,7 +185,7 @@ func TestConfirmedWriteUsesReviewedDayAndCanRetryAfterConflict(t *testing.T) {
 }
 
 func TestReviewBookRequiresDeclaredRuntimeAndConsistentOutput(t *testing.T) {
-	source, err := os.ReadFile("../appcatalog/packages/japanese-review-book-1.1.coveapp")
+	source, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book-1.1.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestReviewBook12MigratesMissCounterAndAppliesItsOwnSchedulingRules(t *testi
 	service.now = func() time.Time { return today }
 	install := func(name string) Release {
 		t.Helper()
-		raw, err := os.ReadFile("../appcatalog/packages/" + name + ".coveapp")
+		raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/" + name + ".coveapp")
 		if err != nil {
 			t.Fatal(err)
 		}

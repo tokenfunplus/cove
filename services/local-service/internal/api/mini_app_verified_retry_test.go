@@ -23,7 +23,7 @@ func TestAcceptedAppBrowserReceiptAcknowledgesAfterGrantRevocation(t *testing.T)
 	defer store.Close()
 	server := NewServer(Config{Store: store, Chat: chat.NewService(store, nil, nil), LaunchToken: "launch-token"})
 	token, csrf := launchBrowserSession(t, server)
-	raw, err := os.ReadFile("../appcatalog/packages/japanese-review-book.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

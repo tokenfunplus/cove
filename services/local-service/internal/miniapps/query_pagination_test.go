@@ -14,7 +14,7 @@ import (
 func TestQueryContinuationAndAttachmentAcrossPages(t *testing.T) {
 	db, service := storeAt(t, ":memory:")
 	defer db.Close()
-	raw, err := os.ReadFile("../appcatalog/packages/japanese-review-book.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestSQLiteQueryMatchesTypedOrderingPredicatesAndLimits(t *testing.T) {
 func TestRecordSearchIncludesLaterPagesAndPreservesActionLimit(t *testing.T) {
 	db, service := storeAt(t, ":memory:")
 	defer db.Close()
-	raw, err := os.ReadFile("../appcatalog/packages/japanese-review-book.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
 	"github.com/tokenfunplus/cove/services/local-service/internal/chat"
 	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
@@ -64,18 +64,13 @@ func TestMiniAppProcessingUsesCurrentGrantsAndSelectedScope(t *testing.T) {
 		}
 		return res.Body.String()
 	}
-	all, err := (appcatalog.Catalog{}).List(t.Context())
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var release miniapps.Release
-	for _, e := range all {
-		if e.App == "japanese-review-book" {
-			release, err = server.apps.Install(t.Context(), e.Raw, e.Origin)
-			if err != nil {
-				t.Fatal(err)
-			}
-		}
+	release, err := server.apps.Install(t.Context(), raw, "builtin")
+	if err != nil {
+		t.Fatal(err)
 	}
 	book := func() miniapps.Instance {
 		i, err := server.apps.Create(t.Context(), miniapps.CreateRequest{Name: "Book", ReleaseID: release.ID, Grants: []string{"documents.search", "speech.speak"}})

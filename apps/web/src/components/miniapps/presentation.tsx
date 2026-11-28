@@ -53,7 +53,7 @@ export function catalogSourceLabel(source: {
   origin: string;
   official_catalog?: boolean;
 }) {
-  if (source.origin === "builtin") return "Included with Cove";
+  if (source.origin === "builtin") return "Verified legacy release";
   if (source.origin === "catalog")
     return source.official_catalog ? "Cove catalog" : "Custom signed catalog";
   return "From a local file";

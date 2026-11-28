@@ -50,7 +50,7 @@ func run(args []string, out io.Writer) error {
 		}
 		pkg.Publisher, pkg.App = args[1], args[2]
 		if appcatalog.ReservedPublisher(pkg.Publisher) {
-			return errors.New("choose your own publisher; this publisher is reserved for bundled releases")
+			return errors.New("choose your own publisher; this publisher is reserved for verified releases")
 		}
 		source, err := json.MarshalIndent(pkg, "", "  ")
 		if err != nil {

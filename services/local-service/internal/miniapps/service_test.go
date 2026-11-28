@@ -16,7 +16,7 @@ import (
 
 func example(t *testing.T) []byte {
 	t.Helper()
-	raw, err := os.ReadFile("../appcatalog/packages/reading-inbox.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/reading-inbox.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,8 +247,8 @@ func TestValidationAndOrigin(t *testing.T) {
 			t.Fatal("invalid package accepted", err)
 		}
 	}
-	if _, err := Preview([]byte(strings.Replace(base, `"bookshelf"`, `"cove"`, 1)), "local"); !errors.Is(err, ErrInvalid) {
-		t.Fatal(err)
+	if candidate, err := Preview([]byte(strings.Replace(base, `"bookshelf"`, `"cove"`, 1)), "local"); err != nil || candidate.Origin != "local" || candidate.OfficialCatalog {
+		t.Fatal("author validation invented distribution authority", candidate.Origin, err)
 	}
 	db, s := storeAt(t, ":memory:")
 	defer db.Close()
@@ -355,11 +355,11 @@ func TestSignedCatalogCanUpdateBundledIndependentPublisher(t *testing.T) {
 }
 
 func TestLegacyOfficialFileCanUpgradeButModifiedFilesCannotClaimItsOrigin(t *testing.T) {
-	raw, err := os.ReadFile("../appcatalog/packages/reading-inbox.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/reading-inbox.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}
-	nextRaw, err := os.ReadFile("../appcatalog/packages/reading-inbox-1.1.coveapp")
+	nextRaw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/reading-inbox-1.1.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

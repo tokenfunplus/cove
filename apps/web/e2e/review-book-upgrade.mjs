@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
-export async function runReviewBookUpgrade({
+export async function runReviewBookUpgrade({ packageFixtures, installPackageFixture,
   snapshot,
   cdp,
   api,
@@ -25,21 +25,11 @@ export async function runReviewBookUpgrade({
   const path = "/apps/" + book.id;
   const before = (await api(root + book.id + "/export")).collections.questions;
   assert.equal(before.length, 3);
-  const catalog = await api("/api/mini-apps/catalog");
+  const catalog = { packages: packageFixtures };
   const entry = catalog.packages.find(
     (item) => item.app === "japanese-review-book" && item.version === "1.1.0",
   );
-  const release = await api(
-    "/api/mini-apps/catalog/" +
-      entry.publisher +
-      "/" +
-      entry.app +
-      "/" +
-      entry.version +
-      "/install",
-    "POST",
-    { digest: entry.digest },
-  );
+  const release = await installPackageFixture(entry);
   await goto(path + "/home");
   await button("Settings");
   await until(

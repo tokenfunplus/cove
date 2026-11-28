@@ -256,3 +256,27 @@ session token or app data.
 A superseding browser traversal releases the obsolete restoration waiter and
 invalidates its pending approval. The actual entry is then handled as a fresh
 navigation using its own tracked position, without replacing history entries.
+
+## Independent application sources and releases
+
+CoveWeb owns business-app source packages, fresh-instance scenarios, migrations
+and upgrade scenarios. Its publication command runs the public coveapp validator,
+scenarios, upgrade checks and packer before exposing immutable downloads or
+signing an index. An app can publish a new version without rebuilding Cove.
+The Mac runtime embeds no business app package. Its author kit ships a minimal
+generic notes example instead of Japanese Review Book or Reading Inbox.
+
+Five old release identities and exact SHA-256 digests remain as read-only
+compatibility metadata. They authenticate only those historical downloaded bytes,
+not new versions or modified packages. Installed releases already live in local
+storage and are neither removed nor rewritten. Official successors still require
+the configured official signing key; other signers cannot inherit those instances.
+The database schema and existing instance IDs, records, attachments and grants
+are unchanged. An unavailable remote source has no installable fallback packages.
+
+Historical package bytes remain frozen under testdata for host regressions only.
+New app business-rule changes and canonical source edits belong to CoveWeb.
+Author CLI previews use local provenance inside their disposable stores, without
+claiming publisher authority; the production HTTP installer remains the authority
+boundary. This supersedes package embedding and embedded-example attestation
+for author commands in the earlier sections.

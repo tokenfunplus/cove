@@ -60,13 +60,14 @@ func TestShippedReadingInboxUpgrade(t *testing.T) {
 			t.Fatal(err)
 		}
 		path := filepath.Join(dir, filepath.Base(args[index]))
-		// The same valid manifest with different bytes must lose its bundled identity.
+		// Author tests accept unpublished bytes without claiming a distribution identity.
 		if err = os.WriteFile(path, append(source, '\n'), 0600); err != nil {
 			t.Fatal(err)
 		}
 		args[index] = path
-		if err = run(args, io.Discard); err == nil || !strings.Contains(err.Error(), "publisher") {
-			t.Fatalf("accepted modified bytes from a reserved publisher at argument %d: %v", index, err)
+		err = run(args, io.Discard)
+		if index == 1 && err != nil || index == 2 && (err == nil || !strings.Contains(err.Error(), "incompatible upgrade")) {
+			t.Fatalf("unpublished author identity check failed at argument %d: %v", index, err)
 		}
 		personal := bytes.Replace(source, []byte(`"bookshelf"`), []byte(`"personal-shelf"`), 1)
 		if err = os.WriteFile(path, personal, 0600); err != nil {

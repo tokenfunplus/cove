@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -61,16 +62,17 @@ func TestMiniAppInstallationNativeImportAndChatSnapshot(t *testing.T) {
 	var catalog struct{ Packages []appcatalog.Entry }
 	call("GET", base+"/catalog", nil, "none", 401, nil)
 	call("GET", base+"/catalog", nil, "browser", 200, &catalog)
-	var item appcatalog.Entry
-	for _, e := range catalog.Packages {
-		if e.App == "japanese-review-book" {
-			item = e
-		}
+	if len(catalog.Packages) != 0 {
+		t.Fatal("production catalog contains app business packages")
 	}
-	path := base + "/catalog/" + item.Publisher + "/" + item.App + "/" + item.Version + "/install"
-	call("POST", path, map[string]string{"digest": "changed"}, "browser", 409, nil)
-	var release miniapps.Release
-	call("POST", path, map[string]string{"digest": item.Digest}, "browser", 200, &release)
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book.coveapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release, err := server.apps.Install(t.Context(), raw, "builtin")
+	if err != nil {
+		t.Fatal(err)
+	}
 	var instance miniapps.Instance
 	call("POST", base+"/instances", miniapps.CreateRequest{ReleaseID: release.ID, Name: "Book", Grants: release.Package.Capabilities}, "browser", 200, &instance)
 	call("GET", "/api/session", nil, "browser", 200, &presence)

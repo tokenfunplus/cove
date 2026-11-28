@@ -11,11 +11,12 @@ public page. The Launcher hands that identity to the local installer, which open
 an exact installed copy, offers a copy chooser, or resolves the requested release
 and shows installation review. Installed apps remain usable offline.
 
-The host bundles reference releases of Japanese Review Book and Reading Inbox.
-They provide offline package verification and developer examples. Importing exact
-bundled or recognized signed bytes retains the verified origin; personal packages
-keep their separate local identity. The installer reserves known catalog
-publishers, including Cove and the bundled Reading Inbox publisher.
+The host does not embed application packages or app-specific business rules.
+CoveWeb maintains app sources, scenario tests and immutable downloads. The host
+retains only the identities and SHA-256 digests of five historical reference
+releases. Those exact downloaded files keep their previous verified identity;
+modified bytes never gain that identity. Existing installed packages, records,
+attachments and grants remain owned by local Persistence.
 
 **Settings → Check for updates** compares the current instance with releases
 in the configured directory. Cove downloads the signed index and checks
@@ -29,13 +30,20 @@ version from their author.
 Run the catalog builder on the publishing machine with a private Ed25519 PEM key. Keep the private key outside source control and outside the static site.
 
 ```sh
-node scripts/build-mini-app-catalog.mjs --sequence 42 /tmp/coveweb-site /secure/catalog-private.pem services/local-service/internal/appcatalog/packages/*.coveapp
+node scripts/build-mini-app-catalog.mjs --sequence 42 /tmp/coveweb-site /secure/catalog-private.pem services/local-service/internal/appcatalog/testdata/legacy-releases/*.coveapp
 ```
 
-The builder writes the catalog landing page, package detail pages under `apps/<publisher>/<app>/`, and `catalog.json` in a new output directory. Serve these files together over HTTPS. The signed format 2 envelope includes issuance time, an explicit positive integer sequence and expiration after 30 days. Use a persistent release counter such as a publishing workflow run number and increase `--sequence` for each index signed by the same key. Sequence ordering does not depend on the publishing machine clock. Rebuild and sign before expiration. Publish an updated index for deployments that still serve format 1. Each Mac remembers the latest accepted signed sequence. Unavailable, expired, conflicting and unverified indexes leave the bundled catalog usable and display a notice.
+The builder writes the catalog landing page, package detail pages under `apps/<publisher>/<app>/`, and `catalog.json` in a new output directory. Serve these files together over HTTPS. The signed format 2 envelope includes issuance time, an explicit positive integer sequence and expiration after 30 days. Use a persistent release counter such as a publishing workflow run number and increase `--sequence` for each index signed by the same key. Sequence ordering does not depend on the publishing machine clock. Rebuild and sign before expiration. Publish an updated index for deployments that still serve format 1. Each Mac remembers the latest accepted signed sequence. Unavailable, expired, conflicting and unverified indexes fail closed. Installed applications remain usable offline.
 
 The separate CoveWeb Next.js project owns the production website presentation.
-Import the builder's signed output there with:
+Build and test its canonical app sources using the installed author CLI, then
+sign on the publishing machine with a key outside both repositories:
+
+```sh
+pnpm apps:build --cli /path/to/coveapp --key /secure/catalog-private.pem --sequence 42
+```
+
+An independently prepared signed index can also be imported there with:
 
 ```sh
 pnpm apps:import --signed /tmp/coveweb-site/catalog.json --public-key BASE64_PUBLIC_KEY
@@ -53,7 +61,7 @@ operator tasks. Curated bundled downloads can also be hosted without inventing a
 signing authority. Mini Apps require a Cove build that includes this runtime;
 the earlier Beta 14 download does not provide it.
 
-In the standalone **Mini Apps → Release source** page, enter the exact HTTPS index URL and the base64 Ed25519 verification key supplied by the publisher. Finder launches reuse these settings. Changing the signing key or clearing the directory opens a confirmation showing the new signing authority. After confirmation, Finder launches reuse that choice. Changing authorities preserves each key's highest accepted sequence, so returning to an earlier key still rejects rollback. Clearing the settings switches to bundled releases only. The public catalog never receives the instance inventory.
+In the standalone **Mini Apps → Release source** page, enter the exact HTTPS index URL and the base64 Ed25519 verification key supplied by the publisher. Finder launches reuse these settings. Changing the signing key or clearing the directory opens a confirmation showing the new signing authority. After confirmation, Finder launches reuse that choice. Changing authorities preserves each key's highest accepted sequence, so returning to an earlier key still rejects rollback. Clearing the settings disables remote release lookup. The public catalog never receives the instance inventory.
 
 A release build can preconfigure the public directory. Pass `COVE_APP_CATALOG_DEFAULTS_FILE` to `scripts/package-macos.sh` with a JSON file containing only the public `url` and `public_key`. The build embeds these values in the signed app resources. Developers can supply defaults using `COVE_APP_CATALOG_URL` and `COVE_APP_CATALOG_PUBLIC_KEY`. Saved local settings take precedence. The repository supplies the static publisher and packaging integration. The production domain, hosting and signing authority belong to the release operator.
 
@@ -67,7 +75,7 @@ A directory selected by the user can publish its own application identities.
 The publishers reserved by the bundled apps can only receive remote releases
 signed by the public key embedded as the default distribution authority in
 Cove. A custom key claiming a reserved publisher causes the remote index to
-be rejected. The bundled apps remain available. Before a production release,
+be rejected. Installed apps remain available. Before a production release,
 embed the official public key using the packaging option above.
 
 Changing a directory URL under the same key retains its trust. Changing the
@@ -91,9 +99,9 @@ under these publisher rules before downloaded files gain catalog provenance.
 Installed app records and package bytes have their independent local ownership.
 
 Release source distinguishes following Cove defaults, a pinned custom directory,
-and bundled-only operation. **Use Cove defaults** removes the override after any
+and local-only operation. **Use Cove defaults** removes the override after any
 required signing-key confirmation. Saving a nonempty configuration identical to
-the packaged defaults also keeps default tracking. Explicit bundled-only and
+the packaged defaults also keeps default tracking. Explicit local-only and
 custom choices survive Cove updates. Legacy explicit settings remain pinned until
 the user chooses to follow defaults.
 

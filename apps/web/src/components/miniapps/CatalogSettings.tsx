@@ -104,7 +104,7 @@ function CatalogForm({
     ? "The new signing key is " +
       confirmation.public_key +
       ". This authority can supply releases and updates for apps installed from this source. Official bundled app identities require Cove's release key."
-    : "Cove will use bundled releases only. You can choose another signed source later.";
+    : "Cove will stop checking remote releases. Installed apps and file imports remain available.";
   return (
     <form
       className="space-y-2"
@@ -120,7 +120,7 @@ function CatalogForm({
       <p className="text-sm">
         Choose the signing authority for app releases and updates on this Mac.
         Changing its key requires confirmation. Leave both fields empty to use
-        bundled releases only.
+        local files only.
       </p>
       {mode && (
         <p className="text-sm text-muted-foreground">
@@ -128,7 +128,7 @@ function CatalogForm({
           {mode === "default"
             ? "Cove defaults"
             : mode === "bundled"
-              ? "Bundled apps only"
+              ? "Local files only"
               : "Custom signed source"}
           .
         </p>
@@ -193,7 +193,7 @@ function CatalogForm({
         title={
           confirmation?.public_key
             ? "Trust this release signing authority?"
-            : "Use bundled releases only?"
+            : "Stop remote release checks?"
         }
         description={
           (save.error instanceof Error ? save.error.message + " " : "") +
@@ -205,7 +205,7 @@ function CatalogForm({
         confirmLabel={
           confirmation?.public_key
             ? "Confirm signing authority"
-            : "Confirm bundled releases"
+            : "Confirm local-only mode"
         }
         cancelLabel="Keep current authority"
         busy={save.isPending}

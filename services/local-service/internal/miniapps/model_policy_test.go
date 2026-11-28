@@ -12,7 +12,7 @@ import (
 func TestCloudPermissionCanBeRevokedWithoutDisablingLocalTasks(t *testing.T) {
 	store, service := storeAt(t, ":memory:")
 	defer store.Close()
-	raw, err := os.ReadFile("../appcatalog/packages/japanese-review-book-1.1.coveapp")
+	raw, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book-1.1.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}

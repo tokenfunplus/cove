@@ -14,7 +14,7 @@ import (
 	"github.com/tokenfunplus/cove/services/local-service/internal/miniapps"
 )
 
-const packageDir = "../../internal/appcatalog/packages"
+const packageDir = "../../internal/appcatalog/testdata/legacy-releases"
 const fixturesDir = "../../../../packages/api-contract/fixtures/mini-apps"
 
 func TestValidateStandardInput(t *testing.T) {

@@ -22,7 +22,7 @@ func TestMiniAppDraftValidationDoesNotGrantPublisherAuthorityOrInstall(t *testin
 	t.Cleanup(func() { _ = store.Close() })
 	server := NewServer(Config{Store: store, LaunchToken: "launch-token"})
 	token, csrf := launchBrowserSession(t, server)
-	source, err := os.ReadFile("../appcatalog/packages/japanese-review-book-1.2.coveapp")
+	source, err := os.ReadFile("../appcatalog/testdata/legacy-releases/japanese-review-book-1.2.coveapp")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,4 +80,10 @@ func TestMiniAppDraftValidationDoesNotGrantPublisherAuthorityOrInstall(t *testin
 	if err != nil || len(instances) != 0 {
 		t.Fatalf("draft validation created instances: %v", err)
 	}
+	// An author sandbox's local provenance must not become installation authority
+	// if a historical local row is encountered in the real workspace.
+	if _, err := server.apps.Install(t.Context(), source, "local"); err != nil {
+		t.Fatal(err)
+	}
+	post("preview", raw, token, csrf, http.StatusBadRequest)
 }
