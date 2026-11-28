@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -41,10 +42,110 @@ func frozenDebateDeliveryFixture(t *testing.T, phase string) (*Service, *persist
 // receipt stays queued, matching an ambiguous delivery before persistence.
 func queueDebateDeliveryWithoutAcknowledgement(t *testing.T, service *Service, turn persistence.DebateTurn, input DebateBrowserResult) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	if _, err := service.SettleDebateBrowserTurn(ctx, turn.DebateID, turn.ID, input); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatal("expected an accepted result with its acknowledgement lost", err)
+	delivered := make(chan error, 1)
+	go func() {
+		_, err := service.SettleDebateBrowserTurn(ctx, turn.DebateID, turn.ID, input)
+		delivered <- err
+	}()
+	watchdog := time.NewTimer(5 * time.Second)
+	defer watchdog.Stop()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	for {
+		service.debateMu.Lock()
+		run := service.debate
+		submitted := run != nil && run.id == turn.DebateID && run.browser[turn.ID] != nil && run.browser[turn.ID].submitted
+		service.debateMu.Unlock()
+		if submitted {
+			break
+		}
+		select {
+		case err := <-delivered:
+			t.Fatal("delivery returned before its receipt was accepted", err)
+		case <-watchdog.C:
+			t.Fatal("receipt was not accepted before the watchdog")
+		case <-poll.C:
+		}
+	}
+	cancel()
+	select {
+	case err := <-delivered:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("expected an accepted result with its acknowledgement lost", err)
+		}
+	case <-watchdog.C:
+		t.Fatal("accepted delivery did not stop after cancellation")
+	}
+}
+
+type observedDebateDeliveryWait struct {
+	context.Context
+	waiting chan struct{}
+	once    sync.Once
+}
+
+func (ctx *observedDebateDeliveryWait) Done() <-chan struct{} {
+	ctx.once.Do(func() { close(ctx.waiting) })
+	return ctx.Context.Done()
+}
+
+func TestDebateExactReceiptReplayWaitsAfterTerminalTurnLeavesRun(t *testing.T) {
+	service, sqlite, upstream, run, turn, task := frozenDebateDeliveryFixture(t, "verifying_response")
+	store := &debateBrowserReceiptFaultStore{SQLiteStore: sqlite}
+	service.store = store
+	input := DebateBrowserResult{ClaimID: "browser-one", Body: "The durably accepted answer", Verification: verifiedSettlement("").Verification}
+	queueDebateDeliveryWithoutAcknowledgement(t, service, turn, input)
+	service.debateMu.Lock()
+	frozen := <-task.result
+	turn.Body, turn.Reasoning, turn.Metrics = frozen.Body, frozen.Reasoning, frozen.Metrics
+	turn.Verification, turn.BrowserReceipt = &frozen.Verification, task.receipt
+	_, err := service.finishDebateTurnLocked(run, turn, "completed", "", "", true)
+	_, stillLive := run.turns[turn.ID]
+	task.expired, task.deadline = true, time.Now().Add(-time.Second)
+	service.debateMu.Unlock()
+	if err != nil || stillLive {
+		t.Fatal("terminal persistence did not leave the expected cleanup window", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	wait := &observedDebateDeliveryWait{Context: ctx, waiting: make(chan struct{})}
+	type deliveryResult struct {
+		turn persistence.DebateTurn
+		err  error
+	}
+	result := make(chan deliveryResult, 1)
+	go func() {
+		turn, err := service.SettleDebateBrowserTurn(wait, turn.DebateID, turn.ID, input)
+		result <- deliveryResult{turn, err}
+	}()
+	watchdog := time.NewTimer(5 * time.Second)
+	defer watchdog.Stop()
+	select {
+	case <-wait.waiting:
+	case returned := <-result:
+		t.Fatal("exact replay revalidated a removed turn instead of awaiting cleanup", returned.err)
+	case <-watchdog.C:
+		t.Fatal("exact replay did not reach its worker completion wait")
+	}
+	// Complete the worker's deferred cleanup only after the replay has reached
+	// its wait, matching the interval after commit and before task.done closes.
+	service.debateMu.Lock()
+	delete(run.browser, turn.ID)
+	close(task.done)
+	service.debateMu.Unlock()
+	select {
+	case returned := <-result:
+		if returned.err != nil || returned.turn.State != "completed" || returned.turn.Body != input.Body {
+			t.Fatal("exact replay lost the committed result", returned.turn, returned.err)
+		}
+	case <-watchdog.C:
+		t.Fatal("exact replay did not receive the committed result")
+	}
+	view, err := sqlite.ReadDebate(t.Context(), turn.DebateID, 0)
+	if err != nil || view.Session.TotalTurns != 1 || store.terminalCommits.Load() != 1 || upstream.calls() != 0 {
+		t.Fatal("receipt replay advanced the cursor or repeated inference", err)
 	}
 }
 

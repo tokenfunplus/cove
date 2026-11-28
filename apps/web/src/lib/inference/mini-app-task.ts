@@ -7,7 +7,11 @@ import { failedVerificationForContract } from "./verification-record";
 
 // Keep paid App output retryable across a brief Local Service outage. Eight
 // sends wait 7.1 seconds in total; claim and inference remain single attempts.
-const appDeliveryPolicy = { maxAttempts: 8, maxDelayMs: 2000 };
+const appDeliveryPolicy = {
+  maxAttempts: 8,
+  maxDelayMs: 2000,
+  attemptTimeoutMs: 2000,
+};
 
 /** Only an explicit start triggers a chargeable request. Polling old jobs never claims work. */
 export function runVerifiedAppTask(
@@ -25,13 +29,27 @@ export function runVerifiedAppTask(
   const claim_id = crypto.randomUUID();
   async function send<T>(step: string, values: Record<string, unknown>) {
     const body = JSON.stringify({ claim_id, ...values });
-    const deliver = () =>
-      request<T>(base + step, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        ...(step === "settle" ? {} : { signal }),
-      });
+    const deliver = async () => {
+      // Settlement outlives task cancellation, but a stalled acknowledgement
+      // must release this attempt so the frozen receipt can be retried.
+      const deadline = step === "settle" ? new AbortController() : undefined;
+      const timer = deadline
+        ? setTimeout(
+            () => deadline.abort(new DOMException("Receipt delivery timed out.", "TimeoutError")),
+            appDeliveryPolicy.attemptTimeoutMs,
+          )
+        : undefined;
+      try {
+        return await request<T>(base + step, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal: deadline?.signal ?? signal,
+        });
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+    };
     // Claim failures are final. Only delivery of these frozen bytes can retry.
     return step === "claim"
       ? deliver()

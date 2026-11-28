@@ -173,7 +173,7 @@ test("unknown inventory presence retries the read after session startup", async 
     .spyOn(miniApps, "instances")
     .mockResolvedValue({ instances: [] });
   const cache = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
   render(
     <QueryClientProvider client={cache}>
@@ -181,5 +181,5 @@ test("unknown inventory presence retries the read after session startup", async 
     </QueryClientProvider>,
   );
   await waitFor(() => expect(instances).toHaveBeenCalledOnce());
-  await waitFor(() => expect(cache.getQueryData(appKeys.presence)).not.toBe(null));
+  await waitFor(() => expect(cache.getQueryData(appKeys.presence)).toBe(false));
 });

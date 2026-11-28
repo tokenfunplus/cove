@@ -10,6 +10,8 @@ export async function runMiniAppScrollHistory({ api, cdp, evaluate, until, click
   // A page-local catalog fixture makes overflow deterministic without installing
   // anything or changing the service's real catalog and instance inventory.
   const injection = await cdp("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
+    // Exercise the popstate/hashchange fallback used without Navigation API.
+    Object.defineProperty(window, 'navigation', { value: undefined, configurable: true });
     const original = window.fetch, entries = ${JSON.stringify(entries)}, pkg = ${JSON.stringify(pkg)};
     window.fetch = (input, init) => {
       const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname;
@@ -73,6 +75,25 @@ export async function runMiniAppScrollHistory({ api, cdp, evaluate, until, click
     await until("document.querySelectorAll('#mini-app-catalog article').length === 24");
     await waitTop(listTop);
     assert.equal(await key(), listKey, "A new same-URL visit does not overwrite the old entry's offset");
+    await click('.mini-app-sidebar a[href="/apps?section=catalog"]');
+    await waitTop(listTop);
+    assert.equal(await key(), listKey, "Clicking the current catalog is a no-op for history and scroll");
+    assert.equal(await evaluate("typeof window.navigation"), "undefined", "The fragment check exercises the native fallback");
+    await evaluate("location.hash = '#native-scroll'");
+    await until("location.hash === '#native-scroll' && history.state?.['cove.workspace-history.v1']?.key !== " + JSON.stringify(listKey));
+    const fragmentKey = await key();
+    await waitTop(listTop);
+    await evaluate("document.querySelector('main.mini-app-shell').scrollTop = 1000");
+    await waitTop(1000);
+    await evaluate("history.back()");
+    await until("location.hash === ''");
+    await waitTop(listTop);
+    assert.equal(await key(), listKey, "The original entry retains its pre-fragment position");
+    await evaluate("history.forward()");
+    await until("location.hash === '#native-scroll'");
+    await waitTop(1000);
+    assert.equal(await key(), fragmentKey, "A fragment stamped after popstate retains its own position");
+    await snapshot("mini-app-native-fragment-after-history-forward");
   } finally {
     await cdp("Page.removeScriptToEvaluateOnNewDocument", { identifier: injection.identifier });
   }

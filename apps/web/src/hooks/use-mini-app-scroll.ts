@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { isWorkspaceNavigation, workspaceEntry } from "@/lib/workspace-navigation";
+import { isWorkspaceNavigation, workspaceEntry, workspaceFragmentStamped } from "@/lib/workspace-navigation";
 
 // Window-local presentation metadata only. Entries and offsets expire on reload.
 const positions = new Map<string, number>();
@@ -23,6 +23,7 @@ export function useMiniAppScroll() {
     const body = content.current;
     if (!node || !body) return;
     let key = currentKey();
+    let href = window.location.href;
     let target: number | undefined;
     let frame: number | undefined;
     let observer: ResizeObserver | undefined;
@@ -57,11 +58,23 @@ export function useMiniAppScroll() {
       schedule();
     };
     const navigate = (event: Event) => {
+      const nextKey = currentKey();
+      const nextHref = window.location.href;
+      if (isWorkspaceNavigation(event) && nextKey === key && nextHref === href) return;
       // Capture the old surface before React replaces or shortens its content.
       save();
       cancel();
-      key = currentKey();
+      key = nextKey;
+      href = nextHref;
       if (key) restore(isWorkspaceNavigation(event) ? 0 : positions.get(key) ?? 0);
+    };
+    const stamped = () => {
+      // Native fragment fallback stamps after popstate. Adopt that identity at
+      // the existing offset without treating metadata as another navigation.
+      save();
+      key = currentKey();
+      href = window.location.href;
+      save();
     };
     const scrolled = () => {
       if (target === undefined) save();
@@ -80,6 +93,7 @@ export function useMiniAppScroll() {
     node.addEventListener("pointerdown", userScroll, { passive: true });
     node.addEventListener("keydown", keyDown);
     window.addEventListener("popstate", navigate);
+    window.addEventListener(workspaceFragmentStamped, stamped);
     restore(key ? positions.get(key) ?? 0 : 0);
     return () => {
       save();
@@ -90,6 +104,7 @@ export function useMiniAppScroll() {
       node.removeEventListener("pointerdown", userScroll);
       node.removeEventListener("keydown", keyDown);
       window.removeEventListener("popstate", navigate);
+      window.removeEventListener(workspaceFragmentStamped, stamped);
     };
   }, []);
   return { main, content };

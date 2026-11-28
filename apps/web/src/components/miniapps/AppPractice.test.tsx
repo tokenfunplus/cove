@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import type { MiniAppPackage } from "@cove/api-contract";
 import { miniApps } from "@/api/mini-apps";
 import { LocalServiceError } from "@/api/client";
 import { AppPractice } from "./AppPractice";
-import { AppView } from "./AppWorkspace";
+import { AppView, AppWorkspace } from "./AppWorkspace";
 const pkg = {
   format: 1,
   publisher: "test",
@@ -138,6 +138,43 @@ test("a revision conflict offers a refreshed queue without changing the reviewed
   expect(finish).toHaveBeenCalledOnce();
   expect(invoke).toHaveBeenCalledTimes(2);
   expect(invoke.mock.calls[1][1]).toMatchObject({ confirm: "signed", records: [{ id: "one", revision: 2 }] });
+});
+
+test.each(["instance", "record"])("a %s conflict refreshes metadata before reloading the practice queue", async (kind) => {
+  const initial = { instance: { id: "book", name: "Book", release_id: "release", enabled: true, revision: 1, grants: ["records.query", "records.commit"] }, package: book };
+  const refreshed = { ...initial, instance: { ...initial.instance, revision: kind === "instance" ? 2 : 1 } };
+  let resolveMetadata!: (value: typeof initial) => void;
+  const metadata = new Promise<typeof initial>((resolve) => { resolveMetadata = resolve; });
+  const get = vi.spyOn(miniApps, "get").mockResolvedValueOnce(initial).mockReturnValue(metadata);
+  let conflicted = false;
+  const invoke = vi.spyOn(miniApps, "invoke").mockImplementation(async (_id, command) => {
+    if (command.action === "learn") {
+      conflicted = true;
+      throw new LocalServiceError({ error: { code: "conflict", message: "The reviewed copy changed.", details: null, request_id: "fixture" } });
+    }
+    if (conflicted && command.expected_instance_revision !== refreshed.instance.revision)
+      throw new LocalServiceError({ error: { code: "conflict", message: "The instance revision is stale.", details: null, request_id: "fixture" } });
+    return { records: [{ ...record, revision: conflicted ? 3 : 2 }] };
+  });
+  mount(<AppWorkspace id="book" surface="page" back={vi.fn()} navigate={vi.fn()} attach={vi.fn()} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Start practice (1)" }));
+  await user.click(screen.getByRole("button", { name: "Show answer" }));
+  await user.click(screen.getByRole("button", { name: "Mark learned" }));
+  const refresh = await screen.findByRole("button", { name: "Return to refreshed queue" });
+  const beforeRefresh = invoke.mock.calls.length;
+  await user.click(refresh);
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  expect(invoke).toHaveBeenCalledTimes(beforeRefresh);
+  expect((refresh as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => { resolveMetadata(refreshed); await metadata; });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Study session" })).toBeNull());
+  await waitFor(() => expect(invoke).toHaveBeenCalledTimes(beforeRefresh + 1));
+  expect(invoke.mock.calls.at(-1)?.[1]).toMatchObject({ action: "due", expected_instance_revision: refreshed.instance.revision });
+  await user.click(screen.getByRole("button", { name: "Start practice (1)" }));
+  await user.click(screen.getByRole("button", { name: "Show answer" }));
+  await user.click(screen.getByRole("button", { name: "Mark learned" }));
+  expect(invoke.mock.calls.at(-1)?.[1].records).toEqual([{ id: record.id, revision: 3 }]);
 });
 test("empty review queue shows a useful next step without a practice button", async () => {
   vi.spyOn(miniApps, "invoke").mockResolvedValue({ records: [] });

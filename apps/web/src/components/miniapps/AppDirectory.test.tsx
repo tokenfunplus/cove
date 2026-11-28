@@ -435,3 +435,19 @@ test("a superseded developer preview cannot replace the most recently imported p
   await act(async () => { complete({ id: "old", digest: "old", origin: "local", package: review }); });
   expect(within(screen.getByRole("dialog", { name: "Review installation" })).getByRole("textbox", { name: "App name" }).getAttribute("value")).toBe("Reading Inbox");
 });
+
+test("an installed package selection supersedes an earlier pending file import", async () => {
+  let complete!: (release: Awaited<ReturnType<typeof miniApps.localPackage>>) => void;
+  vi.mocked(miniApps.releases).mockResolvedValue({ packages: [{ id: "installed", digest: "installed", origin: "local", package: review }] });
+  vi.spyOn(miniApps, "localPackage").mockReturnValue(new Promise((resolve) => { complete = resolve; }));
+  show("packages", vi.fn());
+  const user = userEvent.setup();
+  await screen.findByRole("button", { name: "New instance" });
+  await user.upload(screen.getByLabelText("Choose a Mini App package"), new File([JSON.stringify(inbox)], "inbox.coveapp", { type: "application/json" }));
+  await waitFor(() => expect(miniApps.localPackage).toHaveBeenCalledOnce());
+  await user.click(screen.getByRole("button", { name: "New instance" }));
+  const dialog = await screen.findByRole("dialog", { name: "Review installation" });
+  expect(within(dialog).getByRole("textbox", { name: "App name" })).toHaveProperty("value", "Review book");
+  await act(async () => { complete({ id: "late-import", digest: "late-import", origin: "local", package: inbox }); });
+  expect(within(screen.getByRole("dialog", { name: "Review installation" })).getByRole("textbox", { name: "App name" })).toHaveProperty("value", "Review book");
+});

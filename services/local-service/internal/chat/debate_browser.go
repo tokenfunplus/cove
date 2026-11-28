@@ -217,13 +217,13 @@ func (service *Service) SettleDebateBrowserTurn(ctx context.Context, id, turnID 
 		service.debateMu.Unlock()
 		return persistence.DebateTurn{}, ErrDebateState
 	}
-	turn := run.turns[turnID]
-	success := input.Verification.Status == persistence.VerificationModel || input.Verification.Status == persistence.VerificationGateway
-	if success && (turn.Phase != "verifying_response" || turn.Snapshot.PrivacyMode == provider.PrivacyModePrivateTEE && input.Verification.Status != persistence.VerificationModel) {
-		service.debateMu.Unlock()
-		return persistence.DebateTurn{}, ErrInvalidDebate
-	}
 	if !task.submitted {
+		turn := run.turns[turnID]
+		success := input.Verification.Status == persistence.VerificationModel || input.Verification.Status == persistence.VerificationGateway
+		if success && (turn.Phase != "verifying_response" || turn.Snapshot.PrivacyMode == provider.PrivacyModePrivateTEE && input.Verification.Status != persistence.VerificationModel) {
+			service.debateMu.Unlock()
+			return persistence.DebateTurn{}, ErrInvalidDebate
+		}
 		if task.expired || !time.Now().Before(task.deadline) {
 			service.debateMu.Unlock()
 			return persistence.DebateTurn{}, ErrDebateState
@@ -266,12 +266,15 @@ func (service *Service) persistPendingDebateBrowserResultLocked(turnID string) (
 }
 
 // Resume and Stop recover an accepted result before changing its session.
-// Starting a different debate remains blocked while any result is unsaved.
+// Only work admission is blocked by another debate's unsaved result.
 // Caller holds debateMu.
-func (service *Service) recoverDebateBrowserResultsLocked(id string) error {
+func (service *Service) recoverDebateBrowserResultsLocked(id string, admittingWork bool) error {
 	for turnID, pending := range service.debatePending {
 		if pending.run.id != id {
-			return ErrDebateState
+			if admittingWork {
+				return ErrDebateState
+			}
+			continue
 		}
 		if _, err := service.persistPendingDebateBrowserResultLocked(turnID); err != nil {
 			return err

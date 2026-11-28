@@ -286,3 +286,57 @@ test("aborting App receipt backoff stops retries without replacing the paid resu
   expect(transport.generate).toHaveBeenCalledOnce();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+test("a stalled settlement times out and retries the same paid receipt", async () => {
+  vi.useFakeTimers();
+  const transport = verifiedTransport();
+  const receipts: RequestInit[] = [];
+  vi.mocked(request).mockImplementation(async (path, init) => {
+    if (path.endsWith("/claim")) return claim();
+    if (!path.endsWith("/settle")) return undefined;
+    receipts.push(init!);
+    if (receipts.length === 1) {
+      return new Promise((_, reject) => {
+        init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
+      });
+    }
+    return undefined;
+  });
+  const result = runVerifiedAppTask("book", "task", new AbortController().signal, async () => transport);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(receipts).toHaveLength(1);
+  await vi.advanceTimersByTimeAsync(1999);
+  expect(receipts[0].signal!.aborted).toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(receipts[0].signal!.aborted).toBe(true);
+  expect(receipts[0].signal!.reason.name).toBe("TimeoutError");
+  await vi.advanceTimersByTimeAsync(100);
+  await result;
+  expect(receipts).toHaveLength(2);
+  expect(receipts[0].body).toBe(receipts[1].body);
+  expect(transport.generate).toHaveBeenCalledOnce();
+  expect(vi.mocked(request).mock.calls.filter(([path]) => path.endsWith("/claim"))).toHaveLength(1);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test("task cancellation does not abort an accepted in-flight settlement", async () => {
+  vi.useFakeTimers();
+  const controller = new AbortController();
+  let accepted: RequestInit | undefined;
+  let acknowledge: (() => void) | undefined;
+  vi.mocked(request).mockImplementation(async (path, init) => {
+    if (path.endsWith("/claim")) return claim();
+    if (!path.endsWith("/settle")) return undefined;
+    accepted = init;
+    return new Promise<void>(resolve => { acknowledge = resolve; });
+  });
+  const transport = verifiedTransport();
+  const result = runVerifiedAppTask("book", "task", controller.signal, async () => transport);
+  await vi.waitFor(() => expect(acknowledge).toBeDefined());
+  controller.abort();
+  expect(accepted!.signal!.aborted).toBe(false);
+  acknowledge!();
+  await result;
+  expect(transport.generate).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});

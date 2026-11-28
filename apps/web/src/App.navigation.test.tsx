@@ -512,3 +512,33 @@ test("a second Back that supersedes restoration does not wedge later approved na
   await screen.findByRole("heading", { name: "App workspace" });
   expect(window.location.pathname).toBe("/apps");
 });
+
+test("an unrelated queued Chat traversal clears a previously approved Apps target", async () => {
+  window.history.replaceState(null, "", "/apps");
+  render(<App />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Open Chat" }));
+  act(() => navigateWorkspace("/?queued=earlier", true));
+  const earlier = workspaceEntry()!;
+  act(() => navigateWorkspace("/apps?section=catalog"));
+  await user.click(await screen.findByRole("button", { name: "Open Chat" }));
+  const current = workspaceEntry()!;
+  await user.type(screen.getByRole("textbox", { name: "Draft" }), "First draft");
+  act(() => window.history.back());
+  await screen.findByRole("dialog");
+  await waitFor(() => expect(workspaceEntry()?.key).toBe(current.key));
+  const traverse = window.history.go.bind(window.history);
+  const queued: number[] = [];
+  vi.spyOn(window.history, "go").mockImplementation((delta) => { queued.push(delta ?? 0); });
+  await user.click(screen.getByRole("button", { name: "Leave" }));
+  expect(queued).toEqual([-1]);
+  // A browser-menu traversal reaches another Chat URL before the queued
+  // approval. Later visiting Apps B must protect the newly entered draft.
+  act(() => traverse(-2));
+  await waitFor(() => expect(workspaceEntry()?.key).toBe(earlier.key));
+  await user.type(screen.getByRole("textbox", { name: "Draft" }), "New protected draft");
+  act(() => traverse(1));
+  await screen.findByRole("dialog", { name: "Protect Chat" });
+  expect(screen.queryByRole("heading", { name: "App workspace" })).toBeNull();
+  expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("New protected draft");
+});

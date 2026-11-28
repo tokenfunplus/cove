@@ -107,7 +107,10 @@ export function AppModelTask({
   const [browserError, setBrowserError] = useState<unknown>();
   const cancelledBrowserTask = useRef<string | undefined>(undefined);
   const { profile, model, policyLocal, profiles, catalog } = target;
-  const [started, setStarted] = useState<AppTask>();
+  const [started, setStarted] = useState<{
+    instance: string;
+    task: AppTask;
+  }>();
   const [submitted, setSubmitted] = useState<{
     id: string;
     destination: string;
@@ -127,8 +130,9 @@ export function AppModelTask({
     (job) => job.action === actionId,
   );
   const recent =
-    started ??
+    started?.task ??
     previous.find((job) => job.state === "running" || taskNeedsSave(job));
+  const taskOwner = started?.instance ?? instance.id;
   const retryKey = useRef<
     | {
         key: string;
@@ -138,14 +142,14 @@ export function AppModelTask({
       }
     | undefined
   >(undefined);
-  const { poll, task } = useAppTaskStatus(instance.id, recent, "generation");
+  const { poll, task } = useAppTaskStatus(taskOwner, recent, "generation");
   const active = task?.state === "running";
   const pendingById = new Map(
     (history.data?.tasks ?? [])
       .filter(taskNeedsSave)
       .map((job) => [job.id, job]),
   );
-  if (task) {
+  if (task && taskOwner === instance.id) {
     if (taskNeedsSave(task)) pendingById.set(task.id, task);
     else if (task.state !== "running") pendingById.delete(task.id);
   }
@@ -155,8 +159,8 @@ export function AppModelTask({
     if (task?.state === "cancelled") cancelledBrowserTask.current = task.id;
     if (task && task.state !== "running") void history.refetch();
     if (task && task.state !== "running")
-      stopVerifiedAppTask(instance.id, task.id);
-  }, [instance.id, task?.id, task?.state]);
+      stopVerifiedAppTask(taskOwner, task.id);
+  }, [taskOwner, task?.id, task?.state]);
   function runBrowserTask(job: AppTask, owner: string) {
     if (!job.browser || job.state !== "running") return;
     void startVerifiedAppTask(owner, job.id).catch((error) => {
@@ -212,7 +216,7 @@ export function AppModelTask({
           retryKey.current = undefined;
           setSubmitted({ ...previous.data, id: admitted.id });
           runBrowserTask(admitted, previous.instance);
-          return admitted;
+          return { instance: previous.instance, task: admitted };
         }
       }
       if (retryKey.current?.key !== fingerprint)
@@ -229,7 +233,7 @@ export function AppModelTask({
       retryKey.current = undefined;
       runBrowserTask(job, instance.id);
       setSubmitted({ ...data, id: job.id });
-      return job;
+      return { instance: instance.id, task: job };
     },
     onSuccess: (job) => {
       setStarted(job);
@@ -239,9 +243,9 @@ export function AppModelTask({
   const cancel = useMutation({
     retry: false,
     mutationFn: async () => {
-      const cancelled = await miniApps.cancel(instance.id, task!.id);
+      const cancelled = await miniApps.cancel(taskOwner, task!.id);
       cancelledBrowserTask.current = task!.id;
-      stopVerifiedAppTask(instance.id, task!.id);
+      stopVerifiedAppTask(taskOwner, task!.id);
       return cancelled;
     },
     onSuccess: () => {
@@ -253,6 +257,8 @@ export function AppModelTask({
     task?.inputs ??
     (submitted?.id === task?.id ? submitted?.inputs : undefined);
   const inputReady = !!source;
+  const candidateIdentityMatches =
+    taskOwner === instance.id && task?.action === actionId;
   const candidateReleaseMatches = task?.release_id === instance.release_id;
   const bindings = action.candidate_bindings ?? {};
   const generated = candidate && {
@@ -269,7 +275,11 @@ export function AppModelTask({
       )
     : undefined;
   const parsed =
-    inputReady && candidateReleaseMatches && generated && task?.result
+    inputReady &&
+    candidateIdentityMatches &&
+    candidateReleaseMatches &&
+    generated &&
+    task?.result
       ? candidateBatch(task.result, generated, expectedCount)
       : { rows: [], rejected: 0 };
   const raw = parsed.rows;
@@ -314,7 +324,8 @@ export function AppModelTask({
           task={pending.id}
           onSaved={() => {
             setBrowserError(undefined);
-            if (pending.id === task?.id) setStarted(pending);
+            if (pending.id === task?.id)
+              setStarted({ instance: instance.id, task: pending });
           }}
         />
       ))}
@@ -365,7 +376,8 @@ export function AppModelTask({
             value={recent?.id ?? ""}
             onChange={(e) => {
               setSubmitted(undefined);
-              setStarted(previous.find((t) => t.id === e.target.value));
+              const selected = previous.find((t) => t.id === e.target.value);
+              setStarted(selected && { instance: instance.id, task: selected });
             }}
           >
             <option value="">Select a previous task</option>
@@ -415,7 +427,11 @@ export function AppModelTask({
             <div className="text-sm">
               <strong>Submitted input</strong>
               <Fields
-                fields={modelInputs(action, task.inputs ?? submitted!.inputs)}
+                fields={
+                  candidateIdentityMatches
+                    ? modelInputs(action, task.inputs ?? submitted!.inputs)
+                    : task.inputs ?? submitted!.inputs
+                }
               />
               <p>
                 {task.destination ?? submitted?.destination} ·{" "}
@@ -474,6 +490,14 @@ export function AppModelTask({
             </p>
           )}
           {task.state === "completed" &&
+            candidate &&
+            !candidateIdentityMatches && (
+              <p role="status">
+                This recovered result belongs to a different or unknown app action.
+                Open its original app action to use these candidates.
+              </p>
+            )}
+          {task.state === "completed" &&
             inputReady &&
             (results.length ? (
               <CandidateSelection
@@ -488,12 +512,14 @@ export function AppModelTask({
               />
             ) : (
               <p className="whitespace-pre-wrap break-words text-sm">
-                {candidateReleaseMatches && expectedCount !== undefined && (
-                  <strong className="block">
-                    Expected {expectedCount} valid candidates. Review the model
-                    response or try again.
-                  </strong>
-                )}
+                {candidateIdentityMatches &&
+                  candidateReleaseMatches &&
+                  expectedCount !== undefined && (
+                    <strong className="block">
+                      Expected {expectedCount} valid candidates. Review the model
+                      response or try again.
+                    </strong>
+                  )}
                 {task.result}
               </p>
             ))}

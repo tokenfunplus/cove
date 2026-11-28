@@ -542,6 +542,20 @@ export function AppView({
             queryKey: ["mini-app-records", instance.id],
           })
         }
+        refresh={async () => {
+          const refreshed = await cache.fetchQuery({
+            queryKey: appKeys.instance(instance.id),
+            queryFn: () => miniApps.get(instance.id),
+            staleTime: 0,
+          });
+          await cache.invalidateQueries({
+            queryKey: ["mini-app-records", instance.id],
+            refetchType:
+              refreshed.instance.revision === instance.revision
+                ? "active"
+                : "none",
+          });
+        }}
       />
     ) : null;
   function renderAction(id: string) {

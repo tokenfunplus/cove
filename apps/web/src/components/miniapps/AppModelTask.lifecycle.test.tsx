@@ -521,6 +521,58 @@ test("an ambiguous admission recovers the admitted task before any new paid requ
   expect(startVerifiedAppTask).toHaveBeenCalledWith("book", start.mock.calls[0][1].operationId);
 });
 
+test.each(["action", "instance"])("a recovered admission retains its original %s before exposing candidates", async (change) => {
+  const admitted: AppTask = {
+    ...running,
+    state: "completed",
+    browser: false,
+    inputs: { passage: "Original paid input", material: "M1" },
+    result: '[{"question":"Original question","answer":"Original answer"}]',
+  };
+  vi.spyOn(miniApps, "tasks").mockResolvedValue({ tasks: [] });
+  const start = vi.spyOn(miniApps, "startTask").mockRejectedValue(new Error("Lost admission response"));
+  const lookup = vi.spyOn(miniApps, "task").mockImplementation(async (_instance, id) => ({ ...admitted, id }));
+  const check = vi.spyOn(miniApps, "checkCandidates").mockResolvedValue({ duplicates: [] });
+  const choose = vi.fn();
+  const preview = vi.fn();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const view = (changed = false) => <QueryClientProvider client={client}>
+    <AppModelTask
+      instance={{ id: changed && change === "instance" ? "other-book" : "book", name: "Book", release_id: "r", enabled: true, revision: 1, grants: ["ai.generate", "records.query", "records.commit"] }}
+      actionId={changed && change === "action" ? "practice" : "study"}
+      action={{ title: "Generate", op: "generate", inputs: { passage: "text", material: "text", reference: "text" }, candidate_bindings: { source: changed ? "reference" : "material" }, surfaces: ["page"] }}
+      inputs={{ passage: "Current input", material: "M1", reference: "Other material" }}
+      surface="page"
+      localRequired={false}
+      candidate={{ title: "Save", op: "create", inputs: { question: "text", answer: "text", source: "text" }, surfaces: ["page"] }}
+      previewCandidates={preview}
+      choose={choose}
+    />
+  </QueryClientProvider>;
+  const page = render(view());
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  await screen.findByText("Lost admission response");
+  const operation = start.mock.calls[0][1].operationId;
+  page.rerender(view(true));
+  fireEvent.click(screen.getByRole("button", { name: "Start model task" }));
+  await screen.findByText(/belongs to a different or unknown app action/);
+  expect(lookup).toHaveBeenCalledWith("book", operation);
+  expect(start).toHaveBeenCalledOnce();
+  expect(screen.getByText(admitted.result!)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Use candidate 1" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Preview selected/ })).toBeNull();
+  expect(check).not.toHaveBeenCalled();
+  expect(choose).not.toHaveBeenCalled();
+  expect(preview).not.toHaveBeenCalled();
+
+  page.rerender(view());
+  const useCandidate = await screen.findByRole("button", { name: "Use candidate 1" });
+  await waitFor(() => expect((useCandidate as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(useCandidate);
+  expect(choose).toHaveBeenCalledExactlyOnceWith({ question: "Original question", answer: "Original answer", source: "M1" });
+  expect(start).toHaveBeenCalledOnce();
+});
+
 test("confirmed task detail clears a stale pending history entry when history refresh fails", async () => {
   let saved = false;
   const waiting: AppTask = { ...running, browser: false, state: "save_failed", pending_save: true, result: "Frozen model result", inputs: { passage: "Paid input" } };

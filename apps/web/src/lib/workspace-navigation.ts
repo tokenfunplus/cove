@@ -1,4 +1,5 @@
 const entryKey = "cove.workspace-history.v1";
+export const workspaceFragmentStamped = "cove-workspace-fragment-stamped";
 
 export interface WorkspaceEntry {
   lineage: string;
@@ -49,6 +50,7 @@ export function trackWorkspaceFragment(previous: WorkspaceEntry) {
     key: crypto.randomUUID(),
   };
   window.history.replaceState(withEntry(window.history.state, entry), "");
+  window.dispatchEvent(new Event(workspaceFragmentStamped));
   return entry;
 }
 

@@ -808,12 +808,13 @@ export function AppDirectory({
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() =>
+                        onClick={() => {
+                          ++previewRequest.current;
                           setPreview({
                             pkg: release.package,
                             source: { kind: "installed", release },
-                          })
-                        }
+                          });
+                        }}
                       >
                         <Plus />
                         New instance

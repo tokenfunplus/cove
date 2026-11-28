@@ -220,7 +220,7 @@ func (service *Service) ControlDebate(ctx context.Context, id, action string) (p
 	}
 	service.debateMu.Lock()
 	if action == "resume" || action == "step" || action == "stop" {
-		if err := service.recoverDebateBrowserResultsLocked(id); err != nil {
+		if err := service.recoverDebateBrowserResultsLocked(id, action != "stop"); err != nil {
 			service.debateMu.Unlock()
 			return persistence.DebateSession{}, err
 		}

@@ -130,6 +130,10 @@ export async function runMiniAppTurn({
   assert(selectedRecord, "The selected reference has a saved source record");
   const beforeRecordSharing = requests.length;
   await click('button[aria-label="Send message"]');
+  for (let attempt = 0; attempt < 100 && requests.length === beforeRecordSharing; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  assert(requests.length > beforeRecordSharing, "Sharing selected records sends a model request");
   await until(
     'document.body.textContent.includes("Browser answer from model-one")&&!document.querySelector(\'button[aria-label="Stop generation"]\')',
   );

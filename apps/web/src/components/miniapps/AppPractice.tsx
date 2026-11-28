@@ -23,6 +23,7 @@ interface Props {
   records: MiniAppRecord[];
   finish: () => void;
   changed: () => void;
+  refresh?: () => Promise<void>;
 }
 
 // Keep the reviewed revisions for this session even when another tab edits a card.
@@ -36,6 +37,7 @@ export function AppPractice({
   records,
   finish,
   changed,
+  refresh,
 }: Props) {
   const [index, setIndex] = useState(0);
   const [shown, show] = useState(false);
@@ -74,6 +76,15 @@ export function AppPractice({
   const conflict =
     (mark.error as { envelope?: { error?: { code?: string } } })?.envelope
       ?.error?.code === "conflict";
+  const refreshQueue = useMutation({
+    retry: false,
+    mutationFn: async () => {
+      if (refresh) await refresh();
+      else changed();
+      finish();
+    },
+  });
+  const busy = mark.isPending || refreshQueue.isPending;
   const content = (
     <section className="study-session space-y-5" aria-label="Practice session">
       <div className="flex items-center justify-between gap-4">
@@ -138,7 +149,7 @@ export function AppPractice({
                   <Button
                     variant="outline"
                     key={action}
-                    disabled={mark.isPending}
+                    disabled={busy}
                     onClick={() =>
                       mark.mutate({
                         action,
@@ -170,14 +181,14 @@ export function AppPractice({
                   )}
                 />
                 <Button
-                  disabled={mark.isPending}
+                  disabled={busy}
                   onClick={() => mark.mutate(preview.command)}
                 >
                   Confirm change
                 </Button>
                 <Button
                   variant="ghost"
-                  disabled={mark.isPending}
+                  disabled={busy}
                   onClick={() => setPreview(undefined)}
                 >
                   Back
@@ -212,19 +223,18 @@ export function AppPractice({
           </div>
         )}
         <ErrorMessage error={mark.error} />
+        <ErrorMessage error={refreshQueue.error} />
         {conflict && (
           <Button
             variant="outline"
-            onClick={() => {
-              changed();
-              finish();
-            }}
+            disabled={busy}
+            onClick={() => refreshQueue.mutate()}
           >
             Return to refreshed queue
           </Button>
         )}
       </div>
-      <Button variant="ghost" disabled={mark.isPending} onClick={finish}>
+      <Button variant="ghost" disabled={busy} onClick={finish}>
         {record ? "End practice" : "Return to book"}
       </Button>
     </section>
@@ -233,7 +243,7 @@ export function AppPractice({
     <StudyDialog
       title={record ? "Study session" : "Session complete"}
       close={finish}
-      busy={mark.isPending}
+      busy={busy}
     >
       {content}
     </StudyDialog>

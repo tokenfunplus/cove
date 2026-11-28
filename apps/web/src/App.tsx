@@ -104,6 +104,9 @@ export function App() {
         commit();
         return;
       }
+      // A queued approval belongs only to the traversal that consumes it.
+      // Another browser destination must not leave that target authorized.
+      allowed.current = undefined;
       if (next === address) {
         const previous = current.current!;
         if (
