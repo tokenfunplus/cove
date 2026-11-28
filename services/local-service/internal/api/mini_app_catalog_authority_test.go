@@ -141,36 +141,28 @@ func TestCatalogUpgradeRemainsBoundToItsOriginalSigner(t *testing.T) {
 	if err := json.Unmarshal(call("POST", "/instances", miniapps.CreateRequest{ReleaseID: initial.ID, Name: "My notes", Grants: initial.Package.Capabilities}, 200), &book); err != nil {
 		t.Fatal(err)
 	}
-	// Legacy unbound exports remain recoverable through the ordinary restore
-	// endpoint, but only as a separate disabled copy using exact trusted bytes.
-	legacyStore, err := persistence.OpenSQLite(":memory:")
+	// Restore only the recorded signed identity, never an inferred signer.
+	backup := call("GET", "/instances/"+book.ID+"/export", nil, 200)
+	var unsupported miniapps.Backup
+	if err := json.Unmarshal(backup, &unsupported); err != nil {
+		t.Fatal(err)
+	}
+	unbound, err := miniapps.Preview(old, "catalog")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer legacyStore.Close()
-	legacyService := miniapps.New(legacyStore)
-	legacy, err := legacyService.Install(t.Context(), old, "catalog")
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyBook, err := legacyService.Create(t.Context(), miniapps.CreateRequest{ReleaseID: legacy.ID, Name: "Legacy notes", Grants: legacy.Package.Capabilities})
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacySnapshot, err := legacyService.Export(t.Context(), legacyBook.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacyBackup, err := json.Marshal(legacySnapshot)
-	if err != nil {
-		t.Fatal(err)
+	unsupported.ReleaseID, unsupported.CatalogAuthority = unbound.ID, ""
+	instancesBefore := call("GET", "/instances", nil, 200)
+	call("POST", "/instances/restore", unsupported, 409)
+	if after := call("GET", "/instances", nil, 200); !bytes.Equal(instancesBefore, after) {
+		t.Fatal("rejected restore changed the inventory")
 	}
 	var restored miniapps.Instance
-	if err := json.Unmarshal(call("POST", "/instances/restore", json.RawMessage(legacyBackup), 200), &restored); err != nil {
+	if err := json.Unmarshal(call("POST", "/instances/restore", json.RawMessage(backup), 200), &restored); err != nil {
 		t.Fatal(err)
 	}
-	if restored.ID == legacyBook.ID || restored.ReleaseID != initial.ID || restored.Enabled || len(restored.Grants) != 0 {
-		t.Fatal("legacy restore did not create a disabled bound copy", restored)
+	if restored.ID == book.ID || restored.ReleaseID != initial.ID || restored.Enabled || len(restored.Grants) != 0 {
+		t.Fatal("restore did not create a disabled copy with the original signer", restored)
 	}
 	before := call("GET", "/instances/"+book.ID+"/export", nil, 200)
 	call("PUT", "/catalog-settings", map[string]any{"url": configB.URL, "public_key": configB.PublicKey}, 409)

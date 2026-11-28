@@ -1,3 +1,4 @@
+import { useWorkspaceActive } from "@/lib/workspace-active";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,8 @@ export function PopoverContent({
   collisionPadding = 14,
   ...props
 }: ComponentProps<typeof PopoverPrimitive.Content>) {
+  const active = useWorkspaceActive();
+  if (!active) return null;
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content

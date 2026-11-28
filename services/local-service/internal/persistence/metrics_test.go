@@ -40,7 +40,7 @@ func TestGenerationMetricsSurviveRestartWithoutInventingLegacyUsage(t *testing.T
 		t.Fatalf("saved metrics = %#v, err = %v", got.Metrics, err)
 	}
 	dropWebSearchSchema(t, store)
-	if _, err := store.db.Exec(`DROP TABLE debate_turns; DROP TABLE debate_interventions; DROP TABLE debate_sessions; DROP TABLE conversation_branches; ALTER TABLE messages DROP COLUMN reasoning; ALTER TABLE generations DROP COLUMN metrics; PRAGMA user_version = 16;`); err != nil {
+	if _, err := store.db.Exec(removeMiniAppsSchema + `DROP TABLE debate_turns; DROP TABLE debate_interventions; DROP TABLE debate_sessions; DROP TABLE conversation_branches; ALTER TABLE messages DROP COLUMN reasoning; ALTER TABLE generations DROP COLUMN metrics; PRAGMA user_version = 16;`); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.migrate(); err != nil {

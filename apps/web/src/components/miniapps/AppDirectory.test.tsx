@@ -397,7 +397,7 @@ test.each([
   { scenario: "official successor to bundled", previous: { origin: "builtin" }, selected: { origin: "catalog", catalog_authority: "official", official_catalog: true }, update: true },
   { scenario: "custom successor to bundled", previous: { origin: "builtin" }, selected: { origin: "catalog", catalog_authority: "custom" }, update: false },
   { scenario: "personal package with matching publisher", previous: { origin: "local" }, selected: { origin: "builtin" }, update: false },
-  { scenario: "verified legacy package", previous: { origin: "local", legacy_verified: true }, selected: { origin: "builtin" }, update: true },
+  { scenario: "local package", previous: { origin: "local" }, selected: { origin: "builtin" }, update: false },
   { scenario: "incompatible collection schema", previous: { origin: "builtin", schema_version: 2 }, selected: { origin: "builtin" }, update: false },
 ])("Discover offers a reviewed update only for $scenario", async ({ previous, selected: changes, update }) => {
   const { schema_version, ...provenance } = previous;

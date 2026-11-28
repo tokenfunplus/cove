@@ -76,7 +76,7 @@ func TestSchemaTwentyMigrationPreservesDebatesAndProtectsNewControls(t *testing.
 	}
 	session := storedDebateFixture(t, store)
 	dropWebSearchSchema(t, store)
-	if _, err := store.db.Exec(`PRAGMA user_version=20`); err != nil {
+	if _, err := store.db.Exec(removeMiniAppsSchema + `PRAGMA user_version=20`); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {

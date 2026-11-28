@@ -44,7 +44,6 @@ export function AppSettings({
             entry,
             current.origin,
             entry.origin,
-            current.legacy_verified,
             current,
             entry,
           ),
@@ -68,7 +67,6 @@ export function AppSettings({
             r.package,
             current.origin,
             r.origin,
-            current.legacy_verified,
             current,
             r,
           )),
@@ -183,7 +181,7 @@ export function AppSettings({
         </ul>
       )}
       <ErrorMessage error={readiness.error} />
-      {current && (current.origin !== "local" || current.legacy_verified) && (
+      {current && current.origin !== "local" && (
         <div className="space-y-2">
           <Button
             variant="outline"
@@ -199,7 +197,7 @@ export function AppSettings({
           <ErrorMessage error={check.error} />
         </div>
       )}
-      {current?.origin === "local" && !current.legacy_verified && (
+      {current?.origin === "local" && (
         <p className="text-sm">
           To update this personal app, import a newer package in My apps and
           choose this instance.

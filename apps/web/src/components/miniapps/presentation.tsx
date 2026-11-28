@@ -18,7 +18,6 @@ export function canUpgrade(
   >,
   oldOrigin: string,
   newOrigin: string,
-  legacyVerified = false,
   beforeAuthority: {
     catalog_authority?: string;
     official_catalog?: boolean;
@@ -30,7 +29,7 @@ export function canUpgrade(
 ) {
   const sameOrigin =
     (oldOrigin === "local" && newOrigin === "local") ||
-    ((oldOrigin === "builtin" || legacyVerified) &&
+    (oldOrigin === "builtin" &&
       (newOrigin === "builtin" ||
         (newOrigin === "catalog" &&
           afterAuthority.official_catalog === true))) ||

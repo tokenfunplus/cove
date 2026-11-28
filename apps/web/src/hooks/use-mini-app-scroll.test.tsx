@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { ensureWorkspaceEntry, navigateWorkspace, trackWorkspaceFragment, workspaceEntry } from "@/lib/workspace-navigation";
+import { navigateWorkspace } from "@/lib/workspace-navigation";
 import { useMiniAppScroll } from "./use-mini-app-scroll";
 
 let frames: Map<number, FrameRequestCallback>;
@@ -9,7 +9,6 @@ let resize: (() => void) | undefined;
 let disconnected = vi.fn<() => void>();
 beforeEach(() => {
   window.history.replaceState(null, "", "/apps");
-  ensureWorkspaceEntry();
   frames = new Map();
   let sequence = 0;
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -49,20 +48,20 @@ function mount() {
     node.scrollTop = value;
     node.dispatchEvent(new Event("scroll"));
   });
-  const traverse = (state: unknown, path = "/apps") => act(() => {
-    window.history.replaceState(state, "", path);
-    window.dispatchEvent(new PopStateEvent("popstate", { state }));
+  const traverse = (path: string) => act(() => {
+    window.history.replaceState(null, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
   });
   frame();
   return { ...view, node, frame, scrollTo, traverse, height: (value: number) => { height = value; } };
 }
 
-test("new entries start at zero and Back/Forward restore by entry after content grows", () => {
-  const first = window.history.state;
+test("new entries start at zero and Back/Forward restore each URL after content grows", () => {
+  const first = "/apps";
   const view = mount();
   view.scrollTo(600);
   act(() => navigateWorkspace("/apps?section=catalog"));
-  const second = window.history.state;
+  const second = "/apps?section=catalog";
   view.frame();
   expect(view.node.scrollTop).toBe(0);
   view.scrollTo(220);
@@ -80,7 +79,7 @@ test("new entries start at zero and Back/Forward restore by entry after content 
 });
 
 test("user scrolling cancels a pending restoration", () => {
-  const first = window.history.state;
+  const first = "/apps";
   const view = mount();
   view.scrollTo(600);
   act(() => navigateWorkspace("/apps?section=catalog"));
@@ -100,11 +99,11 @@ test("user scrolling cancels a pending restoration", () => {
 });
 
 test("unmount disconnects a fresh pending restoration and cancels its queued frame", () => {
-  const first = window.history.state;
+  const first = "/apps";
   const view = mount();
   view.scrollTo(600);
   act(() => navigateWorkspace("/apps?section=catalog"));
-  const second = window.history.state;
+  const second = "/apps?section=catalog";
   view.frame();
   view.height(200);
   view.traverse(first);
@@ -123,30 +122,6 @@ test("unmount disconnects a fresh pending restoration and cancels its queued fra
   expect(view.node.scrollTop).toBe(100);
 });
 
-test("a fragment stamped after popstate adopts its key without resetting either saved offset", () => {
-  const original = window.history.state;
-  const entry = workspaceEntry()!;
-  const view = mount();
-  view.scrollTo(600);
-  act(() => {
-    window.history.pushState(null, "", "/apps#native");
-    window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
-    trackWorkspaceFragment(entry);
-  });
-  const fragment = window.history.state;
-  view.frame();
-  expect(view.node.scrollTop).toBe(600);
-  view.scrollTo(300);
-  act(() => navigateWorkspace("/apps?section=catalog"));
-  view.frame();
-  view.traverse(fragment, "/apps#native");
-  view.frame();
-  expect(view.node.scrollTop).toBe(300);
-  view.traverse(original);
-  view.frame();
-  expect(view.node.scrollTop).toBe(600);
-});
-
 test.each([false, true])("same-URL navigation preserves position (replace=%s), while a replaced route starts at zero", (replace) => {
   const view = mount();
   view.scrollTo(600);
@@ -156,19 +131,4 @@ test.each([false, true])("same-URL navigation preserves position (replace=%s), w
   act(() => navigateWorkspace("/apps?section=catalog", true));
   view.frame();
   expect(view.node.scrollTop).toBe(0);
-});
-
-test("untracked destinations keep their native scroll behavior and no global history setting changes", () => {
-  const mode = window.history.scrollRestoration;
-  const first = window.history.state;
-  const view = mount();
-  view.scrollTo(600);
-  view.traverse(null);
-  view.frame();
-  expect(view.node.scrollTop).toBe(600);
-  view.scrollTo(75);
-  view.traverse(first);
-  view.frame();
-  expect(view.node.scrollTop).toBe(600);
-  expect(window.history.scrollRestoration).toBe(mode);
 });

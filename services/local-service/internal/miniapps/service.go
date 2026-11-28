@@ -16,14 +16,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tokenfunplus/cove/services/local-service/internal/appcatalog"
 	"github.com/tokenfunplus/cove/services/local-service/internal/persistence"
 )
 
 type Release struct {
 	CatalogAuthority string  `json:"catalog_authority,omitempty"`
 	OfficialCatalog  bool    `json:"official_catalog,omitempty"`
-	LegacyVerified   bool    `json:"legacy_verified,omitempty"`
 	ID               string  `json:"id"`
 	Origin           string  `json:"origin"`
 	Digest           string  `json:"digest"`
@@ -107,7 +105,6 @@ func loadRelease(tx *persistence.MiniAppStore, id string) (r Release, err error)
 	}
 	r.ID, r.Digest = row.ID, row.Digest
 	r.Origin, r.CatalogAuthority, r.OfficialCatalog = releaseOrigin(row.Origin)
-	r.LegacyVerified = row.Origin == "local" && appcatalog.IsBundledDigest(row.Digest)
 	err = json.Unmarshal(row.Manifest, &r.Package)
 	return
 }
@@ -427,8 +424,8 @@ func (s *Service) RemoveRelease(ctx context.Context, id string) error {
 	})
 }
 
-// releaseOrigin decodes only host-created provenance. A legacy unbound catalog
-// remains readable, but cannot silently acquire a signing identity for updates.
+// releaseOrigin decodes host-created provenance. An absent signing authority
+// cannot authorize a catalog update.
 func releaseOrigin(origin string) (channel, authority string, official bool) {
 	for _, prefix := range []string{"catalog:", "official-catalog:"} {
 		if strings.HasPrefix(origin, prefix) {
@@ -463,7 +460,7 @@ func compatibleAuthority(before, after Release) bool {
 	case "builtin":
 		return after.Origin == "builtin" || after.Origin == "catalog" && after.OfficialCatalog
 	case "local":
-		return after.Origin == "local" || before.LegacyVerified && (after.Origin == "builtin" || after.Origin == "catalog" && after.OfficialCatalog)
+		return after.Origin == "local"
 	default:
 		return false
 	}

@@ -67,3 +67,19 @@ test("outside interaction closes only the confirmation above a study dialog", as
   expect(parentClosed).not.toHaveBeenCalled();
   expect(screen.getByRole("dialog", { name: "Generate questions" })).toBeTruthy();
 });
+
+test("inactive Chat releases its portaled dialog without closing its saved UI state", async () => {
+  const { WorkspaceActiveContext } = await import("@/lib/workspace-active");
+  const close = vi.fn();
+  const tree = (active: boolean) => <WorkspaceActiveContext value={active}>
+    <Dialog open onClose={close}><DialogContent><DialogTitle>Retained Chat dialog</DialogTitle><button>Dialog control</button></DialogContent></Dialog>
+  </WorkspaceActiveContext>;
+  const view = render(tree(true));
+  await screen.findByRole("dialog", { name: "Retained Chat dialog" });
+  view.rerender(tree(false));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(document.body.style.pointerEvents).not.toBe("none");
+  expect(close).not.toHaveBeenCalled();
+  view.rerender(tree(true));
+  await screen.findByRole("dialog", { name: "Retained Chat dialog" });
+});

@@ -24,13 +24,9 @@ type authorityHistory struct {
 }
 
 type preferences struct {
-	TrustPolicy    int                         `json:"trust_policy,omitempty"`
-	ReleaseDigests map[string]bool             `json:"releases,omitempty"`
-	Versions       map[string]string           `json:"versions,omitempty"`
-	Publishers     map[string]bool             `json:"publishers,omitempty"`
-	Config         *Catalog                    `json:"config,omitempty"`
-	Checkpoints    map[string]checkpoint       `json:"checkpoints,omitempty"`
-	Authorities    map[string]authorityHistory `json:"authorities,omitempty"`
+	Config      *Catalog                    `json:"config,omitempty"`
+	Checkpoints map[string]checkpoint       `json:"checkpoints,omitempty"`
+	Authorities map[string]authorityHistory `json:"authorities,omitempty"`
 }
 
 type DirectorySettings struct {
@@ -64,7 +60,7 @@ type releaseRefresh struct {
 }
 
 func Open(path string, defaults Catalog) (*Directory, error) {
-	d := &Directory{path: path, defaults: canonicalCatalog(defaults)}
+	d := &Directory{path: path, defaults: defaults}
 	if path != "" {
 		raw, err := os.ReadFile(path)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -76,24 +72,6 @@ func Open(path string, defaults Catalog) (*Directory, error) {
 				d.prefs = preferences{}
 			}
 		}
-	}
-	d.prefs = normalizeAuthorityPreferences(d.prefs)
-	// Older preferences did not distinguish the official signing authority from a
-	// user-selected directory. Reverify cached release identities under this policy.
-	if d.prefs.TrustPolicy < 2 {
-		// A legacy version history can only be attributed when exactly one key
-		// was ever accepted. Multi-authority histories must be reverified.
-		if len(d.prefs.Checkpoints) == 1 {
-			for key := range d.prefs.Checkpoints {
-				if Authority(key) != "" {
-					d.prefs.Authorities = map[string]authorityHistory{key: {Versions: maps.Clone(d.prefs.Versions), Publishers: maps.Clone(d.prefs.Publishers)}}
-				}
-			}
-		}
-		d.prefs.ReleaseDigests = nil
-		d.prefs.Versions = nil
-		d.prefs.Publishers = nil
-		d.prefs.TrustPolicy = 2
 	}
 	return d, nil
 }
@@ -294,7 +272,6 @@ func (d *Directory) list(ctx context.Context, refresh *releaseRefresh) ([]Entry,
 			return errors.New("catalog release index is older than the trusted revision")
 		}
 		next := d.prefs
-		next.TrustPolicy = 2
 		next.Authorities = maps.Clone(d.prefs.Authorities)
 		if next.Authorities == nil {
 			next.Authorities = make(map[string]authorityHistory)

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { isWorkspaceNavigation, workspaceEntry, workspaceFragmentStamped } from "@/lib/workspace-navigation";
+import { isWorkspaceNavigation } from "@/lib/workspace-navigation";
 
-// Window-local presentation metadata only. Entries and offsets expire on reload.
+// Per-URL presentation offsets only; no traversal indexes or history rewriting.
 const positions = new Map<string, number>();
 const maxPositions = 128;
 function remember(key: string, top: number) {
@@ -11,8 +11,7 @@ function remember(key: string, top: number) {
 }
 function currentKey() {
   if (!/^\/apps(?:\/|$)/.test(window.location.pathname)) return;
-  const entry = workspaceEntry();
-  return entry ? entry.lineage + "/" + entry.key : undefined;
+  return window.location.pathname + window.location.search + window.location.hash;
 }
 
 export function useMiniAppScroll() {
@@ -23,7 +22,6 @@ export function useMiniAppScroll() {
     const body = content.current;
     if (!node || !body) return;
     let key = currentKey();
-    let href = window.location.href;
     let target: number | undefined;
     let frame: number | undefined;
     let observer: ResizeObserver | undefined;
@@ -41,8 +39,6 @@ export function useMiniAppScroll() {
       if (frame !== undefined) return;
       frame = requestAnimationFrame(() => {
         frame = undefined;
-        // App stamps the initial entry in its parent effect after this mount.
-        key ??= currentKey();
         if (target === undefined || !key) return;
         node.scrollTop = target;
         if (Math.abs(node.scrollTop - target) < 1) cancel();
@@ -59,22 +55,12 @@ export function useMiniAppScroll() {
     };
     const navigate = (event: Event) => {
       const nextKey = currentKey();
-      const nextHref = window.location.href;
-      if (isWorkspaceNavigation(event) && nextKey === key && nextHref === href) return;
+      if (nextKey === key) return;
       // Capture the old surface before React replaces or shortens its content.
       save();
       cancel();
       key = nextKey;
-      href = nextHref;
       if (key) restore(isWorkspaceNavigation(event) ? 0 : positions.get(key) ?? 0);
-    };
-    const stamped = () => {
-      // Native fragment fallback stamps after popstate. Adopt that identity at
-      // the existing offset without treating metadata as another navigation.
-      save();
-      key = currentKey();
-      href = window.location.href;
-      save();
     };
     const scrolled = () => {
       if (target === undefined) save();
@@ -93,7 +79,7 @@ export function useMiniAppScroll() {
     node.addEventListener("pointerdown", userScroll, { passive: true });
     node.addEventListener("keydown", keyDown);
     window.addEventListener("popstate", navigate);
-    window.addEventListener(workspaceFragmentStamped, stamped);
+    window.addEventListener("hashchange", navigate);
     restore(key ? positions.get(key) ?? 0 : 0);
     return () => {
       save();
@@ -104,7 +90,7 @@ export function useMiniAppScroll() {
       node.removeEventListener("pointerdown", userScroll);
       node.removeEventListener("keydown", keyDown);
       window.removeEventListener("popstate", navigate);
-      window.removeEventListener(workspaceFragmentStamped, stamped);
+      window.removeEventListener("hashchange", navigate);
     };
   }, []);
   return { main, content };

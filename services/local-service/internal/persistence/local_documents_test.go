@@ -33,7 +33,7 @@ func TestLocalDocumentsMigrationPreservesSchema24Projects(t *testing.T) {
 	if err = store.db.QueryRow(`SELECT payload FROM generation_project_contexts WHERE batch_id=?`, batch.ID).Scan(&original); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.db.Exec(`DROP TABLE project_source_indexes; ALTER TABLE project_sources DROP COLUMN usage; ALTER TABLE generation_batches DROP COLUMN local_only; DROP TABLE local_document_chunks; DROP TABLE local_documents; PRAGMA user_version=24;`); err != nil {
+	if _, err = store.db.Exec(removeMiniAppsSchema + `DROP TABLE project_source_indexes; ALTER TABLE project_sources DROP COLUMN usage; ALTER TABLE generation_batches DROP COLUMN local_only; DROP TABLE local_document_chunks; DROP TABLE local_documents; PRAGMA user_version=24;`); err != nil {
 		t.Fatal(err)
 	}
 	if err = store.Close(); err != nil {
@@ -91,7 +91,7 @@ func TestLocalPreviewSchema23MigrationPreservesLibraryAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	dropProjectSchema(t, store)
-	if _, err = store.db.Exec(`PRAGMA user_version=23;`); err != nil {
+	if _, err = store.db.Exec(removeMiniAppsSchema + `PRAGMA user_version=23;`); err != nil {
 		t.Fatal(err)
 	}
 	if err = store.Close(); err != nil {

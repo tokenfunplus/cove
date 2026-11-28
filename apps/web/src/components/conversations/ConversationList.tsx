@@ -1,3 +1,4 @@
+import { useWorkspaceActive } from "@/lib/workspace-active";
 import { cn } from "@/lib/utils";
 import { workspaceStyles } from "@/styles/workspace";
 import { primitivesStyles } from "@/styles/primitives";
@@ -79,6 +80,7 @@ export function ConversationList({
   deleteDisabled?: boolean;
   copy?: ApplicationCopy;
 }) {
+  const active = useWorkspaceActive();
   const [localQuery, setQuery] = useState("");
   const [localFilters, setLocalFilters] = useState(defaultHistoryFilters);
   const filters = historyFilters ?? localFilters;
@@ -90,6 +92,7 @@ export function ConversationList({
   const query = searchQuery ?? localQuery;
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
+    if (!active) return;
     function handleKeyDown(event: globalThis.KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         const dialog = document.querySelector(
@@ -111,7 +114,7 @@ export function ConversationList({
       if (typeof window !== "undefined")
         window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [revealSearch]);
+  }, [active, revealSearch]);
   const normalizedQuery = query.trim().toLowerCase();
   const matchingConversations = normalizedQuery
     ? searchResults ?? conversations.filter((conversation) =>

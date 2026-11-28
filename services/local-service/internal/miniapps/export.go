@@ -3,7 +3,6 @@ package miniapps
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -112,19 +111,15 @@ func releaseForBackup(tx *persistence.MiniAppStore, b Backup) (Release, error) {
 		return Release{}, err
 	}
 	builtin := releaseID("builtin", b.Publisher, b.App, b.Version)
-	catalog := releaseID("catalog", b.Publisher, b.App, b.Version)
-	if b.ReleaseID == releaseID("local", b.Publisher, b.App, b.Version) {
-		if b.Publisher != "cove" {
-			return restoreLocalPackageFromBundle(tx, b, builtin)
-		}
+	fromBundle := b.ReleaseID == builtin
+	fromCatalog := b.CatalogAuthority != "" && backupHasAuthority(b, b.CatalogAuthority)
+	if !fromBundle && !fromCatalog {
 		return Release{}, ErrBackupRelease
 	}
 	ids, err := tx.ReleaseIDs()
 	if err != nil {
 		return Release{}, err
 	}
-	var candidate *Release
-	ambiguous := false
 	for _, id := range ids {
 		r, err := loadRelease(tx, id)
 		if err != nil {
@@ -133,31 +128,11 @@ func releaseForBackup(tx *persistence.MiniAppStore, b Backup) (Release, error) {
 		if !matchesBackup(r, b) {
 			continue
 		}
-		// An exact bundled artifact is independently attested by this Cove build.
-		if r.Origin == "builtin" && appcatalog.IsBundledDigest(b.Digest) && (b.ReleaseID == builtin || b.ReleaseID == catalog || b.CatalogAuthority != "" && backupHasAuthority(b, b.CatalogAuthority)) {
+		if fromCatalog && r.Origin == "builtin" && appcatalog.IsBundledDigest(b.Digest) ||
+			fromBundle && r.Origin == "catalog" && r.OfficialCatalog ||
+			fromCatalog && r.Origin == "catalog" && r.CatalogAuthority == b.CatalogAuthority {
 			return r, nil
 		}
-		allowed := b.ReleaseID == catalog && r.Origin == "catalog" || b.ReleaseID == builtin && r.Origin == "catalog" && (r.CatalogAuthority == "" || r.OfficialCatalog)
-		if r.CatalogAuthority != "" {
-			for _, prefix := range []string{"catalog:", "official-catalog:"} {
-				allowed = allowed || b.ReleaseID == releaseID(prefix+r.CatalogAuthority, b.Publisher, b.App, b.Version)
-			}
-		}
-		if !allowed {
-			continue
-		}
-		if candidate != nil && candidate.CatalogAuthority != r.CatalogAuthority {
-			ambiguous = true
-		}
-		if candidate == nil {
-			item := r
-			candidate = &item
-		}
-	}
-	// A legacy snapshot cannot infer an original author from multiple identical
-	// republications. The owner must install/select one unambiguous trusted source.
-	if candidate != nil && !ambiguous {
-		return *candidate, nil
 	}
 	return Release{}, ErrBackupRelease
 }
@@ -166,32 +141,8 @@ func matchesBackup(r Release, b Backup) bool {
 	return r.Digest == b.Digest && r.Package.Publisher == b.Publisher && r.Package.App == b.App && r.Package.Version == b.Version
 }
 
-// Earlier releases allowed a bundled third-party package file to be installed
-// locally. Restore the exact original local identity on a replacement Mac.
-func restoreLocalPackageFromBundle(tx *persistence.MiniAppStore, b Backup, builtin string) (Release, error) {
-	row, err := tx.Release(builtin)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Release{}, ErrBackupRelease
-	}
-	if err != nil {
-		return Release{}, err
-	}
-	if row.Origin != "builtin" || row.Digest != b.Digest {
-		return Release{}, ErrBackupRelease
-	}
-	local, err := Preview(row.Manifest, "local")
-	if err != nil {
-		return Release{}, err
-	}
-	if local.ID != b.ReleaseID || local.Digest != b.Digest {
-		return Release{}, ErrBackupRelease
-	}
-	row.ID, row.Origin = local.ID, local.Origin
-	return local, tx.AddRelease(row)
-}
-
-// Restore creates a separate disabled instance. Validate the snapshot as typed
-// literal data; expressions in user text must never be evaluated on restore.
+// Restore creates a separate disabled instance. Treat saved fields as literal
+// user data, never as expressions from a package.
 func (s *Service) Restore(ctx context.Context, raw []byte) (Instance, error) {
 	backup, err := decodeBackup(raw)
 	if err != nil {

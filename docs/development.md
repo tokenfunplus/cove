@@ -70,6 +70,12 @@ Local search uses `GET /api/conversations/search?q=...&archived=...` behind the 
 
 Current source builds migrate the schema 16 database through schema 32. Schema 20 adds separate Debate Session, turn, and intervention records; schema 21 protects persisted summary and budget controls from older services. Schema 22 adds Web search settings, attempt policy, tool traces, and saved evidence. Schema 23 adds Projects, independent project context snapshots, fixed-source blobs and owning references. Schema 24 indexes project provenance and blob ownership lookups. Schema 25 adds the explicit local document library and embedding indexes. Schema 26 adds Project material use, scoped vector indexes, and saved local-only execution policy. Schema 27 adds independent local speech preferences and per-model voice profiles. Schema 28 stores refreshed PDF page text with its Project search index. Schema 29 stores interactive card definitions, values, revisions, and their submitted batch IDs. Selected answers retain cited web source text in later context. See [Debate mode](debate.md), [ADR-0037](adr/0037-add-service-owned-continuous-debate-sessions.md), and [ADR-0062](adr/0062-improve-pdf-extraction-and-local-search-review.md).
 
+Mini Apps upgrades schema 29 directly to schema 32 in one additive migration.
+Schema-32 development databases remain readable without conversion. Unreleased
+schema 30/31 databases are rejected: export with the earlier development build
+before resetting those development databases. The service never clears them
+automatically.
+
 | Schema | Added data | Historical behavior |
 | --- | --- | --- |
 | 17 | Optional per-attempt Generation Metrics | Missing timing and usage stay unavailable; they are not backfilled as zero. |

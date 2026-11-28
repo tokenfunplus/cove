@@ -325,127 +325,31 @@ export async function runMiniAppTurn({
   await fill("#generation-input", "");
   await loadPage("Page.navigate", { url: origin + "/apps" });
   await until('!!document.querySelector(".mini-app-shell")');
-  await until("!!history.state?.['cove.workspace-history.v1']");
-  const appsEntry = await evaluate(
-    "({href:location.href,state:history.state})",
-  );
-  await click('a[href="/"]');
-  await until(
-    `!!document.querySelector('button[aria-label="New conversation"]')`,
-  );
+  const appsURL = await evaluate("location.href");
+  await click('main.mini-app-shell a[href="/"]');
+  await until('!!document.querySelector(\'button[aria-label="New conversation"]\')');
   await click('button[aria-label="New conversation"]');
-  await until('!!document.querySelector("#generation-input")');
+  await until("!!document.querySelector('#generation-input')");
   await fill("#generation-input", "Keep my unsent workspace draft");
-  const chatEntry = await evaluate(
-    "({href:location.href,state:history.state})",
-  );
-  const historyLength = await evaluate("history.length");
-  const requestsBeforeHistory = requests.length;
-  const restoredChat =
-    "location.href===" +
-    JSON.stringify(chatEntry.href) +
-    " && JSON.stringify(history.state)===" +
-    JSON.stringify(JSON.stringify(chatEntry.state));
+  const historyRequests = requests.length;
+  const length = await evaluate("history.length");
   await evaluate("history.back()");
-  await until("document.body.textContent.includes('Discard unsent draft?')");
-  await until(restoredChat);
-  await snapshot("mini-app-history-stay");
-  await button("Stay", "[role=dialog]");
-  assert.equal(
-    await evaluate('document.querySelector("#generation-input").value'),
-    "Keep my unsent workspace draft",
-  );
-  assert.equal(await evaluate("location.href"), chatEntry.href);
-  assert.equal(await evaluate("history.length"), historyLength);
-  assert.deepEqual(await evaluate("history.state"), chatEntry.state);
-
-  // Staying must preserve the actual prior entry, so Back can offer it again.
-  await evaluate("history.back()");
-  await until("document.body.textContent.includes('Discard unsent draft?')");
-  await until(restoredChat);
-  await button("Discard and continue", "[role=dialog]");
-  await until(
-    "location.href===" +
-      JSON.stringify(appsEntry.href) +
-      " && !!document.querySelector('.mini-app-shell')",
-  );
-  assert.deepEqual(await evaluate("history.state"), appsEntry.state);
-  assert.equal(await evaluate("history.length"), historyLength);
-  await snapshot("mini-app-history-leave");
-
-  // Leave traverses instead of replacing the entry: Forward still reaches Chat.
+  await until("!!document.querySelector('main.mini-app-shell')");
+  assert.equal(await evaluate("location.href"), appsURL);
+  assert.equal(await evaluate("document.querySelector('#generation-input').value"), "Keep my unsent workspace draft");
+  assert.equal(await evaluate("!!document.querySelector('.confirmation-dialog__panel')"), false);
   await evaluate("history.forward()");
-  await until(
-    "location.href===" +
-      JSON.stringify(chatEntry.href) +
-      " && !!document.querySelector('#generation-input')",
-  );
-  assert.deepEqual(await evaluate("history.state"), chatEntry.state);
-  assert.equal(
-    await evaluate("document.querySelector('#generation-input').value"),
-    "",
-  );
-  assert.equal(await evaluate("history.length"), historyLength);
-  await evaluate("history.back()");
-  await until(
-    "location.href===" +
-      JSON.stringify(appsEntry.href) +
-      " && !!document.querySelector('.mini-app-shell')",
-  );
-  assert.deepEqual(await evaluate("history.state"), appsEntry.state);
-  assert.equal(
-    requests.length,
-    requestsBeforeHistory,
-    "History confirmation must not invoke a model",
-  );
-
-  // Chromium exposes synchronous entry commits even when native hash events
-  // queue behind several pushes. Preserve every physical entry through the guard.
-  assert.equal(await evaluate("typeof window.navigation?.addEventListener"), "function");
-  await click('a[href="/"]');
-  await until(`!!document.querySelector('button[aria-label="New conversation"]')`);
-  await click('button[aria-label="New conversation"]');
-  await until('!!document.querySelector("#generation-input")');
-  await fill("#generation-input", "Keep my rapid fragment draft");
-  const rapidChat = await evaluate("({href:location.href,state:history.state})");
-  const rapid = await evaluate(`(() => {
-    const signals = [];
-    const listener = event => signals.push(event.navigationType);
-    navigation.addEventListener('currententrychange', listener);
-    location.hash = '#one';
-    const first = { href: location.href, state: history.state };
-    location.hash = '#two';
-    const second = { href: location.href, state: history.state };
-    navigation.removeEventListener('currententrychange', listener);
-    return { first, second, signals };
-  })()`);
-  const historyKey = "cove.workspace-history.v1";
-  assert.equal(rapid.signals.filter(type => type === "push").length, 2);
-  assert.equal(rapid.first.state[historyKey].index, rapidChat.state[historyKey].index + 1);
-  assert.equal(rapid.second.state[historyKey].index, rapidChat.state[historyKey].index + 2);
-  const rapidLength = await evaluate("history.length");
-  const atEntry = entry => "location.href===" + JSON.stringify(entry.href) +
-    " && JSON.stringify(history.state)===" + JSON.stringify(JSON.stringify(entry.state));
+  await until("!document.querySelector('main.mini-app-shell')");
+  assert.equal(await evaluate("document.querySelector('#generation-input').value"), "Keep my unsent workspace draft");
+  await evaluate("location.hash = '#one'; location.hash = '#two'");
+  await until("location.hash === '#two'");
   await evaluate("history.go(-3)");
-  await until("document.body.textContent.includes('Discard unsent draft?')");
-  await until(atEntry(rapid.second));
-  await button("Stay", "[role=dialog]");
-  assert.equal(await evaluate('document.querySelector("#generation-input").value'), "Keep my rapid fragment draft");
-  await snapshot("mini-app-rapid-fragment-stay");
-  await evaluate("history.go(-3)");
-  await until("document.body.textContent.includes('Discard unsent draft?')");
-  await until(atEntry(rapid.second));
-  await button("Discard and continue", "[role=dialog]");
-  await until(atEntry(appsEntry));
-  await until("!!document.querySelector('.mini-app-shell')");
-  for (const entry of [rapidChat, rapid.first, rapid.second]) {
-    await evaluate("history.forward()");
-    await until(atEntry(entry));
-  }
-  assert.equal(await evaluate("history.length"), rapidLength);
-  assert.equal(requests.length, requestsBeforeHistory, "Rapid fragment confirmation stays local");
-  await evaluate("history.go(-3)");
-  await until(atEntry(appsEntry));
-  await snapshot("mini-app-rapid-fragment-leave");
-
+  await until("!!document.querySelector('main.mini-app-shell')");
+  assert.equal(await evaluate("!!document.querySelector('.confirmation-dialog__panel')"), false);
+  await evaluate("history.go(3)");
+  await until("location.hash === '#two' && !document.querySelector('main.mini-app-shell')");
+  assert.equal(await evaluate("document.querySelector('#generation-input').value"), "Keep my unsent workspace draft");
+  assert.equal(await evaluate("history.length"), length + 2);
+  assert.equal(requests.length, historyRequests, "Workspace navigation never invokes a model");
+  await snapshot("mini-app-retained-chat-draft");
 }

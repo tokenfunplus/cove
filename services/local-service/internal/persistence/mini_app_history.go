@@ -2,36 +2,7 @@ package persistence
 
 import (
 	"context"
-	"database/sql"
 )
-
-func migrateMiniAppHistory(tx *sql.Tx) error {
-	// Some imported databases already have additive fields. Check each table before extending it.
-	for _, col := range []struct{ table, name, ddl string }{
-		{"generations", "mini_app_scope", "ALTER TABLE generations ADD COLUMN mini_app_scope TEXT NOT NULL DEFAULT ''"},
-		{"mini_app_invocations", "created_at", "ALTER TABLE mini_app_invocations ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0"},
-		{"mini_app_tasks", "created_at", "ALTER TABLE mini_app_tasks ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0"},
-	} {
-		var count int
-		if err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?", col.table, col.name).Scan(&count); err != nil {
-			return err
-		}
-		if count == 0 {
-			if _, err := tx.Exec(col.ddl); err != nil {
-				return err
-			}
-		}
-	}
-	_, err := tx.Exec(`UPDATE mini_app_tasks SET created_at=unixepoch() WHERE created_at=0;
- UPDATE mini_app_invocations SET created_at=unixepoch() WHERE created_at=0;
- CREATE TABLE IF NOT EXISTS mini_app_activity (
- instance_id TEXT NOT NULL REFERENCES mini_app_instances(id) ON DELETE CASCADE,
- operation_id TEXT NOT NULL,release_id TEXT NOT NULL,action TEXT NOT NULL,surface TEXT NOT NULL,
- status TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(instance_id,operation_id));
- CREATE INDEX IF NOT EXISTS mini_app_activity_time ON mini_app_activity(instance_id,created_at);
- PRAGMA user_version=31;`)
-	return err
-}
 
 // Compact payloads while keeping small idempotency fingerprints that prevent a repeated write or model charge.
 const compactReceipts = `WITH recent AS (

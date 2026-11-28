@@ -2964,24 +2964,21 @@ test("Quick Panel new chat and replacement imports protect a card question", asy
   }
 });
 
-test("browser workspace navigation protects an unsent chat draft",async()=>{
- render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
- const input=await screen.findByRole("textbox",{name:"Send message"});
- await waitFor(()=>expect((input as HTMLTextAreaElement).disabled).toBe(false));
- await userEvent.type(input,"Keep this unsent draft");
- act(()=>{
-  window.history.pushState(null,"","/apps");
-  window.dispatchEvent(new PopStateEvent("popstate"));
- });
- expect(window.location.pathname).toBe("/");
- expect((input as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
- expect(await screen.findByText("Discard unsent draft?")).toBeDefined();
- await userEvent.click(screen.getByRole("button",{name:"Stay"}));
- expect((input as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+test("workspace navigation preserves a mounted Chat draft without confirmation", async () => {
+  render(<QueryClientProvider client={queryClient}><App /></QueryClientProvider>);
+  const input = await screen.findByRole("textbox", { name: "Send message" });
+  await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(false));
+  await userEvent.type(input, "Keep this unsent draft");
+  act(() => { window.history.pushState(null, "", "/apps"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  expect(window.location.pathname).toBe("/apps");
+  expect((input as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
+  expect(screen.queryByRole("dialog", { name: "Discard unsent draft?" })).toBeNull();
+  act(() => { window.history.pushState(null, "", "/"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  expect(screen.getByRole("textbox", { name: "Send message" })).toBe(input);
+  expect((input as HTMLTextAreaElement).value).toBe("Keep this unsent draft");
 });
 
-
-test("Apps navigation protects an unsent Debate intervention and permits an empty workspace", async () => {
+test("workspace switching retains an unsent Debate intervention", async () => {
   configureWorkspace(2);
   fixture.conversation.debate_id = fixture.conversation.id;
   const view: DebateView = {
@@ -2994,20 +2991,9 @@ test("Apps navigation protects an unsent Debate intervention and permits an empt
   const input = await screen.findByRole("textbox", { name: "Your intervention" });
   const user = userEvent.setup();
   await user.type(input, "Keep this intervention.");
-  const proceed = vi.fn(async () => {});
-  let allowed = true;
-  act(() => {
-    allowed = window.dispatchEvent(new CustomEvent("cove-workspace-navigation", { cancelable: true, detail: { proceed } }));
-  });
-  expect(allowed).toBe(false);
-  const dialog = await screen.findByRole("dialog", { name: "Discard unsent draft?" });
-  await user.click(within(dialog).getByRole("button", { name: "Stay" }));
-  expect((input as HTMLTextAreaElement).value).toBe("Keep this intervention.");
-  expect(proceed).not.toHaveBeenCalled();
-  await user.clear(input);
-  act(() => {
-    allowed = window.dispatchEvent(new CustomEvent("cove-workspace-navigation", { cancelable: true, detail: { proceed } }));
-  });
-  expect(allowed).toBe(true);
+  act(() => { window.history.pushState(null, "", "/apps"); window.dispatchEvent(new PopStateEvent("popstate")); });
   expect(screen.queryByRole("dialog", { name: "Discard unsent draft?" })).toBeNull();
+  act(() => { window.history.pushState(null, "", "/"); window.dispatchEvent(new PopStateEvent("popstate")); });
+  expect(screen.getByRole("textbox", { name: "Your intervention" })).toBe(input);
+  expect((input as HTMLTextAreaElement).value).toBe("Keep this intervention.");
 });

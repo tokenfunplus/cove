@@ -85,7 +85,6 @@ export interface MiniAppPackage {
 export interface MiniAppRelease {
   catalog_authority?: string;
   official_catalog?: boolean;
-  legacy_verified?: boolean;
   id: string;
   origin: string;
   digest: string;

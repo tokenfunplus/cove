@@ -1,854 +1,110 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { App } from "./App";
-import { navigateWorkspace, workspaceEntry } from "@/lib/workspace-navigation";
+import { isWorkspaceNavigation, navigateWorkspace } from "@/lib/workspace-navigation";
 
-const calls = vi.hoisted(() => ({ stop: vi.fn(), createConversation: vi.fn() }));
-vi.mock("@/api/conversations", () => ({
-  createConversation: calls.createConversation,
+const calls = vi.hoisted(() => ({ unmount: vi.fn(), createConversation: vi.fn() }));
+vi.mock("@/api/conversations", () => ({ createConversation: calls.createConversation }));
+vi.mock("@/pages/QuickPanelPage", () => ({ QuickPanelPage: () => <p>Quick Panel</p> }));
+vi.mock("@/pages/MiniAppsPage", () => ({
+  default: ({ attach }: { attach: (body: string) => Promise<void> }) => (
+    <div><h1>Apps</h1><button onClick={() => navigateWorkspace("/")}>Open Chat</button>
+      <button onClick={() => void attach("App snapshot")}>Attach</button></div>
+  ),
 }));
-vi.mock("@/pages/QuickPanelPage", () => ({ QuickPanelPage: () => null }));
-vi.mock("@/pages/MiniAppsPage", async () => {
-  const { navigateWorkspace } = await import("@/lib/workspace-navigation");
-  return {
-    default: ({ attach }: { attach: (body: string) => Promise<void> }) => (
-      <div>
-        <h1>App workspace</h1>
-        <button onClick={() => navigateWorkspace("/")}>Open Chat</button>
-        <button onClick={() => void attach("App snapshot")}>Attach to Chat</button>
-      </div>
-    ),
-  };
-});
 vi.mock("@/pages/ChatPage", async () => {
   const { useEffect, useState } = await import("react");
-  const { navigateWorkspace } = await import("@/lib/workspace-navigation");
-  return {
-    ChatPage: ({ incomingAppDraft }: { incomingAppDraft?: { body: string } }) => {
-      const [draft, setDraft] = useState("");
-      const [active, setActive] = useState(false);
-      const [proceed, setProceed] = useState<() => Promise<void>>();
-      useEffect(() => {
-        const protect = (event: Event) => {
-          if (!draft && !active) return;
-          event.preventDefault();
-          setProceed(
-            () =>
-              (event as CustomEvent<{ proceed: () => Promise<void> }>).detail
-                .proceed,
-          );
-        };
-        window.addEventListener("cove-workspace-navigation", protect);
-        return () =>
-          window.removeEventListener("cove-workspace-navigation", protect);
-      }, [draft, active]);
-      return (
-        <div>
-          <h1>Chat workspace</h1>
-          {incomingAppDraft && <p>Incoming: {incomingAppDraft.body}</p>}
-          <input
-            aria-label="Draft"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-          <button onClick={() => setActive(true)}>Start response</button>
-          {active && <p>Response remains active</p>}
-          <button onClick={() => navigateWorkspace("/apps")}>Open Apps</button>
-          {proceed && (
-            <div role="dialog" aria-label="Protect Chat">
-              <button onClick={() => setProceed(undefined)}>Stay</button>
-              <button
-                onClick={async () => {
-                  if (active) calls.stop();
-                  setDraft("");
-                  setActive(false);
-                  await proceed();
-                  setProceed(undefined);
-                }}
-              >
-                Leave
-              </button>
-            </div>
-          )}
-        </div>
-      );
-    },
-  };
+  const { useWorkspaceActive } = await import("@/lib/workspace-active");
+  return { ChatPage: ({ incomingAppDraft }: { incomingAppDraft?: { body: string } }) => {
+    const [draft, setDraft] = useState("");
+    const [running, setRunning] = useState(false);
+    const active = useWorkspaceActive();
+    useEffect(() => () => calls.unmount(), []);
+    return <div><h1>Chat</h1><input aria-label="Draft" value={draft} onChange={e => setDraft(e.target.value)} />
+      <button onClick={() => setRunning(true)}>Start response</button>
+      {running && <p>Response running</p>}{active && <p>Chat input active</p>}
+      {incomingAppDraft && <p>{incomingAppDraft.body}</p>}
+      <button onClick={() => navigateWorkspace("/apps")}>Open Apps</button></div>;
+  } };
 });
+afterEach(() => { cleanup(); vi.clearAllMocks(); window.history.replaceState(null, "", "/"); });
 
-beforeEach(() => {
-  window.history.replaceState(null, "", "/");
-});
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-  calls.stop.mockClear();
-  calls.createConversation.mockReset();
-});
-
-test.each([
-  ["back", "draft"],
-  ["back", "generation"],
-  ["forward", "draft"],
-  ["forward", "generation"],
-] as const)(
-  "%s then Stay preserves the original entry and %s until Leave",
-  async (direction, protection) => {
-    window.history.replaceState(
-      { preserved: "target-state" },
-      "",
-      direction === "back" ? "/apps" : "/",
-    );
-    render(<App />);
-    const user = userEvent.setup();
-    if (direction === "back") {
-      await user.click(
-        await screen.findByRole("button", { name: "Open Chat" }),
-      );
-    } else {
-      await user.click(screen.getByRole("button", { name: "Open Apps" }));
-      await screen.findByRole("heading", { name: "App workspace" });
-      act(() => window.history.back());
-    }
-    const draft = (await screen.findByRole("textbox", {
-      name: "Draft",
-    })) as HTMLInputElement;
-    if (protection === "draft") await user.type(draft, "Keep this draft");
-    else
-      await user.click(screen.getByRole("button", { name: "Start response" }));
-    const original = workspaceEntry()!;
-    const historyLength = window.history.length;
-    const traverse = () =>
-      direction === "back" ? window.history.back() : window.history.forward();
-    act(traverse);
-    await screen.findByRole("dialog", { name: "Protect Chat" });
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(original.key));
-    expect(window.location.pathname).toBe("/");
-    await user.click(screen.getByRole("button", { name: "Stay" }));
-    expect(window.history.length).toBe(historyLength);
-    expect(calls.stop).not.toHaveBeenCalled();
-    if (protection === "draft") expect(draft.value).toBe("Keep this draft");
-    else expect(screen.getByText("Response remains active")).toBeTruthy();
-    act(traverse);
-    await screen.findByRole("dialog", { name: "Protect Chat" });
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(original.key));
-    await user.click(screen.getByRole("button", { name: "Leave" }));
-    await screen.findByRole("heading", { name: "App workspace" });
-    expect(window.location.pathname).toBe("/apps");
-    expect(window.history.length).toBe(historyLength);
-    expect(calls.stop).toHaveBeenCalledTimes(
-      protection === "generation" ? 1 : 0,
-    );
-    if (direction === "back")
-      expect(window.history.state.preserved).toBe("target-state");
-  },
-);
-
-test("programmatic navigation waits for permission before adding an entry", async () => {
+test("Chat draft and generation survive workspace switching and native Back/Forward", async () => {
+  window.history.replaceState({ foreign: true }, "", "/");
   render(<App />);
   const user = userEvent.setup();
-  await user.type(screen.getByRole("textbox", { name: "Draft" }), "Unsent");
-  const historyLength = window.history.length;
-  const original = workspaceEntry()!;
-  await user.click(screen.getByRole("button", { name: "Open Apps" }));
-  await screen.findByRole("dialog");
-  expect(window.history.length).toBe(historyLength);
-  expect(workspaceEntry()?.key).toBe(original.key);
-  expect(window.location.pathname).toBe("/");
-  await user.click(screen.getByRole("button", { name: "Stay" }));
-  await user.click(screen.getByRole("button", { name: "Open Apps" }));
-  await user.click(await screen.findByRole("button", { name: "Leave" }));
-  await screen.findByRole("heading", { name: "App workspace" });
-  expect(window.history.length).toBe(historyLength + 1);
-});
-
-test("unmanaged entries never guess a traversal distance and preserve the full protected URL", async () => {
-  window.history.replaceState(
-    { preserved: "chat-state" },
-    "",
-    "/#keep-this-fragment",
-  );
-  render(<App />);
-  const user = userEvent.setup();
-  await user.type(screen.getByRole("textbox", { name: "Draft" }), "Unsent");
-  const go = vi.spyOn(window.history, "go");
-  act(() => {
-    window.history.pushState({ external: true }, "", "/apps");
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  });
-  await screen.findByRole("dialog");
-  expect(go).not.toHaveBeenCalled();
-  expect(window.location.pathname + window.location.hash).toBe(
-    "/#keep-this-fragment",
-  );
-  expect(window.history.state.preserved).toBe("chat-state");
-  await user.click(screen.getByRole("button", { name: "Stay" }));
-  expect(
-    (screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value,
-  ).toBe("Unsent");
-});
-
-test("native hash-only entries retain the known history lineage without consuming the fragment", () => {
-  window.history.pushState(null, "", "/");
-  render(<App />);
-  const before = workspaceEntry()!;
-  const oldURL = window.location.href;
-  act(() => {
-    window.history.pushState(window.history.state, "", "/#native-fragment");
-    window.dispatchEvent(
-      new HashChangeEvent("hashchange", {
-        oldURL,
-        newURL: window.location.href,
-      }),
-    );
-  });
-  expect(workspaceEntry()?.lineage).toBe(before.lineage);
-  expect(workspaceEntry()?.index).toBe(before.index + 1);
-  expect(workspaceEntry()?.key).not.toBe(before.key);
-  expect(window.location.hash).toBe("#native-fragment");
-});
-
-test("moving to a different entry with the same URL invalidates pending Leave", async () => {
-  window.history.replaceState(null, "", "/apps?book=a");
-  render(<App />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Open Chat" }));
-  const firstChat = workspaceEntry()!;
-  await user.click(screen.getByRole("button", { name: "Open Apps" }));
-  await user.click(await screen.findByRole("button", { name: "Open Chat" }));
-  const secondChat = workspaceEntry()!;
-  await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
-  act(() => window.history.back());
-  await screen.findByRole("dialog");
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(secondChat.key));
-  act(() => window.history.go(-2));
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(firstChat.key));
-  const go = vi.spyOn(window.history, "go");
-  await user.click(screen.getByRole("button", { name: "Leave" }));
-  expect(go).not.toHaveBeenCalled();
-  expect(window.location.pathname).toBe("/");
-  expect(workspaceEntry()?.key).toBe(firstChat.key);
-});
-
-test("Stay preserves the Apps destination after traversing a native fragment", async () => {
-  window.history.replaceState({ preserved: "apps-state" }, "", "/apps");
-  render(<App />);
-  const user = userEvent.setup();
-  await screen.findByRole("heading", { name: "App workspace" });
-  const apps = workspaceEntry()!;
-  await user.click(screen.getByRole("button", { name: "Open Chat" }));
-  const chat = workspaceEntry()!;
-  await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
-  act(() => {
-    window.location.hash = "#native-fragment";
-  });
-  await waitFor(() => {
-    expect(workspaceEntry()?.key).not.toBe(chat.key);
-    expect(workspaceEntry()?.lineage).toBe(chat.lineage);
-    expect(workspaceEntry()?.index).toBe(chat.index + 1);
-  });
-  const fragment = workspaceEntry()!;
-  const historyLength = window.history.length;
-  act(() => window.history.back());
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-  expect(window.location.hash).toBe("");
-  act(() => window.history.back());
-  await screen.findByRole("dialog");
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-  await user.click(screen.getByRole("button", { name: "Stay" }));
-  expect(
-    (screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value,
-  ).toBe("Protected");
-  expect(window.history.length).toBe(historyLength);
-  act(() => window.history.back());
-  await screen.findByRole("dialog");
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-  await user.click(screen.getByRole("button", { name: "Leave" }));
-  await screen.findByRole("heading", { name: "App workspace" });
-  expect(workspaceEntry()?.key).toBe(apps.key);
-  expect(window.history.state.preserved).toBe("apps-state");
-  act(() => window.history.forward());
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-  act(() => window.history.forward());
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(fragment.key));
-  expect(window.location.hash).toBe("#native-fragment");
-  expect(window.history.length).toBe(historyLength);
-});
-
-test("consuming a native fragment preserves both original and new entry positions", async () => {
-  const consume = () => window.history.replaceState(
-    window.history.state, "", window.location.pathname + window.location.search,
-  );
-  // Launcher intents consume their fragment in a child listener before App's
-  // listener runs. Entry identity must still distinguish the two Chat URLs.
-  window.addEventListener("hashchange", consume);
-  try {
-    window.history.replaceState(null, "", "/apps");
-    render(<App />);
-    const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "App workspace" });
-    const apps = workspaceEntry()!;
-    await user.click(screen.getByRole("button", { name: "Open Chat" }));
-    const chat = workspaceEntry()!;
-    act(() => { window.location.hash = "#settings"; });
-    await waitFor(() => {
-      expect(workspaceEntry()?.key).not.toBe(chat.key);
-      expect(workspaceEntry()?.index).toBe(chat.index + 1);
-    });
-    expect(window.location.hash).toBe("");
-    act(() => window.history.back());
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
-    act(() => window.history.back());
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    await user.click(screen.getByRole("button", { name: "Leave" }));
-    await screen.findByRole("heading", { name: "App workspace" });
-    expect(workspaceEntry()?.key).toBe(apps.key);
-  } finally {
-    window.removeEventListener("hashchange", consume);
-  }
-});
-
-test("a completed App attachment cannot replace Chat after leaving Apps", async () => {
-  window.history.replaceState(null, "", "/apps");
-  let complete!: (chat: { id: string }) => void;
-  calls.createConversation.mockReturnValue(new Promise((resolve) => {
-    complete = resolve;
-  }));
-  render(<App />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Attach to Chat" }));
-  expect(calls.createConversation).toHaveBeenCalledTimes(1);
-  await user.click(screen.getByRole("button", { name: "Open Chat" }));
-  await user.type(await screen.findByRole("textbox", { name: "Draft" }), "Protected");
+  await user.type(screen.getByRole("textbox", { name: "Draft" }), "Keep my draft");
   await user.click(screen.getByRole("button", { name: "Start response" }));
-  const chat = workspaceEntry()!;
-  await act(async () => {
-    complete({ id: "created-chat" });
-  });
-  expect(workspaceEntry()?.key).toBe(chat.key);
-  expect(window.location.pathname + window.location.hash).toBe("/");
-  expect(
-    (screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value,
-  ).toBe("Protected");
-  expect(screen.getByText("Response remains active")).toBeTruthy();
-  expect(screen.queryByText("Incoming: App snapshot")).toBeNull();
-  expect(calls.stop).not.toHaveBeenCalled();
-});
-
-test("returning to the initiating Apps entry does not revive a stale attachment", async () => {
-  window.history.replaceState(null, "", "/apps");
-  let complete!: (chat: { id: string }) => void;
-  calls.createConversation.mockReturnValue(new Promise((resolve) => {
-    complete = resolve;
-  }));
-  render(<App />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Attach to Chat" }));
-  const origin = workspaceEntry()!;
-  act(() => navigateWorkspace("/apps?section=catalog"));
-  act(() => window.history.back());
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(origin.key));
-  await act(async () => { complete({ id: "created-chat" }); });
-  expect(window.location.pathname + window.location.hash).toBe("/apps");
-  expect(workspaceEntry()?.key).toBe(origin.key);
-  await user.click(screen.getByRole("button", { name: "Open Chat" }));
-  expect(screen.queryByText("Incoming: App snapshot")).toBeNull();
-});
-
-test("a current App attachment opens its created conversation with the snapshot", async () => {
-  window.history.replaceState(null, "", "/apps");
-  calls.createConversation.mockResolvedValue({ id: "created-chat" });
-  render(<App />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Attach to Chat" }));
-  await screen.findByText("Incoming: App snapshot");
-  expect(window.location.pathname + window.location.hash).toBe(
-    "/#conversation=created-chat",
-  );
-});
-
-test("a native hash change invalidates a pending numeric traversal", async () => {
-  window.history.replaceState(null, "", "/apps");
-  render(<App />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Open Chat" }));
-  await user.type(
-    await screen.findByRole("textbox", { name: "Draft" }),
-    "Protected",
-  );
-  const original = workspaceEntry()!;
-  act(() => window.history.back());
-  await screen.findByRole("dialog");
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(original.key));
-  const go = vi.spyOn(window.history, "go");
-  const oldURL = window.location.href;
-  act(() => {
-    window.history.pushState(window.history.state, "", "/#native-fragment");
-    window.dispatchEvent(
-      new HashChangeEvent("hashchange", {
-        oldURL,
-        newURL: window.location.href,
-      }),
-    );
-  });
-  await user.click(screen.getByRole("button", { name: "Leave" }));
-  expect(go).not.toHaveBeenCalled();
-  expect(window.location.pathname + window.location.hash).toBe(
-    "/#native-fragment",
-  );
-});
-
-test.each([
-  { oldURL: "", newURL: "" },
-  { oldURL: "not-an-absolute-url", newURL: "http://localhost/#fragment" },
-  { oldURL: "http://localhost/", newURL: "invalid" },
-])(
-  "ignores incomplete or malformed synthetic hash events: $oldURL / $newURL",
-  (urls) => {
-    render(<App />);
-    const entry = workspaceEntry()!;
-    const error = vi.fn();
-    window.addEventListener("error", error);
-    try {
-      act(() => window.dispatchEvent(new HashChangeEvent("hashchange", urls)));
-      expect(workspaceEntry()).toEqual(entry);
-      expect(
-        screen.getByRole("heading", { name: "Chat workspace" }),
-      ).toBeTruthy();
-      expect(error).not.toHaveBeenCalled();
-    } finally {
-      window.removeEventListener("error", error);
-    }
-  },
-);
-
-test("synchronous native entry notifications preserve coalesced fragment history through Stay and Leave", async () => {
-  const navigation = new EventTarget();
-  vi.stubGlobal("navigation", navigation);
-  try {
-    window.history.replaceState(null, "", "/apps");
-    render(<App />);
-    const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "App workspace" });
-    const apps = workspaceEntry()!;
-    await user.click(screen.getByRole("button", { name: "Open Chat" }));
-    const chat = workspaceEntry()!;
-    await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
-    const pushFragment = (fragment: string) => {
-      const from = { url: window.location.href };
-      window.location.hash = fragment;
-      navigation.dispatchEvent(Object.assign(new Event("currententrychange"), {
-        navigationType: "push", from,
-      }));
-      return workspaceEntry()!;
-    };
-    let first!: ReturnType<typeof workspaceEntry>;
-    let second!: ReturnType<typeof workspaceEntry>;
-    act(() => {
-      first = pushFragment("#one");
-      second = pushFragment("#two");
-    });
-    expect(first?.index).toBe(chat.index + 1);
-    expect(second?.index).toBe(chat.index + 2);
-    const length = window.history.length;
-    act(() => window.history.go(-3));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(second?.key));
-    await user.click(screen.getByRole("button", { name: "Stay" }));
-    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("Protected");
-    act(() => window.history.go(-3));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(second?.key));
-    await user.click(screen.getByRole("button", { name: "Leave" }));
-    await screen.findByRole("heading", { name: "App workspace" });
-    expect(workspaceEntry()?.key).toBe(apps.key);
-    act(() => window.history.forward());
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    act(() => window.history.forward());
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(first?.key));
-    act(() => window.history.forward());
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(second?.key));
-    expect(window.location.hash).toBe("#two");
-    expect(window.history.length).toBe(length);
-  } finally {
-    cleanup();
-    vi.unstubAllGlobals();
-  }
-});
-
-test("a second Back that supersedes restoration does not wedge later approved navigation", async () => {
-  window.history.replaceState(null, "", "/apps");
-  render(<App />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Open Chat" }));
-  const firstChat = workspaceEntry()!;
-  act(() => navigateWorkspace("/apps?section=catalog"));
-  await screen.findByRole("heading", { name: "App workspace" });
-  await user.click(screen.getByRole("button", { name: "Open Chat" }));
-  await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
-  // Hold the app's corrective Forward while a second user Back is already
-  // queued. Its +1 then lands on Apps B, rather than the original Chat C2.
-  const traverse = window.history.go.bind(window.history);
-  const queued: number[] = [];
-  vi.spyOn(window.history, "go").mockImplementation(delta => { queued.push(delta ?? 0); });
-  act(() => traverse(-1));
-  await screen.findByRole("dialog");
-  await waitFor(() => expect(queued).toEqual([1]));
-  act(() => traverse(-1));
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(firstChat.key));
-  act(() => traverse(queued.shift()!));
-  await waitFor(() => expect(window.location.search).toBe("?section=catalog"));
-  await waitFor(() => expect(queued).toEqual([-1]));
-  act(() => traverse(queued.shift()!));
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(firstChat.key));
-  // Staying keeps the draft. A later explicitly approved navigation must still
-  // update the surface, even though the old restoration never reached C2.
-  await user.click(screen.getByRole("button", { name: "Stay" }));
   await user.click(screen.getByRole("button", { name: "Open Apps" }));
-  await user.click(await screen.findByRole("button", { name: "Leave" }));
-  await screen.findByRole("heading", { name: "App workspace" });
-  expect(window.location.pathname).toBe("/apps");
-});
-
-test("an unrelated queued Chat traversal clears a previously approved Apps target", async () => {
-  window.history.replaceState(null, "", "/apps");
-  render(<App />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Open Chat" }));
-  act(() => navigateWorkspace("/?queued=earlier", true));
-  const earlier = workspaceEntry()!;
-  act(() => navigateWorkspace("/apps?section=catalog"));
-  await user.click(await screen.findByRole("button", { name: "Open Chat" }));
-  const current = workspaceEntry()!;
-  await user.type(screen.getByRole("textbox", { name: "Draft" }), "First draft");
+  await screen.findByRole("heading", { name: "Apps" });
+  expect(screen.queryByRole("heading", { name: "Chat" })).toBeNull();
+  expect(calls.unmount).not.toHaveBeenCalled();
   act(() => window.history.back());
-  await screen.findByRole("dialog");
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(current.key));
-  const traverse = window.history.go.bind(window.history);
-  const queued: number[] = [];
-  vi.spyOn(window.history, "go").mockImplementation((delta) => { queued.push(delta ?? 0); });
-  await user.click(screen.getByRole("button", { name: "Leave" }));
-  expect(queued).toEqual([-1]);
-  // A browser-menu traversal reaches another Chat URL before the queued
-  // approval. Later visiting Apps B must protect the newly entered draft.
-  act(() => traverse(-2));
-  await waitFor(() => expect(workspaceEntry()?.key).toBe(earlier.key));
-  await user.type(screen.getByRole("textbox", { name: "Draft" }), "New protected draft");
-  act(() => traverse(1));
-  await screen.findByRole("dialog", { name: "Protect Chat" });
-  expect(screen.queryByRole("heading", { name: "App workspace" })).toBeNull();
-  expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("New protected draft");
+  await screen.findByRole("heading", { name: "Chat" });
+  expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("Keep my draft");
+  expect(screen.getByText("Response running")).toBeDefined();
+  expect(window.history.state).toEqual({ foreign: true });
+  act(() => window.history.forward());
+  await screen.findByRole("heading", { name: "Apps" });
+  expect(screen.queryByText("Chat input active")).toBeNull();
+  expect(calls.unmount).not.toHaveBeenCalled();
 });
 
-test.each([
-  { name: "coalesced", fragments: ["#one", "#two"], stamped: true },
-  { name: "repeated URLs", fragments: ["#one", "#two", "#one", ""], stamped: true },
-  { name: "bounded overflow", fragments: Array.from({ length: 33 }, (_, index) => "#fragment-" + index), stamped: false },
-])("native fallback preserves Apps through $name fragments and intermediate traversals", async ({ fragments, stamped }) => {
-  vi.stubGlobal("navigation", undefined);
-  try {
-    window.history.replaceState(null, "", "/apps");
-    render(<App />);
-    const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "App workspace" });
-    const apps = workspaceEntry()!;
-    await user.click(screen.getByRole("button", { name: "Open Chat" }));
-    const chat = workspaceEntry()!;
-    await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
-    act(() => { fragments.forEach((fragment) => { window.location.hash = fragment; }); });
-    // Native popstate and hashchange notifications are queued after all pushes.
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
-    const latest = workspaceEntry();
-    if (stamped) expect(latest?.index).toBe(chat.index + fragments.length);
-    else {
-      expect(latest?.lineage).not.toBe(chat.lineage);
-      expect(latest?.index).toBe(0);
-    }
-    const length = window.history.length;
-    act(() => window.history.go(-fragments.length - 1));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(stamped ? latest!.key : chat.key));
-    await user.click(screen.getByRole("button", { name: "Stay" }));
-    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("Protected");
-    if (stamped) {
-      act(() => window.history.back());
-      await waitFor(() => expect(window.location.hash).toBe(fragments.at(-2)));
-      await waitFor(() => expect(workspaceEntry()).toBeDefined());
-      expect(workspaceEntry()?.lineage).not.toBe(chat.lineage);
-      act(() => window.history.go(-fragments.length));
-      await screen.findByRole("dialog");
-      await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-      await user.click(screen.getByRole("button", { name: "Stay" }));
-      act(() => window.history.forward());
-      await waitFor(() => expect(window.location.hash).toBe(fragments[0]));
-      await waitFor(() => expect(workspaceEntry()).toBeDefined());
-      expect(workspaceEntry()?.lineage).not.toBe(chat.lineage);
-      act(() => window.history.go(fragments.length - 1));
-      await waitFor(() => expect(workspaceEntry()?.key).toBe(latest!.key));
-    }
-    act(() => window.history.go(stamped ? -fragments.length - 1 : -1));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(stamped ? latest!.key : chat.key));
-    await user.click(screen.getByRole("button", { name: "Leave" }));
-    await screen.findByRole("heading", { name: "App workspace" });
-    expect(workspaceEntry()?.key).toBe(apps.key);
-    expect(window.history.length).toBe(length);
-    act(() => window.history.forward());
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    act(() => window.history.go(fragments.length));
-    if (stamped) await waitFor(() => expect(workspaceEntry()?.key).toBe(latest!.key));
-    else await waitFor(() => expect(window.location.hash).toBe(fragments.at(-1)));
-    expect(window.history.length).toBe(length);
-  } finally {
-    cleanup();
-    vi.unstubAllGlobals();
-  }
+test("direct App URLs defer Chat bootstrap until first visit, then retain it", async () => {
+  window.history.replaceState(null, "", "/apps?section=catalog");
+  render(<App />);
+  await screen.findByRole("heading", { name: "Apps" });
+  expect(screen.queryByText("Chat", { selector: "h1" })).toBeNull();
+  act(() => navigateWorkspace("/"));
+  await screen.findByRole("heading", { name: "Chat" });
+  act(() => navigateWorkspace("/apps"));
+  await screen.findByRole("heading", { name: "Apps" });
+  expect(calls.unmount).not.toHaveBeenCalled();
 });
 
-test("a single fragment that truncates forward history keeps its own identity and the older Apps target", async () => {
-  vi.stubGlobal("navigation", undefined);
-  try {
-    window.history.replaceState(null, "", "/apps");
-    render(<App />);
-    const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "App workspace" });
-    const apps = workspaceEntry()!;
-    await user.click(screen.getByRole("button", { name: "Open Chat" }));
-    const chat = workspaceEntry()!;
-    act(() => navigateWorkspace("/apps?section=catalog"));
-    act(() => window.history.back());
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
-    const length = window.history.length;
-    act(() => { window.location.hash = "#native"; });
-    await waitFor(() => {
-      expect(workspaceEntry()).toBeDefined();
-      expect(workspaceEntry()?.key).not.toBe(chat.key);
-    });
-    const fragment = workspaceEntry()!;
-    expect(window.history.length).toBe(length);
-    expect(fragment.lineage).not.toBe(chat.lineage);
-    act(() => window.history.go(-2));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    await user.click(screen.getByRole("button", { name: "Stay" }));
-    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("Protected");
-    act(() => window.history.forward());
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(fragment.key));
-    act(() => window.history.go(-2));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    await user.click(screen.getByRole("button", { name: "Leave" }));
-    await screen.findByRole("heading", { name: "App workspace" });
-    expect(workspaceEntry()?.key).toBe(apps.key);
-    expect(window.history.length).toBe(length);
-    act(() => window.history.go(2));
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(fragment.key));
-  } finally {
-    cleanup();
-    vi.unstubAllGlobals();
-  }
+test.each(["complete", "navigate", "unmount"])("App handoff owns its asynchronous navigation: %s", async outcome => {
+  window.history.replaceState(null, "", "/apps");
+  let finish!: (value: { id: string }) => void;
+  calls.createConversation.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const view = render(<App />);
+  await userEvent.click(await screen.findByRole("button", { name: "Attach" }));
+  if (outcome === "navigate") act(() => navigateWorkspace("/apps?section=activity"));
+  if (outcome === "unmount") view.unmount();
+  await act(async () => finish({ id: "created" }));
+  if (outcome === "complete") {
+    await screen.findByText("App snapshot");
+    expect(window.location.hash).toBe("#conversation=created");
+  } else expect(window.location.pathname).toBe("/apps");
 });
 
-test("an Apps fragment rebase does not replace the later Chat correction origin", async () => {
-  vi.stubGlobal("navigation", undefined);
+test("navigation preserves replace-state metadata and does not duplicate the current URL", () => {
+  window.history.replaceState({ foreign: true }, "", "/apps");
+  const length = window.history.length;
+  const listener = vi.fn((event: Event) => expect(isWorkspaceNavigation(event)).toBe(true));
+  window.addEventListener("popstate", listener);
   try {
-    window.history.replaceState(null, "", "/apps");
-    render(<App />);
-    const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "App workspace" });
-    const original = workspaceEntry()!;
-    act(() => navigateWorkspace("/apps?section=catalog"));
-    act(() => window.history.back());
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(original.key));
-    act(() => { window.location.hash = "#apps-fragment"; });
-    await waitFor(() => {
-      expect(workspaceEntry()).toBeDefined();
-      expect(workspaceEntry()?.key).not.toBe(original.key);
-    });
-    const apps = workspaceEntry()!;
-    await user.click(screen.getByRole("button", { name: "Open Chat" }));
-    const chat = workspaceEntry()!;
-    await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
-    act(() => { window.location.hash = "#one"; window.location.hash = "#two"; });
-    await waitFor(() => expect(workspaceEntry()?.index).toBe(chat.index + 2));
-    act(() => window.history.back());
-    await waitFor(() => expect(window.location.hash).toBe("#one"));
-    await waitFor(() => expect(workspaceEntry()).toBeDefined());
-    act(() => window.history.go(-2));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    await user.click(screen.getByRole("button", { name: "Stay" }));
-    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("Protected");
-    act(() => window.history.back());
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    await user.click(screen.getByRole("button", { name: "Leave" }));
-    await screen.findByRole("heading", { name: "App workspace" });
-    expect(workspaceEntry()?.key).toBe(apps.key);
-  } finally {
-    cleanup();
-    vi.unstubAllGlobals();
-  }
-});
-
-test.each([false, true])("reloading a fresh fragment lineage preserves the older Apps target (derived=%s)", async (derived) => {
-  vi.stubGlobal("navigation", undefined);
-  try {
-    window.history.replaceState(null, "", "/apps");
-    let view = render(<App />);
-    const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "App workspace" });
-    const apps = workspaceEntry()!;
-    await user.click(screen.getByRole("button", { name: "Open Chat" }));
-    const chat = workspaceEntry()!;
-    const chatURL = window.location.href;
-    act(() => navigateWorkspace("/apps?section=catalog"));
-    act(() => window.history.back());
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    act(() => { window.location.hash = "#native"; });
-    await waitFor(() => {
-      expect(workspaceEntry()).toBeDefined();
-      expect(workspaceEntry()?.key).not.toBe(chat.key);
-    });
-    if (derived) {
-      const first = workspaceEntry()!;
-      act(() => { window.location.hash = "#derived"; });
-      await waitFor(() => expect(workspaceEntry()?.key).not.toBe(first.key));
-    }
-    const fragment = workspaceEntry()!;
-    view.unmount();
-    view = render(<App />);
-    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("");
-    await user.type(screen.getByRole("textbox", { name: "Draft" }), "New protected draft");
-    const length = window.history.length;
-    act(() => window.history.go(derived ? -3 : -2));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    await user.click(screen.getByRole("button", { name: "Stay" }));
-    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("New protected draft");
-    act(() => window.history.back());
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(chat.key));
-    await user.click(screen.getByRole("button", { name: "Leave" }));
-    await screen.findByRole("heading", { name: "App workspace" });
-    expect(workspaceEntry()?.key).toBe(apps.key);
+    navigateWorkspace("/apps");
     expect(window.history.length).toBe(length);
-    act(() => window.history.go(derived ? 3 : 2));
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(fragment.key));
-    expect((fragment as unknown as { chatOrigin?: unknown }).chatOrigin).toEqual({
-      entry: { lineage: chat.lineage, index: chat.index, key: chat.key }, href: chatURL,
-    });
-  } finally {
-    cleanup();
-    vi.unstubAllGlobals();
-  }
-});
-
-test("an earlier Chat branch keeps an origin that survives truncating a later retained Chat entry", async () => {
-  vi.stubGlobal("navigation", undefined);
-  try {
-    window.history.replaceState(null, "", "/apps");
-    let view = render(<App />);
-    const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "App workspace" });
-    const apps = workspaceEntry()!;
-    await user.click(screen.getByRole("button", { name: "Open Chat" }));
-    const earlier = workspaceEntry()!;
-    act(() => navigateWorkspace("/apps?section=catalog"));
-    await user.click(await screen.findByRole("button", { name: "Open Chat" }));
-    const later = workspaceEntry()!;
-    act(() => { window.location.hash = "#later"; });
-    await waitFor(() => expect(workspaceEntry()?.index).toBe(later.index + 1));
-    act(() => window.history.go(-3));
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(earlier.key));
-    act(() => { window.location.hash = "#new-branch"; });
-    await waitFor(() => {
-      expect(workspaceEntry()).toBeDefined();
-      expect(workspaceEntry()?.key).not.toBe(earlier.key);
-    });
-    expect(workspaceEntry()?.chatOrigin?.entry.key).toBe(earlier.key);
-    view.unmount();
-    view = render(<App />);
-    await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected new branch");
-    act(() => window.history.go(-2));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(earlier.key));
-    await user.click(screen.getByRole("button", { name: "Stay" }));
-    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("Protected new branch");
-    act(() => window.history.back());
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(earlier.key));
-    await user.click(screen.getByRole("button", { name: "Leave" }));
-    await screen.findByRole("heading", { name: "App workspace" });
-    expect(workspaceEntry()?.key).toBe(apps.key);
-  } finally {
-    cleanup();
-    vi.unstubAllGlobals();
-  }
-});
-
-test.each([
-  { copied: false, interleaved: false },
-  { copied: true, interleaved: false },
-  { copied: false, interleaved: true },
-  { copied: true, interleaved: true },
-])("Chrome native fragment popstates retain the known origin (copied=$copied, interleaved=$interleaved)", async ({ copied, interleaved }) => {
-  vi.stubGlobal("navigation", undefined);
-  try {
-    window.history.replaceState(null, "", "/apps");
-    render(<App />);
-    const user = userEvent.setup();
-    await screen.findByRole("heading", { name: "App workspace" });
-    const apps = workspaceEntry()!;
-    await user.click(screen.getByRole("button", { name: "Open Chat" }));
-    const chat = workspaceEntry()!;
-    const state = window.history.state;
-    const start = window.location.href;
-    await user.type(screen.getByRole("textbox", { name: "Draft" }), "Protected");
-    const push = (hash: string) => {
-      window.history.pushState(copied ? state : null, "", "/" + hash);
-      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
-      return window.location.href;
-    };
-    const changed = (oldURL: string, newURL: string) =>
-      window.dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL }));
-    act(() => {
-      const one = push("#one");
-      const two = push("#two");
-      if (interleaved) {
-        changed(start, one);
-        const three = push("#three");
-        changed(one, two);
-        changed(two, three);
-      } else {
-        changed(start, one);
-        changed(one, two);
-      }
-    });
-    const count = interleaved ? 3 : 2;
-    const latest = workspaceEntry()!;
-    expect(latest?.index).toBe(chat.index + count);
-    expect(latest?.key).not.toBe(chat.key);
-    const length = window.history.length;
-    act(() => window.history.go(-count - 1));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(latest.key));
-    await user.click(screen.getByRole("button", { name: "Stay" }));
-    expect((screen.getByRole("textbox", { name: "Draft" }) as HTMLInputElement).value).toBe("Protected");
-    act(() => window.history.go(-count - 1));
-    await screen.findByRole("dialog");
-    await waitFor(() => expect(workspaceEntry()?.key).toBe(latest.key));
-    await user.click(screen.getByRole("button", { name: "Leave" }));
-    await screen.findByRole("heading", { name: "App workspace" });
-    expect(workspaceEntry()?.key).toBe(apps.key);
+    navigateWorkspace("/apps?section=catalog", true);
+    expect(window.history.state).toEqual({ foreign: true });
     expect(window.history.length).toBe(length);
-  } finally {
-    cleanup();
-    vi.unstubAllGlobals();
-  }
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(() => navigateWorkspace("https://example.com/")).toThrow("Invalid workspace destination");
+  } finally { window.removeEventListener("popstate", listener); }
+});
+
+test("Quick Panel stays separate from the retained full Chat surface", () => {
+  window.history.replaceState(null, "", "/?surface=quick-panel");
+  render(<App />);
+  expect(screen.getByText("Quick Panel")).toBeDefined();
+  expect(screen.queryByRole("heading", { name: "Chat" })).toBeNull();
+});
+
+test("App routes retain priority over a Quick Panel query parameter", async () => {
+  window.history.replaceState(null, "", "/apps?surface=quick-panel");
+  render(<App />);
+  await screen.findByRole("heading", { name: "Apps" });
+  expect(screen.queryByText("Quick Panel")).toBeNull();
 });

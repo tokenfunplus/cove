@@ -76,7 +76,6 @@ export default function MiniAppsPage({
     "agent",
     "packages",
     "restore",
-    "settings",
   ].includes(querySection ?? "")
     ? (querySection as DirectorySection)
     : "mine";

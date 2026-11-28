@@ -31,7 +31,6 @@ import {
 } from "./AppCatalog";
 import { HostActivity } from "./HostActivity";
 import { PackageEditor } from "./PackageEditor";
-import { CatalogSettings } from "./CatalogSettings";
 import "./mini-apps.css";
 
 export { PackagePreview } from "./AppInstallPreview";
@@ -47,7 +46,7 @@ export type DirectorySection =
   | "agent"
   | "packages"
   | "restore"
-  | "settings";
+ ;
 interface Props {
   open: (id: string, view?: string, replace?: boolean) => void;
   target?: InstallTarget;
@@ -144,7 +143,6 @@ export function AppDirectory({
         entry,
         release.origin,
         entry.origin,
-        release.legacy_verified,
         release,
         entry,
       ),
@@ -314,7 +312,6 @@ export function AppDirectory({
                   ["agent", "Developer tools"],
                   ["packages", "Manage installed versions"],
                   ["restore", "Restore a backup"],
-                  ["settings", "Catalog settings"],
                 ] as const
               ).map(([value, label]) => (
                 <MenuItem key={value}>
@@ -365,7 +362,6 @@ export function AppDirectory({
               preview.pkg,
               before.origin,
               origin,
-              before.legacy_verified,
               before,
               preview.source.kind === "catalog"
                 ? preview.source.entry
@@ -732,15 +728,6 @@ export function AppDirectory({
             }}
             expanded
           />
-        </div>
-      )}
-      {standalone && section === "settings" && (
-        <div className="space-y-6">
-          <SectionHeading
-            title="Catalog settings"
-            description="Choose where Cove finds additional apps and updates."
-          />
-          <CatalogSettings expanded />
         </div>
       )}
       {standalone && section === "restore" && (

@@ -14,19 +14,19 @@ func TestRestoreAcrossDistributionChannels(t *testing.T) {
 		changeBytes bool
 		wantRestore bool
 	}{
-		{"builtin", "catalog", false, true},
-		{"catalog", "builtin", false, true},
+		{"builtin", "catalog", false, false},
+		{"catalog", "builtin", false, false},
 		{"official-catalog:" + strings.Repeat("a", 64), "builtin", false, true},
 		{"builtin", "official-catalog:" + strings.Repeat("a", 64), false, true},
 		{"builtin", "catalog:" + strings.Repeat("a", 64), false, false},
 		{"official-catalog:" + strings.Repeat("a", 64), "catalog:" + strings.Repeat("a", 64), false, true},
 		{"catalog:" + strings.Repeat("a", 64), "official-catalog:" + strings.Repeat("a", 64), false, true},
 		{"official-catalog:" + strings.Repeat("a", 64), "catalog:" + strings.Repeat("b", 64), false, false},
-		{"catalog", "catalog:" + strings.Repeat("a", 64), false, true},
+		{"catalog", "catalog:" + strings.Repeat("a", 64), false, false},
 		{"catalog", "catalog:" + strings.Repeat("a", 64), true, false},
 		{"builtin", "catalog", true, false},
 		{"local", "catalog", false, false},
-		{"local", "builtin", false, true},
+		{"local", "builtin", false, false},
 		{"local", "builtin", true, false},
 		{"catalog", "local", false, false},
 	} {
@@ -68,13 +68,6 @@ func TestRestoreAcrossDistributionChannels(t *testing.T) {
 				return
 			}
 			expectedID := installed.ID
-			if tc.from == "local" {
-				expectedID = original.ID
-				restoredRelease, readErr := destination.Release(ctx, got.ReleaseID)
-				if readErr != nil || restoredRelease.Origin != "local" || restoredRelease.Digest != original.Digest {
-					t.Fatalf("personal backup lost its local lineage: %v", readErr)
-				}
-			}
 			if err != nil || got.ReleaseID != expectedID || got.Enabled || len(got.Grants) != 0 {
 				t.Fatalf("unexpected restore: %+v, %v", got, err)
 			}

@@ -207,11 +207,11 @@ func TestCustomCatalogCannotPublishBundledIdentities(t *testing.T) {
 	}
 }
 
-func TestOldTrustCacheIsReverifiedAndFailedSavesDoNotChangeAuthority(t *testing.T) {
+func TestFailedSavesDoNotChangeAuthority(t *testing.T) {
 	public, _, _ := ed25519.GenerateKey(nil)
 	initial := Catalog{URL: "https://old.example/catalog.json", PublicKey: base64.StdEncoding.EncodeToString(public)}
 	path := filepath.Join(t.TempDir(), "catalog.json")
-	old := preferences{Config: &initial, ReleaseDigests: map[string]bool{"old-unattributed-digest": true}, Checkpoints: map[string]checkpoint{initial.PublicKey: {Sequence: 9, Digest: "index"}}}
+	old := preferences{Config: &initial, Checkpoints: map[string]checkpoint{initial.PublicKey: {Sequence: 9, Digest: "index"}}}
 	raw, _ := json.Marshal(old)
 	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)

@@ -40,7 +40,7 @@ func TestSchema27UpgradeKeepsProjectPDFIndexes(t *testing.T) {
 	if err = library.SaveLocalDocument(ctx, source, "model", "version", []LocalChunk{{DocumentID: source.ID, Sections: []string{section.ID}, Text: section.Text, Vector: vector}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.db.Exec(`ALTER TABLE project_source_indexes DROP COLUMN source_snapshot; PRAGMA user_version=27;`); err != nil {
+	if _, err = store.db.Exec(removeMiniAppsSchema + `ALTER TABLE project_source_indexes DROP COLUMN source_snapshot; PRAGMA user_version=27;`); err != nil {
 		t.Fatal(err)
 	}
 	if err = store.Close(); err != nil {
@@ -94,7 +94,7 @@ func TestSchema25UpgradeKeepsProjectSourcesAndFrozenInput(t *testing.T) {
 	if err = store.db.QueryRow(`SELECT payload FROM generation_project_contexts WHERE batch_id=?`, batch.ID).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.db.Exec(`DROP TABLE project_source_indexes; ALTER TABLE project_sources DROP COLUMN usage; ALTER TABLE generation_batches DROP COLUMN local_only; PRAGMA user_version=25;`); err != nil {
+	if _, err = store.db.Exec(removeMiniAppsSchema + `DROP TABLE project_source_indexes; ALTER TABLE project_sources DROP COLUMN usage; ALTER TABLE generation_batches DROP COLUMN local_only; PRAGMA user_version=25;`); err != nil {
 		t.Fatal(err)
 	}
 	store.Close()
@@ -123,7 +123,7 @@ func TestSchema26FailureRollsBackSourceAndPolicyColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.db.Exec(`ALTER TABLE project_sources DROP COLUMN usage; ALTER TABLE generation_batches DROP COLUMN local_only; PRAGMA user_version=25;`); err != nil {
+	if _, err = store.db.Exec(removeMiniAppsSchema + `ALTER TABLE project_sources DROP COLUMN usage; ALTER TABLE generation_batches DROP COLUMN local_only; PRAGMA user_version=25;`); err != nil {
 		t.Fatal(err)
 	}
 	store.Close()

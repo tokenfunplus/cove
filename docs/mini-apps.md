@@ -414,11 +414,12 @@ Task details retain their frozen originating action. Recovering an admitted task
 does not repeat inference or apply another action's bindings; open its original
 instance and action before using its candidates.
 
-A legacy file install whose digest matches a bundled official release can
-upgrade to its trusted successor after the user's review. Modified personal
-packages retain their local origin. The author CLI reserves bundled publisher
-names during scaffolding. Validation and packing check the package contract;
-installation also checks the selected distribution authority.
+Personal packages retain their local origin and can upgrade only to a newer
+local release from the same publisher and app. A file matching a recognized
+signed or bundled release is installed under that verified origin from the start.
+The author CLI reserves bundled publisher names during scaffolding. Validation
+and packing check the package contract; installation also checks the selected
+distribution authority.
 
 NearAI progress and result delivery retry temporary Local Service failures up
 to eight sends, with 7.1 seconds of bounded backoff, using the same claim and

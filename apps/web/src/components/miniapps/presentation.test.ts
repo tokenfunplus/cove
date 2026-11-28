@@ -22,7 +22,6 @@ test("catalog updates preserve the independent publisher of a bundled app and is
       after,
       "builtin",
       "catalog",
-      false,
       {},
       { official_catalog: true },
     ),
@@ -40,29 +39,6 @@ test("catalog updates preserve the independent publisher of a bundled app and is
   ).toBe(false);
 });
 
-test("only independently verified legacy files can upgrade to a trusted release", () => {
-  const before = {
-    publisher: "bookshelf",
-    app: "reading-inbox",
-    version: "1.0.0",
-    schema_version: 1,
-  } as MiniAppPackage;
-  const after = { ...before, version: "1.1.0" };
-  expect(canUpgrade(before, after, "local", "builtin", true)).toBe(true);
-  expect(
-    canUpgrade(
-      before,
-      after,
-      "local",
-      "catalog",
-      true,
-      {},
-      { official_catalog: true },
-    ),
-  ).toBe(true);
-  expect(canUpgrade(before, after, "local", "builtin", false)).toBe(false);
-});
-
 test("catalog upgrade choices bind the original signing authority, including legacy unknown authorities", () => {
   const before = {
     publisher: "author",
@@ -77,7 +53,6 @@ test("catalog upgrade choices bind the original signing authority, including leg
       after,
       "catalog",
       "catalog",
-      false,
       { catalog_authority: "key-a" },
       { catalog_authority: "key-a" },
     ),
@@ -88,7 +63,6 @@ test("catalog upgrade choices bind the original signing authority, including leg
       after,
       "catalog",
       "catalog",
-      false,
       { catalog_authority: "key-a" },
       { catalog_authority: "key-b" },
     ),
@@ -99,13 +73,12 @@ test("catalog upgrade choices bind the original signing authority, including leg
       after,
       "catalog",
       "catalog",
-      false,
       {},
       { catalog_authority: "key-a" },
     ),
   ).toBe(false);
   expect(
-    canUpgrade(before, after, "catalog", "builtin", false, {
+    canUpgrade(before, after, "catalog", "builtin", {
       official_catalog: true,
     }),
   ).toBe(true);

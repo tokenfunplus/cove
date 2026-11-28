@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestCloudPolicyMigrationKeepsSavedRecordsAndStartsDenied(t *testing.T) {
+func TestExistingSchema32KeepsCloudPolicyAndSavedRecords(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cloud.sqlite")
 	store, err := OpenSQLite(path)
 	if err != nil {
@@ -23,9 +23,6 @@ func TestCloudPolicyMigrationKeepsSavedRecordsAndStartsDenied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = store.db.Exec("ALTER TABLE mini_app_instances DROP COLUMN cloud_enabled; PRAGMA user_version=31"); err != nil {
-		t.Fatal(err)
-	}
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +36,7 @@ func TestCloudPolicyMigrationKeepsSavedRecordsAndStartsDenied(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if instance.CloudEnabled || !instance.Enabled || instance.Name != "Existing" {
+		if !instance.CloudEnabled || !instance.Enabled || instance.Name != "Existing" {
 			t.Fatal("existing authority changed")
 		}
 		rows, err := tx.Records("book", "items")

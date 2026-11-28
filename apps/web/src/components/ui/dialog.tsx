@@ -1,3 +1,4 @@
+import { useWorkspaceActive } from "@/lib/workspace-active";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import {
   createContext,
@@ -34,10 +35,11 @@ export function Dialog({
   layer?: keyof typeof dialogLayers;
   children: ReactNode;
 }) {
+  const active = useWorkspaceActive();
   const returnFocus = useRef<HTMLElement | null>(null);
   return (
     <DialogPrimitive.Root
-      open={open}
+      open={active && open}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
@@ -83,6 +85,7 @@ export function DialogContent({
   onInteractOutside,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & { as?: ElementType }) {
+  const active = useWorkspaceActive();
   const context = useContext(DialogContext);
   const content = (
     <>
@@ -118,6 +121,7 @@ export function DialogContent({
         onOpenAutoFocus?.(event);
       }}
       onCloseAutoFocus={(event) => {
+        if (!active) { event.preventDefault(); return; }
         onCloseAutoFocus?.(event);
         if (
           !event.defaultPrevented &&

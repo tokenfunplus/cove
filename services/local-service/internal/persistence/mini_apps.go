@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS mini_app_releases (
 );
 CREATE TABLE IF NOT EXISTS mini_app_instances (
  id TEXT PRIMARY KEY, release_id TEXT NOT NULL REFERENCES mini_app_releases(id), name TEXT NOT NULL,
- revision INTEGER NOT NULL, enabled INTEGER NOT NULL, grants BLOB NOT NULL
+ revision INTEGER NOT NULL, enabled INTEGER NOT NULL, grants BLOB NOT NULL, cloud_enabled INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS mini_app_blobs (
  instance_id TEXT NOT NULL REFERENCES mini_app_instances(id) ON DELETE CASCADE,
@@ -26,14 +26,20 @@ CREATE TABLE IF NOT EXISTS mini_app_records (
 );
 CREATE TABLE IF NOT EXISTS mini_app_invocations (
  instance_id TEXT NOT NULL REFERENCES mini_app_instances(id) ON DELETE CASCADE,
- id TEXT NOT NULL, fingerprint TEXT NOT NULL, result BLOB NOT NULL, PRIMARY KEY(instance_id,id)
+ id TEXT NOT NULL, fingerprint TEXT NOT NULL, result BLOB NOT NULL, created_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(instance_id,id)
 );
 CREATE TABLE IF NOT EXISTS mini_app_tasks (
  instance_id TEXT NOT NULL REFERENCES mini_app_instances(id) ON DELETE CASCADE,
  id TEXT NOT NULL, fingerprint TEXT NOT NULL, state TEXT NOT NULL, request TEXT NOT NULL DEFAULT '',
- result TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', snapshot TEXT NOT NULL DEFAULT '', verification TEXT NOT NULL DEFAULT '', PRIMARY KEY(instance_id,id)
+ result TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', snapshot TEXT NOT NULL DEFAULT '', verification TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(instance_id,id)
 );
-PRAGMA user_version=30;
+CREATE TABLE IF NOT EXISTS mini_app_activity (
+ instance_id TEXT NOT NULL REFERENCES mini_app_instances(id) ON DELETE CASCADE,
+ operation_id TEXT NOT NULL,release_id TEXT NOT NULL,action TEXT NOT NULL,surface TEXT NOT NULL,
+ status TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(instance_id,operation_id));
+CREATE INDEX IF NOT EXISTS mini_app_activity_time ON mini_app_activity(instance_id,created_at);
+ALTER TABLE generations ADD COLUMN mini_app_scope TEXT NOT NULL DEFAULT '';
+PRAGMA user_version=32;
 `
 
 // MiniAppTransaction scopes reads, validations and changes to a single consistent snapshot.

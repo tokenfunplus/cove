@@ -42,10 +42,11 @@ operation from several host surfaces. Cove's interpreter implements the
 package operations and applies instance grants. See the
 [VS Code contribution points](https://code.visualstudio.com/api/references/contribution-points).
 
-SQLite schema 30 adds Mini App releases, instances, typed records, attachment
-blobs, write receipts and model tasks. Migration from schema 29 is additive.
+SQLite schema 32 adds Mini App releases, instances, typed records, attachment
+blobs, write receipts, model tasks, activity, cloud policy and conversation action
+scope in one additive migration from schema 29.
 Existing Conversations, Projects, interactive cards and Provider Profiles
-retain their owners. Older services reject schema 30. Package schema versions
+retain their owners. Older services reject schema 32. Package schema versions
 advance independently inside individual instances. The first package format
 supports additive migrations with defaults; an incompatible migration rolls
 back its record changes and keeps the previous release active.
@@ -63,20 +64,13 @@ The user can scope a normal conversation turn to named actions of one instance. 
 
 Cove distinguishes runtime version, immutable package release, collection schema version and record revision. A downloaded file can reuse a trusted release when its exact digest matches the verified source. The signed catalog format adds expiry and a persistent per-key sequence checkpoint. Bundled releases remain available when remote verification fails. Finder-launched sessions can use packaged public trust settings or explicitly configured local preferences.
 
-SQLite schema 31 adds the conversation action scope and bounded, per-instance task and receipt history. Compact idempotency fingerprints outlive the stored result, while instance-owned records and attachments are retained. Older services reject this database version. Package migrations remain independent of the host database version.
-
 ## Review follow-up
-
-An exact bundled digest can attest a legacy local file release for a reviewed
-upgrade to a trusted successor. This exception does not authorize modified
-personal bytes or changes based on publisher name alone. Existing instance
-identity and user records survive this transition.
 
 Verified Mini App settlements store a receipt in the task's existing request
 metadata. The receipt binds the exact response, browser session and claim.
 Delivery retries are idempotent after acceptance and do not repeat inference.
 This adds no host database migration. Record editors bind their target selection
-when opened, and cross-workspace navigation uses Chat's draft confirmation.
+when opened, while cross-workspace navigation retains the Chat workspace.
 
 ## Directory authority and cloud policy
 
@@ -105,16 +99,13 @@ Restart recovery updates task and activity states together.
 An unset directory override follows the public URL and key packaged with the
 installed Cove version. Saving those exact configured defaults preserves that
 mode. A custom directory remains pinned across Cove updates; an explicitly empty
-selection stays bundled-only. Settings exposes the packaged defaults and a
-separate, confirmed action to restore default tracking.
+selection stays bundled-only. The backend retains these modes for development; v1 hides custom directory
+settings and uses packaged defaults, with environment overrides for testing.
 
 Release-version and publisher histories are scoped to the signing key, just like
 rollback checkpoints. Switching authorities cannot transfer a conflicting version
 history to another signer. Returning to an authority still enforces its prior
-sequence and immutable releases. Legacy histories with exactly one attributable
-signer retain their version history; ambiguous multi-signer histories are
-reverified while their rollback checkpoints remain intact. This refines the
-initial directory authority policy without changing installed instance data.
+sequence and immutable releases.
 
 Conversation interception requires an available app and explicit `@Name` for a
 named app. Discovery shortcuts stay local and preserve an existing draft.
@@ -160,53 +151,53 @@ Only the packaged official authority can succeed a bundled identity. This
 supersedes the earlier policy that a newly selected catalog authority could
 update every non-bundled publisher identity.
 
-Existing unbound catalog releases retain their records, attachments and normal
-use, but cannot acquire an inferred signer through an upgrade. Their exact bytes
-can be independently reverified and used when restoring an exported backup as a
-separate disabled instance; permissions must be granted again. Key transfer or
-rotation for an already bound catalog lineage needs a future explicit identity
-transfer contract. This change uses the existing provenance column, without a
-host database schema migration.
-
 Directory failures cache only bundled fallback metadata and the original warning
 for five seconds when no valid verified index remains. A forced refresh for a
 downloaded file preserves a still-valid verified index for ordinary catalog reads;
 its failure has a separate five-second backoff for file checks and cannot attest
 to an unknown release. Cancelled requests do not populate either failure cache,
-and any trust or URL change invalidates them. Legacy immutable-version history is
-attributed to its sole historical signer even when a different, unverified key is
-currently selected; ambiguous multi-signer history still requires independent
-reverification.
-
-Legacy public-key encodings are canonicalized before trust-history lookup. When
-aliases identify the same Ed25519 key, their highest sequence is retained. Equal
-sequence/index conflicts and immutable package conflicts remain closed until an
-unambiguous newer index omits the conflicted version; neither alias is arbitrarily
-accepted. New settings require canonical base64, preventing new history aliases.
+and any trust or URL change invalidates them.
 
 
-## Workspace navigation and draft protection
+## Workspace navigation and retained Chat state
 
-First-party workspace entries carry a namespaced lineage, index, and key while
-preserving other browser history state. Programmatic navigation requests Chat's
-existing draft and generation confirmation before adding an entry. A protected
-Back or Forward traversal returns to the known original entry; approval revisits
-the existing target instead of replacing its URL. Staying leaves those tracked
-entries intact. Native fragment entries retain the current lineage with their own
-index and key, including when Chat consumes the fragment. Back and Forward reuse
-those positions rather than rebasing them. Moving to a different history entry
-invalidates pending approval even when its URL is unchanged. Legacy and external
-entries have no safe numeric traversal distance; their fallback preserves the
-current Chat URL and state rather than guessing into unrelated history.
+Switching between Chat and Mini Apps uses ordinary same-origin history entries.
+Chat mounts on its first visit and stays mounted while Mini Apps is visible.
+Drafts, attachments, interactive cards, answer tools and generation workers remain
+owned by that Chat workspace. Entering Apps does not discard or cancel them, so
+Back and Forward need no interception, corrective traversal or inferred history
+positions. A direct App URL does not bootstrap Chat until its first visit.
 
-An App snapshot handoff belongs to its initiating workspace navigation attempt.
-If the owner navigates away while a conversation is being created, completion
-does not replace the current destination or its draft.
+The inactive Chat surface is invisible and inert while keeping its layout. Its
+search and focus-mode shortcuts and Launcher intents are suspended. Dialogs and
+portaled controls cannot capture input above the active App surface. Private
+inference and Debate workers continue with their existing ownership and limits.
+Refreshing or leaving the document still uses the existing unsaved-draft warning.
 
-The release-authority encoding does not add a database schema migration beyond
-this branch's schema 32. The main-branch service rejects that newer schema. Earlier
-unreleased schema-32 development builds do not implement the new signer binding;
-downgrading Mini App data to those development snapshots is unsupported.
+App snapshot handoffs retain their existing new-conversation behavior and Chat's
+conversation-switch confirmation. An asynchronous handoff cannot replace a newer
+workspace destination. App scroll restoration stores at most 128 offsets by local
+URL for the life of the document; revisiting the same URL shares its last offset.
+It does not store navigation metadata or user content in browser history.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Apps: direct App URL
+    [*] --> Chat: Chat URL
+    Chat --> Apps: open Apps / Back / Forward
+    Apps --> Chat: open Chat / Back / Forward
+    note right of Apps
+        Previously opened Chat remains mounted and inert.
+        Drafts and generation workers retain their owners.
+    end note
+```
+
+The first Mini App database migration is schema 29 to 32. Existing schema-32
+development databases keep their final structure and contents. Unreleased schemas
+30 and 31 are rejected without migration; export their data using the matching
+development build before resetting an obsolete development database. No automatic
+reset deletes data. Pre-release preference/key aliases and local-to-official
+package promotions are unsupported. Local packages retain local update lineage.
 
 ## Review-bound installation and deterministic package upgrades
 
@@ -220,22 +211,3 @@ field, matching sequential upgrades. Later additive defaults do not overwrite
 that stored value. Record size and instance quota checks run before migrated
 record writes, within the existing atomic upgrade transaction. Date defaults
 use civil calendar arithmetic, so DST changes cannot shift a reviewed date.
-
-Where the browser exposes synchronous Navigation API entry-change events, native
-fragment pushes receive their history identity at commit, including rapid pushes
-whose ordinary hash events arrive together. Without those events, only a bounded
-contiguous fragment chain with a proven distance retains its prior lineage.
-An unproven fragment gets an independent scroll identity; it does not acquire
-a guessed position in the older lineage. If declining a protected traversal
-requires crossing that boundary, Cove returns to the retained known Chat origin
-while preserving the Apps destination and intervening entries. This can restore
-the known Chat URL rather than an unproven intermediate fragment. External
-entries without a known origin retain the conservative legacy fallback.
-The known origin is a compact, validated same-origin Chat URL and entry identity
-in the fragment metadata, propagated to derived entries so a reload does not
-erase that fallback. It does not contain a nested history-state snapshot, draft,
-session token or app data.
-
-A superseding browser traversal releases the obsolete restoration waiter and
-invalidates its pending approval. The actual entry is then handled as a fresh
-navigation using its own tracked position, without replacing history entries.

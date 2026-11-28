@@ -478,6 +478,9 @@ func (store *SQLiteStore) migrate() error {
 	if version > schemaVersion {
 		return fmt.Errorf("unsupported SQLite schema version %d", version)
 	}
+	if version == 30 || version == 31 {
+		return fmt.Errorf("unsupported unreleased Mini App schema %d; use a schema-32 development build to export data before resetting this development database", version)
+	}
 	if version == schemaVersion {
 		return nil
 	}
@@ -828,28 +831,7 @@ PRAGMA user_version=22;`); err != nil {
 	}
 	if version == 29 {
 		if _, err := tx.Exec(miniAppsMigration); err != nil {
-			return fmt.Errorf("apply SQLite migration 30: %w", err)
-		}
-		version = 30
-	}
-	if version == 30 {
-		if err := migrateMiniAppHistory(tx); err != nil {
-			return fmt.Errorf("apply SQLite migration 31: %w", err)
-		}
-		version = 31
-	}
-	if version == 31 {
-		var count int
-		if err := tx.QueryRow("SELECT COUNT(*) FROM pragma_table_info('mini_app_instances') WHERE name='cloud_enabled'").Scan(&count); err != nil {
-			return err
-		}
-		if count == 0 {
-			if _, err := tx.Exec("ALTER TABLE mini_app_instances ADD COLUMN cloud_enabled INTEGER NOT NULL DEFAULT 0"); err != nil {
-				return fmt.Errorf("apply SQLite migration 32: %w", err)
-			}
-		}
-		if _, err := tx.Exec("PRAGMA user_version=32"); err != nil {
-			return err
+			return fmt.Errorf("apply SQLite migration 32: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {

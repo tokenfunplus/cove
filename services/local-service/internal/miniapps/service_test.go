@@ -354,7 +354,7 @@ func TestSignedCatalogCanUpdateBundledIndependentPublisher(t *testing.T) {
 	}
 }
 
-func TestLegacyOfficialFileCanUpgradeButModifiedFilesCannotClaimItsOrigin(t *testing.T) {
+func TestLocalPackagesCannotAcquireOfficialSuccessors(t *testing.T) {
 	raw, err := os.ReadFile("../appcatalog/packages/reading-inbox.coveapp")
 	if err != nil {
 		t.Fatal(err)
@@ -392,25 +392,17 @@ func TestLegacyOfficialFileCanUpgradeButModifiedFilesCannotClaimItsOrigin(t *tes
 				t.Fatal(err)
 			}
 			before := call(t, service, book.ID, read("inbox.all")).Records
-			old, err = service.Release(t.Context(), old.ID)
-			if err != nil || old.LegacyVerified == modified {
-				t.Fatal("legacy provenance did not require exact bundled bytes", old.LegacyVerified, err)
-			}
 			next, err := service.Install(t.Context(), nextRaw, "builtin")
 			if err != nil {
 				t.Fatal(err)
 			}
 			updated, err := service.Upgrade(t.Context(), book.ID, UpgradeRequest{Revision: book.Revision, ReleaseID: next.ID, Grants: book.Grants})
-			if modified {
-				if !errors.Is(err, ErrInvalid) {
-					t.Fatal("modified file acquired an official successor", updated, err)
-				}
-				current, err := service.Instance(t.Context(), book.ID)
-				if err != nil || current.ReleaseID != old.ID || current.Revision != book.Revision {
-					t.Fatal("rejected upgrade changed the installed instance", current, err)
-				}
-			} else if err != nil || updated.ID != book.ID {
-				t.Fatal(updated, err)
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatal("local file acquired an official successor", updated, err)
+			}
+			current, err := service.Instance(t.Context(), book.ID)
+			if err != nil || current.ReleaseID != old.ID || current.Revision != book.Revision {
+				t.Fatal("rejected upgrade changed the installed instance", current, err)
 			}
 			after := call(t, service, book.ID, read("inbox.all")).Records
 			if len(after) != len(before) || after[0].ID != before[0].ID || after[0].Fields["note"] != before[0].Fields["note"] {

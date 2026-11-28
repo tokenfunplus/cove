@@ -5,7 +5,6 @@ import {
   Code2,
   Grid2X2,
   MessageSquare,
-  Settings2,
   Laptop,
   Library,
 } from "lucide-react";
@@ -89,12 +88,6 @@ export function AppSidebar({
         "Agent packages",
         <Code2 />,
         current === "agent" && !instance,
-      )}
-      {link(
-        "/apps?section=settings",
-        "Catalog settings",
-        <Settings2 />,
-        current === "settings" && !instance,
       )}
       {link(
         "/apps?section=activity",
