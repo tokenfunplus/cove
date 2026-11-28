@@ -19,6 +19,16 @@ type previewModel struct {
 	real     *http.Transport
 }
 
+type previewChoice struct {
+	Index        int               `json:"index"`
+	Delta        map[string]string `json:"delta"`
+	FinishReason *string           `json:"finish_reason"`
+}
+
+type previewCompletionChunk struct {
+	Choices []previewChoice `json:"choices"`
+}
+
 func newPreviewModel(address, response string) (*previewModel, error) {
 	real := address != ""
 	if !real {
@@ -57,8 +67,23 @@ func (m *previewModel) RoundTrip(r *http.Request) (*http.Response, error) {
 		body = `{"data":[{"id":"fixture-model","object":"model"}]}`
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/chat/completions":
 		content = "text/event-stream"
-		message, _ := json.Marshal(m.response)
-		body = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":" + string(message) + "},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+		stop := "stop"
+		chunks := []previewCompletionChunk{
+			{Choices: []previewChoice{{Index: 0, Delta: map[string]string{"content": m.response}}}},
+			{Choices: []previewChoice{{Index: 0, Delta: map[string]string{}, FinishReason: &stop}}},
+		}
+		var stream strings.Builder
+		for _, chunk := range chunks {
+			encoded, err := json.Marshal(chunk)
+			if err != nil {
+				return nil, err
+			}
+			stream.WriteString("data: ")
+			stream.Write(encoded)
+			stream.WriteString("\n\n")
+		}
+		stream.WriteString("data: [DONE]\n\n")
+		body = stream.String()
 	default:
 		return nil, errors.New("unsupported preview model operation")
 	}

@@ -57,6 +57,8 @@ type releaseRefresh struct {
 	config      Catalog
 	cachedUntil time.Time
 	done        chan struct{}
+	entries     []Entry
+	err         error
 }
 
 func Open(path string, defaults Catalog) (*Directory, error) {
@@ -193,46 +195,57 @@ func (d *Directory) List(ctx context.Context) ([]Entry, error) {
 
 // ListForRelease rechecks a successful cached index when a downloaded file is
 // missing from it. Failed lookups retain the ordinary brief offline cache.
-func (d *Directory) ListForRelease(ctx context.Context, digest string) ([]Entry, error) {
-	if err := ctx.Err(); err != nil {
-		return bundledFallback(ctx, err)
-	}
-	d.mu.Lock()
-	config := d.config()
-	if pending := d.fileRefresh; pending != nil && pending.config == config {
-		d.mu.Unlock()
-		select {
-		case <-pending.done:
-		case <-ctx.Done():
-			return bundledFallback(ctx, ctx.Err())
+func (d *Directory) ListForRelease(ctx context.Context, digest string) (entries []Entry, err error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return bundledFallback(ctx, err)
 		}
+		d.mu.Lock()
+		config := d.config()
+		if pending := d.fileRefresh; pending != nil && pending.config == config {
+			d.mu.Unlock()
+			select {
+			case <-pending.done:
+			case <-ctx.Done():
+				return bundledFallback(ctx, ctx.Err())
+			}
+			d.mu.Lock()
+			if d.config() != config {
+				d.mu.Unlock()
+				return bundledFallback(ctx, ErrCatalogChanged)
+			}
+			retry := (errors.Is(pending.err, context.Canceled) || errors.Is(pending.err, context.DeadlineExceeded)) && d.cachedConfig == config && d.cachedErr == nil && pending.cachedUntil.Equal(d.cachedUntil)
+			entries, err = cloneEntries(pending.entries), pending.err
+			d.mu.Unlock()
+			if retry {
+				continue
+			}
+			return entries, err
+		}
+		var refresh *releaseRefresh
+		if config == d.cachedConfig && d.cachedErr == nil && time.Now().Before(d.cachedUntil) && !slices.ContainsFunc(d.cachedEntries, func(entry Entry) bool { return entry.Digest == digest }) {
+			refresh = &releaseRefresh{config: config, cachedUntil: d.cachedUntil, done: make(chan struct{})}
+			d.fileRefresh = refresh
+		}
+		d.mu.Unlock()
+		if refresh == nil {
+			return d.List(ctx)
+		}
+		defer func() {
+			d.mu.Lock()
+			refresh.entries, refresh.err = cloneEntries(entries), err
+			if d.fileRefresh == refresh {
+				d.fileRefresh = nil
+			}
+			close(refresh.done)
+			d.mu.Unlock()
+		}()
+		entries, err = d.list(ctx, refresh)
 		if d.Config() != config {
 			return bundledFallback(ctx, ErrCatalogChanged)
 		}
-		return d.List(ctx)
+		return entries, err
 	}
-	var refresh *releaseRefresh
-	if config == d.cachedConfig && d.cachedErr == nil && time.Now().Before(d.cachedUntil) && !slices.ContainsFunc(d.cachedEntries, func(entry Entry) bool { return entry.Digest == digest }) {
-		refresh = &releaseRefresh{config: config, cachedUntil: d.cachedUntil, done: make(chan struct{})}
-		d.fileRefresh = refresh
-	}
-	d.mu.Unlock()
-	if refresh == nil {
-		return d.List(ctx)
-	}
-	defer func() {
-		d.mu.Lock()
-		if d.fileRefresh == refresh {
-			d.fileRefresh = nil
-		}
-		close(refresh.done)
-		d.mu.Unlock()
-	}()
-	entries, err := d.list(ctx, refresh)
-	if d.Config() != config {
-		return bundledFallback(ctx, ErrCatalogChanged)
-	}
-	return entries, err
 }
 
 func (d *Directory) list(ctx context.Context, refresh *releaseRefresh) ([]Entry, error) {
