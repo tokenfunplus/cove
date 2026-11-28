@@ -44,7 +44,6 @@ export function WorkspaceSearch({
   });
   const results = [
     { name: "My apps", path: "/apps", kind: "Workspace" },
-    { name: "Discover apps", path: "/apps?section=catalog", kind: "Workspace" },
     { name: "Agent packages", path: "/apps?section=agent", kind: "Workspace" },
     {
       name: "Host activity",

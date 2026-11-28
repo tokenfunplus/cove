@@ -71,11 +71,11 @@ export default function MiniAppsPage({
     "section",
   );
   const section: DirectorySection = [
-    "catalog",
     "activity",
     "agent",
     "packages",
     "restore",
+    "settings",
   ].includes(querySection ?? "")
     ? (querySection as DirectorySection)
     : "mine";
@@ -114,7 +114,7 @@ export default function MiniAppsPage({
     >
       {session.isSuccess && !expired && (
         <AppSidebar
-          current={target ? "catalog" : section}
+          current={section}
           instance={id}
           navigate={navigate}
         />

@@ -147,12 +147,12 @@ export function PackagePreview({
   const [name, setName] = useState(pkg.name);
   const firstTarget =
     targetInstance ??
-    (!createNewCopy && source.kind !== "installed" && previous.length === 1
+    (!createNewCopy && previous.length === 1
       ? previous[0]
       : undefined);
   const [selectedId, setUpgrade] = useState(
     firstTarget?.id ??
-      (!createNewCopy && source.kind !== "installed" && previous.length > 1
+      (!createNewCopy && previous.length > 1
         ? "choose"
         : ""),
   );

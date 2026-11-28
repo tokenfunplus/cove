@@ -1,6 +1,21 @@
 # Distributing Mini Apps
 
-A standard Cove installation includes Japanese Review Book and Reading Inbox. Open Mini Apps in the Launcher to install either release. A browser session can also preview a personal package from disk. Personal and catalog releases have distinct identities. Importing the exact bytes of a bundled or recognized signed release preserves its verified origin. The installer reserves known catalog publishers, including Cove and the bundled Reading Inbox publisher. Existing personal instances keep their original local identity.
+CoveWeb owns the public app catalog, package details, version browsing and official
+downloads at `https://www.hicove.io/apps`. Local Cove owns **My apps**, file import,
+installation review, permissions and the installed app workspace. Its **Browse
+apps on CoveWeb** link opens the website. Local Cove does not provide a second
+marketplace or send its instance inventory to the website.
+
+Visitors can download a `.coveapp` or choose **Open in Cove** on a version-specific
+public page. The Launcher hands that identity to the local installer, which opens
+an exact installed copy, offers a copy chooser, or resolves the requested release
+and shows installation review. Installed apps remain usable offline.
+
+The host bundles reference releases of Japanese Review Book and Reading Inbox.
+They provide offline package verification and developer examples. Importing exact
+bundled or recognized signed bytes retains the verified origin; personal packages
+keep their separate local identity. The installer reserves known catalog
+publishers, including Cove and the bundled Reading Inbox publisher.
 
 **Settings → Check for updates** compares the current instance with releases
 in the configured directory. Cove downloads the signed index and checks
@@ -19,14 +34,33 @@ node scripts/build-mini-app-catalog.mjs --sequence 42 /tmp/coveweb-site /secure/
 
 The builder writes the catalog landing page, package detail pages under `apps/<publisher>/<app>/`, and `catalog.json` in a new output directory. Serve these files together over HTTPS. The signed format 2 envelope includes issuance time, an explicit positive integer sequence and expiration after 30 days. Use a persistent release counter such as a publishing workflow run number and increase `--sequence` for each index signed by the same key. Sequence ordering does not depend on the publishing machine clock. Rebuild and sign before expiration. Publish an updated index for deployments that still serve format 1. Each Mac remembers the latest accepted signed sequence. Unavailable, expired, conflicting and unverified indexes leave the bundled catalog usable and display a notice.
 
-Version 1 hides custom directory settings in the user interface. Released builds
-use the public catalog URL and verification key embedded at packaging time, or
-bundled apps when no official catalog is configured. Development and acceptance
-checks can set `COVE_APP_CATALOG_URL` and `COVE_APP_CATALOG_PUBLIC_KEY`; private
-signing keys must stay outside the app and source control. Existing internal
-preferences are preserved. The backend keeps authority confirmation, per-key
-history and rollback checks for future directory configuration. The public
-catalog never receives the instance inventory.
+The separate CoveWeb Next.js project owns the production website presentation.
+Import the builder's signed output there with:
+
+```sh
+pnpm apps:import --signed /tmp/coveweb-site/catalog.json --public-key BASE64_PUBLIC_KEY
+pnpm apps:check
+pnpm build
+```
+
+That import verifies the signature, validity period, sequence and immutable
+versions before publishing exact package bytes. CoveWeb serves the signed index
+at `/apps/catalog.json` and downloads at
+`/apps/<publisher>/<app>/<version>.coveapp`. Its public pages expose **Open in
+Cove**, without inferring local installation or update state. Packaging the same
+official verification key and configuring the HTTPS index remain release
+operator tasks. Curated bundled downloads can also be hosted without inventing a
+signing authority. Mini Apps require a Cove build that includes this runtime;
+the earlier Beta 14 download does not provide it.
+
+The **Mini Apps → Release source** page shows read-only source information.
+Version 1 uses the public URL and verification key packaged with Cove, or bundled
+apps when no public source is configured. Custom directory editing is hidden.
+Development checks can use `COVE_APP_CATALOG_URL` and
+`COVE_APP_CATALOG_PUBLIC_KEY`; existing internal preferences remain intact.
+The backend retains explicit authority confirmation, per-key histories and
+rollback protection for future configuration support. Private signing keys stay
+outside the app and source control.
 
 A release build can preconfigure the public directory. Pass `COVE_APP_CATALOG_DEFAULTS_FILE` to `scripts/package-macos.sh` with a JSON file containing only the public `url` and `public_key`. The build embeds these values in the signed app resources. Developers can supply defaults using `COVE_APP_CATALOG_URL` and `COVE_APP_CATALOG_PUBLIC_KEY`. Saved local settings take precedence. The repository supplies the static publisher and packaging integration. The production domain, hosting and signing authority belong to the release operator.
 
@@ -46,8 +80,8 @@ embed the official public key using the packaging option above.
 Changing a directory URL under the same key retains its trust. Changing the
 key requires an authenticated confirmation bound to the previously displayed
 URL and key. A newly packaged default public key becomes the official authority
-for that directory's new releases. Users with an explicit saved directory can
-confirm the change through the development settings API. Historical rollback checkpoints
+for that directory's new releases. Existing internal overrides require confirmation through the development
+settings API. Historical rollback checkpoints
 survive the change.
 
 Each installed catalog release also pins the fingerprint of its actual signing
@@ -72,7 +106,7 @@ Successful verified indexes are cached in memory for up to thirty seconds,
 bounded by their signed expiration. Importing a file absent from a successful
 cache rechecks the signed index once, so a newly published release can be verified
 immediately. Concurrent file checks share that refresh. A failed file refresh
-preserves any still-valid verified index for Discover and known-release checks.
+preserves any still-valid verified index for local installation and update checks.
 Missing-file checks retain bundled fallback entries and the warning separately
 for five seconds, so an offline import does not repeat the remote timeout during
 preview and installation. Ordinary directory failures use the same brief

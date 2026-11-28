@@ -12,161 +12,101 @@ export async function runMiniAppWorkspace({
   cdp,
   snapshot,
 }) {
-  const app = "cove/japanese-review-book";
   const catalog = await api("/api/mini-apps/catalog");
-  const appCount = new Set(
-    catalog.packages.map((entry) => entry.publisher + "/" + entry.app),
-  ).size;
   const before = (await api("/api/mini-apps/instances")).instances;
   const installedReleases = (await api("/api/mini-apps/packages")).packages;
-  const copiesForRelease = (entry) => before.filter((book) =>
-    installedReleases.some((release) =>
-      release.id === book.release_id &&
-      release.package.publisher === entry.publisher &&
-      release.package.app === entry.app &&
-      release.package.version === entry.version &&
-      release.digest === entry.digest &&
-      release.origin === entry.origin &&
-      (entry.origin === "builtin" || (
-        entry.origin === "catalog" &&
-        Boolean(entry.catalog_authority) &&
-        release.catalog_authority === entry.catalog_authority &&
-        (release.official_catalog === true) === (entry.official_catalog === true)
-      )),
-    ),
-  );
-  await goto("/apps?section=catalog");
-  await until(
-    "document.querySelectorAll('#mini-app-catalog article[data-app]').length===" +
-      appCount,
-  );
-  assert.equal(appCount, 2, "Historical releases share two distinct app cards");
-  assert.equal(
-    await evaluate(
-      "document.querySelectorAll('[data-app=" +
-        JSON.stringify(app) +
-        "]').length",
-    ),
-    1,
-  );
-  await until(
-    "Array.from(document.querySelectorAll('#mini-app-catalog article')).every(element=>!!element.querySelector('.catalog-art[data-ready=true]'))",
-  );
-  await cdp("Emulation.setDeviceMetricsOverride", {
-    width: 1440,
-    height: 900,
-    deviceScaleFactor: 1,
-    mobile: false,
-  });
-  await evaluate("document.querySelector('main.mini-app-shell').scrollTop = 0");
-  await snapshot("mini-app-market-desktop");
-  await cdp("Emulation.setDeviceMetricsOverride", {
-    width: 390,
-    height: 844,
-    deviceScaleFactor: 1,
-    mobile: true,
-  });
-  await until("document.documentElement.scrollWidth<=innerWidth+1");
-  await evaluate("document.querySelector('main.mini-app-shell').scrollTop = 0");
-  await snapshot("mini-app-market-mobile");
-  await cdp("Emulation.setDeviceMetricsOverride", {
-    width: 1440,
-    height: 900,
-    deviceScaleFactor: 1,
-    mobile: false,
-  });
-  await fill('input[placeholder="Find an app"]', "Japanese");
-  await until(
-    "document.querySelectorAll('#mini-app-catalog article[data-app]').length===1",
-  );
-  assert.equal(
-    await evaluate(
-      "document.querySelector('#mini-app-catalog article').dataset.app",
-    ),
-    app,
-  );
-  await fill('input[placeholder="Find an app"]', "");
-  await until(
-    "document.querySelectorAll('#mini-app-catalog article[data-app]').length===" +
-      appCount,
-  );
-  await click('[data-app="' + app + '"] .mini-app-card-cover');
-  await until(
-    "document.querySelector('select[aria-label=" +
-      JSON.stringify("App version") +
-      "]')?.value==='1.2.0'",
-  );
-  assert.equal(
-    await evaluate(
-      "document.querySelector('select[aria-label=" +
-        JSON.stringify("App version") +
-        "]').options.length",
-    ),
-    3,
-    "Historical versions are available inside the detail page",
-  );
-  await snapshot("mini-app-market-detail");
-  await evaluate(
-    "{const select=document.querySelector('select[aria-label=" +
-      JSON.stringify("App version") +
-      "]'); select.value='1.1.0'; select.dispatchEvent(new Event('change',{bubbles:true}));}",
-  );
-  await until(
-    "new URLSearchParams(location.search).get('version')==='1.1.0' && Array.from(document.querySelectorAll('button')).some(element=>['Get app','Open app','Choose a copy'].includes(element.textContent.trim()) && !element.disabled)",
-  );
-  const detailAction = await evaluate(
-    "Array.from(document.querySelectorAll('button')).find(element=>['Get app','Open app','Choose a copy'].includes(element.textContent.trim()))?.textContent.trim()",
-  );
   const selectedRelease = catalog.packages.find((entry) =>
     entry.publisher === "cove" && entry.app === "japanese-review-book" && entry.version === "1.1.0",
   );
-  assert(selectedRelease, "The reviewed catalog still supplies version 1.1.0");
-  const exactCopies = copiesForRelease(selectedRelease);
-  assert(exactCopies.length, "The preceding upgrade created a saved 1.1.0 copy");
-  assert.equal(
-    detailAction,
-    exactCopies.length === 1 ? "Open app" : "Choose a copy",
-    "Only copies of the selected release determine the Open action",
+  assert(selectedRelease, "The installation fixture supplies version 1.1.0");
+  const installed = installedReleases.find((release) =>
+    release.package.publisher === selectedRelease.publisher &&
+    release.package.app === selectedRelease.app &&
+    release.package.version === selectedRelease.version &&
+    release.digest === selectedRelease.digest && release.origin === selectedRelease.origin,
   );
-  const copy = exactCopies[0];
-  await button(detailAction);
-  if (detailAction === "Choose a copy") await button(copy.name);
-  await until("location.pathname===" + JSON.stringify("/apps/" + copy.id));
-  assert.equal(
-    (await api("/api/mini-apps/instances/" + copy.id)).instance.id,
-    copy.id,
-  );
-  await goto(
-    "/apps?section=catalog&app=cove%2Fjapanese-review-book&version=1.1.0",
-  );
-  await button("Create another copy");
-  await until(
-    "!!document.querySelector('section[aria-label=" +
-      JSON.stringify("Choose app access") +
-      "]')",
-  );
-  assert.equal(
-    await evaluate("document.querySelector('select[aria-label=\"Update an existing copy\"]')?.value"),
-    "",
-    "Create another copy starts fresh even when an older copy can be updated",
-  );
-  assert.equal(
-    await evaluate("document.querySelector('input[aria-label=\"App name\"]')?.value"),
-    selectedRelease.name,
-    "A separate copy starts with the package name",
-  );
-  await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true, "mini-app-workspace-install-scroll-bottom");
-  await button("Cancel");
-  assert.deepEqual(
-    (await api("/api/mini-apps/instances")).instances,
-    before,
-    "Browsing app details, changing version and canceling review cannot install or update a copy",
-  );
-  await button("Back to Discover");
-  await until(
-    "document.querySelectorAll('#mini-app-catalog article[data-app]').length===" +
-      appCount,
-  );
+  const exactCopies = before.filter((book) => book.release_id === installed?.id);
+  assert.equal(exactCopies.length, 1, "The preceding upgrade created one saved 1.1.0 copy");
+  const injection = await cdp("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
+    const original = window.fetch;
+    window.__miniWorkspaceCatalogReads = [];
+    window.fetch = (input, init) => {
+      const path = new URL(typeof input === 'string' ? input : input.url, location.href).pathname;
+      if (path.startsWith('/api/mini-apps/catalog')) window.__miniWorkspaceCatalogReads.push(path);
+      return original(input, init);
+    };
+  })()` });
+  try {
+    // Old market bookmarks remain useful local workspace entries. They do not
+    // reconstruct a public catalog or fetch release metadata in the background.
+    await goto("/apps?section=catalog&app=cove%2Fjapanese-review-book&version=1.1.0");
+    await until("document.querySelector('input[placeholder=\"Find an app\"]') && Array.from(document.querySelectorAll('button strong')).some(element=>element.textContent==='Kana practice')");
+    assert.equal(await evaluate("document.querySelector('#mini-app-catalog')"), null);
+    assert.equal(await evaluate("Array.from(document.querySelectorAll('button')).some(element=>element.textContent.trim()==='Discover')"), false);
+    const website = await evaluate(`(() => {
+      const link = Array.from(document.querySelectorAll('a')).find(element=>element.textContent.includes('Browse apps on CoveWeb'));
+      return link && { href: link.href, target: link.target, rel: link.rel };
+    })()`);
+    assert.equal(website?.href, "https://www.hicove.io/apps");
+    assert.equal(website.target, "_blank");
+    assert(website.rel.split(/\s+/).includes("noreferrer"));
+    assert.deepEqual(await evaluate("window.__miniWorkspaceCatalogReads"), [], "My apps and old catalog bookmarks stay local");
+    await cdp("Emulation.setDeviceMetricsOverride", {
+      width: 1440, height: 900, deviceScaleFactor: 1, mobile: false,
+    });
+    await evaluate("document.querySelector('main.mini-app-shell').scrollTop = 0");
+    await snapshot("mini-app-workspace-desktop");
+    await cdp("Emulation.setDeviceMetricsOverride", {
+      width: 390, height: 844, deviceScaleFactor: 1, mobile: true,
+    });
+    await until("document.documentElement.scrollWidth<=innerWidth+1");
+    await snapshot("mini-app-workspace-mobile");
+    await cdp("Emulation.setDeviceMetricsOverride", {
+      width: 1440, height: 900, deviceScaleFactor: 1, mobile: false,
+    });
+
+    // A cached newer package offers an update review instead of forcing a new
+    // empty instance. Canceling it preserves the full inventory and its data.
+    const newer = catalog.packages.find(entry => entry.app === selectedRelease.app && entry.publisher === selectedRelease.publisher && entry.version === "1.2.0");
+    assert(newer);
+    const cached = await api(`/api/mini-apps/catalog/${newer.publisher}/${newer.app}/${newer.version}/install`, "POST", { digest: newer.digest });
+    assert(!before.some(book => book.release_id === cached.id));
+    await goto("/apps/install/cove/japanese-review-book?version=1.2.0");
+    await button("Review update");
+    await until("!!document.querySelector('select[aria-label=\"Update an existing copy\"]')");
+    await evaluate(`{const select=document.querySelector('select[aria-label="Update an existing copy"]'); select.value=${JSON.stringify(exactCopies[0].id)}; select.dispatchEvent(new Event('change',{bubbles:true}));}`);
+    await until("Array.from(document.querySelectorAll('button')).some(button=>button.textContent.trim()==='Update to 1.2.0' && !button.disabled)");
+    await button("Cancel");
+    assert.deepEqual((await api("/api/mini-apps/instances")).instances, before);
+
+    // CoveWeb's version-specific handoff resolves the precise installed copy
+    // without requiring another remote catalog read or an online connection.
+    await goto("/apps/install/cove/japanese-review-book?version=1.1.0");
+    const copy = exactCopies[0];
+    await until("location.pathname===" + JSON.stringify("/apps/" + copy.id));
+    assert.deepEqual(await evaluate("window.__miniWorkspaceCatalogReads"), [], "An exact installed release opens offline");
+    assert.equal((await api("/api/mini-apps/instances/" + copy.id)).instance.id, copy.id);
+    await button("My apps");
+    await click('button[aria-label="More app options"]');
+    await button("Manage installed versions");
+    await button("New instance", '[data-release="' + installed.id + '"]');
+    await until("!!document.querySelector('section[aria-label=\"Choose app access\"]')");
+    assert.equal(
+      await evaluate("document.querySelector('select[aria-label=\"Update an existing copy\"]')?.value ?? ''"),
+      "",
+      "New instance starts fresh even when an older copy can be updated",
+    );
+    assert.equal(await evaluate("document.querySelector('input[aria-label=\"App name\"]')?.value"), selectedRelease.name);
+    await checkMiniAppScroll({ cdp, evaluate, until, snapshot }, true, "mini-app-workspace-install-scroll-bottom");
+    await button("Cancel");
+    assert.deepEqual(
+      (await api("/api/mini-apps/instances")).instances,
+      before,
+      "Opening a signed handoff and canceling a new-copy review do not mutate installed instances",
+    );
+  } finally {
+    await cdp("Page.removeScriptToEvaluateOnNewDocument", { identifier: injection.identifier });
+  }
 
   await goto("/apps?section=activity");
   await until(

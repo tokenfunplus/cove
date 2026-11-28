@@ -36,6 +36,23 @@ also apply when requests originate in a Mini App.
 The public [authoring contract](../mini-apps.md) describes the release format,
 author tools and executable example scenarios.
 
+## Public discovery and local installation
+
+CoveWeb owns the public app list, package details, public examples, version
+browsing and downloads. The combined design demo does not define an embedded
+marketplace in Cove. Local Cove manages installed instances, file import,
+installation review, permissions, execution, backups and data-preserving updates.
+An external website link replaces its earlier local Discover surface; legacy
+catalog bookmarks open My apps. This supersedes the earlier workspace layout.
+
+Public **Open in Cove** links carry a package identity and exact version. The
+Launcher and authenticated local installer decide whether to open a copy, offer
+a chooser or review installation. Public pages do not query local inventory or
+guess which release is installed. The signed catalog client remains part of
+local installation verification and update checks, independently of website
+presentation. This correction changes no data schema, release authority or
+instance ownership.
+
 Visual Studio Code registers commands and views through JSON declarations in
 its extension manifest. This provided a reference for referencing one named
 operation from several host surfaces. Cove's interpreter implements the
@@ -99,8 +116,9 @@ Restart recovery updates task and activity states together.
 An unset directory override follows the public URL and key packaged with the
 installed Cove version. Saving those exact configured defaults preserves that
 mode. A custom directory remains pinned across Cove updates; an explicitly empty
-selection stays bundled-only. The backend retains these modes for development; v1 hides custom directory
-settings and uses packaged defaults, with environment overrides for testing.
+selection stays bundled-only. The backend retains these modes for development; v1 shows read-only source
+information, hides custom directory editing and uses packaged defaults, with
+environment overrides for testing.
 
 Release-version and publisher histories are scoped to the signing key, just like
 rollback checkpoints. Switching authorities cannot transfer a conflicting version
@@ -108,7 +126,7 @@ history to another signer. Returning to an authority still enforces its prior
 sequence and immutable releases.
 
 Conversation interception requires an available app and explicit `@Name` for a
-named app. Discovery shortcuts stay local and preserve an existing draft.
+named app. Installed-app discovery shortcuts stay local and preserve an existing draft.
 Candidate validation reports individual invalid rows so valid selections remain
 usable; committed batches retain their all-or-nothing validation. Debate retries
 transient delivery of a frozen verified result without claiming or charging a

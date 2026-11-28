@@ -3,12 +3,14 @@ import {
   Activity,
   BookOpen,
   Code2,
-  Grid2X2,
+  ArrowUpRight,
   MessageSquare,
+  Settings2,
   Laptop,
   Library,
 } from "lucide-react";
 import { appKeys, miniApps } from "@/api/mini-apps";
+import { COVEWEB_APPS_URL } from "@/lib/coveweb-apps";
 
 export function AppSidebar({
   current,
@@ -60,13 +62,11 @@ export function AppSidebar({
       </a>
       <p>Workspace</p>
       {link("/", "Cove Chat", <MessageSquare />, false)}
-      {link(
-        "/apps?section=catalog",
-        "App catalog",
-        <Grid2X2 />,
-        !instance && current === "catalog",
-      )}
       {link("/apps", "My apps", <Library />, !instance && current === "mine")}
+      <a href={COVEWEB_APPS_URL} target="_blank" rel="noreferrer">
+        <ArrowUpRight />
+        <span>Browse apps on CoveWeb</span>
+      </a>
       <p>Installed apps</p>
       {apps.data?.instances.map((app) =>
         link(
@@ -88,6 +88,12 @@ export function AppSidebar({
         "Agent packages",
         <Code2 />,
         current === "agent" && !instance,
+      )}
+      {link(
+        "/apps?section=settings",
+        "Release source",
+        <Settings2 />,
+        current === "settings" && !instance,
       )}
       {link(
         "/apps?section=activity",
